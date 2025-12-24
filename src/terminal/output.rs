@@ -267,7 +267,7 @@ impl Command for &FrameBuffer {
     }
 
     #[cfg(windows)]
-    fn execute_winapi(&self, _writer: impl FnMut() -> io::Result<()>) -> io::Result<()> {
+    fn execute_winapi(&self) -> io::Result<()> {
         Ok(())
     }
 }

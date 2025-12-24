@@ -38,9 +38,12 @@ impl TerminalScreen {
         terminal::enable_raw_mode()?;
         self.is_active = true;
 
-        let flag = Arc::clone(&self.resize_flag);
-        signal_hook::flag::register(signal_hook::consts::SIGWINCH, flag)
-            .expect("Failed to register SIGWINCH handler");
+        #[cfg(unix)]
+        {
+            let flag = Arc::clone(&self.resize_flag);
+            signal_hook::flag::register(signal_hook::consts::SIGWINCH, flag)
+                .expect("Failed to register SIGWINCH handler");
+        }
 
         Ok(())
     }
