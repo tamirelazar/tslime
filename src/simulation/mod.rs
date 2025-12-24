@@ -1,6 +1,6 @@
 pub mod agent;
-pub mod trail_map;
 pub mod config;
+pub mod trail_map;
 
 use crate::simulation::agent::Agent;
 use crate::simulation::config::SimConfig;
@@ -9,7 +9,6 @@ use rand::Rng as RandRng;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus as Rng;
 
-#[allow(dead_code)]
 pub struct Simulation {
     config: SimConfig,
     agents: Vec<Agent>,
@@ -17,7 +16,6 @@ pub struct Simulation {
     rng: Rng,
 }
 
-#[allow(dead_code)]
 impl Simulation {
     pub fn new(width: usize, height: usize, config: SimConfig, seed: u64) -> Self {
         let mut rng = Rng::seed_from_u64(seed);
@@ -46,6 +44,7 @@ impl Simulation {
         self.trail_map.height()
     }
 
+    #[allow(dead_code)]
     pub fn config(&self) -> &SimConfig {
         &self.config
     }
@@ -54,6 +53,7 @@ impl Simulation {
         &self.trail_map
     }
 
+    #[allow(dead_code)]
     pub fn trail_map_mut(&mut self) -> &mut TrailMap {
         &mut self.trail_map
     }
@@ -119,12 +119,22 @@ mod tests {
         config.population = 100;
         let mut sim = Simulation::new(400, 400, config, 42);
 
-        let initial_max = *sim.trail_map().current().iter().max_by(|a, b| a.total_cmp(b)).unwrap();
+        let initial_max = *sim
+            .trail_map()
+            .current()
+            .iter()
+            .max_by(|a, b| a.total_cmp(b))
+            .unwrap();
         assert_eq!(initial_max, 0.0);
 
         sim.update();
 
-        let max_after = *sim.trail_map().current().iter().max_by(|a, b| a.total_cmp(b)).unwrap();
+        let max_after = *sim
+            .trail_map()
+            .current()
+            .iter()
+            .max_by(|a, b| a.total_cmp(b))
+            .unwrap();
         assert!(max_after > 0.0);
     }
 
@@ -136,10 +146,20 @@ mod tests {
         let mut sim = Simulation::new(400, 400, config, 42);
 
         sim.update();
-        let max_after_1 = *sim.trail_map().current().iter().max_by(|a, b| a.total_cmp(b)).unwrap();
+        let max_after_1 = *sim
+            .trail_map()
+            .current()
+            .iter()
+            .max_by(|a, b| a.total_cmp(b))
+            .unwrap();
 
         sim.update();
-        let max_after_2 = *sim.trail_map().current().iter().max_by(|a, b| a.total_cmp(b)).unwrap();
+        let max_after_2 = *sim
+            .trail_map()
+            .current()
+            .iter()
+            .max_by(|a, b| a.total_cmp(b))
+            .unwrap();
 
         assert!(max_after_2 < max_after_1 * 1.5);
     }
@@ -153,10 +173,7 @@ mod tests {
         sim1.update();
         sim2.update();
 
-        assert_eq!(
-            sim1.trail_map().current(),
-            sim2.trail_map().current()
-        );
+        assert_eq!(sim1.trail_map().current(), sim2.trail_map().current());
 
         for (a1, a2) in sim1.agents().iter().zip(sim2.agents().iter()) {
             assert!((a1.x - a2.x).abs() < 0.001);

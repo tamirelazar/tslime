@@ -1,12 +1,18 @@
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub enum DiffusionKernel {
     Mean3x3,
     Gaussian,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preset {
+    Network,
+    Exploratory,
+    Tendrils,
+    Organic,
+}
+
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct SimConfig {
     pub population: usize,
     pub sensor_angle: f32,
@@ -33,7 +39,6 @@ impl Default for SimConfig {
     }
 }
 
-#[allow(dead_code)]
 impl SimConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.population < 1000 || self.population > 200_000 {
@@ -79,6 +84,44 @@ impl SimConfig {
             ));
         }
         Ok(())
+    }
+}
+
+impl From<Preset> for SimConfig {
+    fn from(preset: Preset) -> Self {
+        match preset {
+            Preset::Network => Self {
+                population: 50_000,
+                sensor_angle: 15.0,
+                sensor_distance: 9.0,
+                rotation_angle: 30.0,
+                step_size: 1.0,
+                decay_factor: 0.85,
+                deposit_amount: 5.0,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+            },
+            Preset::Exploratory => Self {
+                population: 30_000,
+                sensor_angle: 45.0,
+                sensor_distance: 15.0,
+                rotation_angle: 60.0,
+                step_size: 1.0,
+                decay_factor: 0.96,
+                deposit_amount: 3.0,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+            },
+            Preset::Tendrils => Self {
+                population: 40_000,
+                sensor_angle: 30.0,
+                sensor_distance: 12.0,
+                rotation_angle: 45.0,
+                step_size: 2.0,
+                decay_factor: 0.90,
+                deposit_amount: 4.0,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+            },
+            Preset::Organic => Self::default(),
+        }
     }
 }
 

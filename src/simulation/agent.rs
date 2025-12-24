@@ -1,16 +1,14 @@
-use std::f32::consts::PI;
 use rand::Rng as RandRng;
 use rand_xoshiro::Xoshiro256PlusPlus as Rng;
+use std::f32::consts::PI;
 
 #[derive(Clone, Copy)]
-#[allow(dead_code)]
 pub struct Agent {
     pub x: f32,
     pub y: f32,
     pub heading: f32,
 }
 
-#[allow(dead_code)]
 impl Agent {
     pub fn new(x: f32, y: f32, heading: f32) -> Self {
         Self { x, y, heading }
@@ -46,7 +44,14 @@ impl Agent {
         (left, center, right)
     }
 
-    pub fn rotate(&mut self, left: f32, center: f32, right: f32, rotation_angle: f32, rng: &mut Rng) {
+    pub fn rotate(
+        &mut self,
+        left: f32,
+        center: f32,
+        right: f32,
+        rotation_angle: f32,
+        rng: &mut Rng,
+    ) {
         let rotation_angle_rad = rotation_angle * PI / 180.0;
 
         if center > left && center > right {
@@ -95,7 +100,6 @@ impl Agent {
     }
 }
 
-#[allow(dead_code)]
 fn sample_trail(trail: &[f32], width: usize, height: usize, x: f32, y: f32) -> f32 {
     let ix = x.floor() as i32;
     let iy = y.floor() as i32;

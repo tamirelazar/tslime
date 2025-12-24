@@ -1,4 +1,3 @@
-#[allow(dead_code)]
 pub struct TrailMap {
     width: usize,
     height: usize,
@@ -6,7 +5,6 @@ pub struct TrailMap {
     scratch: Vec<f32>,
 }
 
-#[allow(dead_code)]
 impl TrailMap {
     pub fn new(width: usize, height: usize) -> Self {
         let size = width * height;
@@ -34,10 +32,12 @@ impl TrailMap {
         &mut self.current
     }
 
+    #[allow(dead_code)]
     pub fn scratch(&self) -> &[f32] {
         &self.scratch
     }
 
+    #[allow(dead_code)]
     pub fn scratch_mut(&mut self) -> &mut [f32] {
         &mut self.scratch
     }
@@ -46,6 +46,7 @@ impl TrailMap {
         std::mem::swap(&mut self.current, &mut self.scratch);
     }
 
+    #[allow(dead_code)]
     pub fn get(&self, x: usize, y: usize) -> f32 {
         if x < self.width && y < self.height {
             self.current[y * self.width + x]
@@ -54,18 +55,21 @@ impl TrailMap {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set(&mut self, x: usize, y: usize, value: f32) {
         if x < self.width && y < self.height {
             self.current[y * self.width + x] = value;
         }
     }
 
+    #[allow(dead_code)]
     pub fn add(&mut self, x: usize, y: usize, value: f32) {
         if x < self.width && y < self.height {
             self.current[y * self.width + x] += value;
         }
     }
 
+    #[allow(dead_code)]
     pub fn index(&self, x: usize, y: usize) -> Option<usize> {
         if x < self.width && y < self.height {
             Some(y * self.width + x)
@@ -74,11 +78,13 @@ impl TrailMap {
         }
     }
 
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.current.fill(0.0);
         self.scratch.fill(0.0);
     }
 
+    #[allow(dead_code)]
     pub fn size(&self) -> usize {
         self.width * self.height
     }
