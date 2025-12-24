@@ -160,6 +160,17 @@ fn run_simulation(
 }
 
 fn get_terminal_size() -> (usize, usize) {
+    let width = std::env::var("COLUMNS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok());
+    let height = std::env::var("LINES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok());
+
+    if let (Some(w), Some(h)) = (width, height) {
+        return (w, h);
+    }
+
     match crossterm::terminal::size() {
         Ok((w, h)) => (w as usize, h as usize),
         Err(_) => (80, 24),
