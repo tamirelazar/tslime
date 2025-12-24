@@ -257,6 +257,35 @@ impl Args {
     }
 }
 
+impl Default for Args {
+    fn default() -> Self {
+        Self {
+            live: false,
+            screensaver: false,
+            print: false,
+            seed: None,
+            population: 50000,
+            sensor_angle: 22.5,
+            sensor_distance: 9.0,
+            rotation_angle: 45.0,
+            step_size: 1.0,
+            decay_factor: 0.9,
+            preset: Option::<Preset>::None,
+            frame_delay: 0.033,
+            fps: 30,
+            resolution: Resolution {
+                width: 400,
+                height: 400,
+            },
+            palette: "organic".to_string(),
+            colors: "256".to_string(),
+            ascii: false,
+            braille: false,
+            verbose: false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,34 +362,5 @@ mod tests {
             ..Default::default()
         };
         assert!(args.color_mode().is_err());
-    }
-}
-
-impl Default for Args {
-    fn default() -> Self {
-        Self {
-            live: false,
-            screensaver: false,
-            print: false,
-            seed: None,
-            population: 50000,
-            sensor_angle: 22.5,
-            sensor_distance: 9.0,
-            rotation_angle: 45.0,
-            step_size: 1.0,
-            decay_factor: 0.9,
-            preset: Option::<Preset>::None,
-            frame_delay: 0.033,
-            fps: 30,
-            resolution: Resolution {
-                width: 400,
-                height: 400,
-            },
-            palette: "organic".to_string(),
-            colors: "256".to_string(),
-            ascii: false,
-            braille: false,
-            verbose: false,
-        }
     }
 }

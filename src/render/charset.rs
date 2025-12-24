@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     fn test_all_halfblock_chars() {
-        for i in 0..HALF_BLOCK_CHARS.len() {
+        for (i, _) in HALF_BLOCK_CHARS.iter().enumerate() {
             let brightness = i as f32 / (HALF_BLOCK_CHARS.len() - 1) as f32;
             let char = map_brightness(brightness, Charset::HalfBlock);
             assert_eq!(char, HALF_BLOCK_CHARS[i]);

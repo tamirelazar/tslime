@@ -115,8 +115,10 @@ mod tests {
 
     #[test]
     fn test_update_changes_trail() {
-        let mut config = SimConfig::default();
-        config.population = 100;
+        let config = SimConfig {
+            population: 100,
+            ..Default::default()
+        };
         let mut sim = Simulation::new(400, 400, config, 42);
 
         let initial_max = *sim
@@ -140,9 +142,11 @@ mod tests {
 
     #[test]
     fn test_multiple_updates() {
-        let mut config = SimConfig::default();
-        config.population = 100;
-        config.decay_factor = 0.99;
+        let config = SimConfig {
+            population: 100,
+            decay_factor: 0.99,
+            ..Default::default()
+        };
         let mut sim = Simulation::new(400, 400, config, 42);
 
         sim.update();

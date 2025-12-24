@@ -149,29 +149,37 @@ mod tests {
 
     #[test]
     fn test_validate_population_too_low() {
-        let mut config = SimConfig::default();
-        config.population = 500;
+        let config = SimConfig {
+            population: 500,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_population_too_high() {
-        let mut config = SimConfig::default();
-        config.population = 300_000;
+        let config = SimConfig {
+            population: 300_000,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_sensor_angle() {
-        let mut config = SimConfig::default();
-        config.sensor_angle = 100.0;
+        let config = SimConfig {
+            sensor_angle: 100.0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_decay_factor() {
-        let mut config = SimConfig::default();
-        config.decay_factor = 1.0;
+        let config = SimConfig {
+            decay_factor: 1.0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 }
