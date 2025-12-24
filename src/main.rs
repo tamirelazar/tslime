@@ -51,10 +51,7 @@ fn print_mode(
     charset: Charset,
 ) -> io::Result<()> {
     #[cfg(windows)]
-    {
-        crossterm::terminal::enable_alternate_windows_console_mode()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    }
+    let _enable = enable_ansi_support::enable_ansi_support();
 
     sim.update();
 
