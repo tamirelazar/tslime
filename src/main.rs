@@ -50,6 +50,12 @@ fn print_mode(
     palette: cli::Palette,
     charset: Charset,
 ) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        crossterm::terminal::enable_alternate_windows_console_mode()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    }
+
     sim.update();
 
     let (term_width, term_height) = get_terminal_size();
