@@ -75,7 +75,6 @@ capture_frames() {
 
     COLUMNS=$COLUMNS LINES=$LINES "$TSLIME_BIN" \
         --capture-frames \
-        --plain-output \
         --frame-count $FRAME_COUNT \
         --frame-skip $FRAME_SKIP \
         --frame-dir "$frames_dir" \
