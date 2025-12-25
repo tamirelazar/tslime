@@ -37,6 +37,8 @@ fn main() -> io::Result<()> {
 
     if mode == Mode::Print {
         print_mode(&mut sim, &args, palette, charset)?;
+    } else if mode == Mode::CaptureFrames {
+        capture_frames_mode(&mut sim, &args, palette, charset)?;
     } else {
         run_simulation(&mut sim, &args, mode, palette, charset)?;
     }
@@ -46,7 +48,7 @@ fn main() -> io::Result<()> {
 
 fn print_mode(
     sim: &mut Simulation,
-    _args: &Args,
+    args: &Args,
     palette: cli::Palette,
     charset: Charset,
 ) -> io::Result<()> {
@@ -80,8 +82,82 @@ fn print_mode(
         charset,
     );
 
-    print!("{}", buffer.build_frame_string());
+    print!("{}", buffer.build_frame_string(args.plain_output));
     io::stdout().flush()?;
+
+    Ok(())
+}
+
+fn capture_frames_mode(
+    sim: &mut Simulation,
+    args: &Args,
+    palette: cli::Palette,
+    charset: Charset,
+) -> io::Result<()> {
+    let (term_width, term_height) = get_terminal_size();
+
+    std::fs::create_dir_all(&args.frame_dir)?;
+
+    eprintln!("Capturing {} frames to {}...", args.frame_count, args.frame_dir);
+
+    for frame_idx in 0..args.frame_count {
+        for _ in 0..args.frame_skip {
+            sim.update();
+        }
+
+        let downsampled = downsample(
+            sim.trail_map().current(),
+            sim.width(),
+            sim.height(),
+            term_width,
+            term_height,
+        );
+
+        let max_brightness = downsampled
+            .cells()
+            .iter()
+            .map(|c| c.top.max(c.bottom))
+            .fold(0.0f32, |acc, v| acc.max(v));
+
+        let buffer = FrameBuffer::from_downsampled(
+            downsampled.cells(),
+            term_width,
+            term_height,
+            max_brightness,
+            palette.clone(),
+            charset,
+        );
+
+        let frame_content = buffer.build_frame_string(args.plain_output);
+        let frame_filename = format!("{}/frame_{:03}.txt", args.frame_dir, frame_idx);
+        std::fs::write(&frame_filename, frame_content)?;
+
+        if args.verbose || frame_idx % 10 == 0 {
+            eprintln!(
+                "Captured frame {}/{} (sim step: {})",
+                frame_idx + 1,
+                args.frame_count,
+                (frame_idx + 1) * args.frame_skip
+            );
+        }
+    }
+
+    let meta = serde_json::json!({
+        "seed": args.seed,
+        "preset": args.preset.map(|p| format!("{:?}", p)),
+        "palette": args.palette,
+        "frame_count": args.frame_count,
+        "frame_skip": args.frame_skip,
+        "terminal_size": {"width": term_width, "height": term_height},
+        "resolution": {"width": args.resolution.width, "height": args.resolution.height},
+    });
+
+    std::fs::write(
+        format!("{}/meta.json", args.frame_dir),
+        serde_json::to_string_pretty(&meta).unwrap(),
+    )?;
+
+    eprintln!("Done! Captured {} frames to {}", args.frame_count, args.frame_dir);
 
     Ok(())
 }
@@ -90,7 +166,7 @@ fn print_mode(
 fn run_simulation(
     sim: &mut Simulation,
     args: &Args,
-    mode: Mode,
+    _mode: Mode,
     palette: cli::Palette,
     charset: Charset,
 ) -> io::Result<()> {
@@ -99,11 +175,7 @@ fn run_simulation(
 
     let mut renderer = crate::terminal::output::TerminalRenderer::new(0, 0, palette, charset);
     let mut timer = FrameTimer::new(args.fps, args.frame_delay);
-    let input_poller = if mode == Mode::Screensaver {
-        Some(InputPoller::new())
-    } else {
-        None
-    };
+    let input_poller = InputPoller::new();
 
     let (mut term_width, mut term_height) = screen.get_size()?;
     renderer.set_dimensions(term_width as usize, term_height as usize);
@@ -140,8 +212,8 @@ fn run_simulation(
             renderer.render(downsampled.cells(), max_brightness)?;
         }
 
-        if let Some(poller) = &input_poller {
-            if poller.poll_keypress()? {
+        if let Some(key_event) = input_poller.poll_keypress()? {
+            if InputPoller::is_exit_key(&key_event) {
                 break;
             }
         }

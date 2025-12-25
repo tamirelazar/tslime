@@ -139,10 +139,12 @@ impl FrameBuffer {
         }
     }
 
-    pub fn build_frame_string(&self) -> String {
+    pub fn build_frame_string(&self, plain_output: bool) -> String {
         let mut output = String::new();
 
-        output.push_str("\x1b[H");
+        if !plain_output {
+            output.push_str("\x1b[H");
+        }
 
         let mut last_fg: Option<u8> = None;
         let mut last_bg: Option<u8> = None;
@@ -151,24 +153,26 @@ impl FrameBuffer {
             for x in 0..self.width {
                 let cell = self.cells[y * self.width + x];
 
-                if let Some(fg) = cell.fg_color {
-                    if last_fg != Some(fg) {
-                        output.push_str(&Self::ansi_color_code(fg, true));
-                        last_fg = Some(fg);
+                if !plain_output {
+                    if let Some(fg) = cell.fg_color {
+                        if last_fg != Some(fg) {
+                            output.push_str(&Self::ansi_color_code(fg, true));
+                            last_fg = Some(fg);
+                        }
+                    } else if last_fg.is_some() {
+                        output.push_str("\x1b[39m");
+                        last_fg = None;
                     }
-                } else if last_fg.is_some() {
-                    output.push_str("\x1b[39m");
-                    last_fg = None;
-                }
 
-                if let Some(bg) = cell.bg_color {
-                    if last_bg != Some(bg) {
-                        output.push_str(&Self::ansi_color_code(bg, false));
-                        last_bg = Some(bg);
+                    if let Some(bg) = cell.bg_color {
+                        if last_bg != Some(bg) {
+                            output.push_str(&Self::ansi_color_code(bg, false));
+                            last_bg = Some(bg);
+                        }
+                    } else if last_bg.is_some() {
+                        output.push_str("\x1b[49m");
+                        last_bg = None;
                     }
-                } else if last_bg.is_some() {
-                    output.push_str("\x1b[49m");
-                    last_bg = None;
                 }
 
                 output.push(cell.char);
@@ -179,7 +183,7 @@ impl FrameBuffer {
             }
         }
 
-        if last_fg.is_some() || last_bg.is_some() {
+        if !plain_output && (last_fg.is_some() || last_bg.is_some()) {
             output.push_str("\x1b[0m");
         }
 
@@ -262,7 +266,7 @@ impl TerminalRenderer {
 
 impl Command for &FrameBuffer {
     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-        let frame_str = self.build_frame_string();
+        let frame_str = self.build_frame_string(false);
         write!(f, "{}", frame_str)
     }
 
@@ -391,8 +395,15 @@ mod tests {
     #[test]
     fn test_build_frame_string_cursor_home() {
         let buffer = FrameBuffer::new(5, 3);
-        let frame_str = buffer.build_frame_string();
+        let frame_str = buffer.build_frame_string(false);
         assert!(frame_str.starts_with("\x1b[H"));
+    }
+
+    #[test]
+    fn test_build_frame_string_plain_output() {
+        let buffer = FrameBuffer::new(5, 3);
+        let frame_str = buffer.build_frame_string(true);
+        assert!(!frame_str.contains("\x1b"));
     }
 
     #[test]

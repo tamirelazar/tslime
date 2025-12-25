@@ -10,6 +10,7 @@ pub enum Mode {
     Live,
     Screensaver,
     Print,
+    CaptureFrames,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +87,36 @@ pub struct Args {
 
     #[arg(short = 'p', long = "print", help = "Print single frame and exit")]
     pub print: bool,
+
+    #[arg(
+        long = "capture-frames",
+        help = "Capture simulation frames for GIF generation"
+    )]
+    pub capture_frames: bool,
+
+    #[arg(
+        long = "frame-count",
+        value_name = "INT",
+        default_value = "50",
+        help = "Number of frames to capture"
+    )]
+    pub frame_count: usize,
+
+    #[arg(
+        long = "frame-skip",
+        value_name = "INT",
+        default_value = "50",
+        help = "Simulation steps between captured frames"
+    )]
+    pub frame_skip: usize,
+
+    #[arg(
+        long = "frame-dir",
+        value_name = "PATH",
+        default_value = "frames",
+        help = "Directory to save captured frames"
+    )]
+    pub frame_dir: String,
 
     #[arg(
         short = 's',
@@ -199,6 +230,12 @@ pub struct Args {
     pub braille: bool,
 
     #[arg(
+        long = "plain-output",
+        help = "Output plain text without ANSI color codes (for frame capture)"
+    )]
+    pub plain_output: bool,
+
+    #[arg(
         short = 'v',
         long = "verbose",
         help = "Print performance stats to stderr"
@@ -214,6 +251,8 @@ impl Args {
             Mode::Live
         } else if self.print {
             Mode::Print
+        } else if self.capture_frames {
+            Mode::CaptureFrames
         } else {
             Mode::Default
         }
@@ -263,6 +302,10 @@ impl Default for Args {
             live: false,
             screensaver: false,
             print: false,
+            capture_frames: false,
+            frame_count: 50,
+            frame_skip: 50,
+            frame_dir: "frames".to_string(),
             seed: None,
             population: 50000,
             sensor_angle: 22.5,
@@ -281,6 +324,7 @@ impl Default for Args {
             colors: "256".to_string(),
             ascii: false,
             braille: false,
+            plain_output: false,
             verbose: false,
         }
     }
@@ -314,7 +358,12 @@ mod tests {
             colors: "256".to_string(),
             ascii: false,
             braille: false,
+            plain_output: false,
             verbose: false,
+            capture_frames: false,
+            frame_count: 50,
+            frame_skip: 50,
+            frame_dir: "frames".to_string(),
         };
         assert_eq!(args.mode(), Mode::Default);
     }
