@@ -7,3 +7,7 @@ assets/demos/frames_network
 assets/demos/frames_heat
 assets/demos/frames_exploratory
 assets/demos/frames_ascii
+src/.DS_Store
+.DS_Store
+frames
+bak
