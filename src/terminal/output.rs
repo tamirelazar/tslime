@@ -154,6 +154,8 @@ impl FrameBuffer {
                 let cell = self.cells[y * self.width + x];
 
                 if !plain_output {
+                    output.push_str(&format!("\x1b[{};{}H", y + 1, x + 1));
+
                     if let Some(fg) = cell.fg_color {
                         if last_fg != Some(fg) {
                             output.push_str(&Self::ansi_color_code(fg, true));
@@ -176,10 +178,6 @@ impl FrameBuffer {
                 }
 
                 output.push(cell.char);
-            }
-
-            if y < self.height - 1 {
-                output.push('\n');
             }
         }
 
