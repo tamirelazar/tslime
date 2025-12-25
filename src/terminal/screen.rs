@@ -1,6 +1,5 @@
 use crossterm::{
     cursor,
-    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -33,7 +32,6 @@ impl TerminalScreen {
             self.stdout,
             EnterAlternateScreen,
             cursor::Hide,
-            DisableMouseCapture
         )?;
         terminal::enable_raw_mode()?;
         self.is_active = true;
@@ -66,7 +64,6 @@ impl TerminalScreen {
             self.stdout,
             LeaveAlternateScreen,
             cursor::Show,
-            EnableMouseCapture
         )?;
         self.is_active = false;
         Ok(())
