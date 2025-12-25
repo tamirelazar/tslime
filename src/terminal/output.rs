@@ -104,7 +104,10 @@ impl FrameBuffer {
                 bg_color: None,
             }
         } else if top > THRESHOLD && bottom > THRESHOLD {
-            let char = charset::map_brightness((top + bottom) / 2.0, charset);
+            let char = match charset {
+                Charset::HalfBlock => charset::map_vertical_block(top, bottom),
+                _ => charset::map_brightness((top + bottom) / 2.0, charset),
+            };
             let color = palette::map_brightness((top + bottom) / 2.0, palette.clone());
             Cell {
                 char,
@@ -112,16 +115,26 @@ impl FrameBuffer {
                 bg_color: None,
             }
         } else if top > bottom {
-            let char = '▀';
-            let color = palette::map_brightness(top, palette.clone());
+            let brightness = top;
+            let char = match charset {
+                Charset::Braille => charset::map_brightness(brightness, charset),
+                Charset::HalfBlock => charset::map_vertical_block(top, bottom),
+                _ => '▀',
+            };
+            let color = palette::map_brightness(brightness, palette.clone());
             Cell {
                 char,
                 fg_color: Some(color),
                 bg_color: None,
             }
         } else {
-            let char = '▄';
-            let color = palette::map_brightness(bottom, palette.clone());
+            let brightness = bottom;
+            let char = match charset {
+                Charset::Braille => charset::map_brightness(brightness, charset),
+                Charset::HalfBlock => charset::map_vertical_block(top, bottom),
+                _ => '▄',
+            };
+            let color = palette::map_brightness(brightness, palette.clone());
             Cell {
                 char,
                 fg_color: Some(color),
@@ -355,7 +368,7 @@ mod tests {
     fn test_create_cell_full() {
         let buffer = FrameBuffer::new(10, 10);
         let cell = buffer.create_cell(1.0, 1.0, &Palette::Organic, Charset::HalfBlock);
-        assert_eq!(cell.char, '\u{2587}');
+        assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
     }
@@ -363,7 +376,34 @@ mod tests {
     #[test]
     fn test_create_cell_top_only() {
         let buffer = FrameBuffer::new(10, 10);
+        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Ascii);
+        assert_eq!(cell.char, '▀');
+        assert!(cell.fg_color.is_some());
+        assert!(cell.bg_color.is_none());
+    }
+
+    #[test]
+    fn test_create_cell_halfblock_top_only_uses_half_height() {
+        let buffer = FrameBuffer::new(10, 10);
         let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::HalfBlock);
+        assert_eq!(cell.char, '▀');
+        assert!(cell.fg_color.is_some());
+        assert!(cell.bg_color.is_none());
+    }
+
+    #[test]
+    fn test_create_cell_halfblock_bottom_only_uses_half_height() {
+        let buffer = FrameBuffer::new(10, 10);
+        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::HalfBlock);
+        assert_eq!(cell.char, '▄');
+        assert!(cell.fg_color.is_some());
+        assert!(cell.bg_color.is_none());
+    }
+
+    #[test]
+    fn test_create_cell_halfblock_top_half_brightness() {
+        let buffer = FrameBuffer::new(10, 10);
+        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::HalfBlock);
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -374,6 +414,51 @@ mod tests {
         let buffer = FrameBuffer::new(10, 10);
         let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::HalfBlock);
         assert_eq!(cell.char, '▄');
+        assert!(cell.fg_color.is_some());
+        assert!(cell.bg_color.is_none());
+    }
+
+    #[test]
+    fn test_create_cell_braille_top_only() {
+        let buffer = FrameBuffer::new(10, 10);
+        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Braille);
+        assert_eq!(cell.char, '\u{287B}');
+        assert!(cell.fg_color.is_some());
+        assert!(cell.bg_color.is_none());
+    }
+
+    #[test]
+    fn test_create_cell_braille_bottom_only() {
+        let buffer = FrameBuffer::new(10, 10);
+        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Braille);
+        assert_eq!(cell.char, '\u{287B}');
+        assert!(cell.fg_color.is_some());
+        assert!(cell.bg_color.is_none());
+    }
+
+    #[test]
+    fn test_create_cell_braille_top_half_brightness() {
+        let buffer = FrameBuffer::new(10, 10);
+        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::Braille);
+        assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
+        assert!(cell.fg_color.is_some());
+        assert!(cell.bg_color.is_none());
+    }
+
+    #[test]
+    fn test_create_cell_braille_bottom_half_brightness() {
+        let buffer = FrameBuffer::new(10, 10);
+        let cell = buffer.create_cell(0.0, 0.5, &Palette::Organic, Charset::Braille);
+        assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
+        assert!(cell.fg_color.is_some());
+        assert!(cell.bg_color.is_none());
+    }
+
+    #[test]
+    fn test_create_cell_ascii_top_only_unchanged() {
+        let buffer = FrameBuffer::new(10, 10);
+        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Ascii);
+        assert_eq!(cell.char, '▀');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
     }
@@ -452,7 +537,7 @@ mod tests {
 
         assert_eq!(buffer.cells[0].char, '▀');
         assert_eq!(buffer.cells[1].char, '▄');
-        assert_eq!(buffer.cells[2].char, '\u{2587}');
+        assert_eq!(buffer.cells[2].char, '█');
     }
 
     #[test]

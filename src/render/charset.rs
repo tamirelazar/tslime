@@ -19,8 +19,9 @@ impl Charset {
     }
 }
 
-const HALF_BLOCK_CHARS: [char; 8] = [
+const HALF_BLOCK_CHARS: [char; 9] = [
     ' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
+    '\u{2588}',
 ];
 
 const ASCII_CHARS: [char; 10] = [' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'];
@@ -52,6 +53,19 @@ pub fn map_brightness(brightness: f32, charset: Charset) -> char {
             let index = (brightness * (BRAILLE_PATTERNS.len() - 1) as f32).round() as usize;
             BRAILLE_PATTERNS[index]
         }
+    }
+}
+
+pub fn map_vertical_block(top: f32, bottom: f32) -> char {
+    const THRESHOLD: f32 = 0.05;
+    let top_above = top > THRESHOLD;
+    let bottom_above = bottom > THRESHOLD;
+
+    match (top_above, bottom_above) {
+        (true, true) => '█',
+        (true, false) => '▀',
+        (false, true) => '▄',
+        (false, false) => ' ',
     }
 }
 
@@ -96,7 +110,7 @@ mod tests {
 
     #[test]
     fn test_map_brightness_halfblock_max() {
-        assert_eq!(map_brightness(1.0, Charset::HalfBlock), '\u{2587}');
+        assert_eq!(map_brightness(1.0, Charset::HalfBlock), '\u{2588}');
     }
 
     #[test]
@@ -144,5 +158,50 @@ mod tests {
             let char = map_brightness(brightness, Charset::HalfBlock);
             assert_eq!(char, HALF_BLOCK_CHARS[i]);
         }
+    }
+
+    #[test]
+    fn test_halfblock_chars_expanded() {
+        assert_eq!(HALF_BLOCK_CHARS.len(), 9);
+        assert_eq!(HALF_BLOCK_CHARS[0], ' ');
+        assert_eq!(HALF_BLOCK_CHARS[1], '\u{2581}');
+        assert_eq!(HALF_BLOCK_CHARS[4], '\u{2584}');
+        assert_eq!(HALF_BLOCK_CHARS[7], '\u{2587}');
+        assert_eq!(HALF_BLOCK_CHARS[8], '\u{2588}');
+    }
+
+    #[test]
+    fn test_map_vertical_block_empty() {
+        assert_eq!(map_vertical_block(0.0, 0.0), ' ');
+        assert_eq!(map_vertical_block(0.01, 0.01), ' ');
+    }
+
+    #[test]
+    fn test_map_vertical_block_top_only() {
+        assert_eq!(map_vertical_block(1.0, 0.0), '▀');
+        assert_eq!(map_vertical_block(0.5, 0.01), '▀');
+        assert_eq!(map_vertical_block(0.06, 0.0), '▀');
+    }
+
+    #[test]
+    fn test_map_vertical_block_bottom_only() {
+        assert_eq!(map_vertical_block(0.0, 1.0), '▄');
+        assert_eq!(map_vertical_block(0.01, 0.5), '▄');
+        assert_eq!(map_vertical_block(0.0, 0.06), '▄');
+    }
+
+    #[test]
+    fn test_map_vertical_block_full() {
+        assert_eq!(map_vertical_block(1.0, 1.0), '█');
+        assert_eq!(map_vertical_block(0.5, 0.5), '█');
+        assert_eq!(map_vertical_block(0.06, 0.06), '█');
+    }
+
+    #[test]
+    fn test_map_vertical_block_threshold_edge() {
+        assert_eq!(map_vertical_block(0.05, 0.0), ' ');
+        assert_eq!(map_vertical_block(0.06, 0.0), '▀');
+        assert_eq!(map_vertical_block(0.0, 0.05), ' ');
+        assert_eq!(map_vertical_block(0.0, 0.06), '▄');
     }
 }
