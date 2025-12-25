@@ -1,4 +1,4 @@
-use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use std::io;
 use std::time::Duration;
 
@@ -18,17 +18,22 @@ impl InputPoller {
         self.poll_timeout = timeout;
     }
 
-    pub fn poll_keypress(&self) -> io::Result<bool> {
+    pub fn poll_keypress(&self) -> io::Result<Option<KeyEvent>> {
         if event::poll(self.poll_timeout)? {
-            if let Event::Key(KeyEvent {
-                kind: KeyEventKind::Press,
-                ..
-            }) = event::read()?
-            {
-                return Ok(true);
+            if let Event::Key(key_event) = event::read()? {
+                if key_event.kind == KeyEventKind::Press {
+                    return Ok(Some(key_event));
+                }
             }
         }
-        Ok(false)
+        Ok(None)
+    }
+
+    pub fn is_exit_key(key_event: &KeyEvent) -> bool {
+        matches!(
+            key_event.code,
+            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc
+        )
     }
 }
 

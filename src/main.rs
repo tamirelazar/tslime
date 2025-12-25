@@ -98,7 +98,10 @@ fn capture_frames_mode(
 
     std::fs::create_dir_all(&args.frame_dir)?;
 
-    eprintln!("Capturing {} frames to {}...", args.frame_count, args.frame_dir);
+    eprintln!(
+        "Capturing {} frames to {}...",
+        args.frame_count, args.frame_dir
+    );
 
     for frame_idx in 0..args.frame_count {
         for _ in 0..args.frame_skip {
@@ -157,7 +160,10 @@ fn capture_frames_mode(
         serde_json::to_string_pretty(&meta).unwrap(),
     )?;
 
-    eprintln!("Done! Captured {} frames to {}", args.frame_count, args.frame_dir);
+    eprintln!(
+        "Done! Captured {} frames to {}",
+        args.frame_count, args.frame_dir
+    );
 
     Ok(())
 }
