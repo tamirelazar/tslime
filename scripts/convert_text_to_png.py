@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ANSI text to PNG converter for tslime frames with color support."""
+"""ANSI text to PNG converter for tslime frames with color and cursor positioning support."""
 
 import sys
 import os
@@ -53,72 +53,100 @@ def ansi_to_rgb(color_code, is_fg=True):
     return (128, 128, 128) if is_fg else (0, 0, 0)
 
 
-def parse_ansi_text(text):
-    """Parse ANSI-colored text into a list of (char, fg_color, bg_color) cells."""
-    # ANSI escape sequence pattern
-    ansi_pattern = r"\x1b\[([0-9;]*)m"
+def parse_ansi_text_with_position(text):
+    """Parse ANSI-colored text with cursor positioning into a grid of cells.
 
-    # Track current colors
+    Returns a dict mapping (row, col) to (char, fg_color, bg_color) tuples.
+    Row and col are 1-indexed from cursor positioning, converted to 0-indexed for the grid.
+    """
+    # ANSI escape sequence patterns
+    cursor_pattern = r"\x1b\[(\d+);(\d+)H"
+    color_pattern = r"\x1b\[([0-9;]*)m"
+
+    # Track current position and colors
+    current_row = 0
+    current_col = 0
     fg_color = None
     bg_color = None
 
-    # Parse text into tokens
-    tokens = []
+    # Build grid of cells
+    cells = {}
+
+    # Find all escape sequences and their positions
+    escapes = []
+    for match in re.finditer(cursor_pattern + "|" + color_pattern, text):
+        escapes.append((match.start(), match.end(), match.group(0)))
+
+    # Parse text between escape sequences
     last_pos = 0
-
-    for match in re.finditer(ansi_pattern, text):
+    for start, end, escape in escapes:
         # Add plain text before this escape sequence
-        plain_text = text[last_pos : match.start()]
+        plain_text = text[last_pos:start]
         for char in plain_text:
-            tokens.append((char, fg_color, bg_color))
+            if char not in ("\n", "\r"):
+                # Only store printable characters
+                if current_row >= 0 and current_col >= 0:
+                    cells[(current_row, current_col)] = (char, fg_color, bg_color)
+                current_col += 1
 
-        # Parse ANSI codes
-        codes_str = match.group(1)
-        if codes_str:
-            codes = [int(c) for c in codes_str.split(";") if c]
-        else:
-            codes = []
+        # Process the escape sequence
+        if "H" in escape:
+            # Cursor positioning: \x1b[row;colH
+            match = re.match(r"\x1b\[(\d+);(\d+)H", escape)
+            if match:
+                current_row = int(match.group(1)) - 1  # Convert to 0-indexed
+                current_col = int(match.group(2)) - 1  # Convert to 0-indexed
+        elif "m" in escape:
+            # Color sequence: \x1b[...m
+            match = re.match(r"\x1b\[([0-9;]*)m", escape)
+            if match:
+                codes_str = match.group(1)
+                if codes_str:
+                    codes = [int(c) for c in codes_str.split(";") if c]
+                else:
+                    codes = []
 
-        for code in codes:
-            if code == 0:  # Reset
-                fg_color = None
-                bg_color = None
-            elif code == 39:  # Default foreground
-                fg_color = None
-            elif code == 49:  # Default background
-                bg_color = None
-            elif 38 in codes:  # Foreground color (256-color)
-                idx = codes.index(38)
-                if idx + 2 < len(codes) and codes[idx + 1] == 5:
-                    fg_color = codes[idx + 2]
-                    break
-            elif 48 in codes:  # Background color (256-color)
-                idx = codes.index(48)
-                if idx + 2 < len(codes) and codes[idx + 1] == 5:
-                    bg_color = codes[idx + 2]
-                    break
+                for code in codes:
+                    if code == 0:  # Reset
+                        fg_color = None
+                        bg_color = None
+                    elif code == 39:  # Default foreground
+                        fg_color = None
+                    elif code == 49:  # Default background
+                        bg_color = None
+                    elif 38 in codes:  # Foreground color (256-color)
+                        idx = codes.index(38)
+                        if idx + 2 < len(codes) and codes[idx + 1] == 5:
+                            fg_color = codes[idx + 2]
+                            break
+                    elif 48 in codes:  # Background color (256-color)
+                        idx = codes.index(48)
+                        if idx + 2 < len(codes) and codes[idx + 1] == 5:
+                            bg_color = codes[idx + 2]
+                            break
 
-        last_pos = match.end()
+        last_pos = end
 
-    # Add remaining text
+    # Add remaining text after last escape sequence
     plain_text = text[last_pos:]
     for char in plain_text:
-        tokens.append((char, fg_color, bg_color))
+        if char not in ("\n", "\r"):
+            if current_row >= 0 and current_col >= 0:
+                cells[(current_row, current_col)] = (char, fg_color, bg_color)
+            current_col += 1
 
-    return tokens
+    return cells
 
 
-def convert_frame_to_png(input_file, output_file, font_size=14, line_height_factor=1.2):
-    """Convert an ANSI text file to PNG image with colors."""
+def convert_frame_to_png(input_file, output_file, font_size=14, width=80, height=24):
+    """Convert an ANSI text file to PNG image with colors and cursor positioning."""
     with open(input_file, "r", encoding="utf-8", errors="ignore") as f:
         content = f.read()
 
-    lines = content.split("\n")
-
     cell_width = font_size * 0.6
     cell_height = int(font_size * 1.0)
-    img_width = int(80 * cell_width)
-    img_height = int(24 * cell_height)
+    img_width = int(width * cell_width)
+    img_height = int(height * cell_height)
 
     img = Image.new("RGB", (img_width, img_height), color=(0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -131,37 +159,29 @@ def convert_frame_to_png(input_file, output_file, font_size=14, line_height_fact
         except:
             font = ImageFont.load_default()
 
-    for y, line in enumerate(lines[:24]):
-        if not line.strip():
+    # Parse cells with their positions
+    cells = parse_ansi_text_with_position(content)
+
+    # Render cells at their proper positions
+    for (row, col), (char, fg_code, bg_code) in cells.items():
+        if row >= height or col >= width:
             continue
 
-        tokens = parse_ansi_text(line)
+        fg_rgb = ansi_to_rgb(fg_code, is_fg=True) if fg_code else (128, 128, 128)
+        bg_rgb = ansi_to_rgb(bg_code, is_fg=False) if bg_code else None
 
-        x_pos = 0
-        for char, fg_code, bg_code in tokens:
-            if x_pos >= 80:
-                break
+        cell_x = int(col * cell_width)
+        cell_y = int(row * cell_height)
 
-            if char == "\n" or char == "\r":
-                continue
+        # Draw background if set
+        if bg_rgb:
+            draw.rectangle(
+                [cell_x, cell_y, cell_x + int(cell_width), cell_y + cell_height],
+                fill=bg_rgb,
+            )
 
-            fg_rgb = ansi_to_rgb(fg_code, is_fg=True) if fg_code else (128, 128, 128)
-            bg_rgb = ansi_to_rgb(bg_code, is_fg=False) if bg_code else None
-
-            cell_x = int(x_pos * cell_width)
-            cell_y = int(y * cell_height)
-
-            # Draw background if set
-            if bg_rgb:
-                draw.rectangle(
-                    [cell_x, cell_y, cell_x + int(cell_width), cell_y + cell_height],
-                    fill=bg_rgb,
-                )
-
-            # Draw character
-            draw.text((cell_x, cell_y), char, font=font, fill=fg_rgb)
-
-            x_pos += 1
+        # Draw character
+        draw.text((cell_x, cell_y), char, font=font, fill=fg_rgb)
 
     img.save(output_file, "PNG")
     print(f"Converted {input_file} -> {output_file}")
