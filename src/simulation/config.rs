@@ -12,6 +12,17 @@ pub enum Preset {
     Organic,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InitMode {
+    Random,
+    CentralBurst,
+    Circle,
+    Gradient,
+    WaveFront,
+    Spiral,
+    RandomClusters,
+}
+
 #[derive(Debug, Clone)]
 pub struct SimConfig {
     pub population: usize,

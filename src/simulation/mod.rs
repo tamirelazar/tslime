@@ -3,7 +3,7 @@ pub mod config;
 pub mod trail_map;
 
 use crate::simulation::agent::Agent;
-use crate::simulation::config::SimConfig;
+use crate::simulation::config::{InitMode, SimConfig};
 use crate::simulation::trail_map::TrailMap;
 use rand::Rng as RandRng;
 use rand::SeedableRng;
@@ -17,15 +17,38 @@ pub struct Simulation {
 }
 
 impl Simulation {
-    pub fn new(width: usize, height: usize, config: SimConfig, seed: u64) -> Self {
+    pub fn new(
+        width: usize,
+        height: usize,
+        config: SimConfig,
+        seed: u64,
+        init_mode: InitMode,
+    ) -> Self {
         let mut rng = Rng::seed_from_u64(seed);
         let mut agents = Vec::with_capacity(config.population);
 
-        for _ in 0..config.population {
-            let x = rng.gen_range(0.0..width as f32);
-            let y = rng.gen_range(0.0..height as f32);
-            let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
-            agents.push(Agent::new(x, y, heading));
+        match init_mode {
+            InitMode::Random => {
+                Self::init_random(&mut rng, width, height, &mut agents, config.population);
+            }
+            InitMode::CentralBurst => {
+                Self::init_central_burst(&mut rng, width, height, &mut agents, config.population);
+            }
+            InitMode::Circle => {
+                Self::init_circle(&mut rng, width, height, &mut agents, config.population);
+            }
+            InitMode::Gradient => {
+                Self::init_gradient(&mut rng, width, height, &mut agents, config.population);
+            }
+            InitMode::WaveFront => {
+                Self::init_wave_front(&mut rng, width, height, &mut agents, config.population);
+            }
+            InitMode::Spiral => {
+                Self::init_spiral(&mut rng, width, height, &mut agents, config.population);
+            }
+            InitMode::RandomClusters => {
+                Self::init_random_clusters(&mut rng, width, height, &mut agents, config.population);
+            }
         }
 
         Self {
@@ -33,6 +56,165 @@ impl Simulation {
             agents,
             trail_map: TrailMap::new(width, height),
             rng,
+        }
+    }
+
+    fn init_random(
+        rng: &mut Rng,
+        width: usize,
+        height: usize,
+        agents: &mut Vec<Agent>,
+        population: usize,
+    ) {
+        for _ in 0..population {
+            let x = rng.gen_range(0.0..width as f32);
+            let y = rng.gen_range(0.0..height as f32);
+            let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
+            agents.push(Agent::new(x, y, heading));
+        }
+    }
+
+    fn init_central_burst(
+        rng: &mut Rng,
+        width: usize,
+        height: usize,
+        agents: &mut Vec<Agent>,
+        population: usize,
+    ) {
+        let center_x = width as f32 / 2.0;
+        let center_y = height as f32 / 2.0;
+
+        for _ in 0..population {
+            let x = center_x + rng.gen_range(-2.0..2.0);
+            let y = center_y + rng.gen_range(-2.0..2.0);
+            let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
+            agents.push(Agent::new(x, y, heading));
+        }
+    }
+
+    fn init_circle(
+        rng: &mut Rng,
+        width: usize,
+        height: usize,
+        agents: &mut Vec<Agent>,
+        population: usize,
+    ) {
+        let center_x = width as f32 / 2.0;
+        let center_y = height as f32 / 2.0;
+        let radius = (width.min(height) as f32) * 0.35;
+
+        for _ in 0..population {
+            let angle = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
+            let x = center_x + angle.cos() * radius;
+            let y = center_y + angle.sin() * radius;
+            let heading = (angle + std::f32::consts::PI).atan2(0.0);
+            agents.push(Agent::new(x, y, heading));
+        }
+    }
+
+    fn init_gradient(
+        rng: &mut Rng,
+        width: usize,
+        height: usize,
+        agents: &mut Vec<Agent>,
+        population: usize,
+    ) {
+        let center_x = width as f32 / 2.0;
+        let center_y = height as f32 / 2.0;
+        let max_radius = (width.min(height) as f32) * 0.45;
+
+        for _ in 0..population {
+            let r = rng.gen_range(0.0..1.0);
+            let radius = r * r * max_radius;
+            let angle = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
+            let x = center_x + angle.cos() * radius;
+            let y = center_y + angle.sin() * radius;
+            let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
+            agents.push(Agent::new(x, y, heading));
+        }
+    }
+
+    fn init_wave_front(
+        rng: &mut Rng,
+        width: usize,
+        height: usize,
+        agents: &mut Vec<Agent>,
+        population: usize,
+    ) {
+        for _ in 0..population {
+            let side = rng.gen_range(0..4);
+            let (x, y, heading) = match side {
+                0 => (
+                    rng.gen_range(0.0..width as f32),
+                    0.0,
+                    std::f32::consts::PI / 2.0,
+                ),
+                1 => (
+                    width as f32 - 1.0,
+                    rng.gen_range(0.0..height as f32),
+                    std::f32::consts::PI,
+                ),
+                2 => (
+                    rng.gen_range(0.0..width as f32),
+                    height as f32 - 1.0,
+                    -std::f32::consts::PI / 2.0,
+                ),
+                _ => (0.0, rng.gen_range(0.0..height as f32), 0.0),
+            };
+            let heading = heading + rng.gen_range(-0.1..0.1);
+            agents.push(Agent::new(x, y, heading));
+        }
+    }
+
+    fn init_spiral(
+        rng: &mut Rng,
+        width: usize,
+        height: usize,
+        agents: &mut Vec<Agent>,
+        population: usize,
+    ) {
+        let center_x = width as f32 / 2.0;
+        let center_y = height as f32 / 2.0;
+        let max_radius = (width.min(height) as f32) * 0.4;
+        let golden_angle = std::f32::consts::PI * (3.0 - 5.0f32.sqrt());
+
+        for i in 0..population {
+            let radius = (i as f32 / population as f32).sqrt() * max_radius;
+            let angle = i as f32 * golden_angle;
+            let x = center_x + angle.cos() * radius;
+            let y = center_y + angle.sin() * radius;
+            let heading = angle + std::f32::consts::PI / 2.0;
+            let heading = heading + rng.gen_range(-0.05..0.05);
+            agents.push(Agent::new(x, y, heading));
+        }
+    }
+
+    fn init_random_clusters(
+        rng: &mut Rng,
+        width: usize,
+        height: usize,
+        agents: &mut Vec<Agent>,
+        population: usize,
+    ) {
+        let num_clusters = rng.gen_range(3..7);
+        let agents_per_cluster = population / num_clusters;
+
+        for cluster in 0..num_clusters {
+            let cluster_x = rng.gen_range(width as f32 * 0.2..width as f32 * 0.8);
+            let cluster_y = rng.gen_range(height as f32 * 0.2..height as f32 * 0.8);
+
+            let count = if cluster == num_clusters - 1 {
+                population - (num_clusters - 1) * agents_per_cluster
+            } else {
+                agents_per_cluster
+            };
+
+            for _ in 0..count {
+                let x = cluster_x + rng.gen_range(-20.0..20.0);
+                let y = cluster_y + rng.gen_range(-20.0..20.0);
+                let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
+                agents.push(Agent::new(x, y, heading));
+            }
         }
     }
 
@@ -107,7 +289,7 @@ mod tests {
     #[test]
     fn test_simulation_creation() {
         let config = SimConfig::default();
-        let sim = Simulation::new(400, 400, config, 42);
+        let sim = Simulation::new(400, 400, config, 42, InitMode::Random);
         assert_eq!(sim.width(), 400);
         assert_eq!(sim.height(), 400);
         assert_eq!(sim.agents().len(), 50000);
@@ -119,7 +301,7 @@ mod tests {
             population: 100,
             ..Default::default()
         };
-        let mut sim = Simulation::new(400, 400, config, 42);
+        let mut sim = Simulation::new(400, 400, config, 42, InitMode::Random);
 
         let initial_max = *sim
             .trail_map()
@@ -147,7 +329,7 @@ mod tests {
             decay_factor: 0.99,
             ..Default::default()
         };
-        let mut sim = Simulation::new(400, 400, config, 42);
+        let mut sim = Simulation::new(400, 400, config, 42, InitMode::Random);
 
         sim.update();
         let max_after_1 = *sim
@@ -171,8 +353,8 @@ mod tests {
     #[test]
     fn test_reproducibility() {
         let config = SimConfig::default();
-        let mut sim1 = Simulation::new(400, 400, config.clone(), 42);
-        let mut sim2 = Simulation::new(400, 400, config, 42);
+        let mut sim1 = Simulation::new(400, 400, config.clone(), 42, InitMode::Random);
+        let mut sim2 = Simulation::new(400, 400, config, 42, InitMode::Random);
 
         sim1.update();
         sim2.update();

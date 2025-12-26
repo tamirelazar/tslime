@@ -2,7 +2,7 @@ use clap::Parser;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
-use crate::simulation::config::{Preset, SimConfig};
+use crate::simulation::config::{InitMode, Preset, SimConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -27,6 +27,11 @@ pub enum Palette {
     Heat,
     Ocean,
     Mono,
+    Forest,
+    Neon,
+    Warm,
+    Vibrant,
+    LegibleMono,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +69,26 @@ impl FromStr for Preset {
             "organic" => Ok(Preset::Organic),
             _ => Err(format!(
                 "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic",
+                s
+            )),
+        }
+    }
+}
+
+impl FromStr for InitMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "random" => Ok(InitMode::Random),
+            "central" => Ok(InitMode::CentralBurst),
+            "circle" => Ok(InitMode::Circle),
+            "gradient" => Ok(InitMode::Gradient),
+            "wave" => Ok(InitMode::WaveFront),
+            "spiral" => Ok(InitMode::Spiral),
+            "clusters" => Ok(InitMode::RandomClusters),
+            _ => Err(format!(
+                "Invalid init mode: {}. Must be one of: random, central, circle, gradient, wave, spiral, clusters",
                 s
             )),
         }
@@ -183,6 +208,14 @@ pub struct Args {
     pub preset: Option<Preset>,
 
     #[arg(
+        long = "init",
+        value_name = "MODE",
+        default_value = "random",
+        help = "Initialization mode (random, central, circle, gradient, wave, spiral, clusters)"
+    )]
+    pub init: InitMode,
+
+    #[arg(
         short = 't',
         long = "time",
         value_name = "FLOAT",
@@ -210,8 +243,8 @@ pub struct Args {
     #[arg(
         long = "palette",
         value_name = "NAME",
-        default_value = "organic",
-        help = "Color palette (organic, heat, ocean, mono)"
+        default_value = "forest",
+        help = "Color palette (organic, heat, ocean, mono, forest, neon, warm, vibrant, legiblemono)"
     )]
     pub palette: String,
 
@@ -274,6 +307,11 @@ impl Args {
             "heat" => Ok(Palette::Heat),
             "ocean" => Ok(Palette::Ocean),
             "mono" => Ok(Palette::Mono),
+            "forest" => Ok(Palette::Forest),
+            "neon" => Ok(Palette::Neon),
+            "warm" => Ok(Palette::Warm),
+            "vibrant" => Ok(Palette::Vibrant),
+            "legiblemono" => Ok(Palette::LegibleMono),
             _ => Err(format!("Invalid palette: {}", self.palette)),
         }
     }
@@ -314,13 +352,14 @@ impl Default for Args {
             step_size: 1.0,
             decay_factor: 0.9,
             preset: Option::<Preset>::None,
+            init: InitMode::Random,
             frame_delay: 0.033,
             fps: 30,
             resolution: Resolution {
                 width: 400,
                 height: 400,
             },
-            palette: "organic".to_string(),
+            palette: "forest".to_string(),
             colors: "256".to_string(),
             ascii: false,
             braille: false,
@@ -348,13 +387,14 @@ mod tests {
             step_size: 1.0,
             decay_factor: 0.9,
             preset: Option::<Preset>::None,
+            init: InitMode::Random,
             frame_delay: 0.033,
             fps: 30,
             resolution: Resolution {
                 width: 400,
                 height: 400,
             },
-            palette: "organic".to_string(),
+            palette: "forest".to_string(),
             colors: "256".to_string(),
             ascii: false,
             braille: false,

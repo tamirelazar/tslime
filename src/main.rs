@@ -31,7 +31,13 @@ fn main() -> io::Result<()> {
             .as_secs()
     });
 
-    let mut sim = Simulation::new(args.resolution.width, args.resolution.height, config, seed);
+    let mut sim = Simulation::new(
+        args.resolution.width,
+        args.resolution.height,
+        config,
+        seed,
+        args.init,
+    );
 
     let mode = args.mode();
 
