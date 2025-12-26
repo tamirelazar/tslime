@@ -26,6 +26,10 @@ const HALF_BLOCK_CHARS: [char; 9] = [
 
 const ASCII_CHARS: [char; 10] = [' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'];
 
+const ASCII_TOP_CHARS: [char; 10] = [' ', ',', '.', ':', '-', '=', '+', '*', '#', '^'];
+
+const ASCII_BOTTOM_CHARS: [char; 10] = [' ', '\'', '.', ':', '-', '=', '+', '*', '#', 'v'];
+
 const BRAILLE_PATTERNS: [char; 64] = [
     '\u{2800}', '\u{2801}', '\u{2808}', '\u{2809}', '\u{2802}', '\u{2803}', '\u{280A}', '\u{280B}',
     '\u{2810}', '\u{2811}', '\u{2818}', '\u{2819}', '\u{2812}', '\u{2813}', '\u{281A}', '\u{281B}',
@@ -67,6 +71,17 @@ pub fn map_vertical_block(top: f32, bottom: f32) -> char {
         (false, true) => '▄',
         (false, false) => ' ',
     }
+}
+
+pub fn map_ascii_directional(brightness: f32, is_top: bool) -> char {
+    let brightness = brightness.clamp(0.0, 1.0);
+    let chars = if is_top {
+        ASCII_TOP_CHARS
+    } else {
+        ASCII_BOTTOM_CHARS
+    };
+    let index = (brightness * (chars.len() - 1) as f32).round() as usize;
+    chars[index]
 }
 
 #[cfg(test)]
@@ -203,5 +218,59 @@ mod tests {
         assert_eq!(map_vertical_block(0.06, 0.0), '▀');
         assert_eq!(map_vertical_block(0.0, 0.05), ' ');
         assert_eq!(map_vertical_block(0.0, 0.06), '▄');
+    }
+
+    #[test]
+    fn test_map_ascii_directional_top_min() {
+        assert_eq!(map_ascii_directional(0.0, true), ' ');
+    }
+
+    #[test]
+    fn test_map_ascii_directional_top_max() {
+        assert_eq!(map_ascii_directional(1.0, true), '^');
+    }
+
+    #[test]
+    fn test_map_ascii_directional_bottom_min() {
+        assert_eq!(map_ascii_directional(0.0, false), ' ');
+    }
+
+    #[test]
+    fn test_map_ascii_directional_bottom_max() {
+        assert_eq!(map_ascii_directional(1.0, false), 'v');
+    }
+
+    #[test]
+    fn test_map_ascii_directional_top_mid() {
+        assert_eq!(map_ascii_directional(0.5, true), '=');
+    }
+
+    #[test]
+    fn test_map_ascii_directional_bottom_mid() {
+        assert_eq!(map_ascii_directional(0.5, false), '=');
+    }
+
+    #[test]
+    fn test_map_ascii_directional_clamped() {
+        assert_eq!(map_ascii_directional(-0.5, true), ' ');
+        assert_eq!(map_ascii_directional(1.5, false), 'v');
+    }
+
+    #[test]
+    fn test_all_ascii_top_chars() {
+        for (i, expected) in ASCII_TOP_CHARS.iter().enumerate() {
+            let brightness = i as f32 / (ASCII_TOP_CHARS.len() - 1) as f32;
+            let char = map_ascii_directional(brightness, true);
+            assert_eq!(char, *expected);
+        }
+    }
+
+    #[test]
+    fn test_all_ascii_bottom_chars() {
+        for (i, expected) in ASCII_BOTTOM_CHARS.iter().enumerate() {
+            let brightness = i as f32 / (ASCII_BOTTOM_CHARS.len() - 1) as f32;
+            let char = map_ascii_directional(brightness, false);
+            assert_eq!(char, *expected);
+        }
     }
 }

@@ -1,6 +1,5 @@
 use crossterm::{
-    cursor,
-    execute,
+    cursor, execute,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::io::{self, Stdout};
@@ -28,11 +27,7 @@ impl TerminalScreen {
             return Ok(());
         }
 
-        execute!(
-            self.stdout,
-            EnterAlternateScreen,
-            cursor::Hide,
-        )?;
+        execute!(self.stdout, EnterAlternateScreen, cursor::Hide,)?;
         terminal::enable_raw_mode()?;
         self.is_active = true;
 
@@ -60,11 +55,7 @@ impl TerminalScreen {
         }
 
         terminal::disable_raw_mode()?;
-        execute!(
-            self.stdout,
-            LeaveAlternateScreen,
-            cursor::Show,
-        )?;
+        execute!(self.stdout, LeaveAlternateScreen, cursor::Show,)?;
         self.is_active = false;
         Ok(())
     }

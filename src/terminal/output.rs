@@ -119,7 +119,7 @@ impl FrameBuffer {
             let char = match charset {
                 Charset::Braille => charset::map_brightness(brightness, charset),
                 Charset::HalfBlock => charset::map_vertical_block(top, bottom),
-                _ => '▀',
+                Charset::Ascii => charset::map_ascii_directional(brightness, true),
             };
             let color = palette::map_brightness(brightness, palette.clone());
             Cell {
@@ -132,7 +132,7 @@ impl FrameBuffer {
             let char = match charset {
                 Charset::Braille => charset::map_brightness(brightness, charset),
                 Charset::HalfBlock => charset::map_vertical_block(top, bottom),
-                _ => '▄',
+                Charset::Ascii => charset::map_ascii_directional(brightness, false),
             };
             let color = palette::map_brightness(brightness, palette.clone());
             Cell {
@@ -374,15 +374,6 @@ mod tests {
     }
 
     #[test]
-    fn test_create_cell_top_only() {
-        let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Ascii);
-        assert_eq!(cell.char, '▀');
-        assert!(cell.fg_color.is_some());
-        assert!(cell.bg_color.is_none());
-    }
-
-    #[test]
     fn test_create_cell_halfblock_top_only_uses_half_height() {
         let buffer = FrameBuffer::new(10, 10);
         let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::HalfBlock);
@@ -455,10 +446,37 @@ mod tests {
     }
 
     #[test]
-    fn test_create_cell_ascii_top_only_unchanged() {
+    fn test_create_cell_ascii_top_only() {
         let buffer = FrameBuffer::new(10, 10);
         let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Ascii);
-        assert_eq!(cell.char, '▀');
+        assert_eq!(cell.char, '^');
+        assert!(cell.fg_color.is_some());
+        assert!(cell.bg_color.is_none());
+    }
+
+    #[test]
+    fn test_create_cell_ascii_bottom_only() {
+        let buffer = FrameBuffer::new(10, 10);
+        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Ascii);
+        assert_eq!(cell.char, 'v');
+        assert!(cell.fg_color.is_some());
+        assert!(cell.bg_color.is_none());
+    }
+
+    #[test]
+    fn test_create_cell_ascii_top_half_brightness() {
+        let buffer = FrameBuffer::new(10, 10);
+        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::Ascii);
+        assert_eq!(cell.char, '=');
+        assert!(cell.fg_color.is_some());
+        assert!(cell.bg_color.is_none());
+    }
+
+    #[test]
+    fn test_create_cell_ascii_bottom_half_brightness() {
+        let buffer = FrameBuffer::new(10, 10);
+        let cell = buffer.create_cell(0.0, 0.5, &Palette::Organic, Charset::Ascii);
+        assert_eq!(cell.char, '=');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
     }
