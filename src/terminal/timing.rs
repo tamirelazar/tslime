@@ -58,6 +58,11 @@ impl FrameTimer {
         }
     }
 
+    pub fn delta_time(&self) -> f32 {
+        const REFERENCE_FPS: f32 = 30.0;
+        self.target_fps as f32 / REFERENCE_FPS
+    }
+
     pub fn tick(&mut self) {
         let elapsed = self.last_frame_time.elapsed();
         let target_frame_time = Duration::from_secs_f64(1.0 / self.target_fps as f64);

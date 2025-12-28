@@ -240,9 +240,13 @@ impl Simulation {
         &mut self.trail_map
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, dt: f32) {
         let width = self.trail_map.width();
         let height = self.trail_map.height();
+
+        let effective_step_size = self.config.step_size * dt;
+        let effective_deposit = self.config.deposit_amount * dt;
+        let effective_decay = self.config.decay_factor.powf(dt);
 
         for agent in &mut self.agents {
             let trail = self.trail_map.current();
@@ -263,18 +267,18 @@ impl Simulation {
                 &mut self.rng,
             );
 
-            agent.move_forward(self.config.step_size, width, height);
+            agent.move_forward(effective_step_size, width, height);
 
             agent.deposit(
                 self.trail_map.current_mut(),
                 width,
                 height,
-                self.config.deposit_amount,
+                effective_deposit,
             );
         }
 
         self.trail_map.diffuse();
-        self.trail_map.decay(self.config.decay_factor);
+        self.trail_map.decay(effective_decay);
     }
 
     pub fn agents(&self) -> &[Agent] {
@@ -311,7 +315,7 @@ mod tests {
             .unwrap();
         assert_eq!(initial_max, 0.0);
 
-        sim.update();
+        sim.update(1.0);
 
         let max_after = *sim
             .trail_map()
@@ -331,7 +335,7 @@ mod tests {
         };
         let mut sim = Simulation::new(400, 400, config, 42, InitMode::Random);
 
-        sim.update();
+        sim.update(1.0);
         let max_after_1 = *sim
             .trail_map()
             .current()
@@ -339,7 +343,7 @@ mod tests {
             .max_by(|a, b| a.total_cmp(b))
             .unwrap();
 
-        sim.update();
+        sim.update(1.0);
         let max_after_2 = *sim
             .trail_map()
             .current()
@@ -356,8 +360,8 @@ mod tests {
         let mut sim1 = Simulation::new(400, 400, config.clone(), 42, InitMode::Random);
         let mut sim2 = Simulation::new(400, 400, config, 42, InitMode::Random);
 
-        sim1.update();
-        sim2.update();
+        sim1.update(1.0);
+        sim2.update(1.0);
 
         assert_eq!(sim1.trail_map().current(), sim2.trail_map().current());
 
@@ -366,5 +370,67 @@ mod tests {
             assert!((a1.y - a2.y).abs() < 0.001);
             assert!((a1.heading - a2.heading).abs() < 0.001);
         }
+    }
+
+    #[test]
+    fn test_fps_invariance() {
+        let config = SimConfig::default();
+        let mut sim_low_fps = Simulation::new(100, 100, config.clone(), 42, InitMode::Random);
+        let mut sim_high_fps = Simulation::new(100, 100, config, 42, InitMode::Random);
+
+        for _ in 0..15 {
+            sim_low_fps.update(2.0);
+        }
+
+        for _ in 0..30 {
+            sim_high_fps.update(1.0);
+        }
+
+        let sum_low: f32 = sim_low_fps.trail_map().current().iter().sum();
+        let sum_high: f32 = sim_high_fps.trail_map().current().iter().sum();
+
+        let diff_ratio = (sum_low - sum_high).abs() / (sum_low + sum_high).max(0.001);
+        assert!(diff_ratio < 0.05, "Low FPS ({}) and high FPS ({}) simulations should produce similar results, diff ratio: {}", sum_low, sum_high, diff_ratio);
+    }
+
+    #[test]
+    fn test_time_scaling() {
+        let config = SimConfig::default();
+        let mut sim_half_speed = Simulation::new(100, 100, config.clone(), 42, InitMode::Random);
+        let mut sim_normal = Simulation::new(100, 100, config.clone(), 42, InitMode::Random);
+        let mut sim_double_speed = Simulation::new(100, 100, config, 42, InitMode::Random);
+
+        for _ in 0..20 {
+            sim_half_speed.update(0.5);
+        }
+
+        for _ in 0..10 {
+            sim_normal.update(1.0);
+        }
+
+        for _ in 0..5 {
+            sim_double_speed.update(2.0);
+        }
+
+        let sum_half: f32 = sim_half_speed.trail_map().current().iter().sum();
+        let sum_normal: f32 = sim_normal.trail_map().current().iter().sum();
+        let sum_double: f32 = sim_double_speed.trail_map().current().iter().sum();
+
+        let diff_half = (sum_half - sum_normal).abs() / (sum_half + sum_normal).max(0.001);
+        let diff_double = (sum_double - sum_normal).abs() / (sum_double + sum_normal).max(0.001);
+        assert!(
+            diff_half < 0.05,
+            "Half speed ({}) should match normal speed ({}) over 2x time, diff: {}",
+            sum_half,
+            sum_normal,
+            diff_half
+        );
+        assert!(
+            diff_double < 0.05,
+            "Double speed ({}) should match normal speed ({}) over 0.5x time, diff: {}",
+            sum_double,
+            sum_normal,
+            diff_double
+        );
     }
 }

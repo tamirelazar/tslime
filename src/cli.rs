@@ -241,6 +241,14 @@ pub struct Args {
     pub fps: usize,
 
     #[arg(
+        long = "time-scale",
+        value_name = "FLOAT",
+        default_value = "1.0",
+        help = "Time scaling factor (1.0 = normal, 0.5 = half speed, 2.0 = double speed)"
+    )]
+    pub time_scale: f32,
+
+    #[arg(
         long = "resolution",
         value_name = "WxH",
         default_value = "400x400",
@@ -353,6 +361,16 @@ impl Args {
 
         config
     }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.time_scale < 0.1 || self.time_scale > 10.0 {
+            return Err(format!(
+                "time_scale must be between 0.1 and 10.0, got {}",
+                self.time_scale
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl Default for Args {
@@ -377,6 +395,7 @@ impl Default for Args {
             init: InitMode::Random,
             frame_delay: 0.033,
             fps: 30,
+            time_scale: 1.0,
             resolution: Resolution {
                 width: 400,
                 height: 400,
@@ -415,6 +434,7 @@ mod tests {
             init: InitMode::Random,
             frame_delay: 0.033,
             fps: 30,
+            time_scale: 1.0,
             resolution: Resolution {
                 width: 400,
                 height: 400,

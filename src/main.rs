@@ -18,6 +18,9 @@ use terminal::timing::FrameTimer;
 fn main() -> io::Result<()> {
     let args = Args::parse();
 
+    args.validate()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+
     let config = args.to_sim_config();
     let palette = args
         .palette()
@@ -61,7 +64,7 @@ fn print_mode(
     #[cfg(windows)]
     let _enable = enable_ansi_support::enable_ansi_support();
 
-    sim.update();
+    sim.update(1.0);
 
     let (term_width, term_height) = get_terminal_size();
 
@@ -111,7 +114,7 @@ fn capture_frames_mode(
 
     for frame_idx in 0..args.frame_count {
         for _ in 0..args.frame_skip {
-            sim.update();
+            sim.update(1.0);
         }
 
         let downsampled = downsample(
@@ -207,7 +210,8 @@ fn run_simulation(
             }
         }
 
-        sim.update();
+        let dt = timer.delta_time() * args.time_scale;
+        sim.update(dt);
 
         let downsampled = downsample(
             sim.trail_map().current(),
