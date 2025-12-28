@@ -8,7 +8,7 @@ const OCEAN_GRADIENT: [u8; 11] = [232, 17, 18, 19, 20, 21, 27, 33, 39, 45, 51];
 
 const MONO_GRADIENT: [u8; 11] = [232, 234, 236, 238, 240, 242, 244, 246, 248, 250, 252];
 
-const FOREST_GRADIENT: [u8; 11] = [22, 34, 46, 82, 118, 154, 190, 194, 230, 230, 230];
+const FOREST_GRADIENT: [u8; 11] = [22, 22, 34, 34, 40, 40, 118, 118, 154, 118, 40];
 
 const NEON_GRADIENT: [u8; 11] = [17, 27, 39, 51, 87, 123, 159, 195, 201, 225, 195];
 
@@ -87,7 +87,7 @@ mod tests {
         assert_eq!(map_brightness(1.0, Palette::Heat, false, false), 226);
         assert_eq!(map_brightness(1.0, Palette::Ocean, false, false), 51);
         assert_eq!(map_brightness(1.0, Palette::Mono, false, false), 252);
-        assert_eq!(map_brightness(1.0, Palette::Forest, false, false), 230);
+        assert_eq!(map_brightness(1.0, Palette::Forest, false, false), 30);
         assert_eq!(map_brightness(1.0, Palette::Neon, false, false), 195);
         assert_eq!(map_brightness(1.0, Palette::Warm, false, false), 226);
         assert_eq!(map_brightness(1.0, Palette::Vibrant, false, false), 231);
@@ -129,7 +129,7 @@ mod tests {
         assert_eq!(map_brightness(-0.5, Palette::Organic, false, false), 232);
         assert_eq!(map_brightness(1.5, Palette::Organic, false, false), 226);
         assert_eq!(map_brightness(-0.5, Palette::Forest, false, false), 22);
-        assert_eq!(map_brightness(1.5, Palette::Forest, false, false), 230);
+        assert_eq!(map_brightness(1.5, Palette::Forest, false, false), 30);
     }
 
     #[test]
@@ -159,7 +159,7 @@ mod tests {
         assert_eq!(color, 214);
 
         let color = map_brightness(0.75, Palette::Forest, false, false);
-        assert_eq!(color, 230);
+        assert_eq!(color, 30);
 
         let color = map_brightness(0.75, Palette::Neon, false, false);
         assert_eq!(color, 201);
