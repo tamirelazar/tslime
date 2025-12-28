@@ -201,6 +201,14 @@ pub struct Args {
     pub decay_factor: f32,
 
     #[arg(
+        long = "max-brightness",
+        value_name = "FLOAT",
+        default_value = "20.0",
+        help = "Fixed maximum brightness for normalization (prevents flickering)"
+    )]
+    pub max_brightness: f32,
+
+    #[arg(
         long = "preset",
         value_name = "NAME",
         help = "Use named preset (network, exploratory, tendrils, organic)"
@@ -329,6 +337,7 @@ impl Args {
         config.rotation_angle = self.rotation_angle;
         config.step_size = self.step_size;
         config.decay_factor = self.decay_factor;
+        config.max_brightness = self.max_brightness;
 
         config
     }
@@ -351,6 +360,7 @@ impl Default for Args {
             rotation_angle: 45.0,
             step_size: 1.0,
             decay_factor: 0.9,
+            max_brightness: 20.0,
             preset: Option::<Preset>::None,
             init: InitMode::Random,
             frame_delay: 0.033,
@@ -386,6 +396,7 @@ mod tests {
             rotation_angle: 45.0,
             step_size: 1.0,
             decay_factor: 0.9,
+            max_brightness: 20.0,
             preset: Option::<Preset>::None,
             init: InitMode::Random,
             frame_delay: 0.033,

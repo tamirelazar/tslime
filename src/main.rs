@@ -73,17 +73,13 @@ fn print_mode(
         term_height,
     );
 
-    let max_brightness = downsampled
-        .cells()
-        .iter()
-        .map(|c| c.top.max(c.bottom))
-        .fold(0.0f32, |acc, v| acc.max(v));
+    let config = args.to_sim_config();
 
     let buffer = FrameBuffer::from_downsampled(
         downsampled.cells(),
         term_width,
         term_height,
-        max_brightness,
+        config.max_brightness,
         palette,
         charset,
     );
@@ -109,6 +105,8 @@ fn capture_frames_mode(
         args.frame_count, args.frame_dir
     );
 
+    let config = args.to_sim_config();
+
     for frame_idx in 0..args.frame_count {
         for _ in 0..args.frame_skip {
             sim.update();
@@ -122,17 +120,11 @@ fn capture_frames_mode(
             term_height,
         );
 
-        let max_brightness = downsampled
-            .cells()
-            .iter()
-            .map(|c| c.top.max(c.bottom))
-            .fold(0.0f32, |acc, v| acc.max(v));
-
         let buffer = FrameBuffer::from_downsampled(
             downsampled.cells(),
             term_width,
             term_height,
-            max_brightness,
+            config.max_brightness,
             palette.clone(),
             charset,
         );
@@ -192,7 +184,7 @@ fn run_simulation(
     let (mut term_width, mut term_height) = screen.get_size()?;
     renderer.set_dimensions(term_width as usize, term_height as usize);
 
-    let mut max_brightness = 0.0;
+    let config = args.to_sim_config();
 
     loop {
         if screen.check_resize() {
@@ -214,14 +206,8 @@ fn run_simulation(
             term_height as usize,
         );
 
-        max_brightness = downsampled
-            .cells()
-            .iter()
-            .map(|c| c.top.max(c.bottom))
-            .fold(0.0f32, |acc, v| acc.max(v).max(acc));
-
-        if max_brightness > 0.0 {
-            renderer.render(downsampled.cells(), max_brightness)?;
+        if config.max_brightness > 0.0 {
+            renderer.render(downsampled.cells(), config.max_brightness)?;
         }
 
         if let Some(key_event) = input_poller.poll_keypress()? {
@@ -236,7 +222,7 @@ fn run_simulation(
                 timer.current_fps(),
                 timer.frame_count(),
                 sim.agents().len(),
-                max_brightness
+                config.max_brightness
             );
         }
 

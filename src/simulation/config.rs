@@ -33,6 +33,7 @@ pub struct SimConfig {
     pub decay_factor: f32,
     pub deposit_amount: f32,
     pub diffusion_kernel: DiffusionKernel,
+    pub max_brightness: f32,
 }
 
 impl Default for SimConfig {
@@ -46,6 +47,7 @@ impl Default for SimConfig {
             decay_factor: 0.9,
             deposit_amount: 5.0,
             diffusion_kernel: DiffusionKernel::Mean3x3,
+            max_brightness: 20.0,
         }
     }
 }
@@ -94,6 +96,12 @@ impl SimConfig {
                 self.deposit_amount
             ));
         }
+        if self.max_brightness < 1.0 || self.max_brightness > 100.0 {
+            return Err(format!(
+                "max_brightness must be between 1.0 and 100.0, got {}",
+                self.max_brightness
+            ));
+        }
         Ok(())
     }
 }
@@ -110,6 +118,7 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.85,
                 deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
+                max_brightness: 20.0,
             },
             Preset::Exploratory => Self {
                 population: 30_000,
@@ -120,6 +129,7 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.96,
                 deposit_amount: 3.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
+                max_brightness: 12.0,
             },
             Preset::Tendrils => Self {
                 population: 40_000,
@@ -130,6 +140,7 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.90,
                 deposit_amount: 4.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
+                max_brightness: 16.0,
             },
             Preset::Organic => Self::default(),
         }
@@ -150,6 +161,7 @@ mod tests {
         assert_eq!(config.step_size, 1.0);
         assert_eq!(config.decay_factor, 0.9);
         assert_eq!(config.deposit_amount, 5.0);
+        assert_eq!(config.max_brightness, 20.0);
     }
 
     #[test]
@@ -189,6 +201,24 @@ mod tests {
     fn test_validate_decay_factor() {
         let config = SimConfig {
             decay_factor: 1.0,
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_max_brightness_too_low() {
+        let config = SimConfig {
+            max_brightness: 0.5,
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_max_brightness_too_high() {
+        let config = SimConfig {
+            max_brightness: 150.0,
             ..Default::default()
         };
         assert!(config.validate().is_err());
