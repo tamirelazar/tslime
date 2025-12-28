@@ -82,6 +82,8 @@ fn print_mode(
         config.max_brightness,
         palette,
         charset,
+        args.reverse_palette,
+        args.invert_palette,
     );
 
     print!("{}", buffer.build_frame_string(args.plain_output));
@@ -127,6 +129,8 @@ fn capture_frames_mode(
             config.max_brightness,
             palette.clone(),
             charset,
+            args.reverse_palette,
+            args.invert_palette,
         );
 
         let frame_content = buffer.build_frame_string(args.plain_output);
@@ -177,7 +181,14 @@ fn run_simulation(
     let mut screen = TerminalScreen::new();
     screen.setup()?;
 
-    let mut renderer = crate::terminal::output::TerminalRenderer::new(0, 0, palette, charset);
+    let mut renderer = crate::terminal::output::TerminalRenderer::new(
+        0,
+        0,
+        palette,
+        charset,
+        args.reverse_palette,
+        args.invert_palette,
+    );
     let mut timer = FrameTimer::new(args.fps, args.frame_delay);
     let input_poller = InputPoller::new();
 

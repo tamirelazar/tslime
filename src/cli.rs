@@ -282,6 +282,18 @@ pub struct Args {
         help = "Print performance stats to stderr"
     )]
     pub verbose: bool,
+
+    #[arg(
+        long = "reverse-palette",
+        help = "Reverse palette order (dark becomes light, light becomes dark)"
+    )]
+    pub reverse_palette: bool,
+
+    #[arg(
+        long = "invert-palette",
+        help = "Invert palette colors (complementary colors)"
+    )]
+    pub invert_palette: bool,
 }
 
 impl Args {
@@ -375,6 +387,8 @@ impl Default for Args {
             braille: false,
             plain_output: false,
             verbose: false,
+            reverse_palette: false,
+            invert_palette: false,
         }
     }
 }
@@ -415,6 +429,8 @@ mod tests {
             frame_count: 50,
             frame_skip: 50,
             frame_dir: "frames".to_string(),
+            reverse_palette: false,
+            invert_palette: false,
         };
         assert_eq!(args.mode(), Mode::Default);
     }

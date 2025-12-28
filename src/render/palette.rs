@@ -32,24 +32,36 @@ fn get_gradient(palette: Palette) -> &'static [u8; 11] {
     }
 }
 
-pub fn map_brightness(brightness: f32, palette: Palette) -> u8 {
-    let brightness = brightness.clamp(0.0, 1.0);
+fn invert_color(color_code: u8) -> u8 {
+    255 - color_code
+}
+
+pub fn map_brightness(brightness: f32, palette: Palette, reverse: bool, invert: bool) -> u8 {
+    let mut brightness = brightness.clamp(0.0, 1.0);
     let gradient = get_gradient(palette);
+
+    if reverse {
+        brightness = 1.0 - brightness;
+    }
 
     let position = brightness * (gradient.len() - 1) as f32;
     let lower = position.floor() as usize;
     let upper = position.ceil() as usize;
     let fraction = position - lower as f32;
 
-    if upper == lower {
-        return gradient[lower];
-    }
-
-    if fraction < 0.5 {
+    let color = if upper == lower || fraction < 0.5 {
         gradient[lower]
     } else {
         gradient[upper]
+    };
+
+    let mut final_color = color;
+
+    if invert {
+        final_color = invert_color(final_color);
     }
+
+    final_color
 }
 
 #[cfg(test)]
@@ -58,101 +70,121 @@ mod tests {
 
     #[test]
     fn test_map_brightness_min() {
-        assert_eq!(map_brightness(0.0, Palette::Organic), 232);
-        assert_eq!(map_brightness(0.0, Palette::Heat), 232);
-        assert_eq!(map_brightness(0.0, Palette::Ocean), 232);
-        assert_eq!(map_brightness(0.0, Palette::Mono), 232);
-        assert_eq!(map_brightness(0.0, Palette::Forest), 22);
-        assert_eq!(map_brightness(0.0, Palette::Neon), 17);
-        assert_eq!(map_brightness(0.0, Palette::Warm), 52);
-        assert_eq!(map_brightness(0.0, Palette::Vibrant), 197);
-        assert_eq!(map_brightness(0.0, Palette::LegibleMono), 236);
+        assert_eq!(map_brightness(0.0, Palette::Organic, false, false), 232);
+        assert_eq!(map_brightness(0.0, Palette::Heat, false, false), 232);
+        assert_eq!(map_brightness(0.0, Palette::Ocean, false, false), 232);
+        assert_eq!(map_brightness(0.0, Palette::Mono, false, false), 232);
+        assert_eq!(map_brightness(0.0, Palette::Forest, false, false), 22);
+        assert_eq!(map_brightness(0.0, Palette::Neon, false, false), 17);
+        assert_eq!(map_brightness(0.0, Palette::Warm, false, false), 52);
+        assert_eq!(map_brightness(0.0, Palette::Vibrant, false, false), 197);
+        assert_eq!(map_brightness(0.0, Palette::LegibleMono, false, false), 236);
     }
 
     #[test]
     fn test_map_brightness_max() {
-        assert_eq!(map_brightness(1.0, Palette::Organic), 226);
-        assert_eq!(map_brightness(1.0, Palette::Heat), 226);
-        assert_eq!(map_brightness(1.0, Palette::Ocean), 51);
-        assert_eq!(map_brightness(1.0, Palette::Mono), 252);
-        assert_eq!(map_brightness(1.0, Palette::Forest), 230);
-        assert_eq!(map_brightness(1.0, Palette::Neon), 195);
-        assert_eq!(map_brightness(1.0, Palette::Warm), 226);
-        assert_eq!(map_brightness(1.0, Palette::Vibrant), 231);
-        assert_eq!(map_brightness(1.0, Palette::LegibleMono), 255);
+        assert_eq!(map_brightness(1.0, Palette::Organic, false, false), 226);
+        assert_eq!(map_brightness(1.0, Palette::Heat, false, false), 226);
+        assert_eq!(map_brightness(1.0, Palette::Ocean, false, false), 51);
+        assert_eq!(map_brightness(1.0, Palette::Mono, false, false), 252);
+        assert_eq!(map_brightness(1.0, Palette::Forest, false, false), 230);
+        assert_eq!(map_brightness(1.0, Palette::Neon, false, false), 195);
+        assert_eq!(map_brightness(1.0, Palette::Warm, false, false), 226);
+        assert_eq!(map_brightness(1.0, Palette::Vibrant, false, false), 231);
+        assert_eq!(map_brightness(1.0, Palette::LegibleMono, false, false), 255);
     }
 
     #[test]
     fn test_map_brightness_mid() {
-        let color = map_brightness(0.5, Palette::Organic);
+        let color = map_brightness(0.5, Palette::Organic, false, false);
         assert_eq!(color, 46);
 
-        let color = map_brightness(0.5, Palette::Heat);
+        let color = map_brightness(0.5, Palette::Heat, false, false);
         assert_eq!(color, 196);
 
-        let color = map_brightness(0.5, Palette::Ocean);
+        let color = map_brightness(0.5, Palette::Ocean, false, false);
         assert_eq!(color, 21);
 
-        let color = map_brightness(0.5, Palette::Mono);
+        let color = map_brightness(0.5, Palette::Mono, false, false);
         assert_eq!(color, 242);
 
-        let color = map_brightness(0.5, Palette::Forest);
+        let color = map_brightness(0.5, Palette::Forest, false, false);
         assert_eq!(color, 154);
 
-        let color = map_brightness(0.5, Palette::Neon);
+        let color = map_brightness(0.5, Palette::Neon, false, false);
         assert_eq!(color, 123);
 
-        let color = map_brightness(0.5, Palette::Warm);
+        let color = map_brightness(0.5, Palette::Warm, false, false);
         assert_eq!(color, 208);
 
-        let color = map_brightness(0.5, Palette::Vibrant);
+        let color = map_brightness(0.5, Palette::Vibrant, false, false);
         assert_eq!(color, 121);
 
-        let color = map_brightness(0.5, Palette::LegibleMono);
+        let color = map_brightness(0.5, Palette::LegibleMono, false, false);
         assert_eq!(color, 251);
     }
 
     #[test]
     fn test_map_brightness_clamped() {
-        assert_eq!(map_brightness(-0.5, Palette::Organic), 232);
-        assert_eq!(map_brightness(1.5, Palette::Organic), 226);
-        assert_eq!(map_brightness(-0.5, Palette::Forest), 22);
-        assert_eq!(map_brightness(1.5, Palette::Forest), 230);
+        assert_eq!(map_brightness(-0.5, Palette::Organic, false, false), 232);
+        assert_eq!(map_brightness(1.5, Palette::Organic, false, false), 226);
+        assert_eq!(map_brightness(-0.5, Palette::Forest, false, false), 22);
+        assert_eq!(map_brightness(1.5, Palette::Forest, false, false), 230);
     }
 
     #[test]
     fn test_map_brightness_quarter() {
-        let color = map_brightness(0.25, Palette::Organic);
+        let color = map_brightness(0.25, Palette::Organic, false, false);
         assert_eq!(color, 34);
 
-        let color = map_brightness(0.25, Palette::Heat);
+        let color = map_brightness(0.25, Palette::Heat, false, false);
         assert_eq!(color, 124);
 
-        let color = map_brightness(0.25, Palette::Forest);
+        let color = map_brightness(0.25, Palette::Forest, false, false);
         assert_eq!(color, 82);
 
-        let color = map_brightness(0.25, Palette::Neon);
+        let color = map_brightness(0.25, Palette::Neon, false, false);
         assert_eq!(color, 51);
 
-        let color = map_brightness(0.25, Palette::Warm);
+        let color = map_brightness(0.25, Palette::Warm, false, false);
         assert_eq!(color, 166);
     }
 
     #[test]
     fn test_map_brightness_three_quarter() {
-        let color = map_brightness(0.75, Palette::Organic);
+        let color = map_brightness(0.75, Palette::Organic, false, false);
         assert_eq!(color, 154);
 
-        let color = map_brightness(0.75, Palette::Heat);
+        let color = map_brightness(0.75, Palette::Heat, false, false);
         assert_eq!(color, 214);
 
-        let color = map_brightness(0.75, Palette::Forest);
+        let color = map_brightness(0.75, Palette::Forest, false, false);
         assert_eq!(color, 230);
 
-        let color = map_brightness(0.75, Palette::Neon);
+        let color = map_brightness(0.75, Palette::Neon, false, false);
         assert_eq!(color, 201);
 
-        let color = map_brightness(0.75, Palette::Warm);
+        let color = map_brightness(0.75, Palette::Warm, false, false);
         assert_eq!(color, 226);
+    }
+
+    #[test]
+    fn test_reverse_palette() {
+        assert_eq!(map_brightness(0.0, Palette::Organic, true, false), 226);
+        assert_eq!(map_brightness(1.0, Palette::Organic, true, false), 232);
+    }
+
+    #[test]
+    fn test_invert_palette() {
+        let normal = map_brightness(0.5, Palette::Organic, false, false);
+        let inverted = map_brightness(0.5, Palette::Organic, false, true);
+        assert_eq!(inverted, 255 - normal);
+    }
+
+    #[test]
+    fn test_reverse_and_invert_palette() {
+        let reversed = map_brightness(0.0, Palette::Organic, true, false);
+        let reversed_and_inverted = map_brightness(0.0, Palette::Organic, true, true);
+        assert_eq!(reversed_and_inverted, invert_color(reversed));
     }
 }

@@ -57,6 +57,7 @@ impl FrameBuffer {
             .fold(0.0, |acc, v| acc.max(v))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn from_downsampled(
         downsampled: &[DownsampleCell],
         width: usize,
@@ -64,6 +65,8 @@ impl FrameBuffer {
         max_trail_value: f32,
         palette: Palette,
         charset: Charset,
+        reverse_palette: bool,
+        invert_palette: bool,
     ) -> Self {
         let mut buffer = Self::new(width, height);
 
@@ -86,7 +89,14 @@ impl FrameBuffer {
                 0.0
             };
 
-            let cell = buffer.create_cell(top_brightness, bottom_brightness, &palette, charset);
+            let cell = buffer.create_cell(
+                top_brightness,
+                bottom_brightness,
+                &palette,
+                charset,
+                reverse_palette,
+                invert_palette,
+            );
             buffer.set_cell(x, y, cell);
         }
 
@@ -94,7 +104,15 @@ impl FrameBuffer {
     }
 
     #[allow(dead_code)]
-    fn create_cell(&self, top: f32, bottom: f32, palette: &Palette, charset: Charset) -> Cell {
+    fn create_cell(
+        &self,
+        top: f32,
+        bottom: f32,
+        palette: &Palette,
+        charset: Charset,
+        reverse_palette: bool,
+        invert_palette: bool,
+    ) -> Cell {
         const THRESHOLD: f32 = 0.05;
 
         if top < THRESHOLD && bottom < THRESHOLD {
@@ -108,7 +126,12 @@ impl FrameBuffer {
                 Charset::HalfBlock => charset::map_vertical_block(top, bottom),
                 _ => charset::map_brightness((top + bottom) / 2.0, charset),
             };
-            let color = palette::map_brightness((top + bottom) / 2.0, palette.clone());
+            let color = palette::map_brightness(
+                (top + bottom) / 2.0,
+                palette.clone(),
+                reverse_palette,
+                invert_palette,
+            );
             Cell {
                 char,
                 fg_color: Some(color),
@@ -121,7 +144,12 @@ impl FrameBuffer {
                 Charset::HalfBlock => charset::map_vertical_block(top, bottom),
                 Charset::Ascii => charset::map_ascii_directional(brightness, true),
             };
-            let color = palette::map_brightness(brightness, palette.clone());
+            let color = palette::map_brightness(
+                brightness,
+                palette.clone(),
+                reverse_palette,
+                invert_palette,
+            );
             Cell {
                 char,
                 fg_color: Some(color),
@@ -134,7 +162,12 @@ impl FrameBuffer {
                 Charset::HalfBlock => charset::map_vertical_block(top, bottom),
                 Charset::Ascii => charset::map_ascii_directional(brightness, false),
             };
-            let color = palette::map_brightness(brightness, palette.clone());
+            let color = palette::map_brightness(
+                brightness,
+                palette.clone(),
+                reverse_palette,
+                invert_palette,
+            );
             Cell {
                 char,
                 fg_color: Some(color),
@@ -203,6 +236,7 @@ impl FrameBuffer {
 }
 
 #[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
 pub fn render_frame(
     downsampled: &[DownsampleCell],
     width: usize,
@@ -210,6 +244,8 @@ pub fn render_frame(
     max_trail_value: f32,
     palette: Palette,
     charset: Charset,
+    reverse_palette: bool,
+    invert_palette: bool,
 ) -> io::Result<()> {
     let buffer = FrameBuffer::from_downsampled(
         downsampled,
@@ -218,6 +254,8 @@ pub fn render_frame(
         max_trail_value,
         palette,
         charset,
+        reverse_palette,
+        invert_palette,
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -229,16 +267,27 @@ pub struct TerminalRenderer {
     height: usize,
     palette: Palette,
     charset: Charset,
+    reverse_palette: bool,
+    invert_palette: bool,
 }
 
 impl TerminalRenderer {
-    pub fn new(width: usize, height: usize, palette: Palette, charset: Charset) -> Self {
+    pub fn new(
+        width: usize,
+        height: usize,
+        palette: Palette,
+        charset: Charset,
+        reverse_palette: bool,
+        invert_palette: bool,
+    ) -> Self {
         Self {
             stdout: std::io::stdout(),
             width,
             height,
             palette,
             charset,
+            reverse_palette,
+            invert_palette,
         }
     }
 
@@ -269,6 +318,8 @@ impl TerminalRenderer {
             max_trail_value,
             self.palette.clone(),
             self.charset,
+            self.reverse_palette,
+            self.invert_palette,
         );
 
         execute!(self.stdout, &buffer)
@@ -358,7 +409,14 @@ mod tests {
     #[test]
     fn test_create_cell_empty() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(0.0, 0.0, &Palette::Organic, Charset::HalfBlock);
+        let cell = buffer.create_cell(
+            0.0,
+            0.0,
+            &Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+        );
         assert_eq!(cell.char, ' ');
         assert!(cell.fg_color.is_none());
         assert!(cell.bg_color.is_none());
@@ -367,7 +425,14 @@ mod tests {
     #[test]
     fn test_create_cell_full() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(1.0, 1.0, &Palette::Organic, Charset::HalfBlock);
+        let cell = buffer.create_cell(
+            1.0,
+            1.0,
+            &Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+        );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -376,7 +441,14 @@ mod tests {
     #[test]
     fn test_create_cell_halfblock_top_only_uses_half_height() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::HalfBlock);
+        let cell = buffer.create_cell(
+            1.0,
+            0.0,
+            &Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+        );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -385,7 +457,14 @@ mod tests {
     #[test]
     fn test_create_cell_halfblock_bottom_only_uses_half_height() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::HalfBlock);
+        let cell = buffer.create_cell(
+            0.0,
+            1.0,
+            &Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+        );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -394,7 +473,14 @@ mod tests {
     #[test]
     fn test_create_cell_halfblock_top_half_brightness() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::HalfBlock);
+        let cell = buffer.create_cell(
+            0.5,
+            0.0,
+            &Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+        );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -403,7 +489,14 @@ mod tests {
     #[test]
     fn test_create_cell_bottom_only() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::HalfBlock);
+        let cell = buffer.create_cell(
+            0.0,
+            1.0,
+            &Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+        );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -412,7 +505,7 @@ mod tests {
     #[test]
     fn test_create_cell_braille_top_only() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Braille);
+        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Braille, false, false);
         assert_eq!(cell.char, '\u{287B}');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -421,7 +514,7 @@ mod tests {
     #[test]
     fn test_create_cell_braille_bottom_only() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Braille);
+        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Braille, false, false);
         assert_eq!(cell.char, '\u{287B}');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -430,7 +523,7 @@ mod tests {
     #[test]
     fn test_create_cell_braille_top_half_brightness() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::Braille);
+        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::Braille, false, false);
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -439,7 +532,7 @@ mod tests {
     #[test]
     fn test_create_cell_braille_bottom_half_brightness() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(0.0, 0.5, &Palette::Organic, Charset::Braille);
+        let cell = buffer.create_cell(0.0, 0.5, &Palette::Organic, Charset::Braille, false, false);
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -448,7 +541,7 @@ mod tests {
     #[test]
     fn test_create_cell_ascii_top_only() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Ascii);
+        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Ascii, false, false);
         assert_eq!(cell.char, '^');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -457,7 +550,7 @@ mod tests {
     #[test]
     fn test_create_cell_ascii_bottom_only() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Ascii);
+        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Ascii, false, false);
         assert_eq!(cell.char, 'v');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -466,7 +559,7 @@ mod tests {
     #[test]
     fn test_create_cell_ascii_top_half_brightness() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::Ascii);
+        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::Ascii, false, false);
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -475,7 +568,7 @@ mod tests {
     #[test]
     fn test_create_cell_ascii_bottom_half_brightness() {
         let buffer = FrameBuffer::new(10, 10);
-        let cell = buffer.create_cell(0.0, 0.5, &Palette::Organic, Charset::Ascii);
+        let cell = buffer.create_cell(0.0, 0.5, &Palette::Organic, Charset::Ascii, false, false);
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color.is_some());
         assert!(cell.bg_color.is_none());
@@ -523,6 +616,8 @@ mod tests {
             1.0,
             Palette::Organic,
             Charset::HalfBlock,
+            false,
+            false,
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -551,6 +646,8 @@ mod tests {
             5.0,
             Palette::Organic,
             Charset::HalfBlock,
+            false,
+            false,
         );
 
         assert_eq!(buffer.cells[0].char, '▀');
@@ -560,14 +657,16 @@ mod tests {
 
     #[test]
     fn test_terminal_renderer_creation() {
-        let renderer = TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock);
+        let renderer =
+            TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock, false, false);
         assert_eq!(renderer.width, 80);
         assert_eq!(renderer.height, 24);
     }
 
     #[test]
     fn test_terminal_renderer_set_dimensions() {
-        let mut renderer = TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock);
+        let mut renderer =
+            TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock, false, false);
         renderer.set_dimensions(100, 30);
         assert_eq!(renderer.width, 100);
         assert_eq!(renderer.height, 30);
@@ -575,14 +674,16 @@ mod tests {
 
     #[test]
     fn test_terminal_renderer_set_palette() {
-        let mut renderer = TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock);
+        let mut renderer =
+            TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock, false, false);
         renderer.set_palette(Palette::Heat);
         assert_eq!(renderer.palette, Palette::Heat);
     }
 
     #[test]
     fn test_terminal_renderer_set_charset() {
-        let mut renderer = TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock);
+        let mut renderer =
+            TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock, false, false);
         renderer.set_charset(Charset::Ascii);
         assert_eq!(renderer.charset, Charset::Ascii);
     }
