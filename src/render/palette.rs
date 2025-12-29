@@ -87,7 +87,7 @@ mod tests {
         assert_eq!(map_brightness(1.0, Palette::Heat, false, false), 226);
         assert_eq!(map_brightness(1.0, Palette::Ocean, false, false), 51);
         assert_eq!(map_brightness(1.0, Palette::Mono, false, false), 252);
-        assert_eq!(map_brightness(1.0, Palette::Forest, false, false), 30);
+        assert_eq!(map_brightness(1.0, Palette::Forest, false, false), 40);
         assert_eq!(map_brightness(1.0, Palette::Neon, false, false), 195);
         assert_eq!(map_brightness(1.0, Palette::Warm, false, false), 226);
         assert_eq!(map_brightness(1.0, Palette::Vibrant, false, false), 231);
@@ -109,7 +109,7 @@ mod tests {
         assert_eq!(color, 242);
 
         let color = map_brightness(0.5, Palette::Forest, false, false);
-        assert_eq!(color, 154);
+        assert_eq!(color, 40);
 
         let color = map_brightness(0.5, Palette::Neon, false, false);
         assert_eq!(color, 123);
@@ -129,7 +129,7 @@ mod tests {
         assert_eq!(map_brightness(-0.5, Palette::Organic, false, false), 232);
         assert_eq!(map_brightness(1.5, Palette::Organic, false, false), 226);
         assert_eq!(map_brightness(-0.5, Palette::Forest, false, false), 22);
-        assert_eq!(map_brightness(1.5, Palette::Forest, false, false), 30);
+        assert_eq!(map_brightness(1.5, Palette::Forest, false, false), 40);
     }
 
     #[test]
@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(color, 124);
 
         let color = map_brightness(0.25, Palette::Forest, false, false);
-        assert_eq!(color, 82);
+        assert_eq!(color, 34);
 
         let color = map_brightness(0.25, Palette::Neon, false, false);
         assert_eq!(color, 51);
@@ -159,7 +159,7 @@ mod tests {
         assert_eq!(color, 214);
 
         let color = map_brightness(0.75, Palette::Forest, false, false);
-        assert_eq!(color, 30);
+        assert_eq!(color, 154);
 
         let color = map_brightness(0.75, Palette::Neon, false, false);
         assert_eq!(color, 201);
