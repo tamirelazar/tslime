@@ -3,17 +3,62 @@ pub struct TrailMap {
     height: usize,
     current: Vec<f32>,
     scratch: Vec<f32>,
+    gaussian_kernel: [f32; 25],
+}
+
+const GAUSSIAN_KERNEL_SIZE: usize = 5;
+
+fn generate_gaussian_kernel(sigma: f32) -> [f32; 25] {
+    let mut kernel = [0.0f32; 25];
+    let radius: i32 = 2;
+    let two_sigma_sq = 2.0 * sigma * sigma;
+    let mut sum = 0.0f32;
+
+    for y in -radius..=radius {
+        for x in -radius..=radius {
+            let idx = ((y + radius) * GAUSSIAN_KERNEL_SIZE as i32 + (x + radius)) as usize;
+            let dist_sq = (x * x + y * y) as f32;
+            kernel[idx] = (-dist_sq / two_sigma_sq).exp();
+            sum += kernel[idx];
+        }
+    }
+
+    for kernel_val in kernel.iter_mut() {
+        *kernel_val /= sum;
+    }
+
+    kernel
 }
 
 impl TrailMap {
+    #[allow(dead_code)]
     pub fn new(width: usize, height: usize) -> Self {
         let size = width * height;
+        let gaussian_kernel = generate_gaussian_kernel(1.0);
         Self {
             width,
             height,
             current: vec![0.0; size],
             scratch: vec![0.0; size],
+            gaussian_kernel,
         }
+    }
+
+    pub fn new_with_sigma(width: usize, height: usize, sigma: f32) -> Self {
+        let size = width * height;
+        let gaussian_kernel = generate_gaussian_kernel(sigma);
+        Self {
+            width,
+            height,
+            current: vec![0.0; size],
+            scratch: vec![0.0; size],
+            gaussian_kernel,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn set_gaussian_sigma(&mut self, sigma: f32) {
+        self.gaussian_kernel = generate_gaussian_kernel(sigma);
     }
 
     pub fn width(&self) -> usize {
@@ -121,6 +166,48 @@ impl TrailMap {
         }
 
         self.swap_buffers();
+    }
+
+    pub fn diffuse_gaussian(&mut self) {
+        let width = self.width;
+        let height = self.height;
+        let current = &self.current;
+        let scratch = &mut self.scratch;
+        let kernel = &self.gaussian_kernel;
+        let radius: i32 = 2;
+
+        scratch.copy_from_slice(current);
+
+        for y in 2..height - 2 {
+            let row_offset = y * width;
+            for x in 2..width - 2 {
+                let idx = row_offset + x;
+
+                let mut sum = 0.0f32;
+
+                for ky in -radius..=radius {
+                    for kx in -radius..=radius {
+                        let nx = x as i32 + kx;
+                        let ny = y as i32 + ky;
+                        let kernel_idx =
+                            ((ky + radius) * GAUSSIAN_KERNEL_SIZE as i32 + (kx + radius)) as usize;
+                        sum += current[(ny as usize) * width + (nx as usize)] * kernel[kernel_idx];
+                    }
+                }
+
+                scratch[idx] = sum;
+            }
+        }
+
+        self.swap_buffers();
+    }
+
+    pub fn diffuse_with_kernel(&mut self, use_gaussian: bool) {
+        if use_gaussian {
+            self.diffuse_gaussian();
+        } else {
+            self.diffuse();
+        }
     }
 
     pub fn decay(&mut self, factor: f32) {
@@ -232,5 +319,71 @@ mod tests {
         trail.decay(0.9);
         trail.decay(0.9);
         assert!((trail.get(5, 5) - 81.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_gaussian_kernel_normalization() {
+        let kernel = generate_gaussian_kernel(1.0);
+        let sum: f32 = kernel.iter().sum();
+        assert!((sum - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_gaussian_kernel_center_weight() {
+        let kernel = generate_gaussian_kernel(1.0);
+        let center_idx = 12;
+        let corner_idx = 0;
+        assert!(kernel[center_idx] > kernel[corner_idx]);
+    }
+
+    #[test]
+    fn test_gaussian_kernel_sigma_effect() {
+        let kernel_small = generate_gaussian_kernel(0.5);
+        let kernel_large = generate_gaussian_kernel(1.5);
+        let center_idx = 12;
+        assert!(kernel_small[center_idx] > kernel_large[center_idx]);
+    }
+
+    #[test]
+    fn test_diffuse_gaussian_single_pixel() {
+        let mut trail = TrailMap::new(10, 10);
+        trail.set(5, 5, 9.0);
+        trail.diffuse_gaussian();
+        let value = trail.get(5, 5);
+        assert!(value > 0.0 && value < 9.0);
+    }
+
+    #[test]
+    fn test_diffuse_gaussian_spreads_more_than_mean() {
+        let mut trail1 = TrailMap::new(20, 20);
+        let mut trail2 = TrailMap::new(20, 20);
+
+        trail1.set(10, 10, 10.0);
+        trail2.set(10, 10, 10.0);
+
+        trail1.diffuse();
+        trail2.diffuse_gaussian();
+
+        let center1 = trail1.get(10, 10);
+        let center2 = trail2.get(10, 10);
+
+        assert!(
+            center2 > center1,
+            "Gaussian should preserve more center value than mean"
+        );
+    }
+
+    #[test]
+    fn test_diffuse_with_kernel_dispatch() {
+        let mut trail1 = TrailMap::new(10, 10);
+        let mut trail2 = TrailMap::new(10, 10);
+
+        trail1.set(5, 5, 9.0);
+        trail2.set(5, 5, 9.0);
+
+        trail1.diffuse_with_kernel(false);
+        trail2.diffuse();
+
+        assert_eq!(trail1.current(), trail2.current());
     }
 }

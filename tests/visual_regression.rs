@@ -265,3 +265,35 @@ fn test_visual_regression_different_seeds_produce_different_output() {
         "Different seeds should produce different output"
     );
 }
+
+#[test]
+fn test_visual_regression_gaussian_diffusion() {
+    let output = capture_print_output(
+        &[
+            "-s",
+            "42",
+            "--diffusion-kernel",
+            "gaussian",
+            "--diffusion-sigma",
+            "1.0",
+        ],
+        80,
+        24,
+    );
+    let normalized = normalize_output(&output);
+
+    match load_golden("gaussian_diffusion") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: Gaussian diffusion output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("gaussian_diffusion", &normalized).unwrap();
+        }
+    }
+}

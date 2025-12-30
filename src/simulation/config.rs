@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffusionKernel {
     Mean3x3,
     Gaussian,
@@ -33,6 +33,7 @@ pub struct SimConfig {
     pub decay_factor: f32,
     pub deposit_amount: f32,
     pub diffusion_kernel: DiffusionKernel,
+    pub diffusion_sigma: f32,
     pub max_brightness: f32,
 }
 
@@ -47,6 +48,7 @@ impl Default for SimConfig {
             decay_factor: 0.9,
             deposit_amount: 5.0,
             diffusion_kernel: DiffusionKernel::Mean3x3,
+            diffusion_sigma: 1.0,
             max_brightness: 20.0,
         }
     }
@@ -102,6 +104,12 @@ impl SimConfig {
                 self.max_brightness
             ));
         }
+        if self.diffusion_sigma < 0.5 || self.diffusion_sigma > 2.0 {
+            return Err(format!(
+                "diffusion_sigma must be between 0.5 and 2.0, got {}",
+                self.diffusion_sigma
+            ));
+        }
         Ok(())
     }
 }
@@ -118,6 +126,7 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.85,
                 deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
+                diffusion_sigma: 1.0,
                 max_brightness: 20.0,
             },
             Preset::Exploratory => Self {
@@ -129,6 +138,7 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.96,
                 deposit_amount: 3.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
+                diffusion_sigma: 1.0,
                 max_brightness: 12.0,
             },
             Preset::Tendrils => Self {
@@ -140,6 +150,7 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.90,
                 deposit_amount: 4.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
+                diffusion_sigma: 1.0,
                 max_brightness: 16.0,
             },
             Preset::Organic => Self::default(),

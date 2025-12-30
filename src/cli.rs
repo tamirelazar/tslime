@@ -2,7 +2,7 @@ use clap::Parser;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
-use crate::simulation::config::{InitMode, Preset, SimConfig};
+use crate::simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -89,6 +89,21 @@ impl FromStr for InitMode {
             "clusters" => Ok(InitMode::RandomClusters),
             _ => Err(format!(
                 "Invalid init mode: {}. Must be one of: random, central, circle, gradient, wave, spiral, clusters",
+                s
+            )),
+        }
+    }
+}
+
+impl FromStr for DiffusionKernel {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "mean3x3" | "mean" | "3x3" => Ok(DiffusionKernel::Mean3x3),
+            "gaussian" => Ok(DiffusionKernel::Gaussian),
+            _ => Err(format!(
+                "Invalid diffusion kernel: {}. Must be one of: mean3x3, gaussian",
                 s
             )),
         }
@@ -207,6 +222,20 @@ pub struct Args {
         help = "Fixed maximum brightness for normalization (prevents flickering)"
     )]
     pub max_brightness: f32,
+
+    #[arg(
+        long = "diffusion-kernel",
+        value_name = "TYPE",
+        help = "Diffusion kernel type (mean3x3, gaussian)"
+    )]
+    pub diffusion_kernel: Option<DiffusionKernel>,
+
+    #[arg(
+        long = "diffusion-sigma",
+        value_name = "FLOAT",
+        help = "Gaussian kernel sigma value (0.5-2.0, only used with gaussian kernel)"
+    )]
+    pub diffusion_sigma: Option<f32>,
 
     #[arg(
         long = "preset",
@@ -359,6 +388,14 @@ impl Args {
         config.decay_factor = self.decay_factor;
         config.max_brightness = self.max_brightness;
 
+        if let Some(kernel) = self.diffusion_kernel {
+            config.diffusion_kernel = kernel;
+        }
+
+        if let Some(sigma) = self.diffusion_sigma {
+            config.diffusion_sigma = sigma;
+        }
+
         config
     }
 
@@ -391,6 +428,8 @@ impl Default for Args {
             step_size: 1.0,
             decay_factor: 0.9,
             max_brightness: 20.0,
+            diffusion_kernel: None,
+            diffusion_sigma: None,
             preset: Option::<Preset>::None,
             init: InitMode::Random,
             frame_delay: 0.033,
@@ -430,6 +469,8 @@ mod tests {
             step_size: 1.0,
             decay_factor: 0.9,
             max_brightness: 20.0,
+            diffusion_kernel: None,
+            diffusion_sigma: None,
             preset: Option::<Preset>::None,
             init: InitMode::Random,
             frame_delay: 0.033,
@@ -498,5 +539,22 @@ mod tests {
             ..Default::default()
         };
         assert!(args.color_mode().is_err());
+    }
+
+    #[test]
+    fn test_diffusion_kernel_parsing() {
+        assert_eq!(
+            "mean3x3".parse::<DiffusionKernel>().unwrap(),
+            DiffusionKernel::Mean3x3
+        );
+        assert_eq!(
+            "gaussian".parse::<DiffusionKernel>().unwrap(),
+            DiffusionKernel::Gaussian
+        );
+    }
+
+    #[test]
+    fn test_invalid_diffusion_kernel() {
+        assert!("invalid".parse::<DiffusionKernel>().is_err());
     }
 }

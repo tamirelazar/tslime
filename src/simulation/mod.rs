@@ -51,10 +51,11 @@ impl Simulation {
             }
         }
 
+        let sigma = config.diffusion_sigma;
         Self {
             config,
             agents,
-            trail_map: TrailMap::new(width, height),
+            trail_map: TrailMap::new_with_sigma(width, height, sigma),
             rng,
         }
     }
@@ -277,7 +278,10 @@ impl Simulation {
             );
         }
 
-        self.trail_map.diffuse();
+        self.trail_map.diffuse_with_kernel(matches!(
+            self.config.diffusion_kernel,
+            crate::simulation::config::DiffusionKernel::Gaussian
+        ));
         self.trail_map.decay(effective_decay);
     }
 
