@@ -18,6 +18,10 @@ criterion = "0.5"
 name = "diffusion_benchmark"
 harness = false
 
+[[bench]]
+name = "rendering_benchmark"
+harness = false
+
 [target.'cfg(windows)'.dependencies]
 enable-ansi-support = "0.2.1"
 

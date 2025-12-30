@@ -6,7 +6,7 @@ mod render;
 mod simulation;
 mod terminal;
 
-use cli::{Args, Mode};
+use cli::{Args, Mode, ColorMode};
 use render::charset::Charset;
 use render::downsample::downsample;
 use simulation::Simulation;
@@ -77,6 +77,7 @@ fn print_mode(
     );
 
     let config = args.to_sim_config();
+    let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
     let buffer = FrameBuffer::from_downsampled(
         downsampled.cells(),
@@ -87,9 +88,10 @@ fn print_mode(
         charset,
         args.reverse_palette,
         args.invert_palette,
+        color_mode,
     );
 
-    print!("{}", buffer.build_frame_string(args.plain_output));
+    print!("{}", buffer.build_frame_string(args.plain_output, color_mode));
     io::stdout().flush()?;
 
     Ok(())
@@ -111,6 +113,7 @@ fn capture_frames_mode(
     );
 
     let config = args.to_sim_config();
+    let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
     for frame_idx in 0..args.frame_count {
         for _ in 0..args.frame_skip {
@@ -134,9 +137,10 @@ fn capture_frames_mode(
             charset,
             args.reverse_palette,
             args.invert_palette,
+            color_mode,
         );
 
-        let frame_content = buffer.build_frame_string(args.plain_output);
+        let frame_content = buffer.build_frame_string(args.plain_output, color_mode);
         let frame_filename = format!("{}/frame_{:03}.txt", args.frame_dir, frame_idx);
         std::fs::write(&frame_filename, frame_content)?;
 
@@ -184,6 +188,8 @@ fn run_simulation(
     let mut screen = TerminalScreen::new();
     screen.setup()?;
 
+    let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
+
     let mut renderer = crate::terminal::output::TerminalRenderer::new(
         0,
         0,
@@ -191,6 +197,7 @@ fn run_simulation(
         charset,
         args.reverse_palette,
         args.invert_palette,
+        color_mode,
     );
     let mut timer = FrameTimer::new(args.fps, args.frame_delay);
     let input_poller = InputPoller::new();
