@@ -199,7 +199,7 @@ fn run_simulation(
         args.invert_palette,
         color_mode,
     );
-    let mut timer = FrameTimer::new(args.fps, args.frame_delay);
+    let mut timer = FrameTimer::with_time_scale(args.fps, args.frame_delay, args.time_scale);
     let input_poller = InputPoller::new();
 
     let (mut term_width, mut term_height) = screen.get_size()?;
@@ -217,7 +217,7 @@ fn run_simulation(
             }
         }
 
-        let dt = timer.delta_time() * args.time_scale;
+        let dt = timer.delta_time();
         sim.update(dt);
 
         let downsampled = downsample(
