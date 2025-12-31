@@ -15,6 +15,10 @@ serde_json = "1.0"
 criterion = "0.5"
 
 [[bench]]
+name = "agent_benchmark"
+harness = false
+
+[[bench]]
 name = "diffusion_benchmark"
 harness = false
 
