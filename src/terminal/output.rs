@@ -138,7 +138,8 @@ impl FrameBuffer {
         } else if top > THRESHOLD && bottom > THRESHOLD {
             let char = match charset {
                 Charset::HalfBlock => charset::map_vertical_block(top, bottom),
-                _ => charset::map_brightness((top + bottom) / 2.0, charset),
+                Charset::Braille => charset::map_brightness(top, Some(bottom), charset),
+                _ => charset::map_brightness((top + bottom) / 2.0, None, charset),
             };
             let brightness = (top + bottom) / 2.0;
             match color_mode {
@@ -176,7 +177,7 @@ impl FrameBuffer {
         } else if top > bottom {
             let brightness = top;
             let char = match charset {
-                Charset::Braille => charset::map_brightness(brightness, charset),
+                Charset::Braille => charset::map_brightness(top, Some(bottom), charset),
                 Charset::HalfBlock => charset::map_vertical_block(top, bottom),
                 Charset::Ascii => charset::map_ascii_directional(brightness, true),
             };
@@ -215,7 +216,7 @@ impl FrameBuffer {
         } else {
             let brightness = bottom;
             let char = match charset {
-                Charset::Braille => charset::map_brightness(brightness, charset),
+                Charset::Braille => charset::map_brightness(top, Some(bottom), charset),
                 Charset::HalfBlock => charset::map_vertical_block(top, bottom),
                 Charset::Ascii => charset::map_ascii_directional(brightness, false),
             };
@@ -659,7 +660,7 @@ mod tests {
     fn test_create_cell_braille_top_only() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256);
-        assert_eq!(cell.char, '\u{287B}');
+        assert_eq!(cell.char, '\u{2807}');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
     }
@@ -668,7 +669,7 @@ mod tests {
     fn test_create_cell_braille_bottom_only() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256);
-        assert_eq!(cell.char, '\u{287B}');
+        assert_eq!(cell.char, '\u{2838}');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
     }

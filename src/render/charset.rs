@@ -30,32 +30,57 @@ const ASCII_TOP_CHARS: [char; 10] = [' ', ',', '.', ':', '-', '=', '+', '*', '#'
 
 const ASCII_BOTTOM_CHARS: [char; 10] = [' ', '\'', '.', ':', '-', '=', '+', '*', '#', 'v'];
 
-const BRAILLE_PATTERNS: [char; 64] = [
-    '\u{2800}', '\u{2801}', '\u{2808}', '\u{2809}', '\u{2802}', '\u{2803}', '\u{280A}', '\u{280B}',
-    '\u{2810}', '\u{2811}', '\u{2818}', '\u{2819}', '\u{2812}', '\u{2813}', '\u{281A}', '\u{281B}',
-    '\u{2840}', '\u{2841}', '\u{2848}', '\u{2849}', '\u{2842}', '\u{2843}', '\u{284A}', '\u{284B}',
-    '\u{2850}', '\u{2851}', '\u{2858}', '\u{2859}', '\u{2852}', '\u{2853}', '\u{285A}', '\u{285B}',
-    '\u{2820}', '\u{2821}', '\u{2828}', '\u{2829}', '\u{2822}', '\u{2823}', '\u{282A}', '\u{282B}',
-    '\u{2830}', '\u{2831}', '\u{2838}', '\u{2839}', '\u{2832}', '\u{2833}', '\u{283A}', '\u{283B}',
-    '\u{2860}', '\u{2861}', '\u{2868}', '\u{2869}', '\u{2862}', '\u{2863}', '\u{286A}', '\u{286B}',
-    '\u{2870}', '\u{2871}', '\u{2878}', '\u{2879}', '\u{2872}', '\u{2873}', '\u{287A}', '\u{287B}',
+const BRAILLE_DOT_MASKS: [u8; 5] = [
+    0x00, // 0 dots
+    0x01, // 1 dot
+    0x03, // 2 dots
+    0x07, // 3 dots
+    0x07, // 3 dots (max)
 ];
 
-pub fn map_brightness(brightness: f32, charset: Charset) -> char {
-    let brightness = brightness.clamp(0.0, 1.0);
+pub fn map_braille_subpixel(top: f32, bottom: f32, threshold: f32) -> char {
+    let top = top.clamp(0.0, 1.0);
+    let bottom = bottom.clamp(0.0, 1.0);
 
+    let top_level = if top < threshold {
+        0
+    } else {
+        ((top - threshold) / (1.0 - threshold) * 4.0).ceil() as usize
+    }.min(4);
+
+    let bottom_level = if bottom < threshold {
+        0
+    } else {
+        ((bottom - threshold) / (1.0 - threshold) * 4.0).ceil() as usize
+    }.min(4);
+
+    let left_mask = BRAILLE_DOT_MASKS[top_level];
+    let right_mask = BRAILLE_DOT_MASKS[bottom_level] << 3;
+    let combined_mask = left_mask | right_mask;
+
+    char::from_u32(0x2800 + combined_mask as u32).unwrap_or(' ')
+}
+
+pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
     match charset {
         Charset::HalfBlock => {
+            let brightness = top.clamp(0.0, 1.0);
             let index = (brightness * (HALF_BLOCK_CHARS.len() - 1) as f32).round() as usize;
             HALF_BLOCK_CHARS[index]
         }
         Charset::Ascii => {
+            let brightness = top.clamp(0.0, 1.0);
             let index = (brightness * (ASCII_CHARS.len() - 1) as f32).round() as usize;
             ASCII_CHARS[index]
         }
         Charset::Braille => {
-            let index = (brightness * (BRAILLE_PATTERNS.len() - 1) as f32).round() as usize;
-            BRAILLE_PATTERNS[index]
+            if let Some(bottom_val) = bottom {
+                map_braille_subpixel(top, bottom_val, 0.05)
+            } else {
+                let brightness = top.clamp(0.0, 1.0);
+                let index = (brightness * 15.0).round() as usize;
+                char::from_u32(0x2800 + index as u32).unwrap_or(' ')
+            }
         }
     }
 }
@@ -120,49 +145,49 @@ mod tests {
 
     #[test]
     fn test_map_brightness_halfblock_min() {
-        assert_eq!(map_brightness(0.0, Charset::HalfBlock), ' ');
+        assert_eq!(map_brightness(0.0, None, Charset::HalfBlock), ' ');
     }
 
     #[test]
     fn test_map_brightness_halfblock_max() {
-        assert_eq!(map_brightness(1.0, Charset::HalfBlock), '\u{2588}');
+        assert_eq!(map_brightness(1.0, None, Charset::HalfBlock), '\u{2588}');
     }
 
     #[test]
     fn test_map_brightness_ascii_min() {
-        assert_eq!(map_brightness(0.0, Charset::Ascii), ' ');
+        assert_eq!(map_brightness(0.0, None, Charset::Ascii), ' ');
     }
 
     #[test]
     fn test_map_brightness_ascii_max() {
-        assert_eq!(map_brightness(1.0, Charset::Ascii), '@');
+        assert_eq!(map_brightness(1.0, None, Charset::Ascii), '@');
     }
 
     #[test]
     fn test_map_brightness_braille_min() {
-        assert_eq!(map_brightness(0.0, Charset::Braille), '\u{2800}');
+        assert_eq!(map_brightness(0.0, None, Charset::Braille), '\u{2800}');
     }
 
     #[test]
     fn test_map_brightness_braille_max() {
-        assert_eq!(map_brightness(1.0, Charset::Braille), '\u{287B}');
+        assert_eq!(map_brightness(1.0, None, Charset::Braille), '\u{280F}');
     }
 
     #[test]
     fn test_map_brightness_clamped() {
-        assert_eq!(map_brightness(-0.5, Charset::HalfBlock), ' ');
-        assert_eq!(map_brightness(1.5, Charset::Ascii), '@');
+        assert_eq!(map_brightness(-0.5, None, Charset::HalfBlock), ' ');
+        assert_eq!(map_brightness(1.5, None, Charset::Ascii), '@');
     }
 
     #[test]
     fn test_map_brightness_halfblock_mid() {
-        let char = map_brightness(0.5, Charset::HalfBlock);
+        let char = map_brightness(0.5, None, Charset::HalfBlock);
         assert_eq!(char, '\u{2584}');
     }
 
     #[test]
     fn test_map_brightness_ascii_mid() {
-        let char = map_brightness(0.5, Charset::Ascii);
+        let char = map_brightness(0.5, None, Charset::Ascii);
         assert_eq!(char, '+');
     }
 
@@ -170,7 +195,7 @@ mod tests {
     fn test_all_halfblock_chars() {
         for (i, _) in HALF_BLOCK_CHARS.iter().enumerate() {
             let brightness = i as f32 / (HALF_BLOCK_CHARS.len() - 1) as f32;
-            let char = map_brightness(brightness, Charset::HalfBlock);
+            let char = map_brightness(brightness, None, Charset::HalfBlock);
             assert_eq!(char, HALF_BLOCK_CHARS[i]);
         }
     }
@@ -272,5 +297,92 @@ mod tests {
             let char = map_ascii_directional(brightness, false);
             assert_eq!(char, *expected);
         }
+    }
+
+    #[test]
+    fn test_braille_subpixel_empty() {
+        assert_eq!(map_braille_subpixel(0.0, 0.0, 0.05), '\u{2800}');
+    }
+
+    #[test]
+    fn test_braille_subpixel_top_only() {
+        assert_eq!(map_braille_subpixel(1.0, 0.0, 0.05), '\u{2807}');
+    }
+
+    #[test]
+    fn test_braille_subpixel_bottom_only() {
+        assert_eq!(map_braille_subpixel(0.0, 1.0, 0.05), '\u{2838}');
+    }
+
+    #[test]
+    fn test_braille_subpixel_full() {
+        assert_eq!(map_braille_subpixel(1.0, 1.0, 0.05), '\u{283F}');
+    }
+
+    #[test]
+    fn test_braille_subpixel_top_levels() {
+        assert_eq!(map_braille_subpixel(0.0, 0.0, 0.05), '\u{2800}');
+        assert_eq!(map_braille_subpixel(0.3, 0.0, 0.05), '\u{2803}');
+        assert_eq!(map_braille_subpixel(0.55, 0.0, 0.05), '\u{2807}');
+        assert_eq!(map_braille_subpixel(1.0, 0.0, 0.05), '\u{2807}');
+    }
+
+    #[test]
+    fn test_braille_subpixel_bottom_levels() {
+        assert_eq!(map_braille_subpixel(0.0, 0.0, 0.05), '\u{2800}');
+        assert_eq!(map_braille_subpixel(0.0, 0.3, 0.05), '\u{2818}');
+        assert_eq!(map_braille_subpixel(0.0, 0.55, 0.05), '\u{2838}');
+        assert_eq!(map_braille_subpixel(0.0, 1.0, 0.05), '\u{2838}');
+    }
+
+    #[test]
+    fn test_braille_subpixel_all_combinations() {
+        assert_eq!(map_braille_subpixel(0.0, 0.0, 0.05), '\u{2800}');
+        assert_eq!(map_braille_subpixel(0.0, 0.3, 0.05), '\u{2818}');
+        assert_eq!(map_braille_subpixel(0.0, 0.55, 0.05), '\u{2838}');
+        assert_eq!(map_braille_subpixel(0.0, 1.0, 0.05), '\u{2838}');
+        assert_eq!(map_braille_subpixel(0.3, 0.0, 0.05), '\u{2803}');
+        assert_eq!(map_braille_subpixel(0.3, 0.3, 0.05), '\u{281B}');
+        assert_eq!(map_braille_subpixel(0.3, 0.55, 0.05), '\u{283B}');
+        assert_eq!(map_braille_subpixel(0.3, 1.0, 0.05), '\u{283B}');
+        assert_eq!(map_braille_subpixel(0.55, 0.0, 0.05), '\u{2807}');
+        assert_eq!(map_braille_subpixel(0.55, 0.3, 0.05), '\u{281F}');
+        assert_eq!(map_braille_subpixel(0.55, 0.55, 0.05), '\u{283F}');
+        assert_eq!(map_braille_subpixel(0.55, 1.0, 0.05), '\u{283F}');
+        assert_eq!(map_braille_subpixel(1.0, 0.0, 0.05), '\u{2807}');
+        assert_eq!(map_braille_subpixel(1.0, 0.3, 0.05), '\u{281F}');
+        assert_eq!(map_braille_subpixel(1.0, 0.55, 0.05), '\u{283F}');
+        assert_eq!(map_braille_subpixel(1.0, 1.0, 0.05), '\u{283F}');
+    }
+
+    #[test]
+    fn test_braille_subpixel_threshold() {
+        assert_eq!(map_braille_subpixel(0.04, 0.04, 0.05), '\u{2800}');
+        assert_eq!(map_braille_subpixel(0.06, 0.0, 0.05), '\u{2801}');
+        assert_eq!(map_braille_subpixel(0.0, 0.06, 0.05), '\u{2808}');
+    }
+
+    #[test]
+    fn test_braille_subpixel_clamping() {
+        assert_eq!(map_braille_subpixel(-0.5, 0.0, 0.05), '\u{2800}');
+        assert_eq!(map_braille_subpixel(0.0, -0.5, 0.05), '\u{2800}');
+        assert_eq!(map_braille_subpixel(1.5, 1.5, 0.05), '\u{283F}');
+    }
+
+    #[test]
+    fn test_braille_dot_masks_values() {
+        assert_eq!(BRAILLE_DOT_MASKS[0], 0x00);
+        assert_eq!(BRAILLE_DOT_MASKS[1], 0x01);
+        assert_eq!(BRAILLE_DOT_MASKS[2], 0x03);
+        assert_eq!(BRAILLE_DOT_MASKS[3], 0x07);
+        assert_eq!(BRAILLE_DOT_MASKS[4], 0x07);
+    }
+
+    #[test]
+    fn test_map_brightness_braille_with_bottom() {
+        assert_eq!(map_brightness(1.0, Some(1.0), Charset::Braille), '\u{283F}');
+        assert_eq!(map_brightness(1.0, Some(0.0), Charset::Braille), '\u{2807}');
+        assert_eq!(map_brightness(0.0, Some(1.0), Charset::Braille), '\u{2838}');
+        assert_eq!(map_brightness(0.0, Some(0.0), Charset::Braille), '\u{2800}');
     }
 }

@@ -218,6 +218,27 @@ fn test_visual_regression_ascii_mode() {
 }
 
 #[test]
+fn test_visual_regression_braille_mode() {
+    let output = capture_print_output(&["-s", "42", "--braille"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    match load_golden("braille_mode") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: Braille mode output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("braille_mode", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
 fn test_visual_regression_small_terminal() {
     let output = capture_print_output(&["-s", "42"], 40, 12);
     let normalized = normalize_output(&output);
