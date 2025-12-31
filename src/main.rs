@@ -45,6 +45,7 @@ fn main() -> io::Result<()> {
         config,
         seed,
         args.init,
+        args.effective_trail_history(),
     );
 
     let mode = args.mode();
@@ -73,8 +74,9 @@ fn print_mode(
 
     let (term_width, term_height) = get_terminal_size();
 
+    let blended_trail = sim.trail_map_blended();
     let downsampled = downsample(
-        sim.trail_map().current(),
+        &blended_trail,
         sim.width(),
         sim.height(),
         term_width,
@@ -120,13 +122,14 @@ fn capture_frames_mode(
     let config = args.to_sim_config();
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
-    for frame_idx in 0..args.frame_count {
+        for frame_idx in 0..args.frame_count {
         for _ in 0..args.frame_skip {
             sim.update(1.0);
         }
 
+        let blended_trail = sim.trail_map_blended();
         let downsampled = downsample(
-            sim.trail_map().current(),
+            &blended_trail,
             sim.width(),
             sim.height(),
             term_width,
@@ -272,8 +275,9 @@ fn run_simulation(
             timer.end_sim_start_render();
         }
 
+        let blended_trail = sim.trail_map_blended();
         let downsampled = downsample(
-            sim.trail_map().current(),
+            &blended_trail,
             sim.width(),
             sim.height(),
             term_width as usize,

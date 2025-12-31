@@ -26,6 +26,10 @@ harness = false
 name = "rendering_benchmark"
 harness = false
 
+[[bench]]
+name = "trail_history_benchmark"
+harness = false
+
 [target.'cfg(windows)'.dependencies]
 enable-ansi-support = "0.2.1"
 

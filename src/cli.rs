@@ -335,6 +335,20 @@ pub struct Args {
         help = "Invert palette colors (complementary colors)"
     )]
     pub invert_palette: bool,
+
+    #[arg(
+        long = "trail-history",
+        value_name = "INT",
+        default_value = "0",
+        help = "Number of historical frames to blend for motion blur (0=disabled, max 10)"
+    )]
+    pub trail_history: usize,
+
+    #[arg(
+        long = "motion-blur",
+        help = "Enable motion blur effect (equivalent to --trail-history 3)"
+    )]
+    pub motion_blur: bool,
 }
 
 impl Args {
@@ -419,7 +433,21 @@ impl Args {
                 self.time_scale
             ));
         }
+        if self.trail_history > 10 {
+            return Err(format!(
+                "trail_history must be between 0 and 10, got {}",
+                self.trail_history
+            ));
+        }
         Ok(())
+    }
+
+    pub fn effective_trail_history(&self) -> usize {
+        if self.motion_blur {
+            3
+        } else {
+            self.trail_history
+        }
     }
 }
 
@@ -429,10 +457,6 @@ impl Default for Args {
             live: false,
             screensaver: false,
             print: false,
-            capture_frames: false,
-            frame_count: 50,
-            frame_skip: 50,
-            frame_dir: "frames".to_string(),
             seed: None,
             population: 50000,
             sensor_angle: 22.5,
@@ -460,6 +484,12 @@ impl Default for Args {
             verbose: false,
             reverse_palette: false,
             invert_palette: false,
+            trail_history: 0,
+            motion_blur: false,
+            capture_frames: false,
+            frame_count: 50,
+            frame_skip: 50,
+            frame_dir: "frames".to_string(),
         }
     }
 }
@@ -499,12 +529,14 @@ mod tests {
             braille: false,
             plain_output: false,
             verbose: false,
+            reverse_palette: false,
+            invert_palette: false,
+            trail_history: 0,
+            motion_blur: false,
             capture_frames: false,
             frame_count: 50,
             frame_skip: 50,
             frame_dir: "frames".to_string(),
-            reverse_palette: false,
-            invert_palette: false,
         };
         assert_eq!(args.mode(), Mode::Default);
     }
@@ -569,5 +601,53 @@ mod tests {
     #[test]
     fn test_invalid_diffusion_kernel() {
         assert!("invalid".parse::<DiffusionKernel>().is_err());
+    }
+
+    #[test]
+    fn test_effective_trail_history_default() {
+        let args = Args {
+            trail_history: 0,
+            motion_blur: false,
+            ..Default::default()
+        };
+        assert_eq!(args.effective_trail_history(), 0);
+    }
+
+    #[test]
+    fn test_effective_trail_history_motion_blur() {
+        let args = Args {
+            trail_history: 0,
+            motion_blur: true,
+            ..Default::default()
+        };
+        assert_eq!(args.effective_trail_history(), 3);
+    }
+
+    #[test]
+    fn test_effective_trail_history_explicit() {
+        let args = Args {
+            trail_history: 5,
+            motion_blur: true,
+            ..Default::default()
+        };
+        assert_eq!(args.effective_trail_history(), 3);
+    }
+
+    #[test]
+    fn test_validate_trail_history_too_high() {
+        let args = Args {
+            trail_history: 15,
+            ..Default::default()
+        };
+        assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_trail_history_valid() {
+        let args = Args {
+            trail_history: 5,
+            ..Default::default()
+        };
+        assert!(args.validate().is_ok());
     }
 }

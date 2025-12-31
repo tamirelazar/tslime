@@ -53,6 +53,7 @@ pub struct FrameTimer {
 }
 
 impl FrameTimer {
+    #[allow(dead_code)]
     pub fn new(fps: usize, frame_delay_seconds: f32) -> Self {
         Self::with_time_scale(fps, frame_delay_seconds, 1.0)
     }

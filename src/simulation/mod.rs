@@ -9,11 +9,81 @@ use rand::Rng as RandRng;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus as Rng;
 
+pub struct TrailHistory {
+    history: Vec<Vec<f32>>,
+    capacity: usize,
+    current_index: usize,
+    count: usize,
+}
+
+impl TrailHistory {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            history: Vec::with_capacity(capacity),
+            capacity,
+            current_index: 0,
+            count: 0,
+        }
+    }
+
+    pub fn push(&mut self, trail_map: &[f32]) {
+        if self.capacity == 0 {
+            return;
+        }
+
+        if self.history.len() < self.capacity {
+            self.history.push(trail_map.to_vec());
+            self.count = self.history.len();
+        } else {
+            self.history[self.current_index].copy_from_slice(trail_map);
+        }
+
+        self.current_index = (self.current_index + 1) % self.capacity;
+    }
+
+    pub fn blended(&self) -> Option<Vec<f32>> {
+        if self.count == 0 {
+            return None;
+        }
+
+        let mut result = vec![0.0f32; self.history[0].len()];
+        for frame in &self.history[..self.count] {
+            for (i, &val) in frame.iter().enumerate() {
+                result[i] += val;
+            }
+        }
+
+        let weight = 1.0 / self.count as f32;
+        for val in &mut result {
+            *val *= weight;
+        }
+
+        Some(result)
+    }
+
+    #[allow(dead_code)]
+    pub fn count(&self) -> usize {
+        self.count
+    }
+
+    #[allow(dead_code)]
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    pub fn clear(&mut self) {
+        self.history.clear();
+        self.current_index = 0;
+        self.count = 0;
+    }
+}
+
 pub struct Simulation {
     config: SimConfig,
     agents: Vec<Agent>,
     trail_map: TrailMap,
     rng: Rng,
+    trail_history: Option<TrailHistory>,
 }
 
 impl Simulation {
@@ -23,6 +93,7 @@ impl Simulation {
         config: SimConfig,
         seed: u64,
         init_mode: InitMode,
+        trail_history_capacity: usize,
     ) -> Self {
         let mut rng = Rng::seed_from_u64(seed);
         let mut agents = Vec::with_capacity(config.population);
@@ -52,11 +123,18 @@ impl Simulation {
         }
 
         let sigma = config.diffusion_sigma;
+        let trail_history = if trail_history_capacity > 0 {
+            Some(TrailHistory::new(trail_history_capacity))
+        } else {
+            None
+        };
+
         Self {
             config,
             agents,
             trail_map: TrailMap::new_with_sigma(width, height, sigma),
             rng,
+            trail_history,
         }
     }
 
@@ -232,8 +310,18 @@ impl Simulation {
         &self.config
     }
 
+    #[allow(dead_code)]
     pub fn trail_map(&self) -> &TrailMap {
         &self.trail_map
+    }
+
+    pub fn trail_map_blended(&self) -> Vec<f32> {
+        if let Some(ref history) = self.trail_history {
+            if let Some(blended) = history.blended() {
+                return blended;
+            }
+        }
+        self.trail_map.current().to_vec()
     }
 
     #[allow(dead_code)]
@@ -283,8 +371,13 @@ impl Simulation {
             crate::simulation::config::DiffusionKernel::Gaussian
         ));
         self.trail_map.decay(effective_decay);
+
+        if let Some(ref mut history) = self.trail_history {
+            history.push(self.trail_map.current());
+        }
     }
 
+    #[allow(dead_code)]
     pub fn agents(&self) -> &[Agent] {
         &self.agents
     }
@@ -319,6 +412,9 @@ impl Simulation {
         }
 
         self.trail_map.clear();
+        if let Some(ref mut history) = self.trail_history {
+            history.clear();
+        }
     }
 
     pub fn update_config(&mut self, config: SimConfig) {
@@ -333,7 +429,7 @@ mod tests {
     #[test]
     fn test_simulation_creation() {
         let config = SimConfig::default();
-        let sim = Simulation::new(400, 400, config, 42, InitMode::Random);
+        let sim = Simulation::new(400, 400, config, 42, InitMode::Random, 0);
         assert_eq!(sim.width(), 400);
         assert_eq!(sim.height(), 400);
         assert_eq!(sim.agents().len(), 50000);
@@ -345,7 +441,7 @@ mod tests {
             population: 100,
             ..Default::default()
         };
-        let mut sim = Simulation::new(400, 400, config, 42, InitMode::Random);
+        let mut sim = Simulation::new(400, 400, config, 42, InitMode::Random, 0);
 
         let initial_max = *sim
             .trail_map()
@@ -373,7 +469,7 @@ mod tests {
             decay_factor: 0.99,
             ..Default::default()
         };
-        let mut sim = Simulation::new(400, 400, config, 42, InitMode::Random);
+        let mut sim = Simulation::new(400, 400, config, 42, InitMode::Random, 0);
 
         sim.update(1.0);
         let max_after_1 = *sim
@@ -397,8 +493,8 @@ mod tests {
     #[test]
     fn test_reproducibility() {
         let config = SimConfig::default();
-        let mut sim1 = Simulation::new(400, 400, config.clone(), 42, InitMode::Random);
-        let mut sim2 = Simulation::new(400, 400, config, 42, InitMode::Random);
+        let mut sim1 = Simulation::new(400, 400, config.clone(), 42, InitMode::Random, 0);
+        let mut sim2 = Simulation::new(400, 400, config, 42, InitMode::Random, 0);
 
         sim1.update(1.0);
         sim2.update(1.0);
@@ -415,8 +511,8 @@ mod tests {
     #[test]
     fn test_fps_invariance() {
         let config = SimConfig::default();
-        let mut sim_low_fps = Simulation::new(100, 100, config.clone(), 42, InitMode::Random);
-        let mut sim_high_fps = Simulation::new(100, 100, config, 42, InitMode::Random);
+        let mut sim_low_fps = Simulation::new(100, 100, config.clone(), 42, InitMode::Random, 0);
+        let mut sim_high_fps = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
 
         for _ in 0..15 {
             sim_low_fps.update(2.0);
@@ -436,9 +532,9 @@ mod tests {
     #[test]
     fn test_time_scaling() {
         let config = SimConfig::default();
-        let mut sim_half_speed = Simulation::new(100, 100, config.clone(), 42, InitMode::Random);
-        let mut sim_normal = Simulation::new(100, 100, config.clone(), 42, InitMode::Random);
-        let mut sim_double_speed = Simulation::new(100, 100, config, 42, InitMode::Random);
+        let mut sim_half_speed = Simulation::new(100, 100, config.clone(), 42, InitMode::Random, 0);
+        let mut sim_normal = Simulation::new(100, 100, config.clone(), 42, InitMode::Random, 0);
+        let mut sim_double_speed = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
 
         for _ in 0..20 {
             sim_half_speed.update(0.5);
@@ -472,5 +568,94 @@ mod tests {
             sum_normal,
             diff_double
         );
+    }
+
+    #[test]
+    fn test_trail_history_creation() {
+        let history = TrailHistory::new(5);
+        assert_eq!(history.capacity(), 5);
+        assert_eq!(history.count(), 0);
+    }
+
+    #[test]
+    fn test_trail_history_push_and_blend() {
+        let mut history = TrailHistory::new(3);
+
+        let frame1 = vec![1.0, 2.0, 3.0, 4.0];
+        let frame2 = vec![2.0, 4.0, 6.0, 8.0];
+        let frame3 = vec![3.0, 6.0, 9.0, 12.0];
+
+        history.push(&frame1);
+        history.push(&frame2);
+        history.push(&frame3);
+
+        assert_eq!(history.count(), 3);
+
+        let blended = history.blended().unwrap();
+        assert_eq!(blended, vec![2.0, 4.0, 6.0, 8.0]);
+    }
+
+    #[test]
+    fn test_trail_history_circular_buffer() {
+        let mut history = TrailHistory::new(2);
+
+        let frame1 = vec![1.0, 1.0];
+        let frame2 = vec![2.0, 2.0];
+        let frame3 = vec![3.0, 3.0];
+
+        history.push(&frame1);
+        history.push(&frame2);
+        history.push(&frame3);
+
+        assert_eq!(history.count(), 2);
+
+        let blended = history.blended().unwrap();
+        assert_eq!(blended, vec![2.5, 2.5]);
+    }
+
+    #[test]
+    fn test_trail_history_no_frames() {
+        let history = TrailHistory::new(3);
+        assert!(history.blended().is_none());
+    }
+
+    #[test]
+    fn test_trail_history_clear() {
+        let mut history = TrailHistory::new(3);
+
+        let frame = vec![1.0, 2.0];
+        history.push(&frame);
+        history.push(&frame);
+
+        assert_eq!(history.count(), 2);
+
+        history.clear();
+
+        assert_eq!(history.count(), 0);
+        assert!(history.blended().is_none());
+    }
+
+    #[test]
+    fn test_trail_history_disabled() {
+        let config = SimConfig::default();
+        let sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
+        assert!(sim.trail_history.is_none());
+    }
+
+    #[test]
+    fn test_trail_history_enabled() {
+        let config = SimConfig::default();
+        let sim = Simulation::new(100, 100, config, 42, InitMode::Random, 5);
+        assert!(sim.trail_history.is_some());
+    }
+
+    #[test]
+    fn test_trail_map_blended_without_history() {
+        let config = SimConfig::default();
+        let sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
+
+        let blended = sim.trail_map_blended();
+        let current = sim.trail_map().current();
+        assert_eq!(blended, current);
     }
 }

@@ -448,10 +448,12 @@ impl TerminalRenderer {
         self.charset = charset;
     }
 
+    #[allow(dead_code)]
     pub fn stdout_mut(&mut self) -> &mut Stdout {
         &mut self.stdout
     }
 
+    #[allow(dead_code)]
     pub fn render(
         &mut self,
         downsampled: &[DownsampleCell],
