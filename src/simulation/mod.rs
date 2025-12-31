@@ -288,6 +288,42 @@ impl Simulation {
     pub fn agents(&self) -> &[Agent] {
         &self.agents
     }
+
+    pub fn reset(&mut self, seed: u64, init_mode: InitMode) {
+        self.rng = Rng::seed_from_u64(seed);
+        self.agents.clear();
+        self.agents = Vec::with_capacity(self.config.population);
+
+        match init_mode {
+            InitMode::Random => {
+                Self::init_random(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+            }
+            InitMode::CentralBurst => {
+                Self::init_central_burst(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+            }
+            InitMode::Circle => {
+                Self::init_circle(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+            }
+            InitMode::Gradient => {
+                Self::init_gradient(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+            }
+            InitMode::WaveFront => {
+                Self::init_wave_front(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+            }
+            InitMode::Spiral => {
+                Self::init_spiral(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+            }
+            InitMode::RandomClusters => {
+                Self::init_random_clusters(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+            }
+        }
+
+        self.trail_map.clear();
+    }
+
+    pub fn update_config(&mut self, config: SimConfig) {
+        self.config = config;
+    }
 }
 
 #[cfg(test)]

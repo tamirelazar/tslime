@@ -57,6 +57,28 @@ impl FrameBuffer {
         }
     }
 
+    pub fn draw_text_overlay(&mut self, text_lines: &[&str], start_x: usize, start_y: usize, fg_color: u8, bg_color: Option<u8>) {
+        for (dy, line) in text_lines.iter().enumerate() {
+            let y = start_y + dy;
+            if y >= self.height {
+                break;
+            }
+            for (dx, ch) in line.chars().enumerate() {
+                let x = start_x + dx;
+                if x >= self.width {
+                    break;
+                }
+                self.cells[y * self.width + x] = Cell {
+                    char: ch,
+                    fg_color_256: Some(fg_color),
+                    bg_color_256: bg_color,
+                    fg_color_rgb: None,
+                    bg_color_rgb: None,
+                };
+            }
+        }
+    }
+
     #[allow(dead_code)]
     fn max_brightness(frame: &[DownsampleCell]) -> f32 {
         frame
@@ -426,6 +448,10 @@ impl TerminalRenderer {
         self.charset = charset;
     }
 
+    pub fn stdout_mut(&mut self) -> &mut Stdout {
+        &mut self.stdout
+    }
+
     pub fn render(
         &mut self,
         downsampled: &[DownsampleCell],
@@ -442,6 +468,43 @@ impl TerminalRenderer {
             self.invert_palette,
             self.color_mode,
         );
+
+        execute!(self.stdout, &buffer)
+    }
+
+    pub fn render_with_overlay(
+        &mut self,
+        downsampled: &[DownsampleCell],
+        max_trail_value: f32,
+        help_lines: Option<(&[&str], usize, usize)>,
+        status_line: Option<(String, usize)>,
+        paused_line: Option<(String, usize)>,
+    ) -> io::Result<()> {
+        let mut buffer = FrameBuffer::from_downsampled(
+            downsampled,
+            self.width,
+            self.height,
+            max_trail_value,
+            self.palette.clone(),
+            self.charset,
+            self.reverse_palette,
+            self.invert_palette,
+            self.color_mode,
+        );
+
+        if let Some((lines, x, y)) = help_lines {
+            buffer.draw_text_overlay(lines, x, y, 15, Some(236));
+        }
+
+        if let Some((line, x)) = status_line {
+            let line_chars: Vec<char> = line.chars().collect();
+            buffer.draw_text_overlay(&[&line_chars.iter().collect::<String>()], x, self.height.saturating_sub(2), 14, Some(234));
+        }
+
+        if let Some((text, x)) = paused_line {
+            let text_chars: Vec<char> = text.chars().collect();
+            buffer.draw_text_overlay(&[&text_chars.iter().collect::<String>()], x, 2, 15, Some(196));
+        }
 
         execute!(self.stdout, &buffer)
     }
