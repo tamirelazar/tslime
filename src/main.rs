@@ -7,6 +7,7 @@ mod simulation;
 mod terminal;
 
 use cli::{Args, Mode, ColorMode};
+use render::adaptive_brightness::AdaptiveBrightness;
 use render::charset::Charset;
 use render::downsample::downsample;
 use simulation::Simulation;
@@ -86,11 +87,19 @@ fn print_mode(
     let config = args.to_sim_config();
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
+    let mut adaptive_brightness = AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+    adaptive_brightness.update(downsampled.cells());
+    let max_brightness = if args.auto_normalize {
+        adaptive_brightness.get_max_brightness()
+    } else {
+        config.max_brightness
+    };
+
     let buffer = FrameBuffer::from_downsampled(
         downsampled.cells(),
         term_width,
         term_height,
-        config.max_brightness,
+        max_brightness,
         palette,
         charset,
         args.reverse_palette,
@@ -122,7 +131,9 @@ fn capture_frames_mode(
     let config = args.to_sim_config();
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
-        for frame_idx in 0..args.frame_count {
+    let mut adaptive_brightness = AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+
+    for frame_idx in 0..args.frame_count {
         for _ in 0..args.frame_skip {
             sim.update(1.0);
         }
@@ -136,11 +147,18 @@ fn capture_frames_mode(
             term_height,
         );
 
+        adaptive_brightness.update(downsampled.cells());
+        let max_brightness = if args.auto_normalize {
+            adaptive_brightness.get_max_brightness()
+        } else {
+            config.max_brightness
+        };
+
         let buffer = FrameBuffer::from_downsampled(
             downsampled.cells(),
             term_width,
             term_height,
-            config.max_brightness,
+            max_brightness,
             palette.clone(),
             charset,
             args.reverse_palette,
@@ -250,6 +268,8 @@ fn run_simulation(
         show_help_by_default,
     );
 
+    let mut adaptive_brightness = AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+
     loop {
         if is_shutdown_requested() {
             break;
@@ -285,6 +305,14 @@ fn run_simulation(
         );
 
         let current_config = args.to_sim_config();
+
+        adaptive_brightness.update(downsampled.cells());
+        let max_brightness = if args.auto_normalize {
+            adaptive_brightness.get_max_brightness()
+        } else {
+            current_config.max_brightness
+        };
+
         let current_palette = runtime_state.current_palette(&palette_list);
 
         static HELP_LINES: [&str; 9] = [
@@ -327,10 +355,10 @@ fn run_simulation(
             None
         };
 
-        if current_config.max_brightness > 0.0 {
+        if max_brightness > 0.0 {
             renderer.render_with_overlay(
                 downsampled.cells(),
-                current_config.max_brightness,
+                max_brightness,
                 help_data,
                 status_data,
                 paused_data,

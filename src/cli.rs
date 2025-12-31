@@ -349,6 +349,20 @@ pub struct Args {
         help = "Enable motion blur effect (equivalent to --trail-history 3)"
     )]
     pub motion_blur: bool,
+
+    #[arg(
+        long = "auto-normalize",
+        help = "Enable adaptive brightness normalization to prevent flickering"
+    )]
+    pub auto_normalize: bool,
+
+    #[arg(
+        long = "normalize-window",
+        value_name = "INT",
+        default_value = "30",
+        help = "Number of frames for adaptive brightness normalization window (1-100)"
+    )]
+    pub normalize_window: usize,
 }
 
 impl Args {
@@ -439,6 +453,12 @@ impl Args {
                 self.trail_history
             ));
         }
+        if self.normalize_window < 1 || self.normalize_window > 100 {
+            return Err(format!(
+                "normalize_window must be between 1 and 100, got {}",
+                self.normalize_window
+            ));
+        }
         Ok(())
     }
 
@@ -486,6 +506,8 @@ impl Default for Args {
             invert_palette: false,
             trail_history: 0,
             motion_blur: false,
+            auto_normalize: false,
+            normalize_window: 30,
             capture_frames: false,
             frame_count: 50,
             frame_skip: 50,
@@ -533,6 +555,8 @@ mod tests {
             invert_palette: false,
             trail_history: 0,
             motion_blur: false,
+            auto_normalize: false,
+            normalize_window: 30,
             capture_frames: false,
             frame_count: 50,
             frame_skip: 50,
