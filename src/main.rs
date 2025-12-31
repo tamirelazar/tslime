@@ -264,7 +264,12 @@ fn run_simulation(
         let dt = timer.delta_time();
 
         if !runtime_state.is_paused {
+            timer.start_sim();
             sim.update(dt / REFERENCE_TIME_STEP);
+            timer.end_sim_start_render();
+        } else {
+            timer.start_sim();
+            timer.end_sim_start_render();
         }
 
         let downsampled = downsample(
@@ -328,6 +333,8 @@ fn run_simulation(
             )?;
         }
 
+        timer.end_render();
+
         if let Some(key_event) = input_poller.poll_keypress()? {
             if InputPoller::is_exit_key(&key_event) {
                 break;
@@ -372,11 +379,12 @@ fn run_simulation(
 
         if args.verbose {
             eprintln!(
-                "FPS: {:.1} | Frame: {} | Agents: {} | Max brightness: {:.2}",
+                "FPS: {:.1} (avg: {:.1}) | Sim: {:.1}ms | Render: {:.1}ms | Frame: {}",
                 timer.current_fps(),
+                timer.average_fps(),
+                timer.sim_duration().as_secs_f64() * 1000.0,
+                timer.render_duration().as_secs_f64() * 1000.0,
                 timer.frame_count(),
-                sim.agents().len(),
-                current_config.max_brightness
             );
         }
 

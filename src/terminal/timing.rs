@@ -1,5 +1,7 @@
 use std::time::{Duration, Instant};
 
+const FPS_SAMPLE_COUNT: usize = 30;
+
 /// FrameTimer provides timing control for the simulation loop.
 ///
 /// # Timing Model
@@ -41,6 +43,13 @@ pub struct FrameTimer {
     last_frame_time: Instant,
     frame_count: u64,
     time_scale: f32,
+    fps_samples: [f32; FPS_SAMPLE_COUNT],
+    fps_sample_index: usize,
+    fps_count: usize,
+    sim_start: Instant,
+    sim_duration: Duration,
+    render_start: Instant,
+    render_duration: Duration,
 }
 
 impl FrameTimer {
@@ -58,6 +67,13 @@ impl FrameTimer {
             last_frame_time: Instant::now(),
             frame_count: 0,
             time_scale,
+            fps_samples: [0.0; FPS_SAMPLE_COUNT],
+            fps_sample_index: 0,
+            fps_count: 0,
+            sim_start: Instant::now(),
+            sim_duration: Duration::ZERO,
+            render_start: Instant::now(),
+            render_duration: Duration::ZERO,
         }
     }
 
@@ -98,9 +114,56 @@ impl FrameTimer {
         }
     }
 
+    pub fn average_fps(&self) -> f64 {
+        if self.fps_count == 0 {
+            0.0
+        } else {
+            let sum: f32 = if self.fps_count < FPS_SAMPLE_COUNT {
+                self.fps_samples[..self.fps_count].iter().sum()
+            } else {
+                self.fps_samples.iter().sum()
+            };
+            sum as f64 / self.fps_count.min(FPS_SAMPLE_COUNT) as f64
+        }
+    }
+
+    pub fn sim_duration(&self) -> Duration {
+        self.sim_duration
+    }
+
+    pub fn render_duration(&self) -> Duration {
+        self.render_duration
+    }
+
+    pub fn start_sim(&mut self) {
+        self.sim_start = Instant::now();
+    }
+
+    pub fn end_sim_start_render(&mut self) {
+        self.sim_duration = self.sim_start.elapsed();
+        self.render_start = Instant::now();
+    }
+
+    pub fn end_render(&mut self) {
+        self.render_duration = self.render_start.elapsed();
+    }
+
     pub fn delta_time(&mut self) -> f32 {
         let elapsed = self.last_frame_time.elapsed();
         self.last_frame_time = Instant::now();
+
+        let fps_sample = if elapsed.as_secs_f64() > 0.0 {
+            1.0 / elapsed.as_secs_f64() as f32
+        } else {
+            0.0
+        };
+
+        self.fps_samples[self.fps_sample_index] = fps_sample;
+        self.fps_sample_index = (self.fps_sample_index + 1) % FPS_SAMPLE_COUNT;
+        if self.fps_count < FPS_SAMPLE_COUNT {
+            self.fps_count += 1;
+        }
+
         elapsed.as_secs_f32() * self.time_scale
     }
 
@@ -124,7 +187,20 @@ impl FrameTimer {
 
 impl Default for FrameTimer {
     fn default() -> Self {
-        Self::new(30, 0.033)
+        Self {
+            target_fps: 30,
+            frame_delay: Duration::from_secs_f32(0.033),
+            last_frame_time: Instant::now(),
+            frame_count: 0,
+            time_scale: 1.0,
+            fps_samples: [0.0; FPS_SAMPLE_COUNT],
+            fps_sample_index: 0,
+            fps_count: 0,
+            sim_start: Instant::now(),
+            sim_duration: Duration::ZERO,
+            render_start: Instant::now(),
+            render_duration: Duration::ZERO,
+        }
     }
 }
 
@@ -262,5 +338,64 @@ mod tests {
         std::thread::sleep(Duration::from_millis(10));
         let fps = timer.current_fps();
         assert!(fps > 0.0 && fps < 200.0);
+    }
+
+    #[test]
+    fn test_average_fps_initial() {
+        let timer = FrameTimer::new(30, 0.033);
+        assert_eq!(timer.average_fps(), 0.0);
+    }
+
+    #[test]
+    fn test_average_fps_after_samples() {
+        let mut timer = FrameTimer::new(30, 0.033);
+
+        for _ in 0..5 {
+            std::thread::sleep(Duration::from_millis(50));
+            timer.delta_time();
+        }
+
+        let avg = timer.average_fps();
+        assert!(avg > 10.0 && avg < 30.0, "Average FPS should be around 20, got {}", avg);
+    }
+
+    #[test]
+    fn test_average_fps_converges() {
+        let mut timer = FrameTimer::new(30, 0.033);
+
+        for _ in 0..35 {
+            std::thread::sleep(Duration::from_millis(50));
+            timer.delta_time();
+        }
+
+        let avg = timer.average_fps();
+        assert!(avg > 15.0 && avg < 25.0, "Average should converge to ~20 FPS, got {}", avg);
+    }
+
+    #[test]
+    fn test_sim_and_render_timing() {
+        let mut timer = FrameTimer::new(30, 0.033);
+
+        timer.start_sim();
+        std::thread::sleep(Duration::from_millis(5));
+        timer.end_sim_start_render();
+
+        assert!(timer.sim_duration() >= Duration::from_millis(4));
+
+        timer.end_render();
+        assert!(timer.render_duration() > Duration::ZERO);
+    }
+
+    #[test]
+    fn test_fps_samples_wrap_around() {
+        let mut timer = FrameTimer::new(30, 0.033);
+
+        for i in 0..35 {
+            std::thread::sleep(Duration::from_millis(10 + i % 5));
+            timer.delta_time();
+        }
+
+        let avg = timer.average_fps();
+        assert!(avg > 30.0 && avg < 120.0, "Average should be valid after wrap, got {}", avg);
     }
 }
