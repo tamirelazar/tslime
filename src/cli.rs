@@ -32,6 +32,10 @@ pub enum Palette {
     Warm,
     Vibrant,
     LegibleMono,
+    Slime,
+    Mold,
+    Fungus,
+    Swamp,
 }
 
 #[derive(Debug, Clone)]
@@ -289,7 +293,7 @@ pub struct Args {
         long = "palette",
         value_name = "NAME",
         default_value = "forest",
-        help = "Color palette (organic, heat, ocean, mono, forest, neon, warm, vibrant, legiblemono)"
+        help = "Color palette (organic, heat, ocean, mono, forest, neon, warm, vibrant, legiblemono, slime, mold, fungus, swamp)"
     )]
     pub palette: String,
 
@@ -369,6 +373,10 @@ impl Args {
             "warm" => Ok(Palette::Warm),
             "vibrant" => Ok(Palette::Vibrant),
             "legiblemono" => Ok(Palette::LegibleMono),
+            "slime" => Ok(Palette::Slime),
+            "mold" => Ok(Palette::Mold),
+            "fungus" => Ok(Palette::Fungus),
+            "swamp" => Ok(Palette::Swamp),
             _ => Err(format!("Invalid palette: {}", self.palette)),
         }
     }
