@@ -297,3 +297,31 @@ fn test_visual_regression_gaussian_diffusion() {
         }
     }
 }
+
+#[test]
+fn test_fps_invariant_simulation_speed() {
+    const REFERENCE_TIME_STEP: f32 = 1.0 / 30.0;
+    const STEPS: usize = 100;
+
+    let output_30fps = capture_print_output(
+        &["-s", "42", "--fps", "30", "-n", "500"],
+        80,
+        24,
+    );
+    let output_60fps = capture_print_output(
+        &["-s", "42", "--fps", "60", "-n", "500"],
+        80,
+        24,
+    );
+
+    let normalized_30 = normalize_output(&output_30fps);
+    let normalized_60 = normalize_output(&output_60fps);
+
+    assert_eq!(
+        normalized_30, normalized_60,
+        "FPS-invariant test failed: --fps 30 and --fps 60 should produce identical output\n\
+         With REFERENCE_TIME_STEP={:.4}s and {} simulation steps, both runs should\n\
+         produce the same simulation state regardless of target FPS setting.",
+        REFERENCE_TIME_STEP, STEPS
+    );
+}

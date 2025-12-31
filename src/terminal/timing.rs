@@ -1,33 +1,34 @@
 use std::time::{Duration, Instant};
 
-const SIMULATION_FPS: f32 = 30.0;
-
 /// FrameTimer provides timing control for the simulation loop.
 ///
 /// # Timing Model
 ///
-/// The FrameTimer tracks actual elapsed wall-clock time between frames and
-/// returns a delta_time value scaled for simulation consistency.
-/// The delta_time calculation is:
+/// FrameTimer tracks actual elapsed wall-clock time between frames and
+/// returns a delta_time value scaled by time_scale. The caller (main.rs)
+/// is responsible for applying reference timestep normalization.
 ///
-/// `dt = actual_elapsed_time * time_scale * SIMULATION_FPS`
+/// delta_time() returns: `actual_elapsed_wall_time * time_scale`
 ///
-/// This ensures that:
-/// - Simulation speed is consistent regardless of FPS setting
-/// - `--time-scale 2.0` doubles simulation speed (agents move twice as far per second)
-/// - `--fps 60` and `--fps 30` produce identical simulation progression at same wall-clock time
+/// The caller (main.rs) divides by REFERENCE_TIME_STEP (1/30) to normalize
+/// to the reference 30-fps simulation rate. This ensures:
+/// - time_scale 2.0 doubles simulation speed
+/// - --fps 30 and --fps 60 produce identical simulation progression
+///   at the same wall-clock elapsed time
 ///
 /// The target_fps setting only controls the maximum frame rate (via sleep timing).
-/// It does not affect the simulation delta_time value.
+/// It does not affect the delta_time value.
 ///
 /// # Usage
 ///
 /// ```ignore
+/// const REFERENCE_TIME_STEP: f32 = 1.0 / 30.0;
+///
 /// let mut timer = FrameTimer::with_time_scale(fps, frame_delay, time_scale);
 ///
 /// loop {
-///     let dt = timer.delta_time();  // Returns scaled delta time for simulation
-///     sim.update(dt);
+///     let dt = timer.delta_time();  // Returns elapsed * time_scale
+///     sim.update(dt / REFERENCE_TIME_STEP);  // Apply normalization
 ///     // ... render ...
 ///     timer.tick();  // Sleeps to maintain target FPS, increments frame count
 /// }
@@ -100,7 +101,7 @@ impl FrameTimer {
     pub fn delta_time(&mut self) -> f32 {
         let elapsed = self.last_frame_time.elapsed();
         self.last_frame_time = Instant::now();
-        elapsed.as_secs_f32() * self.time_scale * SIMULATION_FPS
+        elapsed.as_secs_f32() * self.time_scale
     }
 
     #[allow(dead_code)]
@@ -180,7 +181,7 @@ mod tests {
         let mut timer = FrameTimer::new(60, 0.016);
         std::thread::sleep(Duration::from_millis(100));
         let dt = timer.delta_time();
-        assert!(dt >= 2.0 && dt < 4.0, "dt should be ~3.0 (0.1s * 30), got {}", dt);
+        assert!(dt >= 0.08 && dt < 0.15, "dt should be ~0.1s (100ms * 1.0), got {}", dt);
     }
 
     #[test]
@@ -188,7 +189,7 @@ mod tests {
         let mut timer = FrameTimer::with_time_scale(60, 0.016, 2.0);
         std::thread::sleep(Duration::from_millis(100));
         let dt = timer.delta_time();
-        assert!(dt >= 4.0 && dt < 8.0, "dt should be ~6.0 (0.1s * 30 * 2), got {}", dt);
+        assert!(dt >= 0.15 && dt < 0.25, "dt should be ~0.2s (100ms * 2.0), got {}", dt);
     }
 
     #[test]
@@ -197,7 +198,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         timer.set_time_scale(0.5);
         let dt = timer.delta_time();
-        assert!(dt >= 1.0 && dt < 2.5, "dt should be ~1.5 (0.1s * 30 * 0.5), got {}", dt);
+        assert!(dt >= 0.04 && dt < 0.07, "dt should be ~0.05s (100ms * 0.5), got {}", dt);
     }
 
     #[test]
@@ -219,16 +220,40 @@ mod tests {
     #[test]
     fn test_delta_time_fps_invariant() {
         let mut timer_30fps = FrameTimer::new(30, 0.033);
-        let mut timer_60fps = FrameTimer::new(60, 0.016);
 
         std::thread::sleep(Duration::from_millis(100));
         let dt_30 = timer_30fps.delta_time();
 
         std::thread::sleep(Duration::from_millis(100));
-        let dt_60 = timer_60fps.delta_time();
+        let dt_30_again = timer_30fps.delta_time();
 
-        assert!(dt_30 >= 2.0 && dt_30 < 5.0, "30fps dt should be ~3.0, got {}", dt_30);
-        assert!(dt_60 >= 2.0 && dt_60 < 8.0, "60fps dt should be ~3.0, got {}", dt_60);
+        assert!(dt_30 >= 0.08 && dt_30 < 0.15, "First dt should be ~0.1s, got {}", dt_30);
+        assert!(dt_30_again >= 0.08 && dt_30_again < 0.15, "Second dt should be ~0.1s, got {}", dt_30_again);
+        assert!((dt_30 - dt_30_again).abs() < 0.05, "Both dt calls should return similar values, got {} vs {}", dt_30, dt_30_again);
+    }
+
+    #[test]
+    fn test_delta_time_fps_setting_does_not_affect_value() {
+        let mut timer_30 = FrameTimer::with_time_scale(30, 0.033, 1.0);
+
+        std::thread::sleep(Duration::from_millis(50));
+        let dt_30 = timer_30.delta_time();
+
+        let mut timer_60 = FrameTimer::with_time_scale(60, 0.016, 1.0);
+
+        std::thread::sleep(Duration::from_millis(50));
+        let dt_60 = timer_60.delta_time();
+
+        let mut timer_144 = FrameTimer::with_time_scale(144, 0.007, 1.0);
+
+        std::thread::sleep(Duration::from_millis(50));
+        let dt_144 = timer_144.delta_time();
+
+        assert!(dt_30 >= 0.04 && dt_30 < 0.07, "30fps dt should be ~0.05s, got {}", dt_30);
+        assert!(dt_60 >= 0.04 && dt_60 < 0.07, "60fps dt should be ~0.05s, got {}", dt_60);
+        assert!(dt_144 >= 0.04 && dt_144 < 0.07, "144fps dt should be ~0.05s, got {}", dt_144);
+        assert!((dt_30 - dt_60).abs() < 0.02, "30fps and 60fps dt should be similar, got {} vs {}", dt_30, dt_60);
+        assert!((dt_60 - dt_144).abs() < 0.02, "60fps and 144fps dt should be similar, got {} vs {}", dt_60, dt_144);
     }
 
     #[test]

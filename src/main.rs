@@ -15,6 +15,8 @@ use terminal::output::FrameBuffer;
 use terminal::screen::TerminalScreen;
 use terminal::timing::FrameTimer;
 
+const REFERENCE_TIME_STEP: f32 = 1.0 / 30.0;
+
 fn main() -> io::Result<()> {
     let args = Args::parse();
 
@@ -218,7 +220,7 @@ fn run_simulation(
         }
 
         let dt = timer.delta_time();
-        sim.update(dt);
+        sim.update(dt / REFERENCE_TIME_STEP);
 
         let downsampled = downsample(
             sim.trail_map().current(),
