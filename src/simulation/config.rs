@@ -45,7 +45,7 @@ impl Default for SimConfig {
             sensor_distance: 9.0,
             rotation_angle: 45.0,
             step_size: 1.0,
-            decay_factor: 0.9,
+            decay_factor: 0.5,
             deposit_amount: 5.0,
             diffusion_kernel: DiffusionKernel::Mean3x3,
             diffusion_sigma: 1.0,
@@ -170,7 +170,7 @@ mod tests {
         assert_eq!(config.sensor_distance, 9.0);
         assert_eq!(config.rotation_angle, 45.0);
         assert_eq!(config.step_size, 1.0);
-        assert_eq!(config.decay_factor, 0.9);
+        assert_eq!(config.decay_factor, 0.5);
         assert_eq!(config.deposit_amount, 5.0);
         assert_eq!(config.max_brightness, 20.0);
     }

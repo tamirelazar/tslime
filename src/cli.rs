@@ -396,6 +396,11 @@ impl Args {
             config.diffusion_sigma = sigma;
         }
 
+        if self.fps >= 60 && self.diffusion_kernel.is_none() && self.diffusion_sigma.is_none() {
+            config.diffusion_kernel = crate::simulation::config::DiffusionKernel::Gaussian;
+            config.diffusion_sigma = 0.5;
+        }
+
         config
     }
 
