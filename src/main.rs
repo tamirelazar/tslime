@@ -15,6 +15,7 @@ use terminal::control::{handle_key_event, num_palettes, ControlAction, RuntimeSt
 use terminal::input::InputPoller;
 use terminal::output::FrameBuffer;
 use terminal::screen::TerminalScreen;
+use terminal::signal::is_shutdown_requested;
 use terminal::timing::FrameTimer;
 
 const REFERENCE_TIME_STEP: f32 = 1.0 / 30.0;
@@ -247,6 +248,10 @@ fn run_simulation(
     );
 
     loop {
+        if is_shutdown_requested() {
+            break;
+        }
+
         if screen.check_resize() {
             let (new_width, new_height) = screen.get_size()?;
             if new_width != term_width || new_height != term_height {
