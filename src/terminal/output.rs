@@ -2,7 +2,7 @@ use crate::cli::ColorMode;
 use crate::cli::Palette;
 use crate::render::charset::{self, Charset};
 use crate::render::dither::apply_dither;
-use crate::render::downsample::Cell as DownsampleCell;
+use crate::render::downsample::{downsample_multi_species, Cell as DownsampleCell};
 use crate::render::error_diffusion::ErrorDiffusion;
 use crate::render::palette;
 use crate::render::palette::RgbColor;
@@ -25,6 +25,8 @@ pub struct FrameBuffer {
     cells: Vec<Cell>,
     color_mode: ColorMode,
     error_diffusion: Option<ErrorDiffusion>,
+    species_colors_enabled: bool,
+    species_rgb_colors: Vec<RgbColor>,
 }
 
 impl FrameBuffer {
@@ -52,6 +54,8 @@ impl FrameBuffer {
             ],
             color_mode,
             error_diffusion: None,
+            species_colors_enabled: false,
+            species_rgb_colors: Vec::new(),
         }
     }
 
@@ -115,6 +119,8 @@ impl FrameBuffer {
         dither_intensity: f32,
         error_diffusion_enabled: bool,
         error_reset_interval: usize,
+        species_colors_enabled: bool,
+        species_rgb_colors: Option<Vec<RgbColor>>,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode);
 
@@ -124,6 +130,9 @@ impl FrameBuffer {
             None
         };
         buffer.error_diffusion = error_diffusion;
+        buffer.species_colors_enabled = species_colors_enabled;
+
+        let species_colors_slice = species_rgb_colors.as_deref();
 
         for (idx, dcell) in downsampled.iter().enumerate() {
             if idx >= width * height {
@@ -158,9 +167,13 @@ impl FrameBuffer {
                 hue_shift,
                 dither_enabled,
                 dither_intensity,
+                species_colors_enabled,
+                species_colors_slice,
             );
             buffer.set_cell(x, y, cell);
         }
+
+        buffer.species_rgb_colors = species_rgb_colors.unwrap_or_default();
 
         buffer
     }
@@ -193,6 +206,8 @@ impl FrameBuffer {
         hue_shift: f32,
         dither_enabled: bool,
         dither_intensity: f32,
+        species_colors_enabled: bool,
+        species_rgb_colors: Option<&[RgbColor]>,
     ) -> Cell {
         const THRESHOLD: f32 = 0.05;
 
@@ -220,124 +235,116 @@ impl FrameBuffer {
                 fg_color_rgb: None,
                 bg_color_rgb: None,
             }
-        } else if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
-            let char = match charset {
-                Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
-                Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
-                _ => charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset),
-            };
-            let brightness = (top_adj + bottom_adj) / 2.0;
-            match color_mode {
-                ColorMode::TrueColor => {
-                    let rgb = palette::map_brightness_rgb(
-                        brightness,
-                        palette.clone(),
-                        reverse_palette,
-                        invert_palette,
-                        hue_shift,
-                    );
-                    Cell {
-                        char,
-                        fg_color_256: None,
-                        bg_color_256: None,
-                        fg_color_rgb: Some(rgb),
-                        bg_color_rgb: None,
-                    }
-                }
-                _ => {
-                    let color = palette::map_brightness(
-                        brightness,
-                        palette.clone(),
-                        reverse_palette,
-                        invert_palette,
-                    );
-                    Cell {
-                        char,
-                        fg_color_256: Some(color),
-                        bg_color_256: None,
-                        fg_color_rgb: None,
-                        bg_color_rgb: None,
-                    }
-                }
-            }
-        } else if top_adj > bottom_adj {
-            let brightness = top_adj;
-            let char = match charset {
-                Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
-                Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
-                Charset::Ascii => charset::map_ascii_directional(brightness, true),
-            };
-            match color_mode {
-                ColorMode::TrueColor => {
-                    let rgb = palette::map_brightness_rgb(
-                        brightness,
-                        palette.clone(),
-                        reverse_palette,
-                        invert_palette,
-                        hue_shift,
-                    );
-                    Cell {
-                        char,
-                        fg_color_256: None,
-                        bg_color_256: None,
-                        fg_color_rgb: Some(rgb),
-                        bg_color_rgb: None,
-                    }
-                }
-                _ => {
-                    let color = palette::map_brightness(
-                        brightness,
-                        palette.clone(),
-                        reverse_palette,
-                        invert_palette,
-                    );
-                    Cell {
-                        char,
-                        fg_color_256: Some(color),
-                        bg_color_256: None,
-                        fg_color_rgb: None,
-                        bg_color_rgb: None,
-                    }
-                }
-            }
         } else {
-            let brightness = bottom_adj;
-            let char = match charset {
-                Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
-                Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
-                Charset::Ascii => charset::map_ascii_directional(brightness, false),
+            let char = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
+                match charset {
+                    Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
+                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
+                    _ => charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset),
+                }
+            } else if top_adj > bottom_adj {
+                match charset {
+                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
+                    Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
+                    Charset::Ascii => charset::map_ascii_directional(top_adj, true),
+                }
+            } else {
+                match charset {
+                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
+                    Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
+                    Charset::Ascii => charset::map_ascii_directional(bottom_adj, false),
+                }
             };
-            match color_mode {
-                ColorMode::TrueColor => {
-                    let rgb = palette::map_brightness_rgb(
+
+            let brightness = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
+                (top_adj + bottom_adj) / 2.0
+            } else if top_adj > bottom_adj {
+                top_adj
+            } else {
+                bottom_adj
+            };
+
+            self.render_colored_cell(
+                char,
+                brightness,
+                palette,
+                reverse_palette,
+                invert_palette,
+                color_mode,
+                hue_shift,
+                species_colors_enabled,
+                species_rgb_colors,
+            )
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_colored_cell(
+        &self,
+        char: char,
+        brightness: f32,
+        palette: &Palette,
+        reverse_palette: bool,
+        invert_palette: bool,
+        color_mode: ColorMode,
+        hue_shift: f32,
+        species_colors_enabled: bool,
+        species_rgb_colors: Option<&[RgbColor]>,
+    ) -> Cell {
+        match color_mode {
+            ColorMode::TrueColor => {
+                let rgb = if species_colors_enabled {
+                    let base_color = species_rgb_colors
+                        .and_then(|colors| colors.first())
+                        .copied()
+                        .unwrap_or(RgbColor {
+                            r: 128,
+                            g: 128,
+                            b: 128,
+                        });
+                    palette::map_species_brightness_rgb(brightness, base_color, reverse_palette)
+                } else {
+                    palette::map_brightness_rgb(
                         brightness,
                         palette.clone(),
                         reverse_palette,
                         invert_palette,
                         hue_shift,
-                    );
-                    Cell {
-                        char,
-                        fg_color_256: None,
-                        bg_color_256: None,
-                        fg_color_rgb: Some(rgb),
-                        bg_color_rgb: None,
-                    }
+                    )
+                };
+                Cell {
+                    char,
+                    fg_color_256: None,
+                    bg_color_256: None,
+                    fg_color_rgb: Some(rgb),
+                    bg_color_rgb: None,
                 }
-                _ => {
-                    let color = palette::map_brightness(
+            }
+            _ => {
+                let color = if species_colors_enabled {
+                    let base_color = species_rgb_colors
+                        .and_then(|colors| colors.first())
+                        .copied()
+                        .unwrap_or(RgbColor {
+                            r: 128,
+                            g: 128,
+                            b: 128,
+                        });
+                    palette::map_species_brightness(brightness, base_color, reverse_palette)
+                } else {
+                    palette::map_brightness(
                         brightness,
                         palette.clone(),
                         reverse_palette,
                         invert_palette,
-                    );
-                    Cell {
-                        char,
-                        fg_color_256: Some(color),
-                        bg_color_256: None,
-                        fg_color_rgb: None,
-                        bg_color_rgb: None,
-                    }
+                    )
+                };
+                Cell {
+                    char,
+                    fg_color_256: Some(color),
+                    bg_color_256: None,
+                    fg_color_rgb: None,
+                    bg_color_rgb: None,
                 }
             }
         }
@@ -460,6 +467,8 @@ pub fn render_frame(
     dither_intensity: f32,
     error_diffusion_enabled: bool,
     error_reset_interval: usize,
+    species_colors_enabled: bool,
+    species_rgb_colors: Option<Vec<RgbColor>>,
 ) -> io::Result<()> {
     let buffer = FrameBuffer::from_downsampled(
         downsampled,
@@ -476,6 +485,8 @@ pub fn render_frame(
         dither_intensity,
         error_diffusion_enabled,
         error_reset_interval,
+        species_colors_enabled,
+        species_rgb_colors,
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -495,6 +506,8 @@ pub struct TerminalRenderer {
     dither_intensity: f32,
     error_diffusion_enabled: bool,
     error_reset_interval: usize,
+    species_colors_enabled: bool,
+    species_rgb_colors: Vec<RgbColor>,
 }
 
 impl TerminalRenderer {
@@ -521,6 +534,8 @@ impl TerminalRenderer {
             dither_intensity: 0.5,
             error_diffusion_enabled: false,
             error_reset_interval: 60,
+            species_colors_enabled: false,
+            species_rgb_colors: Vec::new(),
         }
     }
 
@@ -559,6 +574,11 @@ impl TerminalRenderer {
         self.charset = charset;
     }
 
+    pub fn set_species_colors(&mut self, enabled: bool, colors: Vec<RgbColor>) {
+        self.species_colors_enabled = enabled;
+        self.species_rgb_colors = colors;
+    }
+
     #[allow(dead_code)]
     pub fn stdout_mut(&mut self) -> &mut Stdout {
         &mut self.stdout
@@ -585,6 +605,12 @@ impl TerminalRenderer {
             self.dither_intensity,
             self.error_diffusion_enabled,
             self.error_reset_interval,
+            self.species_colors_enabled,
+            if self.species_colors_enabled {
+                Some(self.species_rgb_colors.clone())
+            } else {
+                None
+            },
         );
 
         execute!(self.stdout, &buffer)
@@ -613,7 +639,93 @@ impl TerminalRenderer {
             self.dither_intensity,
             self.error_diffusion_enabled,
             self.error_reset_interval,
+            self.species_colors_enabled,
+            if self.species_colors_enabled {
+                Some(self.species_rgb_colors.clone())
+            } else {
+                None
+            },
         );
+
+        if let Some((lines, x, y)) = help_lines {
+            buffer.draw_text_overlay(lines, x, y, 15, Some(236));
+        }
+
+        if let Some((line, x)) = status_line {
+            let line_chars: Vec<char> = line.chars().collect();
+            buffer.draw_text_overlay(
+                &[&line_chars.iter().collect::<String>()],
+                x,
+                self.height.saturating_sub(2),
+                14,
+                Some(234),
+            );
+        }
+
+        if let Some((text, x)) = paused_line {
+            let text_chars: Vec<char> = text.chars().collect();
+            buffer.draw_text_overlay(
+                &[&text_chars.iter().collect::<String>()],
+                x,
+                2,
+                15,
+                Some(196),
+            );
+        }
+
+        execute!(self.stdout, &buffer)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_multi_species_with_overlay<T: AsRef<str>>(
+        &mut self,
+        trail_maps: &[(&[f32], RgbColor)],
+        sim_width: usize,
+        sim_height: usize,
+        max_trail_value: f32,
+        help_lines: Option<(&[T], usize, usize)>,
+        status_line: Option<(String, usize)>,
+        paused_line: Option<(String, usize)>,
+    ) -> io::Result<()> {
+        let mut buffer = FrameBuffer::new(self.width, self.height, self.color_mode);
+        buffer.species_colors_enabled = true;
+        buffer.species_rgb_colors = self.species_rgb_colors.clone();
+
+        for (trail_map, species_color) in trail_maps {
+            let downsampled = downsample_multi_species(
+                &[(trail_map, 0)],
+                sim_width,
+                sim_height,
+                self.width,
+                self.height,
+            );
+
+            let species_color_vec = vec![*species_color];
+            let species_buffer = FrameBuffer::from_downsampled(
+                downsampled.cells(),
+                self.width,
+                self.height,
+                max_trail_value,
+                self.palette.clone(),
+                self.charset,
+                self.reverse_palette,
+                self.invert_palette,
+                self.color_mode,
+                self.hue_shift,
+                self.dither_enabled,
+                self.dither_intensity,
+                self.error_diffusion_enabled,
+                self.error_reset_interval,
+                true,
+                Some(species_color_vec),
+            );
+
+            for (i, cell) in species_buffer.cells.iter().enumerate() {
+                if cell.char != ' ' {
+                    buffer.cells[i] = *cell;
+                }
+            }
+        }
 
         if let Some((lines, x, y)) = help_lines {
             buffer.draw_text_overlay(lines, x, y, 15, Some(236));
@@ -746,6 +858,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, ' ');
         assert!(cell.fg_color_256.is_none());
@@ -771,6 +885,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_some());
@@ -796,6 +912,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_none());
@@ -821,6 +939,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -844,6 +964,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color_256.is_some());
@@ -867,6 +989,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -890,6 +1014,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color_256.is_some());
@@ -913,6 +1039,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, '\u{2807}');
         assert!(cell.fg_color_256.is_some());
@@ -936,6 +1064,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, '\u{2838}');
         assert!(cell.fg_color_256.is_some());
@@ -959,6 +1089,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
@@ -982,6 +1114,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
@@ -1005,6 +1139,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, '^');
         assert!(cell.fg_color_256.is_some());
@@ -1028,6 +1164,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, 'v');
         assert!(cell.fg_color_256.is_some());
@@ -1051,6 +1189,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
@@ -1074,6 +1214,8 @@ mod tests {
             0.0,
             false,
             0.5,
+            false,
+            None,
         );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
@@ -1161,6 +1303,8 @@ mod tests {
             0.5,
             false,
             60,
+            false,
+            None,
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -1197,6 +1341,8 @@ mod tests {
             0.5,
             false,
             60,
+            false,
+            None,
         );
 
         assert_eq!(buffer.cells[0].char, '▀');
@@ -1278,5 +1424,39 @@ mod tests {
         );
         renderer.set_charset(Charset::Ascii);
         assert_eq!(renderer.charset, Charset::Ascii);
+    }
+
+    #[test]
+    fn test_downsample_multi_species() {
+        let trail1 = vec![10.0; 100];
+        let trail2 = vec![5.0; 100];
+
+        let result = downsample_multi_species(&[(&trail1, 0), (&trail2, 1)], 10, 10, 5, 5);
+
+        for cell in result.cells() {
+            assert!(
+                (cell.top - 15.0).abs() < 0.001,
+                "Expected 15.0, got {}",
+                cell.top
+            );
+            assert!(
+                (cell.bottom - 15.0).abs() < 0.001,
+                "Expected 15.0, got {}",
+                cell.bottom
+            );
+        }
+    }
+
+    #[test]
+    fn test_downsample_multi_species_empty() {
+        let trail1 = vec![0.0; 100];
+        let trail2 = vec![0.0; 100];
+
+        let result = downsample_multi_species(&[(&trail1, 0), (&trail2, 1)], 10, 10, 5, 5);
+
+        for cell in result.cells() {
+            assert_eq!(cell.top, 0.0);
+            assert_eq!(cell.bottom, 0.0);
+        }
     }
 }

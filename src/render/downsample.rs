@@ -11,6 +11,13 @@ pub struct Cell {
     pub bottom: f32,
 }
 
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub struct MultiSpeciesCell {
+    pub brightness: f32,
+    pub species_index: usize,
+}
+
 impl DownsampledFrame {
     pub fn new(width: usize, height: usize) -> Self {
         Self {
@@ -91,6 +98,61 @@ pub fn downsample(
                 sim_x_start,
                 sim_x_end,
             );
+
+            frame.cells[cy * term_width + cx] = Cell {
+                top: top_brightness,
+                bottom: bottom_brightness,
+            };
+        }
+    }
+
+    frame
+}
+
+pub fn downsample_multi_species(
+    trail_maps: &[(&[f32], usize)],
+    sim_width: usize,
+    sim_height: usize,
+    term_width: usize,
+    term_height: usize,
+) -> DownsampledFrame {
+    let mut frame = DownsampledFrame::new(term_width, term_height);
+
+    let x_scale = sim_width as f32 / term_width as f32;
+    let y_scale = sim_height as f32 / term_height as f32;
+
+    for cy in 0..term_height {
+        for cx in 0..term_width {
+            let sim_x_start = (cx as f32 * x_scale) as usize;
+            let sim_x_end = (((cx + 1) as f32 * x_scale).ceil() as usize).min(sim_width);
+
+            let sim_y_start = (cy as f32 * y_scale) as usize;
+            let sim_y_mid = (((cy as f32 + 0.5) * y_scale).ceil() as usize).max(sim_y_start + 1);
+            let sim_y_end = (((cy + 1) as f32 * y_scale).ceil() as usize).min(sim_height);
+
+            let mut top_brightness = 0.0f32;
+            let mut bottom_brightness = 0.0f32;
+
+            for (trail_map, _species_idx) in trail_maps {
+                let t = compute_average(
+                    trail_map,
+                    sim_width,
+                    sim_y_start,
+                    sim_y_mid,
+                    sim_x_start,
+                    sim_x_end,
+                );
+                let b = compute_average(
+                    trail_map,
+                    sim_width,
+                    sim_y_mid,
+                    sim_y_end,
+                    sim_x_start,
+                    sim_x_end,
+                );
+                top_brightness += t;
+                bottom_brightness += b;
+            }
 
             frame.cells[cy * term_width + cx] = Cell {
                 top: top_brightness,

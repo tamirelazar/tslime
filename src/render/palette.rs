@@ -1312,6 +1312,66 @@ pub fn invert_256_color(color_code: u8) -> u8 {
     rgb_to_256(new_rgb)
 }
 
+pub fn hex_to_rgb(hex: &str) -> Option<RgbColor> {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some(RgbColor { r, g, b })
+}
+
+pub fn map_species_brightness(brightness: f32, base_color: RgbColor, reverse: bool) -> u8 {
+    let hsv = rgb_to_hsv(base_color);
+    let brightness = if reverse {
+        1.0 - brightness
+    } else {
+        brightness
+    };
+
+    let t = brightness.clamp(0.0, 1.0);
+
+    let min_s = 0.05;
+    let max_s = hsv.s.max(0.1);
+    let min_v = 0.08;
+    let max_v = (hsv.v * 0.9 + 0.1).min(0.95);
+
+    let s = min_s + (max_s - min_s) * t;
+    let v = min_v + (max_v - min_v) * t;
+
+    let final_hsv = HsvColor { h: hsv.h, s, v };
+    let final_rgb = hsv_to_rgb(final_hsv);
+    rgb_to_256(final_rgb)
+}
+
+pub fn map_species_brightness_rgb(
+    brightness: f32,
+    base_color: RgbColor,
+    reverse: bool,
+) -> RgbColor {
+    let hsv = rgb_to_hsv(base_color);
+    let brightness = if reverse {
+        1.0 - brightness
+    } else {
+        brightness
+    };
+
+    let t = brightness.clamp(0.0, 1.0);
+
+    let min_s = 0.05;
+    let max_s = hsv.s.max(0.1);
+    let min_v = 0.08;
+    let max_v = (hsv.v * 0.9 + 0.1).min(0.95);
+
+    let s = min_s + (max_s - min_s) * t;
+    let v = min_v + (max_v - min_v) * t;
+
+    let final_hsv = HsvColor { h: hsv.h, s, v };
+    hsv_to_rgb(final_hsv)
+}
+
 const ORGANIC_GRADIENT: [u8; 11] = [232, 22, 28, 34, 40, 46, 82, 118, 154, 190, 226];
 
 const ORGANIC_RGB: [RgbColor; 11] = [
@@ -2708,5 +2768,60 @@ mod tests {
     #[test]
     fn test_map_brightness_rgb_hue_shift_with_reverse() {
         let _color_shifted = map_brightness_rgb(0.5, Palette::Organic, true, false, 90.0);
+    }
+
+    #[test]
+    fn test_hex_to_rgb_valid() {
+        let rgb = hex_to_rgb("ff0000").unwrap();
+        assert_eq!(rgb.r, 255);
+        assert_eq!(rgb.g, 0);
+        assert_eq!(rgb.b, 0);
+    }
+
+    #[test]
+    fn test_hex_to_rgb_with_hash() {
+        let rgb = hex_to_rgb("#00ff00").unwrap();
+        assert_eq!(rgb.r, 0);
+        assert_eq!(rgb.g, 255);
+        assert_eq!(rgb.b, 0);
+    }
+
+    #[test]
+    fn test_hex_to_rgb_invalid() {
+        assert!(hex_to_rgb("invalid").is_none());
+        assert!(hex_to_rgb("fff").is_none());
+    }
+
+    #[test]
+    fn test_map_species_brightness() {
+        let base_color = RgbColor { r: 255, g: 0, b: 0 };
+        let dark = map_species_brightness(0.0, base_color, false);
+        let light = map_species_brightness(1.0, base_color, false);
+        assert_ne!(dark, light, "Dark and light colors should be different");
+    }
+
+    #[test]
+    fn test_map_species_brightness_reverse() {
+        let base_color = RgbColor { r: 0, g: 0, b: 255 };
+        let dark = map_species_brightness(0.0, base_color, false);
+        let light = map_species_brightness(1.0, base_color, false);
+        let dark_rev = map_species_brightness(0.0, base_color, true);
+        let light_rev = map_species_brightness(1.0, base_color, true);
+        assert_ne!(
+            dark_rev, light_rev,
+            "Reversed dark and light should be different"
+        );
+    }
+
+    #[test]
+    fn test_map_species_brightness_rgb() {
+        let base_color = RgbColor {
+            r: 255,
+            g: 128,
+            b: 0,
+        };
+        let dark = map_species_brightness_rgb(0.0, base_color, false);
+        let light = map_species_brightness_rgb(1.0, base_color, false);
+        assert_ne!(dark.r, light.r, "Red channel should differ");
     }
 }

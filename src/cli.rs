@@ -2,9 +2,11 @@ use clap::Parser;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
-use crate::simulation::config::{Attractor, DiffusionKernel, InitMode, Preset, SimConfig};
+use crate::simulation::config::{
+    Attractor, DiffusionKernel, InitMode, Preset, SimConfig, SpeciesConfig,
+};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
     Default,
     Live,
@@ -42,6 +44,136 @@ pub enum Palette {
 pub struct Resolution {
     pub width: usize,
     pub height: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpeciesArg {
+    pub name: String,
+    pub count: usize,
+    pub sensor_angle: f32,
+    pub rotation_angle: f32,
+    pub step_size: f32,
+    pub deposit_amount: f32,
+    pub color: String,
+}
+
+impl std::str::FromStr for SpeciesArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let name_and_count_parts: Vec<&str> = s.splitn(2, ':').collect();
+        if name_and_count_parts.len() < 2 {
+            return Err(format!(
+                "Species must be in format 'name:count@params:color' or 'name:count:color', got: {}", s
+            ));
+        }
+
+        let name = name_and_count_parts[0].to_string();
+        let rest = name_and_count_parts[1];
+
+        let mut sensor_angle = 22.5;
+        let mut rotation_angle = 45.0;
+        let mut step_size = 1.0;
+        let mut deposit_amount = 5.0;
+        let mut color = "228b22".to_string();
+
+        if rest.contains('@') {
+            let count_and_rest: Vec<&str> = rest.splitn(2, '@').collect();
+            let count_str = count_and_rest[0];
+            let count = parse_count(count_str)?;
+
+            if count_and_rest.len() >= 2 {
+                let params_and_color = count_and_rest[1];
+                if params_and_color.contains(':') {
+                    let params_parts: Vec<&str> = params_and_color.rsplitn(2, ':').collect();
+                    if params_parts.len() == 2 {
+                        let params = params_parts[1];
+                        let color_part = params_parts[0];
+
+                        if color_part.starts_with('#') || color_part.len() == 6 {
+                            color = color_part.trim_start_matches('#').to_string();
+                        }
+
+                        let param_values: Vec<&str> = params.split(',').collect();
+                        if !param_values.is_empty() {
+                            if let Ok(v) = param_values[0].parse::<f32>() {
+                                sensor_angle = v;
+                            }
+                        }
+                        if param_values.len() >= 2 {
+                            if let Ok(v) = param_values[1].parse::<f32>() {
+                                rotation_angle = v;
+                            }
+                        }
+                        if param_values.len() >= 3 {
+                            if let Ok(v) = param_values[2].parse::<f32>() {
+                                step_size = v;
+                            }
+                        }
+                        if param_values.len() >= 4 {
+                            if let Ok(v) = param_values[3].parse::<f32>() {
+                                deposit_amount = v;
+                            }
+                        }
+                    }
+                } else if params_and_color.starts_with('#') || params_and_color.len() == 6 {
+                    color = params_and_color.trim_start_matches('#').to_string();
+                }
+            }
+
+            Ok(SpeciesArg {
+                name,
+                count,
+                sensor_angle,
+                rotation_angle,
+                step_size,
+                deposit_amount,
+                color,
+            })
+        } else {
+            let parts: Vec<&str> = rest.rsplitn(2, ':').collect();
+            let count_str;
+            if parts.len() == 2 {
+                count_str = parts[1];
+                let color_part = parts[0];
+                if color_part.starts_with('#') || color_part.len() == 6 {
+                    color = color_part.trim_start_matches('#').to_string();
+                }
+            } else {
+                count_str = parts[0];
+            }
+            let count = parse_count(count_str)?;
+
+            Ok(SpeciesArg {
+                name,
+                count,
+                sensor_angle,
+                rotation_angle,
+                step_size,
+                deposit_amount,
+                color,
+            })
+        }
+    }
+}
+
+fn parse_count(s: &str) -> Result<usize, String> {
+    if s.ends_with('k') || s.ends_with('K') {
+        let num = &s[..s.len() - 1];
+        let val = num
+            .parse::<f64>()
+            .map_err(|e| format!("Invalid count: {}", e))?;
+        Ok((val * 1000.0) as usize)
+    } else if s.ends_with('m') || s.ends_with('M') {
+        let num = &s[..s.len() - 1];
+        let val = num
+            .parse::<f64>()
+            .map_err(|e| format!("Invalid count: {}", e))?;
+        Ok((val * 1000000.0) as usize)
+    } else {
+        s.parse::<usize>()
+            .map_err(|e| format!("Invalid count: {}", e))
+    }
 }
 
 impl std::str::FromStr for Resolution {
@@ -254,6 +386,14 @@ pub struct Args {
     pub decay_factor: f32,
 
     #[arg(
+        long = "deposit",
+        value_name = "FLOAT",
+        default_value = "5.0",
+        help = "Amount of pheromone deposited by agents per step"
+    )]
+    pub deposit_amount: f32,
+
+    #[arg(
         long = "max-brightness",
         value_name = "FLOAT",
         default_value = "20.0",
@@ -440,6 +580,25 @@ pub struct Args {
         help = "Enable Floyd-Steinberg error diffusion for smoother gradients (replaces ordered dither)"
     )]
     pub error_diffusion: bool,
+
+    #[arg(
+        long = "species",
+        value_name = "SPEC",
+        help = "Define agent species with format 'name:count@sensor_angle,rotation_angle,step_size,deposit:color'. Can be specified multiple times or comma-separated. Example: --species 'red:20k@22.5,45,1.0,5.0:ff0000,blue:30k@30,60,1.5,3.0:0000ff'"
+    )]
+    pub species: Vec<SpeciesArg>,
+
+    #[arg(
+        long = "separate-species-trails",
+        help = "Each species maintains its own separate trail map (higher memory, allows species-specific patterns)"
+    )]
+    pub separate_species_trails: bool,
+
+    #[arg(
+        long = "species-colors",
+        help = "Enable species-specific rendering using each species' configured color. Automatically enables --separate-species-trails."
+    )]
+    pub species_colors: bool,
 }
 
 impl Args {
@@ -493,7 +652,6 @@ impl Args {
             SimConfig::default()
         };
 
-        config.population = self.population;
         config.sensor_angle = self.sensor_angle;
         config.sensor_distance = self.sensor_distance;
         config.rotation_angle = self.rotation_angle;
@@ -520,6 +678,34 @@ impl Args {
             .map(|a| Attractor::new(a.x, a.y, a.strength))
             .collect();
         config.attractor_strength = self.attractor_strength;
+
+        config.separate_species_trails = self.separate_species_trails || self.species_colors;
+
+        if !self.species.is_empty() {
+            config.species_configs = self
+                .species
+                .iter()
+                .map(|s| SpeciesConfig {
+                    name: s.name.clone(),
+                    count: s.count,
+                    sensor_angle: s.sensor_angle,
+                    rotation_angle: s.rotation_angle,
+                    step_size: s.step_size,
+                    deposit_amount: s.deposit_amount,
+                    color: s.color.clone(),
+                })
+                .collect();
+        } else {
+            config.species_configs = vec![SpeciesConfig {
+                name: "default".to_string(),
+                count: self.population,
+                sensor_angle: self.sensor_angle,
+                rotation_angle: self.rotation_angle,
+                step_size: self.step_size,
+                deposit_amount: self.deposit_amount,
+                color: "228b22".to_string(),
+            }];
+        }
 
         config
     }
@@ -580,6 +766,7 @@ impl Default for Args {
             rotation_angle: 45.0,
             step_size: 1.0,
             decay_factor: 0.9,
+            deposit_amount: 5.0,
             max_brightness: 20.0,
             diffusion_kernel: None,
             diffusion_sigma: None,
@@ -614,6 +801,9 @@ impl Default for Args {
             dither: false,
             dither_intensity: 0.5,
             error_diffusion: false,
+            species: Vec::new(),
+            separate_species_trails: false,
+            species_colors: false,
         }
     }
 }
@@ -635,6 +825,7 @@ mod tests {
             rotation_angle: 45.0,
             step_size: 1.0,
             decay_factor: 0.9,
+            deposit_amount: 5.0,
             max_brightness: 20.0,
             diffusion_kernel: None,
             diffusion_sigma: None,
@@ -669,6 +860,9 @@ mod tests {
             dither: false,
             dither_intensity: 0.5,
             error_diffusion: false,
+            species: Vec::new(),
+            separate_species_trails: false,
+            species_colors: false,
         };
         assert_eq!(args.mode(), Mode::Default);
     }
@@ -820,5 +1014,54 @@ mod tests {
             ..Default::default()
         };
         assert!(args.validate().is_ok());
+    }
+
+    #[test]
+    fn test_species_arg_basic() {
+        let species: SpeciesArg = "red:20k@22.5,45,1.0,5.0:ff0000".parse().unwrap();
+        assert_eq!(species.name, "red");
+        assert_eq!(species.count, 20000);
+        assert!((species.sensor_angle - 22.5).abs() < 0.01);
+        assert!((species.rotation_angle - 45.0).abs() < 0.01);
+        assert!((species.step_size - 1.0).abs() < 0.01);
+        assert!((species.deposit_amount - 5.0).abs() < 0.01);
+        assert_eq!(species.color, "ff0000");
+    }
+
+    #[test]
+    fn test_species_arg_count_formats() {
+        let s1: SpeciesArg = "red:1000".parse().unwrap();
+        assert_eq!(s1.count, 1000);
+
+        let s2: SpeciesArg = "red:10k".parse().unwrap();
+        assert_eq!(s2.count, 10000);
+
+        let s3: SpeciesArg = "red:1m".parse().unwrap();
+        assert_eq!(s3.count, 1000000);
+    }
+
+    #[test]
+    fn test_species_arg_color_formats() {
+        let s1: SpeciesArg = "red:1000:ff0000".parse().unwrap();
+        assert_eq!(s1.color, "ff0000");
+
+        let s2: SpeciesArg = "red:1000:#00ff00".parse().unwrap();
+        assert_eq!(s2.color, "00ff00");
+    }
+
+    #[test]
+    fn test_species_arg_defaults() {
+        let species: SpeciesArg = "red:1000".parse().unwrap();
+        assert_eq!(species.sensor_angle, 22.5);
+        assert_eq!(species.rotation_angle, 45.0);
+        assert_eq!(species.step_size, 1.0);
+        assert_eq!(species.deposit_amount, 5.0);
+        assert_eq!(species.color, "228b22");
+    }
+
+    #[test]
+    fn test_species_arg_invalid_format() {
+        assert!("red".parse::<SpeciesArg>().is_err());
+        assert!("red:invalid".parse::<SpeciesArg>().is_err());
     }
 }

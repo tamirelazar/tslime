@@ -9,11 +9,17 @@ pub struct Agent {
     pub x: f32,
     pub y: f32,
     pub heading: f32,
+    pub species_id: u8,
 }
 
 impl Agent {
-    pub fn new(x: f32, y: f32, heading: f32) -> Self {
-        Self { x, y, heading }
+    pub fn new(x: f32, y: f32, heading: f32, species_id: u8) -> Self {
+        Self {
+            x,
+            y,
+            heading,
+            species_id,
+        }
     }
 
     pub fn sense(
@@ -166,20 +172,21 @@ mod tests {
 
     #[test]
     fn test_agent_creation() {
-        let agent = Agent::new(200.0, 200.0, 0.0);
+        let agent = Agent::new(200.0, 200.0, 0.0, 0);
         assert_eq!(agent.x, 200.0);
         assert_eq!(agent.y, 200.0);
         assert_eq!(agent.heading, 0.0);
+        assert_eq!(agent.species_id, 0);
     }
 
     #[test]
     fn test_agent_size() {
-        assert_eq!(std::mem::size_of::<Agent>(), 12);
+        assert_eq!(std::mem::size_of::<Agent>(), 16);
     }
 
     #[test]
     fn test_move_forward() {
-        let mut agent = Agent::new(100.0, 100.0, 0.0);
+        let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
         agent.move_forward(1.0, 400, 400);
         assert!((agent.x - 101.0).abs() < 0.001);
         assert!((agent.y - 100.0).abs() < 0.001);
@@ -187,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_move_with_heading_90() {
-        let mut agent = Agent::new(100.0, 100.0, PI / 2.0);
+        let mut agent = Agent::new(100.0, 100.0, PI / 2.0, 0);
         agent.move_forward(1.0, 400, 400);
         assert!((agent.x - 100.0).abs() < 0.001);
         assert!((agent.y - 101.0).abs() < 0.001);
@@ -195,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_boundary_handling() {
-        let mut agent = Agent::new(0.5, 200.0, PI);
+        let mut agent = Agent::new(0.5, 200.0, PI, 0);
         agent.move_forward(2.0, 400, 400);
         assert!(agent.x >= 0.0);
     }
@@ -203,7 +210,7 @@ mod tests {
     #[test]
     fn test_deposit() {
         let mut trail = vec![0.0; 400 * 400];
-        let agent = Agent::new(100.0, 100.0, 0.0);
+        let agent = Agent::new(100.0, 100.0, 0.0, 0);
         agent.deposit(&mut trail, 400, 400, 5.0);
         assert_eq!(trail[100 * 400 + 100], 5.0);
     }
@@ -211,7 +218,7 @@ mod tests {
     #[test]
     fn test_sense() {
         let mut trail = vec![0.0; 400 * 400];
-        let agent = Agent::new(100.0, 100.0, 0.0);
+        let agent = Agent::new(100.0, 100.0, 0.0, 0);
         let sensor_x = (100.0 + 0.0_f32.cos() * 9.0) as usize;
         let sensor_y = 100_usize;
         trail[sensor_y * 400 + sensor_x] = 10.0;
@@ -221,7 +228,7 @@ mod tests {
 
     #[test]
     fn test_rotate_center_strongest() {
-        let mut agent = Agent::new(100.0, 100.0, 0.0);
+        let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(42);
         agent.rotate(1.0, 10.0, 1.0, 45.0, &mut rng);
         assert_eq!(agent.heading, 0.0);
@@ -229,7 +236,7 @@ mod tests {
 
     #[test]
     fn test_rotate_left_strongest() {
-        let mut agent = Agent::new(100.0, 100.0, 0.0);
+        let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(42);
         agent.rotate(10.0, 1.0, 1.0, 45.0, &mut rng);
         assert!((agent.heading - (-45.0 * PI / 180.0)).abs() < 0.001);
@@ -237,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_rotate_right_strongest() {
-        let mut agent = Agent::new(100.0, 100.0, 0.0);
+        let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(42);
         agent.rotate(1.0, 1.0, 10.0, 45.0, &mut rng);
         assert!((agent.heading - (45.0 * PI / 180.0)).abs() < 0.001);
@@ -245,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_apply_attractor_forces_attract() {
-        let mut agent = Agent::new(100.0, 100.0, PI / 2.0);
+        let mut agent = Agent::new(100.0, 100.0, PI / 2.0, 0);
         let attractors = vec![Attractor::new(150.0, 200.0, 1.0)];
         agent.apply_attractor_forces(&attractors, 1.0, 400, 400);
         assert!(
@@ -257,7 +264,7 @@ mod tests {
 
     #[test]
     fn test_apply_attractor_forces_repel() {
-        let mut agent = Agent::new(100.0, 100.0, PI / 2.0);
+        let mut agent = Agent::new(100.0, 100.0, PI / 2.0, 0);
         let attractors = vec![Attractor::new(150.0, 200.0, -1.0)];
         agent.apply_attractor_forces(&attractors, 1.0, 400, 400);
         assert!(
@@ -269,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_apply_attractor_forces_no_attractors() {
-        let mut agent = Agent::new(100.0, 100.0, 0.0);
+        let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
         let original_heading = agent.heading;
         agent.apply_attractor_forces(&[], 1.0, 400, 400);
         assert_eq!(agent.heading, original_heading);
@@ -277,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_apply_attractor_forces_multiple() {
-        let mut agent = Agent::new(200.0, 200.0, 0.0);
+        let mut agent = Agent::new(200.0, 200.0, 0.0, 0);
         let attractors = vec![
             Attractor::new(100.0, 200.0, 1.0),
             Attractor::new(300.0, 200.0, 1.0),

@@ -49,10 +49,19 @@ fn normalize_output(output: &str) -> String {
         .join("\n")
 }
 
+fn should_update_golden() -> bool {
+    std::env::var("UPDATE_GOLDEN").is_ok()
+}
+
 #[test]
 fn test_visual_regression_default_seed() {
     let output = capture_print_output(&["-s", "1"], 80, 24);
     let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("default_seed", &normalized).unwrap();
+        return;
+    }
 
     match load_golden("default_seed") {
         Ok(golden) => {
@@ -75,6 +84,11 @@ fn test_visual_regression_seed_42() {
     let output = capture_print_output(&["-s", "42"], 80, 24);
     let normalized = normalize_output(&output);
 
+    if should_update_golden() {
+        update_golden("seed_42", &normalized).unwrap();
+        return;
+    }
+
     match load_golden("seed_42") {
         Ok(golden) => {
             assert_eq!(
@@ -95,6 +109,11 @@ fn test_visual_regression_seed_42() {
 fn test_visual_regression_seed_123() {
     let output = capture_print_output(&["-s", "123"], 80, 24);
     let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("seed_123", &normalized).unwrap();
+        return;
+    }
 
     match load_golden("seed_123") {
         Ok(golden) => {
@@ -117,6 +136,11 @@ fn test_visual_regression_network_preset() {
     let output = capture_print_output(&["-s", "42", "--preset", "network"], 80, 24);
     let normalized = normalize_output(&output);
 
+    if should_update_golden() {
+        update_golden("network_preset", &normalized).unwrap();
+        return;
+    }
+
     match load_golden("network_preset") {
         Ok(golden) => {
             assert_eq!(
@@ -137,6 +161,11 @@ fn test_visual_regression_network_preset() {
 fn test_visual_regression_exploratory_preset() {
     let output = capture_print_output(&["-s", "42", "--preset", "exploratory"], 80, 24);
     let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("exploratory_preset", &normalized).unwrap();
+        return;
+    }
 
     match load_golden("exploratory_preset") {
         Ok(golden) => {
@@ -159,6 +188,11 @@ fn test_visual_regression_heat_palette() {
     let output = capture_print_output(&["-s", "42", "--palette", "heat"], 80, 24);
     let normalized = normalize_output(&output);
 
+    if should_update_golden() {
+        update_golden("heat_palette", &normalized).unwrap();
+        return;
+    }
+
     match load_golden("heat_palette") {
         Ok(golden) => {
             assert_eq!(
@@ -179,6 +213,11 @@ fn test_visual_regression_heat_palette() {
 fn test_visual_regression_ocean_palette() {
     let output = capture_print_output(&["-s", "42", "--palette", "ocean"], 80, 24);
     let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("ocean_palette", &normalized).unwrap();
+        return;
+    }
 
     match load_golden("ocean_palette") {
         Ok(golden) => {
@@ -201,6 +240,11 @@ fn test_visual_regression_ascii_mode() {
     let output = capture_print_output(&["-s", "42", "--ascii"], 80, 24);
     let normalized = normalize_output(&output);
 
+    if should_update_golden() {
+        update_golden("ascii_mode", &normalized).unwrap();
+        return;
+    }
+
     match load_golden("ascii_mode") {
         Ok(golden) => {
             assert_eq!(
@@ -222,6 +266,11 @@ fn test_visual_regression_braille_mode() {
     let output = capture_print_output(&["-s", "42", "--braille"], 80, 24);
     let normalized = normalize_output(&output);
 
+    if should_update_golden() {
+        update_golden("braille_mode", &normalized).unwrap();
+        return;
+    }
+
     match load_golden("braille_mode") {
         Ok(golden) => {
             assert_eq!(
@@ -242,6 +291,11 @@ fn test_visual_regression_braille_mode() {
 fn test_visual_regression_small_terminal() {
     let output = capture_print_output(&["-s", "42"], 40, 12);
     let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("small_terminal", &normalized).unwrap();
+        return;
+    }
 
     match load_golden("small_terminal") {
         Ok(golden) => {
@@ -302,6 +356,11 @@ fn test_visual_regression_gaussian_diffusion() {
         24,
     );
     let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("gaussian_diffusion", &normalized).unwrap();
+        return;
+    }
 
     match load_golden("gaussian_diffusion") {
         Ok(golden) => {

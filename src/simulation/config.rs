@@ -37,9 +37,69 @@ impl Attractor {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpeciesConfig {
+    pub name: String,
+    pub count: usize,
+    pub sensor_angle: f32,
+    pub rotation_angle: f32,
+    pub step_size: f32,
+    pub deposit_amount: f32,
+    pub color: String,
+}
+
+impl Default for SpeciesConfig {
+    fn default() -> Self {
+        Self {
+            name: "default".to_string(),
+            count: 50_000,
+            sensor_angle: 22.5,
+            rotation_angle: 45.0,
+            step_size: 1.0,
+            deposit_amount: 5.0,
+            color: "228b22".to_string(),
+        }
+    }
+}
+
+impl SpeciesConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.count < 100 || self.count > 200_000 {
+            return Err(format!(
+                "species '{}' count must be between 100 and 200000, got {}",
+                self.name, self.count
+            ));
+        }
+        if self.sensor_angle < 5.0 || self.sensor_angle > 90.0 {
+            return Err(format!(
+                "species '{}' sensor_angle must be between 5.0 and 90.0, got {}",
+                self.name, self.sensor_angle
+            ));
+        }
+        if self.rotation_angle < 5.0 || self.rotation_angle > 90.0 {
+            return Err(format!(
+                "species '{}' rotation_angle must be between 5.0 and 90.0, got {}",
+                self.name, self.rotation_angle
+            ));
+        }
+        if self.step_size < 0.5 || self.step_size > 5.0 {
+            return Err(format!(
+                "species '{}' step_size must be between 0.5 and 5.0, got {}",
+                self.name, self.step_size
+            ));
+        }
+        if self.deposit_amount < 1.0 || self.deposit_amount > 20.0 {
+            return Err(format!(
+                "species '{}' deposit_amount must be between 1.0 and 20.0, got {}",
+                self.name, self.deposit_amount
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SimConfig {
-    pub population: usize,
     pub sensor_angle: f32,
     pub sensor_distance: f32,
     pub rotation_angle: f32,
@@ -51,12 +111,13 @@ pub struct SimConfig {
     pub max_brightness: f32,
     pub attractors: Vec<Attractor>,
     pub attractor_strength: f32,
+    pub species_configs: Vec<SpeciesConfig>,
+    pub separate_species_trails: bool,
 }
 
 impl Default for SimConfig {
     fn default() -> Self {
         Self {
-            population: 50_000,
             sensor_angle: 22.5,
             sensor_distance: 9.0,
             rotation_angle: 45.0,
@@ -68,16 +129,23 @@ impl Default for SimConfig {
             max_brightness: 20.0,
             attractors: Vec::new(),
             attractor_strength: 1.0,
+            species_configs: vec![SpeciesConfig::default()],
+            separate_species_trails: false,
         }
     }
 }
 
 impl SimConfig {
     pub fn validate(&self) -> Result<(), String> {
-        if self.population < 1000 || self.population > 200_000 {
+        if self.species_configs.is_empty() {
+            return Err("at least one species must be configured".to_string());
+        }
+        if self.species_configs.iter().map(|s| s.count).sum::<usize>() < 1000
+            || self.species_configs.iter().map(|s| s.count).sum::<usize>() > 200_000
+        {
             return Err(format!(
-                "population must be between 1000 and 200000, got {}",
-                self.population
+                "total population must be between 1000 and 200000, got {}",
+                self.species_configs.iter().map(|s| s.count).sum::<usize>()
             ));
         }
         if self.sensor_angle < 5.0 || self.sensor_angle > 90.0 {
@@ -142,7 +210,14 @@ impl SimConfig {
                 ));
             }
         }
+        for species in &self.species_configs {
+            species.validate()?;
+        }
         Ok(())
+    }
+
+    pub fn total_population(&self) -> usize {
+        self.species_configs.iter().map(|s| s.count).sum()
     }
 }
 
@@ -150,7 +225,6 @@ impl From<Preset> for SimConfig {
     fn from(preset: Preset) -> Self {
         match preset {
             Preset::Network => Self {
-                population: 50_000,
                 sensor_angle: 15.0,
                 sensor_distance: 9.0,
                 rotation_angle: 30.0,
@@ -162,9 +236,18 @@ impl From<Preset> for SimConfig {
                 max_brightness: 20.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 50_000,
+                    sensor_angle: 15.0,
+                    rotation_angle: 30.0,
+                    step_size: 1.0,
+                    deposit_amount: 5.0,
+                    color: "228b22".to_string(),
+                }],
+                separate_species_trails: false,
             },
             Preset::Exploratory => Self {
-                population: 30_000,
                 sensor_angle: 45.0,
                 sensor_distance: 15.0,
                 rotation_angle: 60.0,
@@ -176,9 +259,18 @@ impl From<Preset> for SimConfig {
                 max_brightness: 12.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 30_000,
+                    sensor_angle: 45.0,
+                    rotation_angle: 60.0,
+                    step_size: 1.0,
+                    deposit_amount: 3.0,
+                    color: "228b22".to_string(),
+                }],
+                separate_species_trails: false,
             },
             Preset::Tendrils => Self {
-                population: 40_000,
                 sensor_angle: 30.0,
                 sensor_distance: 12.0,
                 rotation_angle: 45.0,
@@ -190,10 +282,19 @@ impl From<Preset> for SimConfig {
                 max_brightness: 16.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 40_000,
+                    sensor_angle: 30.0,
+                    rotation_angle: 45.0,
+                    step_size: 2.0,
+                    deposit_amount: 4.0,
+                    color: "228b22".to_string(),
+                }],
+                separate_species_trails: false,
             },
             Preset::Organic => Self::default(),
             Preset::Minimal => Self {
-                population: 15_000,
                 sensor_angle: 30.0,
                 sensor_distance: 9.0,
                 rotation_angle: 30.0,
@@ -205,6 +306,16 @@ impl From<Preset> for SimConfig {
                 max_brightness: 15.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 15_000,
+                    sensor_angle: 30.0,
+                    rotation_angle: 30.0,
+                    step_size: 0.8,
+                    deposit_amount: 3.0,
+                    color: "228b22".to_string(),
+                }],
+                separate_species_trails: false,
             },
         }
     }
@@ -217,7 +328,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = SimConfig::default();
-        assert_eq!(config.population, 50_000);
+        assert_eq!(config.total_population(), 50_000);
         assert_eq!(config.sensor_angle, 22.5);
         assert_eq!(config.sensor_distance, 9.0);
         assert_eq!(config.rotation_angle, 45.0);
@@ -236,7 +347,10 @@ mod tests {
     #[test]
     fn test_validate_population_too_low() {
         let config = SimConfig {
-            population: 500,
+            species_configs: vec![SpeciesConfig {
+                count: 500,
+                ..Default::default()
+            }],
             ..Default::default()
         };
         assert!(config.validate().is_err());
@@ -245,7 +359,10 @@ mod tests {
     #[test]
     fn test_validate_population_too_high() {
         let config = SimConfig {
-            population: 300_000,
+            species_configs: vec![SpeciesConfig {
+                count: 300_000,
+                ..Default::default()
+            }],
             ..Default::default()
         };
         assert!(config.validate().is_err());
@@ -326,5 +443,65 @@ mod tests {
     fn test_negative_attractor_strength() {
         let attractor = Attractor::new(200.0, 200.0, -1.0);
         assert_eq!(attractor.strength, -1.0);
+    }
+
+    #[test]
+    fn test_species_config_default() {
+        let species = SpeciesConfig::default();
+        assert_eq!(species.count, 50_000);
+        assert_eq!(species.sensor_angle, 22.5);
+        assert_eq!(species.rotation_angle, 45.0);
+        assert_eq!(species.step_size, 1.0);
+        assert_eq!(species.deposit_amount, 5.0);
+    }
+
+    #[test]
+    fn test_species_config_validate_count_too_low() {
+        let species = SpeciesConfig {
+            count: 50,
+            ..Default::default()
+        };
+        assert!(species.validate().is_err());
+    }
+
+    #[test]
+    fn test_species_config_validate_count_too_high() {
+        let species = SpeciesConfig {
+            count: 300_000,
+            ..Default::default()
+        };
+        assert!(species.validate().is_err());
+    }
+
+    #[test]
+    fn test_total_population_single_species() {
+        let config = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 10000,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_eq!(config.total_population(), 10000);
+    }
+
+    #[test]
+    fn test_total_population_multiple_species() {
+        let config = SimConfig {
+            species_configs: vec![
+                SpeciesConfig {
+                    count: 10000,
+                    ..Default::default()
+                },
+                SpeciesConfig {
+                    count: 20000,
+                    name: "second".to_string(),
+                    color: "ff0000".to_string(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        assert_eq!(config.total_population(), 30000);
     }
 }

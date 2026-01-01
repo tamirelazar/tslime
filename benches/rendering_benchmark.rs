@@ -351,6 +351,10 @@ fn bench_framebuffer_256color(c: &mut Criterion) {
                 black_box(0.0),
                 black_box(false),
                 black_box(0.5),
+                black_box(false),
+                black_box(60),
+                black_box(false),
+                black_box(None),
             );
             black_box(buffer.build_frame_string(true));
         });
@@ -379,6 +383,10 @@ fn bench_framebuffer_truecolor(c: &mut Criterion) {
                 black_box(0.0),
                 black_box(false),
                 black_box(0.5),
+                black_box(false),
+                black_box(60),
+                black_box(false),
+                black_box(None),
             );
             black_box(buffer.build_frame_string(true));
         });
@@ -407,6 +415,10 @@ fn bench_framebuffer_large_256color(c: &mut Criterion) {
                 black_box(0.0),
                 black_box(false),
                 black_box(0.5),
+                black_box(false),
+                black_box(60),
+                black_box(false),
+                black_box(None),
             );
             black_box(buffer.build_frame_string(true));
         });
@@ -435,6 +447,10 @@ fn bench_framebuffer_large_truecolor(c: &mut Criterion) {
                 black_box(0.0),
                 black_box(false),
                 black_box(0.5),
+                black_box(false),
+                black_box(60),
+                black_box(false),
+                black_box(None),
             );
             black_box(buffer.build_frame_string(true));
         });
@@ -491,6 +507,10 @@ fn bench_color_mode_comparison(c: &mut Criterion) {
                 black_box(0.0),
                 black_box(false),
                 black_box(0.5),
+                black_box(false),
+                black_box(60),
+                black_box(false),
+                black_box(None),
             );
             black_box(buffer);
         });
@@ -511,6 +531,10 @@ fn bench_color_mode_comparison(c: &mut Criterion) {
                 black_box(0.0),
                 black_box(false),
                 black_box(0.5),
+                black_box(false),
+                black_box(60),
+                black_box(false),
+                black_box(None),
             );
             black_box(buffer);
         });

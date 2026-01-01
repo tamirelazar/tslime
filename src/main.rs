@@ -10,6 +10,7 @@ use cli::{Args, ColorMode, Mode};
 use render::adaptive_brightness::AdaptiveBrightness;
 use render::charset::Charset;
 use render::downsample::downsample;
+use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{Preset, SimConfig};
 use simulation::Simulation;
 use terminal::control::{handle_key_event, num_palettes, ControlAction, RuntimeState};
@@ -20,6 +21,14 @@ use terminal::signal::is_shutdown_requested;
 use terminal::timing::FrameTimer;
 
 const REFERENCE_TIME_STEP: f32 = 1.0 / 30.0;
+
+fn extract_species_rgb_colors(config: &SimConfig) -> Vec<RgbColor> {
+    config
+        .species_configs
+        .iter()
+        .filter_map(|s| hex_to_rgb(&s.color))
+        .collect()
+}
 
 fn main() -> io::Result<()> {
     let args = Args::parse();
@@ -96,6 +105,12 @@ fn print_mode(
         config.max_brightness
     };
 
+    let species_rgb_colors = if args.species_colors {
+        Some(extract_species_rgb_colors(&config))
+    } else {
+        None
+    };
+
     let buffer = FrameBuffer::from_downsampled(
         downsampled.cells(),
         term_width,
@@ -111,6 +126,8 @@ fn print_mode(
         args.dither_intensity,
         args.error_diffusion,
         60,
+        args.species_colors,
+        species_rgb_colors,
     );
 
     print!(
@@ -164,6 +181,12 @@ fn capture_frames_mode(
             config.max_brightness
         };
 
+        let species_rgb_colors = if args.species_colors {
+            Some(extract_species_rgb_colors(&config))
+        } else {
+            None
+        };
+
         let buffer = FrameBuffer::from_downsampled(
             downsampled.cells(),
             term_width,
@@ -179,6 +202,8 @@ fn capture_frames_mode(
             args.dither_intensity,
             args.error_diffusion,
             60,
+            args.species_colors,
+            species_rgb_colors,
         );
 
         let frame_content = buffer.build_frame_string(args.plain_output, color_mode);
@@ -290,6 +315,12 @@ fn run_simulation(
     runtime_state.dither_intensity = args.dither_intensity;
     renderer.set_dither(args.dither, args.dither_intensity);
 
+    let config = args.to_sim_config();
+    if args.species_colors {
+        let species_rgb_colors = extract_species_rgb_colors(&config);
+        renderer.set_species_colors(true, species_rgb_colors);
+    }
+
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
     let mut hue_offset: f32 = 0.0;
@@ -394,13 +425,32 @@ fn run_simulation(
         };
 
         if max_brightness > 0.0 {
-            renderer.render_with_overlay(
-                downsampled.cells(),
-                max_brightness,
-                help_lines.as_ref().map(|v| (v.as_slice(), 2, 2)),
-                status_data,
-                paused_data,
-            )?;
+            if args.species_colors && sim.config().separate_species_trails {
+                let species_trail_maps = sim.trail_maps_for_species_colors();
+                let species_rgb_colors = extract_species_rgb_colors(&current_config);
+                let combined: Vec<_> = species_trail_maps
+                    .iter()
+                    .zip(species_rgb_colors.iter())
+                    .map(|(tm, color)| (*tm, *color))
+                    .collect();
+                renderer.render_multi_species_with_overlay(
+                    &combined,
+                    sim.width(),
+                    sim.height(),
+                    max_brightness,
+                    help_lines.as_ref().map(|v| (v.as_slice(), 2, 2)),
+                    status_data,
+                    paused_data,
+                )?;
+            } else {
+                renderer.render_with_overlay(
+                    downsampled.cells(),
+                    max_brightness,
+                    help_lines.as_ref().map(|v| (v.as_slice(), 2, 2)),
+                    status_data,
+                    paused_data,
+                )?;
+            }
         }
 
         timer.end_render();

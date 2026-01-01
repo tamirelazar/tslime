@@ -81,7 +81,7 @@ impl TrailHistory {
 pub struct Simulation {
     config: SimConfig,
     agents: Vec<Agent>,
-    trail_map: TrailMap,
+    trail_maps: Vec<TrailMap>,
     rng: Rng,
     trail_history: Option<TrailHistory>,
 }
@@ -96,30 +96,19 @@ impl Simulation {
         trail_history_capacity: usize,
     ) -> Self {
         let mut rng = Rng::seed_from_u64(seed);
-        let mut agents = Vec::with_capacity(config.population);
+        let total_population = config.total_population();
+        let mut agents = Vec::with_capacity(total_population);
 
-        match init_mode {
-            InitMode::Random => {
-                Self::init_random(&mut rng, width, height, &mut agents, config.population);
-            }
-            InitMode::CentralBurst => {
-                Self::init_central_burst(&mut rng, width, height, &mut agents, config.population);
-            }
-            InitMode::Circle => {
-                Self::init_circle(&mut rng, width, height, &mut agents, config.population);
-            }
-            InitMode::Gradient => {
-                Self::init_gradient(&mut rng, width, height, &mut agents, config.population);
-            }
-            InitMode::WaveFront => {
-                Self::init_wave_front(&mut rng, width, height, &mut agents, config.population);
-            }
-            InitMode::Spiral => {
-                Self::init_spiral(&mut rng, width, height, &mut agents, config.population);
-            }
-            InitMode::RandomClusters => {
-                Self::init_random_clusters(&mut rng, width, height, &mut agents, config.population);
-            }
+        for (species_id, species_config) in config.species_configs.iter().enumerate() {
+            Self::init_species(
+                &mut rng,
+                width,
+                height,
+                &mut agents,
+                species_config.count,
+                init_mode,
+                species_id as u8,
+            );
         }
 
         let sigma = config.diffusion_sigma;
@@ -129,12 +118,57 @@ impl Simulation {
             None
         };
 
+        let num_trails = if config.separate_species_trails {
+            config.species_configs.len()
+        } else {
+            1
+        };
+
+        let mut trail_maps = Vec::with_capacity(num_trails);
+        for _ in 0..num_trails {
+            trail_maps.push(TrailMap::new_with_sigma(width, height, sigma));
+        }
+
         Self {
             config,
             agents,
-            trail_map: TrailMap::new_with_sigma(width, height, sigma),
+            trail_maps,
             rng,
             trail_history,
+        }
+    }
+
+    fn init_species(
+        rng: &mut Rng,
+        width: usize,
+        height: usize,
+        agents: &mut Vec<Agent>,
+        population: usize,
+        init_mode: InitMode,
+        species_id: u8,
+    ) {
+        match init_mode {
+            InitMode::Random => {
+                Self::init_random(rng, width, height, agents, population, species_id);
+            }
+            InitMode::CentralBurst => {
+                Self::init_central_burst(rng, width, height, agents, population, species_id);
+            }
+            InitMode::Circle => {
+                Self::init_circle(rng, width, height, agents, population, species_id);
+            }
+            InitMode::Gradient => {
+                Self::init_gradient(rng, width, height, agents, population, species_id);
+            }
+            InitMode::WaveFront => {
+                Self::init_wave_front(rng, width, height, agents, population, species_id);
+            }
+            InitMode::Spiral => {
+                Self::init_spiral(rng, width, height, agents, population, species_id);
+            }
+            InitMode::RandomClusters => {
+                Self::init_random_clusters(rng, width, height, agents, population, species_id);
+            }
         }
     }
 
@@ -144,12 +178,13 @@ impl Simulation {
         height: usize,
         agents: &mut Vec<Agent>,
         population: usize,
+        species_id: u8,
     ) {
         for _ in 0..population {
             let x = rng.gen_range(0.0..width as f32);
             let y = rng.gen_range(0.0..height as f32);
             let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
-            agents.push(Agent::new(x, y, heading));
+            agents.push(Agent::new(x, y, heading, species_id));
         }
     }
 
@@ -159,6 +194,7 @@ impl Simulation {
         height: usize,
         agents: &mut Vec<Agent>,
         population: usize,
+        species_id: u8,
     ) {
         let center_x = width as f32 / 2.0;
         let center_y = height as f32 / 2.0;
@@ -167,7 +203,7 @@ impl Simulation {
             let x = center_x + rng.gen_range(-2.0..2.0);
             let y = center_y + rng.gen_range(-2.0..2.0);
             let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
-            agents.push(Agent::new(x, y, heading));
+            agents.push(Agent::new(x, y, heading, species_id));
         }
     }
 
@@ -177,6 +213,7 @@ impl Simulation {
         height: usize,
         agents: &mut Vec<Agent>,
         population: usize,
+        species_id: u8,
     ) {
         let center_x = width as f32 / 2.0;
         let center_y = height as f32 / 2.0;
@@ -187,7 +224,7 @@ impl Simulation {
             let x = center_x + angle.cos() * radius;
             let y = center_y + angle.sin() * radius;
             let heading = (angle + std::f32::consts::PI).atan2(0.0);
-            agents.push(Agent::new(x, y, heading));
+            agents.push(Agent::new(x, y, heading, species_id));
         }
     }
 
@@ -197,6 +234,7 @@ impl Simulation {
         height: usize,
         agents: &mut Vec<Agent>,
         population: usize,
+        species_id: u8,
     ) {
         let center_x = width as f32 / 2.0;
         let center_y = height as f32 / 2.0;
@@ -209,7 +247,7 @@ impl Simulation {
             let x = center_x + angle.cos() * radius;
             let y = center_y + angle.sin() * radius;
             let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
-            agents.push(Agent::new(x, y, heading));
+            agents.push(Agent::new(x, y, heading, species_id));
         }
     }
 
@@ -219,6 +257,7 @@ impl Simulation {
         height: usize,
         agents: &mut Vec<Agent>,
         population: usize,
+        species_id: u8,
     ) {
         for _ in 0..population {
             let side = rng.gen_range(0..4);
@@ -241,7 +280,7 @@ impl Simulation {
                 _ => (0.0, rng.gen_range(0.0..height as f32), 0.0),
             };
             let heading = heading + rng.gen_range(-0.1..0.1);
-            agents.push(Agent::new(x, y, heading));
+            agents.push(Agent::new(x, y, heading, species_id));
         }
     }
 
@@ -251,6 +290,7 @@ impl Simulation {
         height: usize,
         agents: &mut Vec<Agent>,
         population: usize,
+        species_id: u8,
     ) {
         let center_x = width as f32 / 2.0;
         let center_y = height as f32 / 2.0;
@@ -264,7 +304,7 @@ impl Simulation {
             let y = center_y + angle.sin() * radius;
             let heading = angle + std::f32::consts::PI / 2.0;
             let heading = heading + rng.gen_range(-0.05..0.05);
-            agents.push(Agent::new(x, y, heading));
+            agents.push(Agent::new(x, y, heading, species_id));
         }
     }
 
@@ -274,6 +314,7 @@ impl Simulation {
         height: usize,
         agents: &mut Vec<Agent>,
         population: usize,
+        species_id: u8,
     ) {
         let num_clusters = rng.gen_range(3..7);
         let agents_per_cluster = population / num_clusters;
@@ -292,27 +333,27 @@ impl Simulation {
                 let x = cluster_x + rng.gen_range(-20.0..20.0);
                 let y = cluster_y + rng.gen_range(-20.0..20.0);
                 let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
-                agents.push(Agent::new(x, y, heading));
+                agents.push(Agent::new(x, y, heading, species_id));
             }
         }
     }
 
     pub fn width(&self) -> usize {
-        self.trail_map.width()
+        self.trail_maps.first().map(|tm| tm.width()).unwrap_or(0)
     }
 
     pub fn height(&self) -> usize {
-        self.trail_map.height()
+        self.trail_maps.first().map(|tm| tm.height()).unwrap_or(0)
     }
 
     #[allow(dead_code)]
-    pub fn config(&self) -> &SimConfig {
-        &self.config
+    pub fn trail_maps(&self) -> &[TrailMap] {
+        &self.trail_maps
     }
 
     #[allow(dead_code)]
     pub fn trail_map(&self) -> &TrailMap {
-        &self.trail_map
+        &self.trail_maps[0]
     }
 
     pub fn trail_map_blended(&self) -> Vec<f32> {
@@ -321,64 +362,149 @@ impl Simulation {
                 return blended;
             }
         }
-        self.trail_map.current().to_vec()
+        if self.config.separate_species_trails {
+            let width = self.width();
+            let height = self.height();
+            let mut combined = vec![0.0f32; width * height];
+            for trail_map in &self.trail_maps {
+                for (i, &val) in trail_map.current().iter().enumerate() {
+                    combined[i] += val;
+                }
+            }
+            combined
+        } else {
+            self.trail_maps[0].current().to_vec()
+        }
+    }
+
+    pub fn trail_maps_for_species_colors(&self) -> Vec<&[f32]> {
+        self.trail_maps.iter().map(|tm| tm.current()).collect()
     }
 
     #[allow(dead_code)]
     pub fn trail_map_mut(&mut self) -> &mut TrailMap {
-        &mut self.trail_map
+        &mut self.trail_maps[0]
+    }
+
+    #[allow(dead_code)]
+    pub fn config(&self) -> &SimConfig {
+        &self.config
     }
 
     pub fn update(&mut self, dt: f32) {
-        let width = self.trail_map.width();
-        let height = self.trail_map.height();
+        let width = self.width();
+        let height = self.height();
 
         let effective_step_size = self.config.step_size * dt;
-        let effective_deposit = self.config.deposit_amount * dt;
         let effective_decay = self.config.decay_factor.powf(dt);
 
         let attractors = &self.config.attractors;
         let attractor_strength = self.config.attractor_strength * dt;
 
-        for agent in &mut self.agents {
-            let trail = self.trail_map.current();
+        let separate_trails = self.config.separate_species_trails;
 
-            let (left, center, right) = agent.sense(
-                trail,
-                width,
-                height,
-                self.config.sensor_angle,
-                self.config.sensor_distance,
-            );
+        if separate_trails {
+            for species_idx in 0..self.config.species_configs.len() {
+                let species_config = &self.config.species_configs[species_idx];
+                let trail_idx = species_idx;
 
-            agent.rotate(
-                left,
-                center,
-                right,
-                self.config.rotation_angle,
-                &mut self.rng,
-            );
+                {
+                    let trail = self.trail_maps[trail_idx].current();
+                    for agent in self
+                        .agents
+                        .iter_mut()
+                        .filter(|a| a.species_id as usize == species_idx)
+                    {
+                        let (left, center, right) = agent.sense(
+                            trail,
+                            width,
+                            height,
+                            species_config.sensor_angle,
+                            self.config.sensor_distance,
+                        );
 
-            agent.apply_attractor_forces(attractors, attractor_strength, width, height);
+                        agent.rotate(
+                            left,
+                            center,
+                            right,
+                            species_config.rotation_angle,
+                            &mut self.rng,
+                        );
 
-            agent.move_forward(effective_step_size, width, height);
+                        agent.apply_attractor_forces(attractors, attractor_strength, width, height);
 
-            agent.deposit(
-                self.trail_map.current_mut(),
-                width,
-                height,
-                effective_deposit,
-            );
+                        agent.move_forward(effective_step_size, width, height);
+                    }
+                }
+
+                let trail_mut = self.trail_maps[trail_idx].current_mut();
+                for agent in self
+                    .agents
+                    .iter_mut()
+                    .filter(|a| a.species_id as usize == species_idx)
+                {
+                    agent.deposit(trail_mut, width, height, species_config.deposit_amount * dt);
+                }
+            }
+        } else {
+            let species_config = self
+                .config
+                .species_configs
+                .first()
+                .cloned()
+                .unwrap_or_default();
+
+            {
+                let trail = self.trail_maps[0].current();
+                for agent in self.agents.iter_mut() {
+                    let (left, center, right) = agent.sense(
+                        trail,
+                        width,
+                        height,
+                        species_config.sensor_angle,
+                        self.config.sensor_distance,
+                    );
+
+                    agent.rotate(
+                        left,
+                        center,
+                        right,
+                        species_config.rotation_angle,
+                        &mut self.rng,
+                    );
+
+                    agent.apply_attractor_forces(attractors, attractor_strength, width, height);
+
+                    agent.move_forward(effective_step_size, width, height);
+                }
+            }
+
+            let trail_mut = self.trail_maps[0].current_mut();
+            for agent in self.agents.iter_mut() {
+                agent.deposit(trail_mut, width, height, species_config.deposit_amount * dt);
+            }
         }
 
-        self.trail_map.diffuse_with_kernel(matches!(
-            self.config.diffusion_kernel,
-            crate::simulation::config::DiffusionKernel::Gaussian
-        ));
-        self.trail_map.decay(effective_decay);
+        for trail_map in &mut self.trail_maps {
+            trail_map.diffuse_with_kernel(matches!(
+                self.config.diffusion_kernel,
+                crate::simulation::config::DiffusionKernel::Gaussian
+            ));
+            trail_map.decay(effective_decay);
+        }
 
         if let Some(ref mut history) = self.trail_history {
-            history.push(self.trail_map.current());
+            if self.config.separate_species_trails {
+                let mut combined = vec![0.0f32; width * height];
+                for trail_map in &self.trail_maps {
+                    for (i, &val) in trail_map.current().iter().enumerate() {
+                        combined[i] += val;
+                    }
+                }
+                history.push(&combined);
+            } else {
+                history.push(self.trail_maps[0].current());
+            }
         }
     }
 
@@ -390,75 +516,28 @@ impl Simulation {
     pub fn reset(&mut self, seed: u64, init_mode: InitMode) {
         self.rng = Rng::seed_from_u64(seed);
         self.agents.clear();
-        self.agents = Vec::with_capacity(self.config.population);
 
-        match init_mode {
-            InitMode::Random => {
-                Self::init_random(
-                    &mut self.rng,
-                    self.trail_map.width(),
-                    self.trail_map.height(),
-                    &mut self.agents,
-                    self.config.population,
-                );
-            }
-            InitMode::CentralBurst => {
-                Self::init_central_burst(
-                    &mut self.rng,
-                    self.trail_map.width(),
-                    self.trail_map.height(),
-                    &mut self.agents,
-                    self.config.population,
-                );
-            }
-            InitMode::Circle => {
-                Self::init_circle(
-                    &mut self.rng,
-                    self.trail_map.width(),
-                    self.trail_map.height(),
-                    &mut self.agents,
-                    self.config.population,
-                );
-            }
-            InitMode::Gradient => {
-                Self::init_gradient(
-                    &mut self.rng,
-                    self.trail_map.width(),
-                    self.trail_map.height(),
-                    &mut self.agents,
-                    self.config.population,
-                );
-            }
-            InitMode::WaveFront => {
-                Self::init_wave_front(
-                    &mut self.rng,
-                    self.trail_map.width(),
-                    self.trail_map.height(),
-                    &mut self.agents,
-                    self.config.population,
-                );
-            }
-            InitMode::Spiral => {
-                Self::init_spiral(
-                    &mut self.rng,
-                    self.trail_map.width(),
-                    self.trail_map.height(),
-                    &mut self.agents,
-                    self.config.population,
-                );
-            }
-            InitMode::RandomClusters => {
-                Self::init_random_clusters(
-                    &mut self.rng,
-                    self.trail_map.width(),
-                    self.trail_map.height(),
-                    &mut self.agents,
-                    self.config.population,
-                );
-            }
+        let total_population = self.config.total_population();
+        self.agents = Vec::with_capacity(total_population);
+
+        let width = self.width();
+        let height = self.height();
+
+        for (species_id, species_config) in self.config.species_configs.iter().enumerate() {
+            Self::init_species(
+                &mut self.rng,
+                width,
+                height,
+                &mut self.agents,
+                species_config.count,
+                init_mode,
+                species_id as u8,
+            );
         }
 
-        self.trail_map.clear();
+        for trail_map in &mut self.trail_maps {
+            trail_map.clear();
+        }
         if let Some(ref mut history) = self.trail_history {
             history.clear();
         }
@@ -466,12 +545,25 @@ impl Simulation {
 
     pub fn update_config(&mut self, config: SimConfig) {
         self.config = config;
+        let num_trails = if self.config.separate_species_trails {
+            self.config.species_configs.len()
+        } else {
+            1
+        };
+        while self.trail_maps.len() < num_trails {
+            self.trail_maps.push(TrailMap::new_with_sigma(
+                self.width(),
+                self.height(),
+                self.config.diffusion_sigma,
+            ));
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::simulation::config::SpeciesConfig;
 
     #[test]
     fn test_simulation_creation() {
@@ -483,9 +575,35 @@ mod tests {
     }
 
     #[test]
+    fn test_multi_species_creation() {
+        let config = SimConfig {
+            species_configs: vec![
+                SpeciesConfig {
+                    name: "red".to_string(),
+                    count: 10000,
+                    color: "ff0000".to_string(),
+                    ..Default::default()
+                },
+                SpeciesConfig {
+                    name: "blue".to_string(),
+                    count: 20000,
+                    color: "0000ff".to_string(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let sim = Simulation::new(400, 400, config, 42, InitMode::Random, 0);
+        assert_eq!(sim.agents().len(), 30000);
+    }
+
+    #[test]
     fn test_update_changes_trail() {
         let config = SimConfig {
-            population: 100,
+            species_configs: vec![SpeciesConfig {
+                count: 100,
+                ..Default::default()
+            }],
             ..Default::default()
         };
         let mut sim = Simulation::new(400, 400, config, 42, InitMode::Random, 0);
@@ -512,7 +630,10 @@ mod tests {
     #[test]
     fn test_multiple_updates() {
         let config = SimConfig {
-            population: 100,
+            species_configs: vec![SpeciesConfig {
+                count: 100,
+                ..Default::default()
+            }],
             decay_factor: 0.99,
             ..Default::default()
         };
@@ -704,5 +825,152 @@ mod tests {
         let blended = sim.trail_map_blended();
         let current = sim.trail_map().current();
         assert_eq!(blended, current);
+    }
+
+    #[test]
+    fn test_separate_trails_single_species() {
+        let config = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 100,
+                ..Default::default()
+            }],
+            separate_species_trails: true,
+            ..Default::default()
+        };
+        let sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
+        assert_eq!(sim.trail_maps().len(), 1);
+    }
+
+    #[test]
+    fn test_separate_trails_multiple_species() {
+        let config = SimConfig {
+            species_configs: vec![
+                SpeciesConfig {
+                    count: 100,
+                    ..Default::default()
+                },
+                SpeciesConfig {
+                    count: 100,
+                    name: "blue".to_string(),
+                    color: "0000ff".to_string(),
+                    ..Default::default()
+                },
+            ],
+            separate_species_trails: true,
+            ..Default::default()
+        };
+        let sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
+        assert_eq!(sim.trail_maps().len(), 2);
+    }
+
+    #[test]
+    fn test_separate_trails_all_species_visible() {
+        let config = SimConfig {
+            species_configs: vec![
+                SpeciesConfig {
+                    name: "red".to_string(),
+                    count: 500,
+                    color: "ff0000".to_string(),
+                    sensor_angle: 22.5,
+                    rotation_angle: 45.0,
+                    step_size: 1.0,
+                    deposit_amount: 5.0,
+                },
+                SpeciesConfig {
+                    name: "blue".to_string(),
+                    count: 500,
+                    color: "0000ff".to_string(),
+                    sensor_angle: 22.5,
+                    rotation_angle: 45.0,
+                    step_size: 1.0,
+                    deposit_amount: 5.0,
+                },
+            ],
+            separate_species_trails: true,
+            decay_factor: 0.99,
+            ..Default::default()
+        };
+
+        let mut sim = Simulation::new(100, 100, config, 42, InitMode::CentralBurst, 0);
+
+        for _ in 0..50 {
+            sim.update(1.0);
+        }
+
+        let trail_map_sum: f32 = sim.trail_map_blended().iter().sum();
+        assert!(
+            trail_map_sum > 100.0,
+            "Combined trail map should have significant values when all species have agents, got sum: {}",
+            trail_map_sum
+        );
+
+        assert_eq!(sim.trail_maps().len(), 2);
+        let red_trail_sum: f32 = sim.trail_maps()[0].current().iter().sum();
+        let blue_trail_sum: f32 = sim.trail_maps()[1].current().iter().sum();
+        assert!(
+            red_trail_sum > 50.0,
+            "Red species trail (index 0) should have significant values, got sum: {}",
+            red_trail_sum
+        );
+        assert!(
+            blue_trail_sum > 50.0,
+            "Blue species trail (index 1) should have significant values, got sum: {}",
+            blue_trail_sum
+        );
+    }
+
+    #[test]
+    fn test_separate_trails_second_species_only() {
+        let config = SimConfig {
+            species_configs: vec![
+                SpeciesConfig {
+                    name: "red".to_string(),
+                    count: 0,
+                    color: "ff0000".to_string(),
+                    sensor_angle: 22.5,
+                    rotation_angle: 45.0,
+                    step_size: 1.0,
+                    deposit_amount: 5.0,
+                },
+                SpeciesConfig {
+                    name: "blue".to_string(),
+                    count: 500,
+                    color: "0000ff".to_string(),
+                    sensor_angle: 22.5,
+                    rotation_angle: 45.0,
+                    step_size: 1.0,
+                    deposit_amount: 5.0,
+                },
+            ],
+            separate_species_trails: true,
+            decay_factor: 0.99,
+            ..Default::default()
+        };
+
+        let mut sim = Simulation::new(100, 100, config, 42, InitMode::CentralBurst, 0);
+
+        for _ in 0..50 {
+            sim.update(1.0);
+        }
+
+        let blended_sum: f32 = sim.trail_map_blended().iter().sum();
+        assert!(
+            blended_sum > 50.0,
+            "trail_map_blended() should include second species' trail when first species has 0 agents. Got sum: {}",
+            blended_sum
+        );
+
+        let red_trail_sum: f32 = sim.trail_maps()[0].current().iter().sum();
+        let blue_trail_sum: f32 = sim.trail_maps()[1].current().iter().sum();
+        assert!(
+            red_trail_sum < 1.0,
+            "Red species trail (index 0, 0 agents) should have minimal values, got sum: {}",
+            red_trail_sum
+        );
+        assert!(
+            blue_trail_sum > 50.0,
+            "Blue species trail (index 1, 500 agents) should have significant values, got sum: {}",
+            blue_trail_sum
+        );
     }
 }
