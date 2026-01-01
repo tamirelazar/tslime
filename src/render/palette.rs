@@ -2136,6 +2136,66 @@ const SWAMP_RGB: [RgbColor; 11] = [
     },
 ];
 
+const MOSS_GRADIENT: [u8; 11] = [22, 22, 28, 34, 40, 70, 76, 112, 148, 184, 220];
+
+const MOSS_RGB: [RgbColor; 11] = [
+    RgbColor {
+        r: 20,
+        g: 35,
+        b: 20,
+    },
+    RgbColor {
+        r: 25,
+        g: 45,
+        b: 22,
+    },
+    RgbColor {
+        r: 35,
+        g: 60,
+        b: 28,
+    },
+    RgbColor {
+        r: 45,
+        g: 80,
+        b: 35,
+    },
+    RgbColor {
+        r: 60,
+        g: 100,
+        b: 40,
+    },
+    RgbColor {
+        r: 80,
+        g: 120,
+        b: 50,
+    },
+    RgbColor {
+        r: 100,
+        g: 140,
+        b: 65,
+    },
+    RgbColor {
+        r: 120,
+        g: 160,
+        b: 80,
+    },
+    RgbColor {
+        r: 145,
+        g: 175,
+        b: 95,
+    },
+    RgbColor {
+        r: 170,
+        g: 190,
+        b: 115,
+    },
+    RgbColor {
+        r: 195,
+        g: 210,
+        b: 140,
+    },
+];
+
 fn get_256_gradient(palette: Palette) -> &'static [u8; 11] {
     match palette {
         Palette::Organic => &ORGANIC_GRADIENT,
@@ -2151,6 +2211,7 @@ fn get_256_gradient(palette: Palette) -> &'static [u8; 11] {
         Palette::Mold => &MOLD_GRADIENT,
         Palette::Fungus => &FUNGUS_GRADIENT,
         Palette::Swamp => &SWAMP_GRADIENT,
+        Palette::Moss => &MOSS_GRADIENT,
     }
 }
 
@@ -2169,6 +2230,7 @@ fn get_rgb_gradient(palette: Palette) -> &'static [RgbColor; 11] {
         Palette::Mold => &MOLD_RGB,
         Palette::Fungus => &FUNGUS_RGB,
         Palette::Swamp => &SWAMP_RGB,
+        Palette::Moss => &MOSS_RGB,
     }
 }
 
@@ -2517,6 +2579,7 @@ mod tests {
             Palette::Mold,
             Palette::Fungus,
             Palette::Swamp,
+            Palette::Moss,
         ];
 
         for palette in palettes {
@@ -2701,6 +2764,7 @@ mod tests {
         let _ = Palette::Mold;
         let _ = Palette::Fungus;
         let _ = Palette::Swamp;
+        let _ = Palette::Moss;
     }
 
     #[test]
@@ -2736,6 +2800,14 @@ mod tests {
     }
 
     #[test]
+    fn test_moss_palette_gradient() {
+        let min_color = map_brightness(0.0, Palette::Moss, false, false);
+        let max_color = map_brightness(1.0, Palette::Moss, false, false);
+        assert_eq!(min_color, 22);
+        assert_eq!(max_color, 220);
+    }
+
+    #[test]
     fn test_slime_palette_rgb_values() {
         let color = map_brightness_rgb(0.5, Palette::Slime, false, false, 0.0);
         assert!(color.g > color.r && color.g > color.b);
@@ -2754,10 +2826,17 @@ mod tests {
             Palette::Mold,
             Palette::Fungus,
             Palette::Swamp,
+            Palette::Moss,
         ];
         for _ in palettes {
             let _color = map_brightness_rgb(0.5, Palette::Slime, false, false, 0.0);
         }
+    }
+
+    #[test]
+    fn test_moss_palette_has_green_tones() {
+        let color = map_brightness_rgb(0.5, Palette::Moss, false, false, 0.0);
+        assert!(color.g > color.r && color.g > color.b);
     }
 
     #[test]

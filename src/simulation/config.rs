@@ -11,6 +11,7 @@ pub enum Preset {
     Tendrils,
     Organic,
     Minimal,
+    Moss,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -314,6 +315,29 @@ impl From<Preset> for SimConfig {
                     step_size: 0.8,
                     deposit_amount: 3.0,
                     color: "228b22".to_string(),
+                }],
+                separate_species_trails: false,
+            },
+            Preset::Moss => Self {
+                sensor_angle: 22.0,
+                sensor_distance: 12.0,
+                rotation_angle: 35.0,
+                step_size: 1.0,
+                decay_factor: 0.88,
+                deposit_amount: 4.0,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+                diffusion_sigma: 1.0,
+                max_brightness: 18.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 35_000,
+                    sensor_angle: 22.0,
+                    rotation_angle: 35.0,
+                    step_size: 1.0,
+                    deposit_amount: 4.0,
+                    color: "4a7a4a".to_string(),
                 }],
                 separate_species_trails: false,
             },

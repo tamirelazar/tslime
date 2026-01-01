@@ -38,6 +38,7 @@ pub enum Palette {
     Mold,
     Fungus,
     Swamp,
+    Moss,
 }
 
 #[derive(Debug, Clone)]
@@ -204,8 +205,9 @@ impl FromStr for Preset {
             "tendrils" => Ok(Preset::Tendrils),
             "organic" => Ok(Preset::Organic),
             "minimal" => Ok(Preset::Minimal),
+            "moss" => Ok(Preset::Moss),
             _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal",
+                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss",
                 s
             )),
         }

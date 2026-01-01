@@ -3,7 +3,7 @@ use crate::simulation::config::InitMode;
 use crate::simulation::config::Preset;
 use crossterm::event::KeyEvent;
 
-const ALL_PALETTES: [Palette; 13] = [
+const ALL_PALETTES: [Palette; 14] = [
     Palette::Organic,
     Palette::Heat,
     Palette::Ocean,
@@ -17,6 +17,7 @@ const ALL_PALETTES: [Palette; 13] = [
     Palette::Mold,
     Palette::Fungus,
     Palette::Swamp,
+    Palette::Moss,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -97,7 +98,7 @@ impl RuntimeState {
         }
     }
 
-    pub fn current_palette(&self, palettes: &[Palette; 13]) -> Palette {
+    pub fn current_palette(&self, palettes: &[Palette; 14]) -> Palette {
         palettes[self.palette_index].clone()
     }
 
@@ -126,6 +127,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('3') => ControlAction::SetPreset(Preset::Tendrils),
         KeyCode::Char('4') => ControlAction::SetPreset(Preset::Organic),
         KeyCode::Char('5') => ControlAction::SetPreset(Preset::Minimal),
+        KeyCode::Char('6') => ControlAction::SetPreset(Preset::Moss),
         KeyCode::Char('+') | KeyCode::Char('=') => ControlAction::AdjustTimeScale(0.5),
         KeyCode::Char('-') | KeyCode::Char('_') => ControlAction::AdjustTimeScale(-0.5),
         KeyCode::Char('C') if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -148,6 +150,7 @@ pub fn preset_name(preset: Preset) -> &'static str {
         Preset::Tendrils => "Tendrils",
         Preset::Organic => "Organic",
         Preset::Minimal => "Minimal",
+        Preset::Moss => "Moss",
     }
 }
 
@@ -166,5 +169,6 @@ pub fn palette_name(palette: Palette) -> &'static str {
         Palette::Mold => "Mold",
         Palette::Fungus => "Fungus",
         Palette::Swamp => "Swamp",
+        Palette::Moss => "Moss",
     }
 }

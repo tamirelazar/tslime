@@ -295,6 +295,7 @@ fn run_simulation(
         cli::Palette::Mold,
         cli::Palette::Fungus,
         cli::Palette::Swamp,
+        cli::Palette::Moss,
     ];
     let initial_palette_index = palette_list
         .iter()
