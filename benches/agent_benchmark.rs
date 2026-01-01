@@ -108,15 +108,13 @@ fn bench_agent_sense_rotate_move_deposit(c: &mut Criterion) {
         })
         .collect();
 
-    let sensor_angle = 0.7853981633974483;
+    let sensor_angle = std::f32::consts::FRAC_PI_4;
     let sensor_distance = 9.0;
-    let rotation_angle = 0.39269908169872414;
+    let rotation_angle = std::f32::consts::FRAC_PI_8;
     let step_size = 1.0;
     let deposit_amount = 5.0;
     let width = 400;
     let height = 400;
-
-    use rand::Rng;
 
     c.bench_function("agent_sense_rotate_move_deposit_50k", |b| {
         b.iter(|| {
@@ -225,9 +223,9 @@ fn bench_agent_update_full_frame(c: &mut Criterion) {
         })
         .collect();
 
-    let sensor_angle = 0.7853981633974483;
+    let sensor_angle = std::f32::consts::FRAC_PI_4;
     let sensor_distance = 9.0;
-    let rotation_angle = 0.39269908169872414;
+    let rotation_angle = std::f32::consts::FRAC_PI_8;
     let step_size = 1.0;
     let deposit_amount = 5.0;
     let width = 400;
@@ -281,18 +279,26 @@ fn bench_agent_update_varying_population(c: &mut Criterion) {
 
         group.bench_function(format!("{}_agents", population), |b| {
             b.iter(|| {
+                use rand::Rng;
                 let mut rng = rand::thread_rng();
                 let mut trail = vec![0.0f32; 400 * 400];
                 let mut agents = agents.clone();
 
                 for agent in &mut agents {
-                    use rand::Rng;
-                    let left_x = (agent.x + (agent.heading - 0.785).cos() * 9.0) as usize;
-                    let left_y = (agent.y + (agent.heading - 0.785).sin() * 9.0) as usize;
+                    let left_x = (agent.x
+                        + (agent.heading - std::f32::consts::FRAC_PI_4).cos() * 9.0)
+                        as usize;
+                    let left_y = (agent.y
+                        + (agent.heading - std::f32::consts::FRAC_PI_4).sin() * 9.0)
+                        as usize;
                     let center_x = (agent.x + agent.heading.cos() * 9.0) as usize;
                     let center_y = (agent.y + agent.heading.sin() * 9.0) as usize;
-                    let right_x = (agent.x + (agent.heading + 0.785).cos() * 9.0) as usize;
-                    let right_y = (agent.y + (agent.heading + 0.785).sin() * 9.0) as usize;
+                    let right_x = (agent.x
+                        + (agent.heading + std::f32::consts::FRAC_PI_4).cos() * 9.0)
+                        as usize;
+                    let right_y = (agent.y
+                        + (agent.heading + std::f32::consts::FRAC_PI_4).sin() * 9.0)
+                        as usize;
 
                     let idx_l = left_y.min(399) * 400 + left_x.min(399);
                     let idx_c = center_y.min(399) * 400 + center_x.min(399);
@@ -302,11 +308,15 @@ fn bench_agent_update_varying_population(c: &mut Criterion) {
 
                     if center > left && center > right {
                     } else if center < left && center < right {
-                        agent.heading += if rng.gen_bool(0.5) { 0.3927 } else { -0.3927 };
+                        agent.heading += if rng.gen_bool(0.5) {
+                            std::f32::consts::FRAC_PI_8
+                        } else {
+                            -std::f32::consts::FRAC_PI_8
+                        };
                     } else if left > right {
-                        agent.heading -= 0.3927;
+                        agent.heading -= std::f32::consts::FRAC_PI_8;
                     } else if right > left {
-                        agent.heading += 0.3927;
+                        agent.heading += std::f32::consts::FRAC_PI_8;
                     }
 
                     agent.x = (agent.x + agent.heading.cos()).abs();

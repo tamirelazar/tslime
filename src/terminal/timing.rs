@@ -259,7 +259,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         let dt = timer.delta_time();
         assert!(
-            dt >= 0.08 && dt < 0.15,
+            (0.08..0.15).contains(&dt),
             "dt should be ~0.1s (100ms * 1.0), got {}",
             dt
         );
@@ -271,7 +271,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         let dt = timer.delta_time();
         assert!(
-            dt >= 0.15 && dt < 0.25,
+            (0.15..0.25).contains(&dt),
             "dt should be ~0.2s (100ms * 2.0), got {}",
             dt
         );
@@ -284,7 +284,7 @@ mod tests {
         timer.set_time_scale(0.5);
         let dt = timer.delta_time();
         assert!(
-            dt >= 0.04 && dt < 0.07,
+            (0.04..0.07).contains(&dt),
             "dt should be ~0.05s (100ms * 0.5), got {}",
             dt
         );
@@ -321,12 +321,12 @@ mod tests {
         let dt_30_again = timer_30fps.delta_time();
 
         assert!(
-            dt_30 >= 0.08 && dt_30 < 0.15,
+            (0.08..0.15).contains(&dt_30),
             "First dt should be ~0.1s, got {}",
             dt_30
         );
         assert!(
-            dt_30_again >= 0.08 && dt_30_again < 0.15,
+            (0.08..0.15).contains(&dt_30_again),
             "Second dt should be ~0.1s, got {}",
             dt_30_again
         );
@@ -356,17 +356,17 @@ mod tests {
         let dt_144 = timer_144.delta_time();
 
         assert!(
-            dt_30 >= 0.04 && dt_30 < 0.07,
+            (0.04..0.07).contains(&dt_30),
             "30fps dt should be ~0.05s, got {}",
             dt_30
         );
         assert!(
-            dt_60 >= 0.04 && dt_60 < 0.07,
+            (0.04..0.07).contains(&dt_60),
             "60fps dt should be ~0.05s, got {}",
             dt_60
         );
         assert!(
-            dt_144 >= 0.04 && dt_144 < 0.07,
+            (0.04..0.07).contains(&dt_144),
             "144fps dt should be ~0.05s, got {}",
             dt_144
         );

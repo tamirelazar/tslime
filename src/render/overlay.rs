@@ -68,15 +68,7 @@ impl OverlayRenderer {
     }
 
     #[cfg(test)]
-    pub fn check_overlay_line_lengths(lines: &[String]) -> bool {
-        if lines.is_empty() {
-            return true;
-        }
-        let target_len = lines[0].chars().count();
-        lines.iter().all(|line| line.chars().count() == target_len)
-    }
-
-    #[cfg(test)]
+    #[allow(dead_code)]
     pub fn check_attractor_section_lengths(lines: &[String], base_help_len: usize) -> bool {
         if lines.len() <= base_help_len {
             return true;

@@ -136,7 +136,7 @@ mod tests {
         assert_eq!(ab.peak_history.len(), 3);
         let max = ab.get_max_brightness();
         assert!(
-            max >= 30.0 && max <= 50.0,
+            (30.0..=50.0).contains(&max),
             "Expected max in [30, 50], got {}",
             max
         );

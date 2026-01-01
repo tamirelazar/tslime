@@ -473,7 +473,6 @@ fn get_terminal_size() -> (usize, usize) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     const HELP_LINES_TOP: &str = "┌─ tslime controls ───────────────────────┐";
     const HELP_LINES_BOTTOM: &str = "└─────────────────────────────────────────┘";
