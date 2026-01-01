@@ -29,12 +29,7 @@ impl ErrorDiffusion {
         }
     }
 
-    pub fn apply_and_distribute(
-        &mut self,
-        idx: usize,
-        brightness: f32,
-        quantized: f32,
-    ) -> f32 {
+    pub fn apply_and_distribute(&mut self, idx: usize, brightness: f32, quantized: f32) -> f32 {
         let accumulated = self.error_buffer[idx];
         let adjusted = brightness + accumulated;
         let error = adjusted - quantized;
