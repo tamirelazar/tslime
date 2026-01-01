@@ -109,6 +109,8 @@ fn print_mode(
         0.0,
         args.dither,
         args.dither_intensity,
+        args.error_diffusion,
+        60,
     );
 
     print!(
@@ -175,6 +177,8 @@ fn capture_frames_mode(
             0.0,
             args.dither,
             args.dither_intensity,
+            args.error_diffusion,
+            60,
         );
 
         let frame_content = buffer.build_frame_string(args.plain_output, color_mode);

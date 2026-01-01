@@ -434,6 +434,12 @@ pub struct Args {
         help = "Dithering intensity (0.0-1.0, higher = more dithering effect)"
     )]
     pub dither_intensity: f32,
+
+    #[arg(
+        long = "error-diffusion",
+        help = "Enable Floyd-Steinberg error diffusion for smoother gradients (replaces ordered dither)"
+    )]
+    pub error_diffusion: bool,
 }
 
 impl Args {
@@ -607,6 +613,7 @@ impl Default for Args {
             frame_dir: "frames".to_string(),
             dither: false,
             dither_intensity: 0.5,
+            error_diffusion: false,
         }
     }
 }
@@ -661,6 +668,7 @@ mod tests {
             frame_dir: "frames".to_string(),
             dither: false,
             dither_intensity: 0.5,
+            error_diffusion: false,
         };
         assert_eq!(args.mode(), Mode::Default);
     }
