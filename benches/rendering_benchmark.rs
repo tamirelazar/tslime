@@ -28,6 +28,13 @@ pub enum ColorMode {
     Bits256,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Charset {
+    HalfBlock,
+    Ascii,
+    Braille,
+}
+
 const ORGANIC_RGB: [RgbColor; 11] = [
     RgbColor {
         r: 18,
@@ -259,6 +266,7 @@ impl FrameBuffer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn from_downsampled(
         downsampled: &[DownsampleCell],
         width: usize,
@@ -474,8 +482,15 @@ fn bench_color_mode_comparison(c: &mut Criterion) {
                 black_box(&downsampled),
                 black_box(width),
                 black_box(height),
+                black_box(20.0),
                 black_box(palette),
+                black_box(Charset::HalfBlock),
+                black_box(false),
+                black_box(false),
                 black_box(ColorMode::Bits256),
+                black_box(0.0),
+                black_box(false),
+                black_box(0.5),
             );
             black_box(buffer);
         });
@@ -487,8 +502,15 @@ fn bench_color_mode_comparison(c: &mut Criterion) {
                 black_box(&downsampled),
                 black_box(width),
                 black_box(height),
+                black_box(20.0),
                 black_box(palette),
+                black_box(Charset::HalfBlock),
+                black_box(false),
+                black_box(false),
                 black_box(ColorMode::TrueColor),
+                black_box(0.0),
+                black_box(false),
+                black_box(0.5),
             );
             black_box(buffer);
         });

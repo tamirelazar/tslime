@@ -529,10 +529,12 @@ impl TerminalRenderer {
         self.dither_intensity = intensity;
     }
 
+    #[allow(dead_code)]
     pub fn set_error_diffusion(&mut self, enabled: bool) {
         self.error_diffusion_enabled = enabled;
     }
 
+    #[allow(dead_code)]
     pub fn set_error_reset_interval(&mut self, interval: usize) {
         self.error_reset_interval = interval;
     }

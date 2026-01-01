@@ -32,9 +32,9 @@ mod tests {
 
     #[test]
     fn test_bayer_threshold_range() {
-        for y in 0..4 {
-            for x in 0..4 {
-                let threshold = BAYER_4X4[y][x] as f32 / 16.0;
+        for row in &BAYER_4X4 {
+            for &val in row {
+                let threshold = val as f32 / 16.0;
                 assert!(threshold >= 0.0);
                 assert!(threshold <= 1.0);
             }

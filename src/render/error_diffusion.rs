@@ -54,10 +54,12 @@ impl ErrorDiffusion {
         adjusted.clamp(0.0, 1.0)
     }
 
+    #[allow(dead_code)]
     pub fn width(&self) -> usize {
         self.width
     }
 
+    #[allow(dead_code)]
     pub fn height(&self) -> usize {
         self.height
     }
