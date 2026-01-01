@@ -11,16 +11,23 @@ impl OverlayRenderer {
         preset: Preset,
         time_scale: f32,
         palette: Palette,
+        dither_enabled: bool,
+        dither_intensity: f32,
         _width: usize,
     ) -> String {
         let paused_text = if is_paused { " [PAUSED]" } else { "" };
         let preset_text = preset_name(preset);
         let palette_text = palette_name(palette);
         let time_text = format!("{:.1}x", time_scale);
+        let dither_text = if dither_enabled {
+            format!(" D:{:.1}", dither_intensity)
+        } else {
+            "".to_string()
+        };
 
         format!(
-            "{} | {} | {} | {}",
-            preset_text, time_text, palette_text, paused_text
+            "{} | {} | {} | {}{}",
+            preset_text, time_text, palette_text, dither_text, paused_text
         )
     }
 

@@ -28,6 +28,8 @@ pub enum ControlAction {
     CyclePalette,
     CyclePaletteReverse,
     ToggleHelp,
+    ToggleDither,
+    AdjustDitherIntensity(f32),
     Quit,
     None,
 }
@@ -41,6 +43,8 @@ pub struct RuntimeState {
     pub palette_index: usize,
     pub original_seed: u64,
     pub original_init_mode: InitMode,
+    pub dither_enabled: bool,
+    pub dither_intensity: f32,
 }
 
 impl RuntimeState {
@@ -59,6 +63,8 @@ impl RuntimeState {
             palette_index: initial_palette_index,
             original_seed: seed,
             original_init_mode: init_mode,
+            dither_enabled: false,
+            dither_intensity: 0.5,
         }
     }
 
@@ -94,6 +100,15 @@ impl RuntimeState {
     pub fn current_palette(&self, palettes: &[Palette; 13]) -> Palette {
         palettes[self.palette_index].clone()
     }
+
+    pub fn toggle_dither(&mut self) {
+        self.dither_enabled = !self.dither_enabled;
+    }
+
+    pub fn adjust_dither_intensity(&mut self, delta: f32) {
+        let new_intensity = (self.dither_intensity + delta).clamp(0.0, 1.0);
+        self.dither_intensity = new_intensity;
+    }
 }
 
 pub fn num_palettes() -> usize {
@@ -118,6 +133,9 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         }
         KeyCode::Char('c') => ControlAction::CyclePalette,
         KeyCode::Char('h') | KeyCode::Char('H') => ControlAction::ToggleHelp,
+        KeyCode::Char('d') | KeyCode::Char('D') => ControlAction::ToggleDither,
+        KeyCode::Char('[') | KeyCode::Char('{') => ControlAction::AdjustDitherIntensity(-0.1),
+        KeyCode::Char(']') | KeyCode::Char('}') => ControlAction::AdjustDitherIntensity(0.1),
         KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => ControlAction::Quit,
         _ => ControlAction::None,
     }

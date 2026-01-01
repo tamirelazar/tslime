@@ -107,6 +107,8 @@ fn print_mode(
         args.invert_palette,
         color_mode,
         0.0,
+        args.dither,
+        args.dither_intensity,
     );
 
     print!(
@@ -171,6 +173,8 @@ fn capture_frames_mode(
             args.invert_palette,
             color_mode,
             0.0,
+            args.dither,
+            args.dither_intensity,
         );
 
         let frame_content = buffer.build_frame_string(args.plain_output, color_mode);
@@ -232,6 +236,7 @@ fn run_simulation(
         args.invert_palette,
         color_mode,
     );
+    renderer.set_dither(args.dither, args.dither_intensity);
     let mut timer = FrameTimer::with_time_scale(args.fps, args.frame_delay, args.time_scale);
     let input_poller = InputPoller::new();
 
@@ -277,6 +282,9 @@ fn run_simulation(
         initial_palette_index,
         show_help_by_default,
     );
+    runtime_state.dither_enabled = args.dither;
+    runtime_state.dither_intensity = args.dither_intensity;
+    renderer.set_dither(args.dither, args.dither_intensity);
 
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
@@ -331,13 +339,15 @@ fn run_simulation(
         hue_offset %= 360.0;
         renderer.set_hue_shift(hue_offset);
 
-        static HELP_LINES: [&str; 9] = [
+        static HELP_LINES: [&str; 11] = [
             "┌─ tslime controls ───────────────────────┐",
             "│ p: Pause/Resume                         │",
             "│ r: Restart                              │",
             "│ 1-5: Presets  (Network,Exploratory,etc) │",
             "│ +/-: Time scale (0.5x - 4.0x)           │",
             "│ c: Cycle palette (Shift+C reverse)      │",
+            "│ d: Toggle dithering                    │",
+            "│ []: Adjust dither intensity (0.0-1.0)   │",
             "│ h: Toggle this help                     │",
             "│ q: Quit                                 │",
             "└─────────────────────────────────────────┘",
@@ -359,6 +369,8 @@ fn run_simulation(
             runtime_state.current_preset,
             runtime_state.time_scale,
             current_palette,
+            runtime_state.dither_enabled,
+            runtime_state.dither_intensity,
             term_width as usize,
         );
         let status_x =
@@ -425,6 +437,16 @@ fn run_simulation(
                     runtime_state.cycle_palette_reverse(num_palettes());
                     let new_palette = runtime_state.current_palette(&palette_list);
                     renderer.set_palette(new_palette);
+                }
+                ControlAction::ToggleDither => {
+                    runtime_state.toggle_dither();
+                    renderer
+                        .set_dither(runtime_state.dither_enabled, runtime_state.dither_intensity);
+                }
+                ControlAction::AdjustDitherIntensity(delta) => {
+                    runtime_state.adjust_dither_intensity(delta);
+                    renderer
+                        .set_dither(runtime_state.dither_enabled, runtime_state.dither_intensity);
                 }
                 ControlAction::ToggleHelp => {
                     runtime_state.toggle_help();

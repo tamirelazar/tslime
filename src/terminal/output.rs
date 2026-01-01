@@ -1,6 +1,7 @@
 use crate::cli::ColorMode;
 use crate::cli::Palette;
 use crate::render::charset::{self, Charset};
+use crate::render::dither::apply_dither;
 use crate::render::downsample::Cell as DownsampleCell;
 use crate::render::palette;
 use crate::render::palette::RgbColor;
@@ -107,6 +108,8 @@ impl FrameBuffer {
         invert_palette: bool,
         color_mode: ColorMode,
         hue_shift: f32,
+        dither_enabled: bool,
+        dither_intensity: f32,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode);
 
@@ -130,6 +133,8 @@ impl FrameBuffer {
             };
 
             let cell = buffer.create_cell(
+                x,
+                y,
                 top_brightness,
                 bottom_brightness,
                 &palette,
@@ -138,6 +143,8 @@ impl FrameBuffer {
                 invert_palette,
                 color_mode,
                 hue_shift,
+                dither_enabled,
+                dither_intensity,
             );
             buffer.set_cell(x, y, cell);
         }
@@ -149,6 +156,8 @@ impl FrameBuffer {
     #[allow(clippy::too_many_arguments)]
     fn create_cell(
         &self,
+        x: usize,
+        y: usize,
         top: f32,
         bottom: f32,
         palette: &Palette,
@@ -157,6 +166,8 @@ impl FrameBuffer {
         invert_palette: bool,
         color_mode: ColorMode,
         hue_shift: f32,
+        dither_enabled: bool,
+        dither_intensity: f32,
     ) -> Cell {
         const THRESHOLD: f32 = 0.05;
 
@@ -169,12 +180,22 @@ impl FrameBuffer {
                 bg_color_rgb: None,
             }
         } else if top > THRESHOLD && bottom > THRESHOLD {
-            let char = match charset {
-                Charset::HalfBlock => charset::map_vertical_block(top, bottom),
-                Charset::Braille => charset::map_brightness(top, Some(bottom), charset),
-                _ => charset::map_brightness((top + bottom) / 2.0, None, charset),
+            let top_adj = if dither_enabled {
+                apply_dither(x, y, top, dither_intensity)
+            } else {
+                top
             };
-            let brightness = (top + bottom) / 2.0;
+            let bottom_adj = if dither_enabled {
+                apply_dither(x, y, bottom, dither_intensity)
+            } else {
+                bottom
+            };
+            let char = match charset {
+                Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
+                Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
+                _ => charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset),
+            };
+            let brightness = (top_adj + bottom_adj) / 2.0;
             match color_mode {
                 ColorMode::TrueColor => {
                     let rgb = palette::map_brightness_rgb(
@@ -209,10 +230,20 @@ impl FrameBuffer {
                 }
             }
         } else if top > bottom {
-            let brightness = top;
+            let top_adj = if dither_enabled {
+                apply_dither(x, y, top, dither_intensity)
+            } else {
+                top
+            };
+            let bottom_adj = if dither_enabled {
+                apply_dither(x, y, bottom, dither_intensity)
+            } else {
+                bottom
+            };
+            let brightness = top_adj;
             let char = match charset {
-                Charset::Braille => charset::map_brightness(top, Some(bottom), charset),
-                Charset::HalfBlock => charset::map_vertical_block(top, bottom),
+                Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
+                Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
                 Charset::Ascii => charset::map_ascii_directional(brightness, true),
             };
             match color_mode {
@@ -249,10 +280,20 @@ impl FrameBuffer {
                 }
             }
         } else {
-            let brightness = bottom;
+            let top_adj = if dither_enabled {
+                apply_dither(x, y, top, dither_intensity)
+            } else {
+                top
+            };
+            let bottom_adj = if dither_enabled {
+                apply_dither(x, y, bottom, dither_intensity)
+            } else {
+                bottom
+            };
+            let brightness = bottom_adj;
             let char = match charset {
-                Charset::Braille => charset::map_brightness(top, Some(bottom), charset),
-                Charset::HalfBlock => charset::map_vertical_block(top, bottom),
+                Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
+                Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
                 Charset::Ascii => charset::map_ascii_directional(brightness, false),
             };
             match color_mode {
@@ -404,6 +445,8 @@ pub fn render_frame(
     invert_palette: bool,
     color_mode: ColorMode,
     hue_shift: f32,
+    dither_enabled: bool,
+    dither_intensity: f32,
 ) -> io::Result<()> {
     let buffer = FrameBuffer::from_downsampled(
         downsampled,
@@ -416,6 +459,8 @@ pub fn render_frame(
         invert_palette,
         color_mode,
         hue_shift,
+        dither_enabled,
+        dither_intensity,
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -431,6 +476,8 @@ pub struct TerminalRenderer {
     invert_palette: bool,
     color_mode: ColorMode,
     hue_shift: f32,
+    dither_enabled: bool,
+    dither_intensity: f32,
 }
 
 impl TerminalRenderer {
@@ -453,7 +500,14 @@ impl TerminalRenderer {
             invert_palette,
             color_mode,
             hue_shift: 0.0,
+            dither_enabled: false,
+            dither_intensity: 0.5,
         }
+    }
+
+    pub fn set_dither(&mut self, enabled: bool, intensity: f32) {
+        self.dither_enabled = enabled;
+        self.dither_intensity = intensity;
     }
 
     pub fn set_dimensions(&mut self, width: usize, height: usize) {
@@ -498,6 +552,8 @@ impl TerminalRenderer {
             self.invert_palette,
             self.color_mode,
             self.hue_shift,
+            self.dither_enabled,
+            self.dither_intensity,
         );
 
         execute!(self.stdout, &buffer)
@@ -522,6 +578,8 @@ impl TerminalRenderer {
             self.invert_palette,
             self.color_mode,
             self.hue_shift,
+            self.dither_enabled,
+            self.dither_intensity,
         );
 
         if let Some((lines, x, y)) = help_lines {
@@ -900,6 +958,8 @@ mod tests {
     fn test_create_cell_ascii_bottom_half_brightness() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
+            0,
+            0,
             0.0,
             0.5,
             &Palette::Organic,
@@ -908,6 +968,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
+            false,
+            0.5,
         );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
@@ -991,6 +1053,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
+            false,
+            0.5,
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -1023,6 +1087,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
+            false,
+            0.5,
         );
 
         assert_eq!(buffer.cells[0].char, '▀');

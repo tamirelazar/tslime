@@ -263,8 +263,15 @@ impl FrameBuffer {
         downsampled: &[DownsampleCell],
         width: usize,
         height: usize,
+        _max_trail_value: f32,
         palette: Palette,
+        _charset: Charset,
+        _reverse_palette: bool,
+        _invert_palette: bool,
         color_mode: ColorMode,
+        _hue_shift: f32,
+        _dither_enabled: bool,
+        _dither_intensity: f32,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode);
 
@@ -327,8 +334,15 @@ fn bench_framebuffer_256color(c: &mut Criterion) {
                 black_box(&downsampled),
                 black_box(width),
                 black_box(height),
+                black_box(20.0),
                 black_box(palette),
+                black_box(Charset::HalfBlock),
+                black_box(false),
+                black_box(false),
                 black_box(color_mode),
+                black_box(0.0),
+                black_box(false),
+                black_box(0.5),
             );
             black_box(buffer.build_frame_string(true));
         });
@@ -348,8 +362,15 @@ fn bench_framebuffer_truecolor(c: &mut Criterion) {
                 black_box(&downsampled),
                 black_box(width),
                 black_box(height),
+                black_box(20.0),
                 black_box(palette),
+                black_box(Charset::HalfBlock),
+                black_box(false),
+                black_box(false),
                 black_box(color_mode),
+                black_box(0.0),
+                black_box(false),
+                black_box(0.5),
             );
             black_box(buffer.build_frame_string(true));
         });
@@ -369,8 +390,15 @@ fn bench_framebuffer_large_256color(c: &mut Criterion) {
                 black_box(&downsampled),
                 black_box(width),
                 black_box(height),
+                black_box(20.0),
                 black_box(palette),
+                black_box(Charset::HalfBlock),
+                black_box(false),
+                black_box(false),
                 black_box(color_mode),
+                black_box(0.0),
+                black_box(false),
+                black_box(0.5),
             );
             black_box(buffer.build_frame_string(true));
         });
@@ -390,8 +418,15 @@ fn bench_framebuffer_large_truecolor(c: &mut Criterion) {
                 black_box(&downsampled),
                 black_box(width),
                 black_box(height),
+                black_box(20.0),
                 black_box(palette),
+                black_box(Charset::HalfBlock),
+                black_box(false),
+                black_box(false),
                 black_box(color_mode),
+                black_box(0.0),
+                black_box(false),
+                black_box(0.5),
             );
             black_box(buffer.build_frame_string(true));
         });

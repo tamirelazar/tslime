@@ -420,6 +420,20 @@ pub struct Args {
         help = "Global multiplier for attractor/repeller strength (0.1-10.0)"
     )]
     pub attractor_strength: f32,
+
+    #[arg(
+        long = "dither",
+        help = "Enable ordered dithering for smoother color gradients on limited color terminals"
+    )]
+    pub dither: bool,
+
+    #[arg(
+        long = "dither-intensity",
+        value_name = "FLOAT",
+        default_value = "0.5",
+        help = "Dithering intensity (0.0-1.0, higher = more dithering effect)"
+    )]
+    pub dither_intensity: f32,
 }
 
 impl Args {
@@ -529,6 +543,12 @@ impl Args {
                 self.attractor_strength
             ));
         }
+        if self.dither_intensity < 0.0 || self.dither_intensity > 1.0 {
+            return Err(format!(
+                "dither_intensity must be between 0.0 and 1.0, got {}",
+                self.dither_intensity
+            ));
+        }
         Ok(())
     }
 
@@ -585,6 +605,8 @@ impl Default for Args {
             frame_count: 50,
             frame_skip: 50,
             frame_dir: "frames".to_string(),
+            dither: false,
+            dither_intensity: 0.5,
         }
     }
 }
@@ -637,6 +659,8 @@ mod tests {
             frame_count: 50,
             frame_skip: 50,
             frame_dir: "frames".to_string(),
+            dither: false,
+            dither_intensity: 0.5,
         };
         assert_eq!(args.mode(), Mode::Default);
     }
