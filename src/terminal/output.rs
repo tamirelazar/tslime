@@ -98,6 +98,7 @@ impl FrameBuffer {
         reverse_palette: bool,
         invert_palette: bool,
         color_mode: ColorMode,
+        hue_shift: f32,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode);
 
@@ -128,6 +129,7 @@ impl FrameBuffer {
                 reverse_palette,
                 invert_palette,
                 color_mode,
+                hue_shift,
             );
             buffer.set_cell(x, y, cell);
         }
@@ -146,6 +148,7 @@ impl FrameBuffer {
         reverse_palette: bool,
         invert_palette: bool,
         color_mode: ColorMode,
+        hue_shift: f32,
     ) -> Cell {
         const THRESHOLD: f32 = 0.05;
 
@@ -171,6 +174,7 @@ impl FrameBuffer {
                         palette.clone(),
                         reverse_palette,
                         invert_palette,
+                        hue_shift,
                     );
                     Cell {
                         char,
@@ -210,6 +214,7 @@ impl FrameBuffer {
                         palette.clone(),
                         reverse_palette,
                         invert_palette,
+                        hue_shift,
                     );
                     Cell {
                         char,
@@ -249,6 +254,7 @@ impl FrameBuffer {
                         palette.clone(),
                         reverse_palette,
                         invert_palette,
+                        hue_shift,
                     );
                     Cell {
                         char,
@@ -384,6 +390,7 @@ pub fn render_frame(
     reverse_palette: bool,
     invert_palette: bool,
     color_mode: ColorMode,
+    hue_shift: f32,
 ) -> io::Result<()> {
     let buffer = FrameBuffer::from_downsampled(
         downsampled,
@@ -395,6 +402,7 @@ pub fn render_frame(
         reverse_palette,
         invert_palette,
         color_mode,
+        hue_shift,
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -409,6 +417,7 @@ pub struct TerminalRenderer {
     reverse_palette: bool,
     invert_palette: bool,
     color_mode: ColorMode,
+    hue_shift: f32,
 }
 
 impl TerminalRenderer {
@@ -430,6 +439,7 @@ impl TerminalRenderer {
             reverse_palette,
             invert_palette,
             color_mode,
+            hue_shift: 0.0,
         }
     }
 
@@ -441,6 +451,11 @@ impl TerminalRenderer {
     #[allow(dead_code)]
     pub fn set_palette(&mut self, palette: Palette) {
         self.palette = palette;
+    }
+
+    #[allow(dead_code)]
+    pub fn set_hue_shift(&mut self, hue_shift: f32) {
+        self.hue_shift = hue_shift;
     }
 
     #[allow(dead_code)]
@@ -469,6 +484,7 @@ impl TerminalRenderer {
             self.reverse_palette,
             self.invert_palette,
             self.color_mode,
+            self.hue_shift,
         );
 
         execute!(self.stdout, &buffer)
@@ -492,6 +508,7 @@ impl TerminalRenderer {
             self.reverse_palette,
             self.invert_palette,
             self.color_mode,
+            self.hue_shift,
         );
 
         if let Some((lines, x, y)) = help_lines {
@@ -607,6 +624,7 @@ mod tests {
             false,
             false,
             ColorMode::Bits256,
+            0.0,
         );
         assert_eq!(cell.char, ' ');
         assert!(cell.fg_color_256.is_none());
@@ -626,6 +644,7 @@ mod tests {
             false,
             false,
             ColorMode::Bits256,
+            0.0,
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_some());
@@ -645,6 +664,7 @@ mod tests {
             false,
             false,
             ColorMode::TrueColor,
+            0.0,
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_none());
@@ -664,6 +684,7 @@ mod tests {
             false,
             false,
             ColorMode::Bits256,
+            0.0,
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -681,6 +702,7 @@ mod tests {
             false,
             false,
             ColorMode::Bits256,
+            0.0,
         );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color_256.is_some());
@@ -698,6 +720,7 @@ mod tests {
             false,
             false,
             ColorMode::Bits256,
+            0.0,
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -715,6 +738,7 @@ mod tests {
             false,
             false,
             ColorMode::Bits256,
+            0.0,
         );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color_256.is_some());
@@ -724,7 +748,7 @@ mod tests {
     #[test]
     fn test_create_cell_braille_top_only() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256);
+        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256, 0.0);
         assert_eq!(cell.char, '\u{2807}');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -733,7 +757,7 @@ mod tests {
     #[test]
     fn test_create_cell_braille_bottom_only() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256);
+        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256, 0.0);
         assert_eq!(cell.char, '\u{2838}');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -742,7 +766,7 @@ mod tests {
     #[test]
     fn test_create_cell_braille_top_half_brightness() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256);
+        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256, 0.0);
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -751,7 +775,7 @@ mod tests {
     #[test]
     fn test_create_cell_braille_bottom_half_brightness() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(0.0, 0.5, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256);
+        let cell = buffer.create_cell(0.0, 0.5, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256, 0.0);
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -760,7 +784,7 @@ mod tests {
     #[test]
     fn test_create_cell_ascii_top_only() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Ascii, false, false, ColorMode::Bits256);
+        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Ascii, false, false, ColorMode::Bits256, 0.0);
         assert_eq!(cell.char, '^');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -769,7 +793,7 @@ mod tests {
     #[test]
     fn test_create_cell_ascii_bottom_only() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Ascii, false, false, ColorMode::Bits256);
+        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Ascii, false, false, ColorMode::Bits256, 0.0);
         assert_eq!(cell.char, 'v');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -778,7 +802,7 @@ mod tests {
     #[test]
     fn test_create_cell_ascii_top_half_brightness() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::Ascii, false, false, ColorMode::Bits256);
+        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::Ascii, false, false, ColorMode::Bits256, 0.0);
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -787,7 +811,7 @@ mod tests {
     #[test]
     fn test_create_cell_ascii_bottom_half_brightness() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(0.0, 0.5, &Palette::Organic, Charset::Ascii, false, false, ColorMode::Bits256);
+        let cell = buffer.create_cell(0.0, 0.5, &Palette::Organic, Charset::Ascii, false, false, ColorMode::Bits256, 0.0);
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -865,6 +889,7 @@ mod tests {
             false,
             false,
             ColorMode::Bits256,
+            0.0,
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -896,6 +921,7 @@ mod tests {
             false,
             false,
             ColorMode::Bits256,
+            0.0,
         );
 
         assert_eq!(buffer.cells[0].char, '▀');

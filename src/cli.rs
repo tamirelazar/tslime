@@ -337,6 +337,14 @@ pub struct Args {
     pub invert_palette: bool,
 
     #[arg(
+        long = "palette-shift",
+        value_name = "DEG",
+        default_value = "0",
+        help = "Rotate palette hue over time (degrees per second, negative for reverse rotation)"
+    )]
+    pub palette_shift: f32,
+
+    #[arg(
         long = "trail-history",
         value_name = "INT",
         default_value = "0",
@@ -504,6 +512,7 @@ impl Default for Args {
             verbose: false,
             reverse_palette: false,
             invert_palette: false,
+            palette_shift: 0.0,
             trail_history: 0,
             motion_blur: false,
             auto_normalize: false,
@@ -553,6 +562,7 @@ mod tests {
             verbose: false,
             reverse_palette: false,
             invert_palette: false,
+            palette_shift: 0.0,
             trail_history: 0,
             motion_blur: false,
             auto_normalize: false,

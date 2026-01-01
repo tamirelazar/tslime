@@ -105,6 +105,7 @@ fn print_mode(
         args.reverse_palette,
         args.invert_palette,
         color_mode,
+        0.0,
     );
 
     print!("{}", buffer.build_frame_string(args.plain_output, color_mode));
@@ -164,6 +165,7 @@ fn capture_frames_mode(
             args.reverse_palette,
             args.invert_palette,
             color_mode,
+            0.0,
         );
 
         let frame_content = buffer.build_frame_string(args.plain_output, color_mode);
@@ -269,6 +271,7 @@ fn run_simulation(
     );
 
     let mut adaptive_brightness = AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+    let mut hue_offset: f32 = 0.0;
 
     loop {
         if is_shutdown_requested() {
@@ -314,6 +317,10 @@ fn run_simulation(
         };
 
         let current_palette = runtime_state.current_palette(&palette_list);
+
+        hue_offset += args.palette_shift * dt;
+        hue_offset %= 360.0;
+        renderer.set_hue_shift(hue_offset);
 
         static HELP_LINES: [&str; 9] = [
             "┌─ tslime controls ───────────────────────┐",

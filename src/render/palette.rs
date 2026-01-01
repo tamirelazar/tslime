@@ -480,7 +480,7 @@ fn invert_rgb(rgb: RgbColor) -> RgbColor {
     }
 }
 
-pub fn map_brightness_rgb(brightness: f32, palette: Palette, reverse: bool, invert: bool) -> RgbColor {
+pub fn map_brightness_rgb(brightness: f32, palette: Palette, reverse: bool, invert: bool, hue_shift: f32) -> RgbColor {
     let mut brightness = brightness.clamp(0.0, 1.0);
     let gradient = get_rgb_gradient(palette);
 
@@ -514,8 +514,16 @@ pub fn map_brightness_rgb(brightness: f32, palette: Palette, reverse: bool, inve
 
     let final_color = RgbColor { r, g, b };
 
-    if invert {
+    let final_color = if invert {
         invert_rgb(final_color)
+    } else {
+        final_color
+    };
+
+    if hue_shift != 0.0 {
+        let hsv = rgb_to_hsv(final_color);
+        let rotated = rotate_hue(hsv, hue_shift);
+        hsv_to_rgb(rotated)
     } else {
         final_color
     }
@@ -655,7 +663,7 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_min() {
-        let color = map_brightness_rgb(0.0, Palette::Organic, false, false);
+        let color = map_brightness_rgb(0.0, Palette::Organic, false, false, 0.0);
         assert_eq!(color.r, 18);
         assert_eq!(color.g, 18);
         assert_eq!(color.b, 18);
@@ -663,7 +671,7 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_max() {
-        let color = map_brightness_rgb(1.0, Palette::Organic, false, false);
+        let color = map_brightness_rgb(1.0, Palette::Organic, false, false, 0.0);
         assert_eq!(color.r, 150);
         assert_eq!(color.g, 220);
         assert_eq!(color.b, 200);
@@ -671,12 +679,12 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_interpolation() {
-        let color = map_brightness_rgb(0.5, Palette::Organic, false, false);
+        let color = map_brightness_rgb(0.5, Palette::Organic, false, false, 0.0);
         assert!(color.r >= 18 && color.r <= 160);
         assert!(color.g >= 18 && color.g <= 220);
         assert!(color.b >= 18 && color.b <= 200);
 
-        let color = map_brightness_rgb(0.5, Palette::Ocean, false, false);
+        let color = map_brightness_rgb(0.5, Palette::Ocean, false, false, 0.0);
         assert!(color.r >= 18 && color.r <= 80);
         assert!(color.g >= 18 && color.g <= 170);
         assert!(color.b >= 18 && color.b <= 240);
@@ -684,8 +692,8 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_heat() {
-        let min_color = map_brightness_rgb(0.0, Palette::Heat, false, false);
-        let max_color = map_brightness_rgb(1.0, Palette::Heat, false, false);
+        let min_color = map_brightness_rgb(0.0, Palette::Heat, false, false, 0.0);
+        let max_color = map_brightness_rgb(1.0, Palette::Heat, false, false, 0.0);
         assert_eq!(min_color.r, 40);
         assert_eq!(min_color.g, 20);
         assert_eq!(min_color.b, 20);
@@ -696,8 +704,8 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_ocean() {
-        let min_color = map_brightness_rgb(0.0, Palette::Ocean, false, false);
-        let max_color = map_brightness_rgb(1.0, Palette::Ocean, false, false);
+        let min_color = map_brightness_rgb(0.0, Palette::Ocean, false, false, 0.0);
+        let max_color = map_brightness_rgb(1.0, Palette::Ocean, false, false, 0.0);
         assert_eq!(min_color.r, 18);
         assert_eq!(min_color.g, 18);
         assert_eq!(min_color.b, 18);
@@ -708,8 +716,8 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_forest() {
-        let min_color = map_brightness_rgb(0.0, Palette::Forest, false, false);
-        let max_color = map_brightness_rgb(1.0, Palette::Forest, false, false);
+        let min_color = map_brightness_rgb(0.0, Palette::Forest, false, false, 0.0);
+        let max_color = map_brightness_rgb(1.0, Palette::Forest, false, false, 0.0);
         assert_eq!(min_color.r, 20);
         assert_eq!(min_color.g, 40);
         assert_eq!(min_color.b, 20);
@@ -720,8 +728,8 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_reverse() {
-        let normal = map_brightness_rgb(0.0, Palette::Organic, false, false);
-        let reversed = map_brightness_rgb(1.0, Palette::Organic, true, false);
+        let normal = map_brightness_rgb(0.0, Palette::Organic, false, false, 0.0);
+        let reversed = map_brightness_rgb(1.0, Palette::Organic, true, false, 0.0);
         assert_eq!(normal.r, reversed.r);
         assert_eq!(normal.g, reversed.g);
         assert_eq!(normal.b, reversed.b);
@@ -729,8 +737,8 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_invert() {
-        let normal = map_brightness_rgb(0.5, Palette::Organic, false, false);
-        let inverted = map_brightness_rgb(0.5, Palette::Organic, false, true);
+        let normal = map_brightness_rgb(0.5, Palette::Organic, false, false, 0.0);
+        let inverted = map_brightness_rgb(0.5, Palette::Organic, false, true, 0.0);
         assert_eq!(inverted.r, 255 - normal.r);
         assert_eq!(inverted.g, 255 - normal.g);
         assert_eq!(inverted.b, 255 - normal.b);
@@ -755,7 +763,7 @@ mod tests {
         ];
 
         for palette in palettes {
-            let color = map_brightness_rgb(0.5, palette, false, false);
+            let color = map_brightness_rgb(0.5, palette, false, false, 0.0);
             assert!(color.r <= 255 && color.g <= 255 && color.b <= 255);
             assert!(color.r >= 0 && color.g >= 0 && color.b >= 0);
         }
@@ -763,9 +771,9 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_clamped() {
-        let min = map_brightness_rgb(-0.5, Palette::Heat, false, false);
-        let max = map_brightness_rgb(1.5, Palette::Heat, false, false);
-        let normal = map_brightness_rgb(0.5, Palette::Heat, false, false);
+        let min = map_brightness_rgb(-0.5, Palette::Heat, false, false, 0.0);
+        let max = map_brightness_rgb(1.5, Palette::Heat, false, false, 0.0);
+        let normal = map_brightness_rgb(0.5, Palette::Heat, false, false, 0.0);
         assert_eq!(min.r, 40);
         assert_eq!(max.r, 240);
         assert!(min.r <= normal.r && normal.r <= max.r);
@@ -950,13 +958,13 @@ mod tests {
 
     #[test]
     fn test_slime_palette_rgb_values() {
-        let color = map_brightness_rgb(0.5, Palette::Slime, false, false);
+        let color = map_brightness_rgb(0.5, Palette::Slime, false, false, 0.0);
         assert!(color.g > color.r && color.g > color.b);
     }
 
     #[test]
     fn test_fungus_palette_has_purple_tones() {
-        let color = map_brightness_rgb(0.3, Palette::Fungus, false, false);
+        let color = map_brightness_rgb(0.3, Palette::Fungus, false, false, 0.0);
         assert!(color.r > 50 && color.b > 50);
     }
 
@@ -969,10 +977,56 @@ mod tests {
             Palette::Swamp,
         ];
         for palette in palettes {
-            let color = map_brightness_rgb(0.5, palette, false, false);
+            let color = map_brightness_rgb(0.5, palette, false, false, 0.0);
             assert!(color.r <= 255 && color.g <= 255 && color.b <= 255);
             assert!(color.r >= 0 && color.g >= 0 && color.b >= 0);
         }
+    }
+
+    #[test]
+    fn test_map_brightness_rgb_hue_shift_zero() {
+        let color_no_shift = map_brightness_rgb(0.5, Palette::Organic, false, false, 0.0);
+        let color_default = map_brightness_rgb(0.5, Palette::Organic, false, false, 0.0);
+        assert_eq!(color_no_shift.r, color_default.r);
+        assert_eq!(color_no_shift.g, color_default.g);
+        assert_eq!(color_no_shift.b, color_default.b);
+    }
+
+    #[test]
+    fn test_map_brightness_rgb_hue_shift_positive() {
+        let color_no_shift = map_brightness_rgb(0.5, Palette::Neon, false, false, 0.0);
+        let color_shifted = map_brightness_rgb(0.5, Palette::Neon, false, false, 90.0);
+        assert!(color_no_shift != color_shifted, "Color should change with hue shift");
+    }
+
+    #[test]
+    fn test_map_brightness_rgb_hue_shift_negative() {
+        let color_no_shift = map_brightness_rgb(0.5, Palette::Neon, false, false, 0.0);
+        let color_shifted = map_brightness_rgb(0.5, Palette::Neon, false, false, -90.0);
+        assert!(color_no_shift != color_shifted, "Color should change with negative hue shift");
+    }
+
+    #[test]
+    fn test_map_brightness_rgb_hue_shift_wraps_around() {
+        let color_no_shift = map_brightness_rgb(0.5, Palette::Organic, false, false, 0.0);
+        let color_shifted_360 = map_brightness_rgb(0.5, Palette::Organic, false, false, 360.0);
+        assert_eq!(color_no_shift.r, color_shifted_360.r);
+        assert_eq!(color_no_shift.g, color_shifted_360.g);
+        assert_eq!(color_no_shift.b, color_shifted_360.b);
+    }
+
+    #[test]
+    fn test_map_brightness_rgb_hue_shift_with_invert() {
+        let color_shifted = map_brightness_rgb(0.5, Palette::Organic, false, true, 90.0);
+        assert!(color_shifted.r <= 255 && color_shifted.g <= 255 && color_shifted.b <= 255);
+        assert!(color_shifted.r >= 0 && color_shifted.g >= 0 && color_shifted.b >= 0);
+    }
+
+    #[test]
+    fn test_map_brightness_rgb_hue_shift_with_reverse() {
+        let color_shifted = map_brightness_rgb(0.5, Palette::Organic, true, false, 90.0);
+        assert!(color_shifted.r <= 255 && color_shifted.g <= 255 && color_shifted.b <= 255);
+        assert!(color_shifted.r >= 0 && color_shifted.g >= 0 && color_shifted.b >= 0);
     }
 }
 
