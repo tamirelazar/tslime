@@ -110,6 +110,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('2') => ControlAction::SetPreset(Preset::Exploratory),
         KeyCode::Char('3') => ControlAction::SetPreset(Preset::Tendrils),
         KeyCode::Char('4') => ControlAction::SetPreset(Preset::Organic),
+        KeyCode::Char('5') => ControlAction::SetPreset(Preset::Minimal),
         KeyCode::Char('+') | KeyCode::Char('=') => ControlAction::AdjustTimeScale(0.5),
         KeyCode::Char('-') | KeyCode::Char('_') => ControlAction::AdjustTimeScale(-0.5),
         KeyCode::Char('C') if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -128,6 +129,7 @@ pub fn preset_name(preset: Preset) -> &'static str {
         Preset::Exploratory => "Exploratory",
         Preset::Tendrils => "Tendrils",
         Preset::Organic => "Organic",
+        Preset::Minimal => "Minimal",
     }
 }
 

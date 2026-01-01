@@ -335,7 +335,7 @@ fn run_simulation(
             "┌─ tslime controls ───────────────────────┐",
             "│ p: Pause/Resume                         │",
             "│ r: Restart                              │",
-            "│ 1-4: Presets  (Network,Exploratory,etc) │",
+            "│ 1-5: Presets  (Network,Exploratory,etc) │",
             "│ +/-: Time scale (0.5x - 4.0x)           │",
             "│ c: Cycle palette (Shift+C reverse)      │",
             "│ h: Toggle this help                     │",
@@ -479,7 +479,7 @@ mod tests {
     const HELP_LINES_CONTENT: [&str; 7] = [
         "│ p: Pause/Resume                         │",
         "│ r: Restart                              │",
-        "│ 1-4: Presets  (Network,Exploratory,etc) │",
+        "│ 1-5: Presets  (Network,Exploratory,etc) │",
         "│ +/-: Time scale (0.5x - 4.0x)           │",
         "│ c: Cycle palette (Shift+C reverse)      │",
         "│ h: Toggle this help                     │",

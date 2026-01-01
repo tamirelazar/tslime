@@ -71,8 +71,9 @@ impl FromStr for Preset {
             "exploratory" => Ok(Preset::Exploratory),
             "tendrils" => Ok(Preset::Tendrils),
             "organic" => Ok(Preset::Organic),
+            "minimal" => Ok(Preset::Minimal),
             _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic",
+                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal",
                 s
             )),
         }
@@ -277,7 +278,7 @@ pub struct Args {
     #[arg(
         long = "preset",
         value_name = "NAME",
-        help = "Use named preset (network, exploratory, tendrils, organic)"
+        help = "Use named preset (network, exploratory, tendrils, organic, minimal)"
     )]
     pub preset: Option<Preset>,
 

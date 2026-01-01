@@ -10,6 +10,7 @@ pub enum Preset {
     Exploratory,
     Tendrils,
     Organic,
+    Minimal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -191,6 +192,20 @@ impl From<Preset> for SimConfig {
                 attractor_strength: 1.0,
             },
             Preset::Organic => Self::default(),
+            Preset::Minimal => Self {
+                population: 15_000,
+                sensor_angle: 30.0,
+                sensor_distance: 9.0,
+                rotation_angle: 30.0,
+                step_size: 0.8,
+                decay_factor: 0.95,
+                deposit_amount: 3.0,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+                diffusion_sigma: 1.0,
+                max_brightness: 15.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
+            },
         }
     }
 }
