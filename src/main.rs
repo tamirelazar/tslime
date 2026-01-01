@@ -334,8 +334,11 @@ fn run_simulation(
             "└─────────────────────────────────────────┘",
         ];
 
-        let help_data = if runtime_state.show_help {
-            Some((HELP_LINES.as_slice(), 2, 2))
+        let help_lines = if runtime_state.show_help {
+            Some(render::overlay::OverlayRenderer::build_help_with_attractors(
+                &HELP_LINES,
+                &sim.config().attractors,
+            ))
         } else {
             None
         };
@@ -366,7 +369,7 @@ fn run_simulation(
             renderer.render_with_overlay(
                 downsampled.cells(),
                 max_brightness,
-                help_data,
+                help_lines.as_ref().map(|v| (v.as_slice(), 2, 2)),
                 status_data,
                 paused_data,
             )?;
@@ -389,7 +392,9 @@ fn run_simulation(
                 }
                 ControlAction::SetPreset(preset) => {
                     runtime_state.set_preset(preset);
-                    let new_config = SimConfig::from(preset);
+                    let mut new_config = SimConfig::from(preset);
+                    new_config.attractors = sim.config().attractors.clone();
+                    new_config.attractor_strength = sim.config().attractor_strength;
                     sim.update_config(new_config);
                 }
                 ControlAction::AdjustTimeScale(delta) => {

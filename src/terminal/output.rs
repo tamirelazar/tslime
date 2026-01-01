@@ -57,12 +57,13 @@ impl FrameBuffer {
         }
     }
 
-    pub fn draw_text_overlay(&mut self, text_lines: &[&str], start_x: usize, start_y: usize, fg_color: u8, bg_color: Option<u8>) {
+    pub fn draw_text_overlay<T: AsRef<str>>(&mut self, text_lines: &[T], start_x: usize, start_y: usize, fg_color: u8, bg_color: Option<u8>) {
         for (dy, line) in text_lines.iter().enumerate() {
             let y = start_y + dy;
             if y >= self.height {
                 break;
             }
+            let line = line.as_ref();
             for (dx, ch) in line.chars().enumerate() {
                 let x = start_x + dx;
                 if x >= self.width {
@@ -490,11 +491,11 @@ impl TerminalRenderer {
         execute!(self.stdout, &buffer)
     }
 
-    pub fn render_with_overlay(
+    pub fn render_with_overlay<T: AsRef<str>>(
         &mut self,
         downsampled: &[DownsampleCell],
         max_trail_value: f32,
-        help_lines: Option<(&[&str], usize, usize)>,
+        help_lines: Option<(&[T], usize, usize)>,
         status_line: Option<(String, usize)>,
         paused_line: Option<(String, usize)>,
     ) -> io::Result<()> {

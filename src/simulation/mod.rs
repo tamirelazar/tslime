@@ -337,6 +337,9 @@ impl Simulation {
         let effective_deposit = self.config.deposit_amount * dt;
         let effective_decay = self.config.decay_factor.powf(dt);
 
+        let attractors = &self.config.attractors;
+        let attractor_strength = self.config.attractor_strength * dt;
+
         for agent in &mut self.agents {
             let trail = self.trail_map.current();
 
@@ -355,6 +358,8 @@ impl Simulation {
                 self.config.rotation_angle,
                 &mut self.rng,
             );
+
+            agent.apply_attractor_forces(attractors, attractor_strength, width, height);
 
             agent.move_forward(effective_step_size, width, height);
 

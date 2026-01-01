@@ -23,6 +23,19 @@ pub enum InitMode {
     RandomClusters,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Attractor {
+    pub x: f32,
+    pub y: f32,
+    pub strength: f32,
+}
+
+impl Attractor {
+    pub fn new(x: f32, y: f32, strength: f32) -> Self {
+        Self { x, y, strength }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SimConfig {
     pub population: usize,
@@ -35,6 +48,8 @@ pub struct SimConfig {
     pub diffusion_kernel: DiffusionKernel,
     pub diffusion_sigma: f32,
     pub max_brightness: f32,
+    pub attractors: Vec<Attractor>,
+    pub attractor_strength: f32,
 }
 
 impl Default for SimConfig {
@@ -50,6 +65,8 @@ impl Default for SimConfig {
             diffusion_kernel: DiffusionKernel::Mean3x3,
             diffusion_sigma: 1.0,
             max_brightness: 20.0,
+            attractors: Vec::new(),
+            attractor_strength: 1.0,
         }
     }
 }
@@ -110,6 +127,20 @@ impl SimConfig {
                 self.diffusion_sigma
             ));
         }
+        if self.attractor_strength < 0.1 || self.attractor_strength > 10.0 {
+            return Err(format!(
+                "attractor_strength must be between 0.1 and 10.0, got {}",
+                self.attractor_strength
+            ));
+        }
+        for (i, attractor) in self.attractors.iter().enumerate() {
+            if attractor.strength < -10.0 || attractor.strength > 10.0 {
+                return Err(format!(
+                    "attractor[{}].strength must be between -10.0 and 10.0, got {}",
+                    i, attractor.strength
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -128,6 +159,8 @@ impl From<Preset> for SimConfig {
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
                 max_brightness: 20.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
             },
             Preset::Exploratory => Self {
                 population: 30_000,
@@ -140,6 +173,8 @@ impl From<Preset> for SimConfig {
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
                 max_brightness: 12.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
             },
             Preset::Tendrils => Self {
                 population: 40_000,
@@ -152,6 +187,8 @@ impl From<Preset> for SimConfig {
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
                 max_brightness: 16.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
             },
             Preset::Organic => Self::default(),
         }
@@ -233,5 +270,46 @@ mod tests {
             ..Default::default()
         };
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_attractor_strength_too_low() {
+        let config = SimConfig {
+            attractor_strength: 0.05,
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_attractor_strength_too_high() {
+        let config = SimConfig {
+            attractor_strength: 15.0,
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_attractor_strength_valid() {
+        let config = SimConfig {
+            attractor_strength: 5.0,
+            ..Default::default()
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_attractor_creation() {
+        let attractor = Attractor::new(200.0, 200.0, 1.0);
+        assert_eq!(attractor.x, 200.0);
+        assert_eq!(attractor.y, 200.0);
+        assert_eq!(attractor.strength, 1.0);
+    }
+
+    #[test]
+    fn test_negative_attractor_strength() {
+        let attractor = Attractor::new(200.0, 200.0, -1.0);
+        assert_eq!(attractor.strength, -1.0);
     }
 }

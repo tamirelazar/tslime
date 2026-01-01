@@ -2,6 +2,8 @@ use rand::Rng as RandRng;
 use rand_xoshiro::Xoshiro256PlusPlus as Rng;
 use std::f32::consts::PI;
 
+use super::config::Attractor;
+
 #[derive(Clone, Copy)]
 pub struct Agent {
     pub x: f32,
@@ -65,6 +67,45 @@ impl Agent {
             self.heading -= rotation_angle_rad;
         } else if right > left {
             self.heading += rotation_angle_rad;
+        }
+    }
+
+    pub fn apply_attractor_forces(&mut self, attractors: &[Attractor], strength_multiplier: f32, _width: usize, _height: usize) {
+        if attractors.is_empty() {
+            return;
+        }
+
+        let mut force_x: f32 = 0.0;
+        let mut force_y: f32 = 0.0;
+
+        for attractor in attractors {
+            let dx = attractor.x - self.x;
+            let dy = attractor.y - self.y;
+            let dist_sq = dx * dx + dy * dy;
+
+            let min_dist = 1.0;
+            let dist_sq = dist_sq.max(min_dist * min_dist);
+
+            let force = attractor.strength * strength_multiplier / dist_sq.sqrt();
+
+            force_x += dx / dist_sq.sqrt() * force;
+            force_y += dy / dist_sq.sqrt() * force;
+        }
+
+        if force_x.abs() > 0.001 || force_y.abs() > 0.001 {
+            let target_heading = force_y.atan2(force_x);
+            let diff = target_heading - self.heading;
+
+            let mut normalized_diff = diff;
+            while normalized_diff > PI {
+                normalized_diff -= 2.0 * PI;
+            }
+            while normalized_diff < -PI {
+                normalized_diff += 2.0 * PI;
+            }
+
+            let steer_strength = 0.1;
+            self.heading += normalized_diff * steer_strength;
         }
     }
 
@@ -194,5 +235,39 @@ mod tests {
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(42);
         agent.rotate(1.0, 1.0, 10.0, 45.0, &mut rng);
         assert!((agent.heading - (45.0 * PI / 180.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_apply_attractor_forces_attract() {
+        let mut agent = Agent::new(100.0, 100.0, PI / 2.0);
+        let attractors = vec![Attractor::new(150.0, 200.0, 1.0)];
+        agent.apply_attractor_forces(&attractors, 1.0, 400, 400);
+        assert!((agent.heading - PI / 2.0).abs() < 0.15, "heading should adjust toward attractor, got {}", agent.heading);
+    }
+
+    #[test]
+    fn test_apply_attractor_forces_repel() {
+        let mut agent = Agent::new(100.0, 100.0, PI / 2.0);
+        let attractors = vec![Attractor::new(150.0, 200.0, -1.0)];
+        agent.apply_attractor_forces(&attractors, 1.0, 400, 400);
+        assert!((agent.heading - PI / 2.0).abs() > 0.1, "heading should turn away from repeller, got {}", agent.heading);
+    }
+
+    #[test]
+    fn test_apply_attractor_forces_no_attractors() {
+        let mut agent = Agent::new(100.0, 100.0, 0.0);
+        let original_heading = agent.heading;
+        agent.apply_attractor_forces(&[], 1.0, 400, 400);
+        assert_eq!(agent.heading, original_heading);
+    }
+
+    #[test]
+    fn test_apply_attractor_forces_multiple() {
+        let mut agent = Agent::new(200.0, 200.0, 0.0);
+        let attractors = vec![
+            Attractor::new(100.0, 200.0, 1.0),
+            Attractor::new(300.0, 200.0, 1.0),
+        ];
+        agent.apply_attractor_forces(&attractors, 1.0, 400, 400);
     }
 }

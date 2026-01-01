@@ -2,7 +2,7 @@ use clap::Parser;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
-use crate::simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig};
+use crate::simulation::config::{Attractor, DiffusionKernel, InitMode, Preset, SimConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -96,6 +96,39 @@ impl FromStr for InitMode {
                 s
             )),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AttractorArg {
+    pub x: f32,
+    pub y: f32,
+    pub strength: f32,
+}
+
+impl std::str::FromStr for AttractorArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(',').collect();
+        if parts.len() != 3 {
+            return Err(format!(
+                "Attractor must be in x,y,strength format, got: {}",
+                s
+            ));
+        }
+
+        let x = parts[0]
+            .parse::<f32>()
+            .map_err(|e| format!("Invalid x coordinate: {}", e))?;
+        let y = parts[1]
+            .parse::<f32>()
+            .map_err(|e| format!("Invalid y coordinate: {}", e))?;
+        let strength = parts[2]
+            .parse::<f32>()
+            .map_err(|e| format!("Invalid strength: {}", e))?;
+
+        Ok(AttractorArg { x, y, strength })
     }
 }
 
@@ -371,6 +404,21 @@ pub struct Args {
         help = "Number of frames for adaptive brightness normalization window (1-100)"
     )]
     pub normalize_window: usize,
+
+    #[arg(
+        long = "attract",
+        value_name = "X,Y,STRENGTH",
+        help = "Add point attractor (positive=attract, negative=repel). Can be specified multiple times. Example: --attract 200,200,1.0"
+    )]
+    pub attract: Vec<AttractorArg>,
+
+    #[arg(
+        long = "attractor-strength",
+        value_name = "FLOAT",
+        default_value = "1.0",
+        help = "Global multiplier for attractor/repeller strength (0.1-10.0)"
+    )]
+    pub attractor_strength: f32,
 }
 
 impl Args {
@@ -445,6 +493,9 @@ impl Args {
             config.diffusion_sigma = 0.5;
         }
 
+        config.attractors = self.attract.iter().map(|a| Attractor::new(a.x, a.y, a.strength)).collect();
+        config.attractor_strength = self.attractor_strength;
+
         config
     }
 
@@ -465,6 +516,12 @@ impl Args {
             return Err(format!(
                 "normalize_window must be between 1 and 100, got {}",
                 self.normalize_window
+            ));
+        }
+        if self.attractor_strength < 0.1 || self.attractor_strength > 10.0 {
+            return Err(format!(
+                "attractor_strength must be between 0.1 and 10.0, got {}",
+                self.attractor_strength
             ));
         }
         Ok(())
@@ -517,6 +574,8 @@ impl Default for Args {
             motion_blur: false,
             auto_normalize: false,
             normalize_window: 30,
+            attract: Vec::new(),
+            attractor_strength: 1.0,
             capture_frames: false,
             frame_count: 50,
             frame_skip: 50,
@@ -567,6 +626,8 @@ mod tests {
             motion_blur: false,
             auto_normalize: false,
             normalize_window: 30,
+            attract: Vec::new(),
+            attractor_strength: 1.0,
             capture_frames: false,
             frame_count: 50,
             frame_skip: 50,
@@ -680,6 +741,45 @@ mod tests {
     fn test_validate_trail_history_valid() {
         let args = Args {
             trail_history: 5,
+            ..Default::default()
+        };
+        assert!(args.validate().is_ok());
+    }
+
+    #[test]
+    fn test_attractor_arg_parsing() {
+        let arg: AttractorArg = "200,300,1.5".parse().unwrap();
+        assert_eq!(arg.x, 200.0);
+        assert_eq!(arg.y, 300.0);
+        assert_eq!(arg.strength, 1.5);
+    }
+
+    #[test]
+    fn test_attractor_arg_negative_strength() {
+        let arg: AttractorArg = "100,100,-1.0".parse().unwrap();
+        assert_eq!(arg.strength, -1.0);
+    }
+
+    #[test]
+    fn test_attractor_arg_invalid_format() {
+        assert!("200,300".parse::<AttractorArg>().is_err());
+        assert!("200,300,1.0,extra".parse::<AttractorArg>().is_err());
+        assert!("abc,def,ghi".parse::<AttractorArg>().is_err());
+    }
+
+    #[test]
+    fn test_validate_attractor_strength_too_low() {
+        let args = Args {
+            attractor_strength: 0.05,
+            ..Default::default()
+        };
+        assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_attractor_strength_valid() {
+        let args = Args {
+            attractor_strength: 5.0,
             ..Default::default()
         };
         assert!(args.validate().is_ok());
