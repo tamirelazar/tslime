@@ -394,25 +394,67 @@ impl Simulation {
 
         match init_mode {
             InitMode::Random => {
-                Self::init_random(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+                Self::init_random(
+                    &mut self.rng,
+                    self.trail_map.width(),
+                    self.trail_map.height(),
+                    &mut self.agents,
+                    self.config.population,
+                );
             }
             InitMode::CentralBurst => {
-                Self::init_central_burst(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+                Self::init_central_burst(
+                    &mut self.rng,
+                    self.trail_map.width(),
+                    self.trail_map.height(),
+                    &mut self.agents,
+                    self.config.population,
+                );
             }
             InitMode::Circle => {
-                Self::init_circle(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+                Self::init_circle(
+                    &mut self.rng,
+                    self.trail_map.width(),
+                    self.trail_map.height(),
+                    &mut self.agents,
+                    self.config.population,
+                );
             }
             InitMode::Gradient => {
-                Self::init_gradient(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+                Self::init_gradient(
+                    &mut self.rng,
+                    self.trail_map.width(),
+                    self.trail_map.height(),
+                    &mut self.agents,
+                    self.config.population,
+                );
             }
             InitMode::WaveFront => {
-                Self::init_wave_front(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+                Self::init_wave_front(
+                    &mut self.rng,
+                    self.trail_map.width(),
+                    self.trail_map.height(),
+                    &mut self.agents,
+                    self.config.population,
+                );
             }
             InitMode::Spiral => {
-                Self::init_spiral(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+                Self::init_spiral(
+                    &mut self.rng,
+                    self.trail_map.width(),
+                    self.trail_map.height(),
+                    &mut self.agents,
+                    self.config.population,
+                );
             }
             InitMode::RandomClusters => {
-                Self::init_random_clusters(&mut self.rng, self.trail_map.width(), self.trail_map.height(), &mut self.agents, self.config.population);
+                Self::init_random_clusters(
+                    &mut self.rng,
+                    self.trail_map.width(),
+                    self.trail_map.height(),
+                    &mut self.agents,
+                    self.config.population,
+                );
             }
         }
 

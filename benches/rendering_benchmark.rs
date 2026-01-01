@@ -29,31 +29,119 @@ pub enum ColorMode {
 }
 
 const ORGANIC_RGB: [RgbColor; 11] = [
-    RgbColor { r: 18, g: 18, b: 18 },
-    RgbColor { r: 40, g: 40, b: 40 },
-    RgbColor { r: 70, g: 20, b: 20 },
-    RgbColor { r: 100, g: 40, b: 40 },
-    RgbColor { r: 130, g: 50, b: 40 },
-    RgbColor { r: 160, g: 50, b: 50 },
-    RgbColor { r: 120, g: 100, b: 50 },
-    RgbColor { r: 100, g: 130, b: 60 },
-    RgbColor { r: 80, g: 160, b: 80 },
-    RgbColor { r: 100, g: 190, b: 130 },
-    RgbColor { r: 150, g: 220, b: 200 },
+    RgbColor {
+        r: 18,
+        g: 18,
+        b: 18,
+    },
+    RgbColor {
+        r: 40,
+        g: 40,
+        b: 40,
+    },
+    RgbColor {
+        r: 70,
+        g: 20,
+        b: 20,
+    },
+    RgbColor {
+        r: 100,
+        g: 40,
+        b: 40,
+    },
+    RgbColor {
+        r: 130,
+        g: 50,
+        b: 40,
+    },
+    RgbColor {
+        r: 160,
+        g: 50,
+        b: 50,
+    },
+    RgbColor {
+        r: 120,
+        g: 100,
+        b: 50,
+    },
+    RgbColor {
+        r: 100,
+        g: 130,
+        b: 60,
+    },
+    RgbColor {
+        r: 80,
+        g: 160,
+        b: 80,
+    },
+    RgbColor {
+        r: 100,
+        g: 190,
+        b: 130,
+    },
+    RgbColor {
+        r: 150,
+        g: 220,
+        b: 200,
+    },
 ];
 
 const OCEAN_RGB: [RgbColor; 11] = [
-    RgbColor { r: 18, g: 18, b: 18 },
-    RgbColor { r: 20, g: 20, b: 50 },
-    RgbColor { r: 20, g: 25, b: 60 },
-    RgbColor { r: 20, g: 30, b: 70 },
-    RgbColor { r: 20, g: 40, b: 80 },
-    RgbColor { r: 25, g: 50, b: 100 },
-    RgbColor { r: 30, g: 70, b: 130 },
-    RgbColor { r: 40, g: 90, b: 160 },
-    RgbColor { r: 50, g: 110, b: 190 },
-    RgbColor { r: 60, g: 140, b: 220 },
-    RgbColor { r: 80, g: 170, b: 240 },
+    RgbColor {
+        r: 18,
+        g: 18,
+        b: 18,
+    },
+    RgbColor {
+        r: 20,
+        g: 20,
+        b: 50,
+    },
+    RgbColor {
+        r: 20,
+        g: 25,
+        b: 60,
+    },
+    RgbColor {
+        r: 20,
+        g: 30,
+        b: 70,
+    },
+    RgbColor {
+        r: 20,
+        g: 40,
+        b: 80,
+    },
+    RgbColor {
+        r: 25,
+        g: 50,
+        b: 100,
+    },
+    RgbColor {
+        r: 30,
+        g: 70,
+        b: 130,
+    },
+    RgbColor {
+        r: 40,
+        g: 90,
+        b: 160,
+    },
+    RgbColor {
+        r: 50,
+        g: 110,
+        b: 190,
+    },
+    RgbColor {
+        r: 60,
+        g: 140,
+        b: 220,
+    },
+    RgbColor {
+        r: 80,
+        g: 170,
+        b: 240,
+    },
 ];
 
 fn get_rgb_gradient(palette: Palette) -> &'static [RgbColor; 11] {
@@ -70,7 +158,12 @@ fn get_rgb_gradient(palette: Palette) -> &'static [RgbColor; 11] {
     }
 }
 
-pub fn map_brightness_rgb(brightness: f32, palette: Palette, _reverse: bool, _invert: bool) -> RgbColor {
+pub fn map_brightness_rgb(
+    brightness: f32,
+    palette: Palette,
+    _reverse: bool,
+    _invert: bool,
+) -> RgbColor {
     let brightness = brightness.clamp(0.0, 1.0);
     let gradient = get_rgb_gradient(palette);
 

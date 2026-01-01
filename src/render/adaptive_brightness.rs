@@ -42,11 +42,14 @@ impl AdaptiveBrightness {
         }
 
         if self.peak_history.len() >= 3 {
-            let avg_peak: f32 = self.peak_history.iter().sum::<f32>() / self.peak_history.len() as f32;
-            self.current_max = self.current_max + (avg_peak - self.current_max) * self.smoothing_factor;
+            let avg_peak: f32 =
+                self.peak_history.iter().sum::<f32>() / self.peak_history.len() as f32;
+            self.current_max =
+                self.current_max + (avg_peak - self.current_max) * self.smoothing_factor;
             self.current_max = self.current_max.max(0.1);
         } else if current_peak > self.current_max {
-            self.current_max = self.current_max + (current_peak - self.current_max) * self.smoothing_factor;
+            self.current_max =
+                self.current_max + (current_peak - self.current_max) * self.smoothing_factor;
         }
     }
 
@@ -84,8 +87,14 @@ mod tests {
     fn test_adaptive_brightness_disabled() {
         let mut ab = AdaptiveBrightness::new(10, false);
         let cells = vec![
-            Cell { top: 10.0, bottom: 5.0 },
-            Cell { top: 8.0, bottom: 6.0 },
+            Cell {
+                top: 10.0,
+                bottom: 5.0,
+            },
+            Cell {
+                top: 8.0,
+                bottom: 6.0,
+            },
         ];
         ab.update(&cells);
         assert_eq!(ab.get_max_brightness(), 1.0);
@@ -95,10 +104,16 @@ mod tests {
     fn test_adaptive_brightness_tracks_increasing_peak() {
         let mut ab = AdaptiveBrightness::new(10, true).with_smoothing_factor(0.5);
 
-        let cells1 = vec![Cell { top: 5.0, bottom: 3.0 }];
+        let cells1 = vec![Cell {
+            top: 5.0,
+            bottom: 3.0,
+        }];
         ab.update(&cells1);
 
-        let cells2 = vec![Cell { top: 10.0, bottom: 8.0 }];
+        let cells2 = vec![Cell {
+            top: 10.0,
+            bottom: 8.0,
+        }];
         ab.update(&cells2);
 
         let max = ab.get_max_brightness();
@@ -111,19 +126,29 @@ mod tests {
         let mut ab = AdaptiveBrightness::new(3, true).with_smoothing_factor(0.5);
 
         for i in 1..=5 {
-            let cells = vec![Cell { top: i as f32 * 10.0, bottom: 0.0 }];
+            let cells = vec![Cell {
+                top: i as f32 * 10.0,
+                bottom: 0.0,
+            }];
             ab.update(&cells);
         }
 
         assert_eq!(ab.peak_history.len(), 3);
         let max = ab.get_max_brightness();
-        assert!(max >= 30.0 && max <= 50.0, "Expected max in [30, 50], got {}", max);
+        assert!(
+            max >= 30.0 && max <= 50.0,
+            "Expected max in [30, 50], got {}",
+            max
+        );
     }
 
     #[test]
     fn test_adaptive_brightness_reset() {
         let mut ab = AdaptiveBrightness::new(10, true);
-        let cells = vec![Cell { top: 25.0, bottom: 20.0 }];
+        let cells = vec![Cell {
+            top: 25.0,
+            bottom: 20.0,
+        }];
         ab.update(&cells);
 
         ab.reset();
@@ -134,7 +159,10 @@ mod tests {
     #[test]
     fn test_adaptive_brightness_set_enabled() {
         let mut ab = AdaptiveBrightness::new(10, false);
-        let cells = vec![Cell { top: 15.0, bottom: 10.0 }];
+        let cells = vec![Cell {
+            top: 15.0,
+            bottom: 10.0,
+        }];
         ab.update(&cells);
 
         ab.set_enabled(true);
@@ -147,7 +175,10 @@ mod tests {
     #[test]
     fn test_adaptive_brightness_minimum() {
         let mut ab = AdaptiveBrightness::new(10, true);
-        let cells = vec![Cell { top: 0.0, bottom: 0.0 }];
+        let cells = vec![Cell {
+            top: 0.0,
+            bottom: 0.0,
+        }];
         ab.update(&cells);
         assert_eq!(ab.get_max_brightness(), 1.0);
     }
@@ -157,11 +188,18 @@ mod tests {
         let mut ab = AdaptiveBrightness::new(10, true).with_smoothing_factor(0.1);
 
         for _ in 0..10 {
-            let cells = vec![Cell { top: 20.0, bottom: 15.0 }];
+            let cells = vec![Cell {
+                top: 20.0,
+                bottom: 15.0,
+            }];
             ab.update(&cells);
         }
 
         let max = ab.get_max_brightness();
-        assert!(max > 10.0 && max < 20.0, "Expected smoothed value, got {}", max);
+        assert!(
+            max > 10.0 && max < 20.0,
+            "Expected smoothed value, got {}",
+            max
+        );
     }
 }

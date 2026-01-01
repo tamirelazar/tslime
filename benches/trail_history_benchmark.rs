@@ -73,9 +73,8 @@ fn bench_trail_history_blend_various_sizes(c: &mut Criterion) {
         group.bench_function(format!("blend_{}_frames", size), |b| {
             b.iter(|| {
                 let mut history = TrailHistory::new(size);
-                let trail_data: Vec<f32> = (0..400 * 400)
-                    .map(|i| (i % 100) as f32 / 10.0)
-                    .collect();
+                let trail_data: Vec<f32> =
+                    (0..400 * 400).map(|i| (i % 100) as f32 / 10.0).collect();
 
                 for _ in 0..size {
                     history.push(&trail_data);

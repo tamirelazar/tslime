@@ -6,12 +6,12 @@ mod render;
 mod simulation;
 mod terminal;
 
-use cli::{Args, Mode, ColorMode};
+use cli::{Args, ColorMode, Mode};
 use render::adaptive_brightness::AdaptiveBrightness;
 use render::charset::Charset;
 use render::downsample::downsample;
-use simulation::Simulation;
 use simulation::config::{Preset, SimConfig};
+use simulation::Simulation;
 use terminal::control::{handle_key_event, num_palettes, ControlAction, RuntimeState};
 use terminal::input::InputPoller;
 use terminal::output::FrameBuffer;
@@ -87,7 +87,8 @@ fn print_mode(
     let config = args.to_sim_config();
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
-    let mut adaptive_brightness = AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+    let mut adaptive_brightness =
+        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
     adaptive_brightness.update(downsampled.cells());
     let max_brightness = if args.auto_normalize {
         adaptive_brightness.get_max_brightness()
@@ -108,7 +109,10 @@ fn print_mode(
         0.0,
     );
 
-    print!("{}", buffer.build_frame_string(args.plain_output, color_mode));
+    print!(
+        "{}",
+        buffer.build_frame_string(args.plain_output, color_mode)
+    );
     io::stdout().flush()?;
 
     Ok(())
@@ -132,7 +136,8 @@ fn capture_frames_mode(
     let config = args.to_sim_config();
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
-    let mut adaptive_brightness = AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+    let mut adaptive_brightness =
+        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
     for frame_idx in 0..args.frame_count {
         for _ in 0..args.frame_skip {
@@ -257,7 +262,10 @@ fn run_simulation(
         cli::Palette::Fungus,
         cli::Palette::Swamp,
     ];
-    let initial_palette_index = palette_list.iter().position(|p| *p == initial_palette).unwrap_or(4);
+    let initial_palette_index = palette_list
+        .iter()
+        .position(|p| *p == initial_palette)
+        .unwrap_or(4);
 
     let mode = args.mode();
     let show_help_by_default = !matches!(mode, cli::Mode::Screensaver);
@@ -270,7 +278,8 @@ fn run_simulation(
         show_help_by_default,
     );
 
-    let mut adaptive_brightness = AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+    let mut adaptive_brightness =
+        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
     let mut hue_offset: f32 = 0.0;
 
     loop {
@@ -335,10 +344,12 @@ fn run_simulation(
         ];
 
         let help_lines = if runtime_state.show_help {
-            Some(render::overlay::OverlayRenderer::build_help_with_attractors(
-                &HELP_LINES,
-                &sim.config().attractors,
-            ))
+            Some(
+                render::overlay::OverlayRenderer::build_help_with_attractors(
+                    &HELP_LINES,
+                    &sim.config().attractors,
+                ),
+            )
         } else {
             None
         };
@@ -350,7 +361,8 @@ fn run_simulation(
             current_palette,
             term_width as usize,
         );
-        let status_x = render::overlay::OverlayRenderer::status_line_x(&status_line, term_width as usize);
+        let status_x =
+            render::overlay::OverlayRenderer::status_line_x(&status_line, term_width as usize);
         let status_data = if runtime_state.show_help || runtime_state.is_paused {
             Some((status_line, status_x))
         } else {
@@ -388,7 +400,10 @@ fn run_simulation(
                     runtime_state.toggle_pause();
                 }
                 ControlAction::Restart => {
-                    sim.reset(runtime_state.original_seed, runtime_state.original_init_mode);
+                    sim.reset(
+                        runtime_state.original_seed,
+                        runtime_state.original_init_mode,
+                    );
                 }
                 ControlAction::SetPreset(preset) => {
                     runtime_state.set_preset(preset);

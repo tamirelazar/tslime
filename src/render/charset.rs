@@ -46,13 +46,15 @@ pub fn map_braille_subpixel(top: f32, bottom: f32, threshold: f32) -> char {
         0
     } else {
         ((top - threshold) / (1.0 - threshold) * 4.0).ceil() as usize
-    }.min(4);
+    }
+    .min(4);
 
     let bottom_level = if bottom < threshold {
         0
     } else {
         ((bottom - threshold) / (1.0 - threshold) * 4.0).ceil() as usize
-    }.min(4);
+    }
+    .min(4);
 
     let left_mask = BRAILLE_DOT_MASKS[top_level];
     let right_mask = BRAILLE_DOT_MASKS[bottom_level] << 3;

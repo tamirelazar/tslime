@@ -70,7 +70,13 @@ impl Agent {
         }
     }
 
-    pub fn apply_attractor_forces(&mut self, attractors: &[Attractor], strength_multiplier: f32, _width: usize, _height: usize) {
+    pub fn apply_attractor_forces(
+        &mut self,
+        attractors: &[Attractor],
+        strength_multiplier: f32,
+        _width: usize,
+        _height: usize,
+    ) {
         if attractors.is_empty() {
             return;
         }
@@ -242,7 +248,11 @@ mod tests {
         let mut agent = Agent::new(100.0, 100.0, PI / 2.0);
         let attractors = vec![Attractor::new(150.0, 200.0, 1.0)];
         agent.apply_attractor_forces(&attractors, 1.0, 400, 400);
-        assert!((agent.heading - PI / 2.0).abs() < 0.15, "heading should adjust toward attractor, got {}", agent.heading);
+        assert!(
+            (agent.heading - PI / 2.0).abs() < 0.15,
+            "heading should adjust toward attractor, got {}",
+            agent.heading
+        );
     }
 
     #[test]
@@ -250,7 +260,11 @@ mod tests {
         let mut agent = Agent::new(100.0, 100.0, PI / 2.0);
         let attractors = vec![Attractor::new(150.0, 200.0, -1.0)];
         agent.apply_attractor_forces(&attractors, 1.0, 400, 400);
-        assert!((agent.heading - PI / 2.0).abs() > 0.1, "heading should turn away from repeller, got {}", agent.heading);
+        assert!(
+            (agent.heading - PI / 2.0).abs() > 0.1,
+            "heading should turn away from repeller, got {}",
+            agent.heading
+        );
     }
 
     #[test]

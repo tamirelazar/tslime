@@ -324,16 +324,8 @@ fn test_fps_invariant_simulation_speed() {
     const REFERENCE_TIME_STEP: f32 = 1.0 / 30.0;
     const STEPS: usize = 100;
 
-    let output_30fps = capture_print_output(
-        &["-s", "42", "--fps", "30", "-n", "500"],
-        80,
-        24,
-    );
-    let output_60fps = capture_print_output(
-        &["-s", "42", "--fps", "60", "-n", "500"],
-        80,
-        24,
-    );
+    let output_30fps = capture_print_output(&["-s", "42", "--fps", "30", "-n", "500"], 80, 24);
+    let output_60fps = capture_print_output(&["-s", "42", "--fps", "60", "-n", "500"], 80, 24);
 
     let normalized_30 = normalize_output(&output_30fps);
     let normalized_60 = normalize_output(&output_60fps);

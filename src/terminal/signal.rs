@@ -44,7 +44,7 @@ mod tests {
     #[test]
     fn test_thread_safe_access() {
         clear_shutdown_request();
-        
+
         let handle = std::thread::spawn(|| {
             for _ in 0..1000 {
                 request_shutdown();

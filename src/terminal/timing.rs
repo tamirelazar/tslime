@@ -258,7 +258,11 @@ mod tests {
         let mut timer = FrameTimer::new(60, 0.016);
         std::thread::sleep(Duration::from_millis(100));
         let dt = timer.delta_time();
-        assert!(dt >= 0.08 && dt < 0.15, "dt should be ~0.1s (100ms * 1.0), got {}", dt);
+        assert!(
+            dt >= 0.08 && dt < 0.15,
+            "dt should be ~0.1s (100ms * 1.0), got {}",
+            dt
+        );
     }
 
     #[test]
@@ -266,7 +270,11 @@ mod tests {
         let mut timer = FrameTimer::with_time_scale(60, 0.016, 2.0);
         std::thread::sleep(Duration::from_millis(100));
         let dt = timer.delta_time();
-        assert!(dt >= 0.15 && dt < 0.25, "dt should be ~0.2s (100ms * 2.0), got {}", dt);
+        assert!(
+            dt >= 0.15 && dt < 0.25,
+            "dt should be ~0.2s (100ms * 2.0), got {}",
+            dt
+        );
     }
 
     #[test]
@@ -275,7 +283,11 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         timer.set_time_scale(0.5);
         let dt = timer.delta_time();
-        assert!(dt >= 0.04 && dt < 0.07, "dt should be ~0.05s (100ms * 0.5), got {}", dt);
+        assert!(
+            dt >= 0.04 && dt < 0.07,
+            "dt should be ~0.05s (100ms * 0.5), got {}",
+            dt
+        );
     }
 
     #[test]
@@ -291,7 +303,11 @@ mod tests {
         let dt_slower = timer_fast.delta_time();
 
         let ratio = dt_normal / dt_slower;
-        assert!(ratio > 1.8 && ratio < 2.2, "ratio should be ~2.0, got {}", ratio);
+        assert!(
+            ratio > 1.8 && ratio < 2.2,
+            "ratio should be ~2.0, got {}",
+            ratio
+        );
     }
 
     #[test]
@@ -304,9 +320,22 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         let dt_30_again = timer_30fps.delta_time();
 
-        assert!(dt_30 >= 0.08 && dt_30 < 0.15, "First dt should be ~0.1s, got {}", dt_30);
-        assert!(dt_30_again >= 0.08 && dt_30_again < 0.15, "Second dt should be ~0.1s, got {}", dt_30_again);
-        assert!((dt_30 - dt_30_again).abs() < 0.05, "Both dt calls should return similar values, got {} vs {}", dt_30, dt_30_again);
+        assert!(
+            dt_30 >= 0.08 && dt_30 < 0.15,
+            "First dt should be ~0.1s, got {}",
+            dt_30
+        );
+        assert!(
+            dt_30_again >= 0.08 && dt_30_again < 0.15,
+            "Second dt should be ~0.1s, got {}",
+            dt_30_again
+        );
+        assert!(
+            (dt_30 - dt_30_again).abs() < 0.05,
+            "Both dt calls should return similar values, got {} vs {}",
+            dt_30,
+            dt_30_again
+        );
     }
 
     #[test]
@@ -326,11 +355,33 @@ mod tests {
         std::thread::sleep(Duration::from_millis(50));
         let dt_144 = timer_144.delta_time();
 
-        assert!(dt_30 >= 0.04 && dt_30 < 0.07, "30fps dt should be ~0.05s, got {}", dt_30);
-        assert!(dt_60 >= 0.04 && dt_60 < 0.07, "60fps dt should be ~0.05s, got {}", dt_60);
-        assert!(dt_144 >= 0.04 && dt_144 < 0.07, "144fps dt should be ~0.05s, got {}", dt_144);
-        assert!((dt_30 - dt_60).abs() < 0.02, "30fps and 60fps dt should be similar, got {} vs {}", dt_30, dt_60);
-        assert!((dt_60 - dt_144).abs() < 0.02, "60fps and 144fps dt should be similar, got {} vs {}", dt_60, dt_144);
+        assert!(
+            dt_30 >= 0.04 && dt_30 < 0.07,
+            "30fps dt should be ~0.05s, got {}",
+            dt_30
+        );
+        assert!(
+            dt_60 >= 0.04 && dt_60 < 0.07,
+            "60fps dt should be ~0.05s, got {}",
+            dt_60
+        );
+        assert!(
+            dt_144 >= 0.04 && dt_144 < 0.07,
+            "144fps dt should be ~0.05s, got {}",
+            dt_144
+        );
+        assert!(
+            (dt_30 - dt_60).abs() < 0.02,
+            "30fps and 60fps dt should be similar, got {} vs {}",
+            dt_30,
+            dt_60
+        );
+        assert!(
+            (dt_60 - dt_144).abs() < 0.02,
+            "60fps and 144fps dt should be similar, got {} vs {}",
+            dt_60,
+            dt_144
+        );
     }
 
     #[test]
@@ -357,7 +408,11 @@ mod tests {
         }
 
         let avg = timer.average_fps();
-        assert!(avg > 10.0 && avg < 30.0, "Average FPS should be around 20, got {}", avg);
+        assert!(
+            avg > 10.0 && avg < 30.0,
+            "Average FPS should be around 20, got {}",
+            avg
+        );
     }
 
     #[test]
@@ -370,7 +425,11 @@ mod tests {
         }
 
         let avg = timer.average_fps();
-        assert!(avg > 15.0 && avg < 25.0, "Average should converge to ~20 FPS, got {}", avg);
+        assert!(
+            avg > 15.0 && avg < 25.0,
+            "Average should converge to ~20 FPS, got {}",
+            avg
+        );
     }
 
     #[test]
@@ -397,6 +456,10 @@ mod tests {
         }
 
         let avg = timer.average_fps();
-        assert!(avg > 30.0 && avg < 120.0, "Average should be valid after wrap, got {}", avg);
+        assert!(
+            avg > 30.0 && avg < 120.0,
+            "Average should be valid after wrap, got {}",
+            avg
+        );
     }
 }

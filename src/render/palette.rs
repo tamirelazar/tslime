@@ -20,71 +20,1185 @@ pub const ANSI_256_TO_RGB: [RgbColor; 256] = {
     // Colors 232-255: 24-step grayscale ramp (8, 18, 28, ... 248)
     [
         // 0-15: ANSI system colors
-        RgbColor { r: 0, g: 0, b: 0 },        // 0: Black
-        RgbColor { r: 128, g: 0, b: 0 },      // 1: Maroon
-        RgbColor { r: 0, g: 128, b: 0 },      // 2: Green
-        RgbColor { r: 128, g: 128, b: 0 },    // 3: Olive
-        RgbColor { r: 0, g: 0, b: 128 },      // 4: Navy
-        RgbColor { r: 128, g: 0, b: 128 },    // 5: Purple
-        RgbColor { r: 0, g: 128, b: 128 },    // 6: Teal
-        RgbColor { r: 192, g: 192, b: 192 },  // 7: Silver
-        RgbColor { r: 128, g: 128, b: 128 },  // 8: Grey
-        RgbColor { r: 255, g: 0, b: 0 },      // 9: Red
-        RgbColor { r: 0, g: 255, b: 0 },      // 10: Lime
-        RgbColor { r: 255, g: 255, b: 0 },    // 11: Yellow
-        RgbColor { r: 0, g: 0, b: 255 },      // 12: Blue
-        RgbColor { r: 255, g: 0, b: 255 },    // 13: Fuchsia
-        RgbColor { r: 0, g: 255, b: 255 },    // 14: Aqua
-        RgbColor { r: 255, g: 255, b: 255 },  // 15: White
+        RgbColor { r: 0, g: 0, b: 0 },   // 0: Black
+        RgbColor { r: 128, g: 0, b: 0 }, // 1: Maroon
+        RgbColor { r: 0, g: 128, b: 0 }, // 2: Green
+        RgbColor {
+            r: 128,
+            g: 128,
+            b: 0,
+        }, // 3: Olive
+        RgbColor { r: 0, g: 0, b: 128 }, // 4: Navy
+        RgbColor {
+            r: 128,
+            g: 0,
+            b: 128,
+        }, // 5: Purple
+        RgbColor {
+            r: 0,
+            g: 128,
+            b: 128,
+        }, // 6: Teal
+        RgbColor {
+            r: 192,
+            g: 192,
+            b: 192,
+        }, // 7: Silver
+        RgbColor {
+            r: 128,
+            g: 128,
+            b: 128,
+        }, // 8: Grey
+        RgbColor { r: 255, g: 0, b: 0 }, // 9: Red
+        RgbColor { r: 0, g: 255, b: 0 }, // 10: Lime
+        RgbColor {
+            r: 255,
+            g: 255,
+            b: 0,
+        }, // 11: Yellow
+        RgbColor { r: 0, g: 0, b: 255 }, // 12: Blue
+        RgbColor {
+            r: 255,
+            g: 0,
+            b: 255,
+        }, // 13: Fuchsia
+        RgbColor {
+            r: 0,
+            g: 255,
+            b: 255,
+        }, // 14: Aqua
+        RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        }, // 15: White
         // 16-231: 6×6×6 RGB cube (r=0, g=0, b=0 to b=5)
-        RgbColor { r: 0, g: 0, b: 0 }, RgbColor { r: 0, g: 0, b: 95 }, RgbColor { r: 0, g: 0, b: 135 }, RgbColor { r: 0, g: 0, b: 175 }, RgbColor { r: 0, g: 0, b: 215 }, RgbColor { r: 0, g: 0, b: 255 },
-        RgbColor { r: 0, g: 95, b: 0 }, RgbColor { r: 0, g: 95, b: 95 }, RgbColor { r: 0, g: 95, b: 135 }, RgbColor { r: 0, g: 95, b: 175 }, RgbColor { r: 0, g: 95, b: 215 }, RgbColor { r: 0, g: 95, b: 255 },
-        RgbColor { r: 0, g: 135, b: 0 }, RgbColor { r: 0, g: 135, b: 95 }, RgbColor { r: 0, g: 135, b: 135 }, RgbColor { r: 0, g: 135, b: 175 }, RgbColor { r: 0, g: 135, b: 215 }, RgbColor { r: 0, g: 135, b: 255 },
-        RgbColor { r: 0, g: 175, b: 0 }, RgbColor { r: 0, g: 175, b: 95 }, RgbColor { r: 0, g: 175, b: 135 }, RgbColor { r: 0, g: 175, b: 175 }, RgbColor { r: 0, g: 175, b: 215 }, RgbColor { r: 0, g: 175, b: 255 },
-        RgbColor { r: 0, g: 215, b: 0 }, RgbColor { r: 0, g: 215, b: 95 }, RgbColor { r: 0, g: 215, b: 135 }, RgbColor { r: 0, g: 215, b: 175 }, RgbColor { r: 0, g: 215, b: 215 }, RgbColor { r: 0, g: 215, b: 255 },
-        RgbColor { r: 0, g: 255, b: 0 }, RgbColor { r: 0, g: 255, b: 95 }, RgbColor { r: 0, g: 255, b: 135 }, RgbColor { r: 0, g: 255, b: 175 }, RgbColor { r: 0, g: 255, b: 215 }, RgbColor { r: 0, g: 255, b: 255 },
+        RgbColor { r: 0, g: 0, b: 0 },
+        RgbColor { r: 0, g: 0, b: 95 },
+        RgbColor { r: 0, g: 0, b: 135 },
+        RgbColor { r: 0, g: 0, b: 175 },
+        RgbColor { r: 0, g: 0, b: 215 },
+        RgbColor { r: 0, g: 0, b: 255 },
+        RgbColor { r: 0, g: 95, b: 0 },
+        RgbColor { r: 0, g: 95, b: 95 },
+        RgbColor {
+            r: 0,
+            g: 95,
+            b: 135,
+        },
+        RgbColor {
+            r: 0,
+            g: 95,
+            b: 175,
+        },
+        RgbColor {
+            r: 0,
+            g: 95,
+            b: 215,
+        },
+        RgbColor {
+            r: 0,
+            g: 95,
+            b: 255,
+        },
+        RgbColor { r: 0, g: 135, b: 0 },
+        RgbColor {
+            r: 0,
+            g: 135,
+            b: 95,
+        },
+        RgbColor {
+            r: 0,
+            g: 135,
+            b: 135,
+        },
+        RgbColor {
+            r: 0,
+            g: 135,
+            b: 175,
+        },
+        RgbColor {
+            r: 0,
+            g: 135,
+            b: 215,
+        },
+        RgbColor {
+            r: 0,
+            g: 135,
+            b: 255,
+        },
+        RgbColor { r: 0, g: 175, b: 0 },
+        RgbColor {
+            r: 0,
+            g: 175,
+            b: 95,
+        },
+        RgbColor {
+            r: 0,
+            g: 175,
+            b: 135,
+        },
+        RgbColor {
+            r: 0,
+            g: 175,
+            b: 175,
+        },
+        RgbColor {
+            r: 0,
+            g: 175,
+            b: 215,
+        },
+        RgbColor {
+            r: 0,
+            g: 175,
+            b: 255,
+        },
+        RgbColor { r: 0, g: 215, b: 0 },
+        RgbColor {
+            r: 0,
+            g: 215,
+            b: 95,
+        },
+        RgbColor {
+            r: 0,
+            g: 215,
+            b: 135,
+        },
+        RgbColor {
+            r: 0,
+            g: 215,
+            b: 175,
+        },
+        RgbColor {
+            r: 0,
+            g: 215,
+            b: 215,
+        },
+        RgbColor {
+            r: 0,
+            g: 215,
+            b: 255,
+        },
+        RgbColor { r: 0, g: 255, b: 0 },
+        RgbColor {
+            r: 0,
+            g: 255,
+            b: 95,
+        },
+        RgbColor {
+            r: 0,
+            g: 255,
+            b: 135,
+        },
+        RgbColor {
+            r: 0,
+            g: 255,
+            b: 175,
+        },
+        RgbColor {
+            r: 0,
+            g: 255,
+            b: 215,
+        },
+        RgbColor {
+            r: 0,
+            g: 255,
+            b: 255,
+        },
         // r=1 (95)
-        RgbColor { r: 95, g: 0, b: 0 }, RgbColor { r: 95, g: 0, b: 95 }, RgbColor { r: 95, g: 0, b: 135 }, RgbColor { r: 95, g: 0, b: 175 }, RgbColor { r: 95, g: 0, b: 215 }, RgbColor { r: 95, g: 0, b: 255 },
-        RgbColor { r: 95, g: 95, b: 0 }, RgbColor { r: 95, g: 95, b: 95 }, RgbColor { r: 95, g: 95, b: 135 }, RgbColor { r: 95, g: 95, b: 175 }, RgbColor { r: 95, g: 95, b: 215 }, RgbColor { r: 95, g: 95, b: 255 },
-        RgbColor { r: 95, g: 135, b: 0 }, RgbColor { r: 95, g: 135, b: 95 }, RgbColor { r: 95, g: 135, b: 135 }, RgbColor { r: 95, g: 135, b: 175 }, RgbColor { r: 95, g: 135, b: 215 }, RgbColor { r: 95, g: 135, b: 255 },
-        RgbColor { r: 95, g: 175, b: 0 }, RgbColor { r: 95, g: 175, b: 95 }, RgbColor { r: 95, g: 175, b: 135 }, RgbColor { r: 95, g: 175, b: 175 }, RgbColor { r: 95, g: 175, b: 215 }, RgbColor { r: 95, g: 175, b: 255 },
-        RgbColor { r: 95, g: 215, b: 0 }, RgbColor { r: 95, g: 215, b: 95 }, RgbColor { r: 95, g: 215, b: 135 }, RgbColor { r: 95, g: 215, b: 175 }, RgbColor { r: 95, g: 215, b: 215 }, RgbColor { r: 95, g: 215, b: 255 },
-        RgbColor { r: 95, g: 255, b: 0 }, RgbColor { r: 95, g: 255, b: 95 }, RgbColor { r: 95, g: 255, b: 135 }, RgbColor { r: 95, g: 255, b: 175 }, RgbColor { r: 95, g: 255, b: 215 }, RgbColor { r: 95, g: 255, b: 255 },
+        RgbColor { r: 95, g: 0, b: 0 },
+        RgbColor { r: 95, g: 0, b: 95 },
+        RgbColor {
+            r: 95,
+            g: 0,
+            b: 135,
+        },
+        RgbColor {
+            r: 95,
+            g: 0,
+            b: 175,
+        },
+        RgbColor {
+            r: 95,
+            g: 0,
+            b: 215,
+        },
+        RgbColor {
+            r: 95,
+            g: 0,
+            b: 255,
+        },
+        RgbColor { r: 95, g: 95, b: 0 },
+        RgbColor {
+            r: 95,
+            g: 95,
+            b: 95,
+        },
+        RgbColor {
+            r: 95,
+            g: 95,
+            b: 135,
+        },
+        RgbColor {
+            r: 95,
+            g: 95,
+            b: 175,
+        },
+        RgbColor {
+            r: 95,
+            g: 95,
+            b: 215,
+        },
+        RgbColor {
+            r: 95,
+            g: 95,
+            b: 255,
+        },
+        RgbColor {
+            r: 95,
+            g: 135,
+            b: 0,
+        },
+        RgbColor {
+            r: 95,
+            g: 135,
+            b: 95,
+        },
+        RgbColor {
+            r: 95,
+            g: 135,
+            b: 135,
+        },
+        RgbColor {
+            r: 95,
+            g: 135,
+            b: 175,
+        },
+        RgbColor {
+            r: 95,
+            g: 135,
+            b: 215,
+        },
+        RgbColor {
+            r: 95,
+            g: 135,
+            b: 255,
+        },
+        RgbColor {
+            r: 95,
+            g: 175,
+            b: 0,
+        },
+        RgbColor {
+            r: 95,
+            g: 175,
+            b: 95,
+        },
+        RgbColor {
+            r: 95,
+            g: 175,
+            b: 135,
+        },
+        RgbColor {
+            r: 95,
+            g: 175,
+            b: 175,
+        },
+        RgbColor {
+            r: 95,
+            g: 175,
+            b: 215,
+        },
+        RgbColor {
+            r: 95,
+            g: 175,
+            b: 255,
+        },
+        RgbColor {
+            r: 95,
+            g: 215,
+            b: 0,
+        },
+        RgbColor {
+            r: 95,
+            g: 215,
+            b: 95,
+        },
+        RgbColor {
+            r: 95,
+            g: 215,
+            b: 135,
+        },
+        RgbColor {
+            r: 95,
+            g: 215,
+            b: 175,
+        },
+        RgbColor {
+            r: 95,
+            g: 215,
+            b: 215,
+        },
+        RgbColor {
+            r: 95,
+            g: 215,
+            b: 255,
+        },
+        RgbColor {
+            r: 95,
+            g: 255,
+            b: 0,
+        },
+        RgbColor {
+            r: 95,
+            g: 255,
+            b: 95,
+        },
+        RgbColor {
+            r: 95,
+            g: 255,
+            b: 135,
+        },
+        RgbColor {
+            r: 95,
+            g: 255,
+            b: 175,
+        },
+        RgbColor {
+            r: 95,
+            g: 255,
+            b: 215,
+        },
+        RgbColor {
+            r: 95,
+            g: 255,
+            b: 255,
+        },
         // r=2 (135)
-        RgbColor { r: 135, g: 0, b: 0 }, RgbColor { r: 135, g: 0, b: 95 }, RgbColor { r: 135, g: 0, b: 135 }, RgbColor { r: 135, g: 0, b: 175 }, RgbColor { r: 135, g: 0, b: 215 }, RgbColor { r: 135, g: 0, b: 255 },
-        RgbColor { r: 135, g: 95, b: 0 }, RgbColor { r: 135, g: 95, b: 95 }, RgbColor { r: 135, g: 95, b: 135 }, RgbColor { r: 135, g: 95, b: 175 }, RgbColor { r: 135, g: 95, b: 215 }, RgbColor { r: 135, g: 95, b: 255 },
-        RgbColor { r: 135, g: 135, b: 0 }, RgbColor { r: 135, g: 135, b: 95 }, RgbColor { r: 135, g: 135, b: 135 }, RgbColor { r: 135, g: 135, b: 175 }, RgbColor { r: 135, g: 135, b: 215 }, RgbColor { r: 135, g: 135, b: 255 },
-        RgbColor { r: 135, g: 175, b: 0 }, RgbColor { r: 135, g: 175, b: 95 }, RgbColor { r: 135, g: 175, b: 135 }, RgbColor { r: 135, g: 175, b: 175 }, RgbColor { r: 135, g: 175, b: 215 }, RgbColor { r: 135, g: 175, b: 255 },
-        RgbColor { r: 135, g: 215, b: 0 }, RgbColor { r: 135, g: 215, b: 95 }, RgbColor { r: 135, g: 215, b: 135 }, RgbColor { r: 135, g: 215, b: 175 }, RgbColor { r: 135, g: 215, b: 215 }, RgbColor { r: 135, g: 215, b: 255 },
-        RgbColor { r: 135, g: 255, b: 0 }, RgbColor { r: 135, g: 255, b: 95 }, RgbColor { r: 135, g: 255, b: 135 }, RgbColor { r: 135, g: 255, b: 175 }, RgbColor { r: 135, g: 255, b: 215 }, RgbColor { r: 135, g: 255, b: 255 },
+        RgbColor { r: 135, g: 0, b: 0 },
+        RgbColor {
+            r: 135,
+            g: 0,
+            b: 95,
+        },
+        RgbColor {
+            r: 135,
+            g: 0,
+            b: 135,
+        },
+        RgbColor {
+            r: 135,
+            g: 0,
+            b: 175,
+        },
+        RgbColor {
+            r: 135,
+            g: 0,
+            b: 215,
+        },
+        RgbColor {
+            r: 135,
+            g: 0,
+            b: 255,
+        },
+        RgbColor {
+            r: 135,
+            g: 95,
+            b: 0,
+        },
+        RgbColor {
+            r: 135,
+            g: 95,
+            b: 95,
+        },
+        RgbColor {
+            r: 135,
+            g: 95,
+            b: 135,
+        },
+        RgbColor {
+            r: 135,
+            g: 95,
+            b: 175,
+        },
+        RgbColor {
+            r: 135,
+            g: 95,
+            b: 215,
+        },
+        RgbColor {
+            r: 135,
+            g: 95,
+            b: 255,
+        },
+        RgbColor {
+            r: 135,
+            g: 135,
+            b: 0,
+        },
+        RgbColor {
+            r: 135,
+            g: 135,
+            b: 95,
+        },
+        RgbColor {
+            r: 135,
+            g: 135,
+            b: 135,
+        },
+        RgbColor {
+            r: 135,
+            g: 135,
+            b: 175,
+        },
+        RgbColor {
+            r: 135,
+            g: 135,
+            b: 215,
+        },
+        RgbColor {
+            r: 135,
+            g: 135,
+            b: 255,
+        },
+        RgbColor {
+            r: 135,
+            g: 175,
+            b: 0,
+        },
+        RgbColor {
+            r: 135,
+            g: 175,
+            b: 95,
+        },
+        RgbColor {
+            r: 135,
+            g: 175,
+            b: 135,
+        },
+        RgbColor {
+            r: 135,
+            g: 175,
+            b: 175,
+        },
+        RgbColor {
+            r: 135,
+            g: 175,
+            b: 215,
+        },
+        RgbColor {
+            r: 135,
+            g: 175,
+            b: 255,
+        },
+        RgbColor {
+            r: 135,
+            g: 215,
+            b: 0,
+        },
+        RgbColor {
+            r: 135,
+            g: 215,
+            b: 95,
+        },
+        RgbColor {
+            r: 135,
+            g: 215,
+            b: 135,
+        },
+        RgbColor {
+            r: 135,
+            g: 215,
+            b: 175,
+        },
+        RgbColor {
+            r: 135,
+            g: 215,
+            b: 215,
+        },
+        RgbColor {
+            r: 135,
+            g: 215,
+            b: 255,
+        },
+        RgbColor {
+            r: 135,
+            g: 255,
+            b: 0,
+        },
+        RgbColor {
+            r: 135,
+            g: 255,
+            b: 95,
+        },
+        RgbColor {
+            r: 135,
+            g: 255,
+            b: 135,
+        },
+        RgbColor {
+            r: 135,
+            g: 255,
+            b: 175,
+        },
+        RgbColor {
+            r: 135,
+            g: 255,
+            b: 215,
+        },
+        RgbColor {
+            r: 135,
+            g: 255,
+            b: 255,
+        },
         // r=3 (175)
-        RgbColor { r: 175, g: 0, b: 0 }, RgbColor { r: 175, g: 0, b: 95 }, RgbColor { r: 175, g: 0, b: 135 }, RgbColor { r: 175, g: 0, b: 175 }, RgbColor { r: 175, g: 0, b: 215 }, RgbColor { r: 175, g: 0, b: 255 },
-        RgbColor { r: 175, g: 95, b: 0 }, RgbColor { r: 175, g: 95, b: 95 }, RgbColor { r: 175, g: 95, b: 135 }, RgbColor { r: 175, g: 95, b: 175 }, RgbColor { r: 175, g: 95, b: 215 }, RgbColor { r: 175, g: 95, b: 255 },
-        RgbColor { r: 175, g: 135, b: 0 }, RgbColor { r: 175, g: 135, b: 95 }, RgbColor { r: 175, g: 135, b: 135 }, RgbColor { r: 175, g: 135, b: 175 }, RgbColor { r: 175, g: 135, b: 215 }, RgbColor { r: 175, g: 135, b: 255 },
-        RgbColor { r: 175, g: 175, b: 0 }, RgbColor { r: 175, g: 175, b: 95 }, RgbColor { r: 175, g: 175, b: 135 }, RgbColor { r: 175, g: 175, b: 175 }, RgbColor { r: 175, g: 175, b: 215 }, RgbColor { r: 175, g: 175, b: 255 },
-        RgbColor { r: 175, g: 215, b: 0 }, RgbColor { r: 175, g: 215, b: 95 }, RgbColor { r: 175, g: 215, b: 135 }, RgbColor { r: 175, g: 215, b: 175 }, RgbColor { r: 175, g: 215, b: 215 }, RgbColor { r: 175, g: 215, b: 255 },
-        RgbColor { r: 175, g: 255, b: 0 }, RgbColor { r: 175, g: 255, b: 95 }, RgbColor { r: 175, g: 255, b: 135 }, RgbColor { r: 175, g: 255, b: 175 }, RgbColor { r: 175, g: 255, b: 215 }, RgbColor { r: 175, g: 255, b: 255 },
+        RgbColor { r: 175, g: 0, b: 0 },
+        RgbColor {
+            r: 175,
+            g: 0,
+            b: 95,
+        },
+        RgbColor {
+            r: 175,
+            g: 0,
+            b: 135,
+        },
+        RgbColor {
+            r: 175,
+            g: 0,
+            b: 175,
+        },
+        RgbColor {
+            r: 175,
+            g: 0,
+            b: 215,
+        },
+        RgbColor {
+            r: 175,
+            g: 0,
+            b: 255,
+        },
+        RgbColor {
+            r: 175,
+            g: 95,
+            b: 0,
+        },
+        RgbColor {
+            r: 175,
+            g: 95,
+            b: 95,
+        },
+        RgbColor {
+            r: 175,
+            g: 95,
+            b: 135,
+        },
+        RgbColor {
+            r: 175,
+            g: 95,
+            b: 175,
+        },
+        RgbColor {
+            r: 175,
+            g: 95,
+            b: 215,
+        },
+        RgbColor {
+            r: 175,
+            g: 95,
+            b: 255,
+        },
+        RgbColor {
+            r: 175,
+            g: 135,
+            b: 0,
+        },
+        RgbColor {
+            r: 175,
+            g: 135,
+            b: 95,
+        },
+        RgbColor {
+            r: 175,
+            g: 135,
+            b: 135,
+        },
+        RgbColor {
+            r: 175,
+            g: 135,
+            b: 175,
+        },
+        RgbColor {
+            r: 175,
+            g: 135,
+            b: 215,
+        },
+        RgbColor {
+            r: 175,
+            g: 135,
+            b: 255,
+        },
+        RgbColor {
+            r: 175,
+            g: 175,
+            b: 0,
+        },
+        RgbColor {
+            r: 175,
+            g: 175,
+            b: 95,
+        },
+        RgbColor {
+            r: 175,
+            g: 175,
+            b: 135,
+        },
+        RgbColor {
+            r: 175,
+            g: 175,
+            b: 175,
+        },
+        RgbColor {
+            r: 175,
+            g: 175,
+            b: 215,
+        },
+        RgbColor {
+            r: 175,
+            g: 175,
+            b: 255,
+        },
+        RgbColor {
+            r: 175,
+            g: 215,
+            b: 0,
+        },
+        RgbColor {
+            r: 175,
+            g: 215,
+            b: 95,
+        },
+        RgbColor {
+            r: 175,
+            g: 215,
+            b: 135,
+        },
+        RgbColor {
+            r: 175,
+            g: 215,
+            b: 175,
+        },
+        RgbColor {
+            r: 175,
+            g: 215,
+            b: 215,
+        },
+        RgbColor {
+            r: 175,
+            g: 215,
+            b: 255,
+        },
+        RgbColor {
+            r: 175,
+            g: 255,
+            b: 0,
+        },
+        RgbColor {
+            r: 175,
+            g: 255,
+            b: 95,
+        },
+        RgbColor {
+            r: 175,
+            g: 255,
+            b: 135,
+        },
+        RgbColor {
+            r: 175,
+            g: 255,
+            b: 175,
+        },
+        RgbColor {
+            r: 175,
+            g: 255,
+            b: 215,
+        },
+        RgbColor {
+            r: 175,
+            g: 255,
+            b: 255,
+        },
         // r=4 (215)
-        RgbColor { r: 215, g: 0, b: 0 }, RgbColor { r: 215, g: 0, b: 95 }, RgbColor { r: 215, g: 0, b: 135 }, RgbColor { r: 215, g: 0, b: 175 }, RgbColor { r: 215, g: 0, b: 215 }, RgbColor { r: 215, g: 0, b: 255 },
-        RgbColor { r: 215, g: 95, b: 0 }, RgbColor { r: 215, g: 95, b: 95 }, RgbColor { r: 215, g: 95, b: 135 }, RgbColor { r: 215, g: 95, b: 175 }, RgbColor { r: 215, g: 95, b: 215 }, RgbColor { r: 215, g: 95, b: 255 },
-        RgbColor { r: 215, g: 135, b: 0 }, RgbColor { r: 215, g: 135, b: 95 }, RgbColor { r: 215, g: 135, b: 135 }, RgbColor { r: 215, g: 135, b: 175 }, RgbColor { r: 215, g: 135, b: 215 }, RgbColor { r: 215, g: 135, b: 255 },
-        RgbColor { r: 215, g: 175, b: 0 }, RgbColor { r: 215, g: 175, b: 95 }, RgbColor { r: 215, g: 175, b: 135 }, RgbColor { r: 215, g: 175, b: 175 }, RgbColor { r: 215, g: 175, b: 215 }, RgbColor { r: 215, g: 175, b: 255 },
-        RgbColor { r: 215, g: 215, b: 0 }, RgbColor { r: 215, g: 215, b: 95 }, RgbColor { r: 215, g: 215, b: 135 }, RgbColor { r: 215, g: 215, b: 175 }, RgbColor { r: 215, g: 215, b: 215 }, RgbColor { r: 215, g: 215, b: 255 },
-        RgbColor { r: 215, g: 255, b: 0 }, RgbColor { r: 215, g: 255, b: 95 }, RgbColor { r: 215, g: 255, b: 135 }, RgbColor { r: 215, g: 255, b: 175 }, RgbColor { r: 215, g: 255, b: 215 }, RgbColor { r: 215, g: 255, b: 255 },
+        RgbColor { r: 215, g: 0, b: 0 },
+        RgbColor {
+            r: 215,
+            g: 0,
+            b: 95,
+        },
+        RgbColor {
+            r: 215,
+            g: 0,
+            b: 135,
+        },
+        RgbColor {
+            r: 215,
+            g: 0,
+            b: 175,
+        },
+        RgbColor {
+            r: 215,
+            g: 0,
+            b: 215,
+        },
+        RgbColor {
+            r: 215,
+            g: 0,
+            b: 255,
+        },
+        RgbColor {
+            r: 215,
+            g: 95,
+            b: 0,
+        },
+        RgbColor {
+            r: 215,
+            g: 95,
+            b: 95,
+        },
+        RgbColor {
+            r: 215,
+            g: 95,
+            b: 135,
+        },
+        RgbColor {
+            r: 215,
+            g: 95,
+            b: 175,
+        },
+        RgbColor {
+            r: 215,
+            g: 95,
+            b: 215,
+        },
+        RgbColor {
+            r: 215,
+            g: 95,
+            b: 255,
+        },
+        RgbColor {
+            r: 215,
+            g: 135,
+            b: 0,
+        },
+        RgbColor {
+            r: 215,
+            g: 135,
+            b: 95,
+        },
+        RgbColor {
+            r: 215,
+            g: 135,
+            b: 135,
+        },
+        RgbColor {
+            r: 215,
+            g: 135,
+            b: 175,
+        },
+        RgbColor {
+            r: 215,
+            g: 135,
+            b: 215,
+        },
+        RgbColor {
+            r: 215,
+            g: 135,
+            b: 255,
+        },
+        RgbColor {
+            r: 215,
+            g: 175,
+            b: 0,
+        },
+        RgbColor {
+            r: 215,
+            g: 175,
+            b: 95,
+        },
+        RgbColor {
+            r: 215,
+            g: 175,
+            b: 135,
+        },
+        RgbColor {
+            r: 215,
+            g: 175,
+            b: 175,
+        },
+        RgbColor {
+            r: 215,
+            g: 175,
+            b: 215,
+        },
+        RgbColor {
+            r: 215,
+            g: 175,
+            b: 255,
+        },
+        RgbColor {
+            r: 215,
+            g: 215,
+            b: 0,
+        },
+        RgbColor {
+            r: 215,
+            g: 215,
+            b: 95,
+        },
+        RgbColor {
+            r: 215,
+            g: 215,
+            b: 135,
+        },
+        RgbColor {
+            r: 215,
+            g: 215,
+            b: 175,
+        },
+        RgbColor {
+            r: 215,
+            g: 215,
+            b: 215,
+        },
+        RgbColor {
+            r: 215,
+            g: 215,
+            b: 255,
+        },
+        RgbColor {
+            r: 215,
+            g: 255,
+            b: 0,
+        },
+        RgbColor {
+            r: 215,
+            g: 255,
+            b: 95,
+        },
+        RgbColor {
+            r: 215,
+            g: 255,
+            b: 135,
+        },
+        RgbColor {
+            r: 215,
+            g: 255,
+            b: 175,
+        },
+        RgbColor {
+            r: 215,
+            g: 255,
+            b: 215,
+        },
+        RgbColor {
+            r: 215,
+            g: 255,
+            b: 255,
+        },
         // r=5 (255)
-        RgbColor { r: 255, g: 0, b: 0 }, RgbColor { r: 255, g: 0, b: 95 }, RgbColor { r: 255, g: 0, b: 135 }, RgbColor { r: 255, g: 0, b: 175 }, RgbColor { r: 255, g: 0, b: 215 }, RgbColor { r: 255, g: 0, b: 255 },
-        RgbColor { r: 255, g: 95, b: 0 }, RgbColor { r: 255, g: 95, b: 95 }, RgbColor { r: 255, g: 95, b: 135 }, RgbColor { r: 255, g: 95, b: 175 }, RgbColor { r: 255, g: 95, b: 215 }, RgbColor { r: 255, g: 95, b: 255 },
-        RgbColor { r: 255, g: 135, b: 0 }, RgbColor { r: 255, g: 135, b: 95 }, RgbColor { r: 255, g: 135, b: 135 }, RgbColor { r: 255, g: 135, b: 175 }, RgbColor { r: 255, g: 135, b: 215 }, RgbColor { r: 255, g: 135, b: 255 },
-        RgbColor { r: 255, g: 175, b: 0 }, RgbColor { r: 255, g: 175, b: 95 }, RgbColor { r: 255, g: 175, b: 135 }, RgbColor { r: 255, g: 175, b: 175 }, RgbColor { r: 255, g: 175, b: 215 }, RgbColor { r: 255, g: 175, b: 255 },
-        RgbColor { r: 255, g: 215, b: 0 }, RgbColor { r: 255, g: 215, b: 95 }, RgbColor { r: 255, g: 215, b: 135 }, RgbColor { r: 255, g: 215, b: 175 }, RgbColor { r: 255, g: 215, b: 215 }, RgbColor { r: 255, g: 215, b: 255 },
-        RgbColor { r: 255, g: 255, b: 0 }, RgbColor { r: 255, g: 255, b: 95 }, RgbColor { r: 255, g: 255, b: 135 }, RgbColor { r: 255, g: 255, b: 175 }, RgbColor { r: 255, g: 255, b: 215 }, RgbColor { r: 255, g: 255, b: 255 },
+        RgbColor { r: 255, g: 0, b: 0 },
+        RgbColor {
+            r: 255,
+            g: 0,
+            b: 95,
+        },
+        RgbColor {
+            r: 255,
+            g: 0,
+            b: 135,
+        },
+        RgbColor {
+            r: 255,
+            g: 0,
+            b: 175,
+        },
+        RgbColor {
+            r: 255,
+            g: 0,
+            b: 215,
+        },
+        RgbColor {
+            r: 255,
+            g: 0,
+            b: 255,
+        },
+        RgbColor {
+            r: 255,
+            g: 95,
+            b: 0,
+        },
+        RgbColor {
+            r: 255,
+            g: 95,
+            b: 95,
+        },
+        RgbColor {
+            r: 255,
+            g: 95,
+            b: 135,
+        },
+        RgbColor {
+            r: 255,
+            g: 95,
+            b: 175,
+        },
+        RgbColor {
+            r: 255,
+            g: 95,
+            b: 215,
+        },
+        RgbColor {
+            r: 255,
+            g: 95,
+            b: 255,
+        },
+        RgbColor {
+            r: 255,
+            g: 135,
+            b: 0,
+        },
+        RgbColor {
+            r: 255,
+            g: 135,
+            b: 95,
+        },
+        RgbColor {
+            r: 255,
+            g: 135,
+            b: 135,
+        },
+        RgbColor {
+            r: 255,
+            g: 135,
+            b: 175,
+        },
+        RgbColor {
+            r: 255,
+            g: 135,
+            b: 215,
+        },
+        RgbColor {
+            r: 255,
+            g: 135,
+            b: 255,
+        },
+        RgbColor {
+            r: 255,
+            g: 175,
+            b: 0,
+        },
+        RgbColor {
+            r: 255,
+            g: 175,
+            b: 95,
+        },
+        RgbColor {
+            r: 255,
+            g: 175,
+            b: 135,
+        },
+        RgbColor {
+            r: 255,
+            g: 175,
+            b: 175,
+        },
+        RgbColor {
+            r: 255,
+            g: 175,
+            b: 215,
+        },
+        RgbColor {
+            r: 255,
+            g: 175,
+            b: 255,
+        },
+        RgbColor {
+            r: 255,
+            g: 215,
+            b: 0,
+        },
+        RgbColor {
+            r: 255,
+            g: 215,
+            b: 95,
+        },
+        RgbColor {
+            r: 255,
+            g: 215,
+            b: 135,
+        },
+        RgbColor {
+            r: 255,
+            g: 215,
+            b: 175,
+        },
+        RgbColor {
+            r: 255,
+            g: 215,
+            b: 215,
+        },
+        RgbColor {
+            r: 255,
+            g: 215,
+            b: 255,
+        },
+        RgbColor {
+            r: 255,
+            g: 255,
+            b: 0,
+        },
+        RgbColor {
+            r: 255,
+            g: 255,
+            b: 95,
+        },
+        RgbColor {
+            r: 255,
+            g: 255,
+            b: 135,
+        },
+        RgbColor {
+            r: 255,
+            g: 255,
+            b: 175,
+        },
+        RgbColor {
+            r: 255,
+            g: 255,
+            b: 215,
+        },
+        RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        },
         // 232-255: Grayscale
-        RgbColor { r: 8, g: 8, b: 8 }, RgbColor { r: 18, g: 18, b: 18 }, RgbColor { r: 28, g: 28, b: 28 }, RgbColor { r: 38, g: 38, b: 38 },
-        RgbColor { r: 48, g: 48, b: 48 }, RgbColor { r: 58, g: 58, b: 58 }, RgbColor { r: 68, g: 68, b: 68 }, RgbColor { r: 78, g: 78, b: 78 },
-        RgbColor { r: 88, g: 88, b: 88 }, RgbColor { r: 98, g: 98, b: 98 }, RgbColor { r: 108, g: 108, b: 108 }, RgbColor { r: 118, g: 118, b: 118 },
-        RgbColor { r: 128, g: 128, b: 128 }, RgbColor { r: 138, g: 138, b: 138 }, RgbColor { r: 148, g: 148, b: 148 }, RgbColor { r: 158, g: 158, b: 158 },
-        RgbColor { r: 168, g: 168, b: 168 }, RgbColor { r: 178, g: 178, b: 178 }, RgbColor { r: 188, g: 188, b: 188 }, RgbColor { r: 198, g: 198, b: 198 },
-        RgbColor { r: 208, g: 208, b: 208 }, RgbColor { r: 218, g: 218, b: 218 }, RgbColor { r: 228, g: 228, b: 228 }, RgbColor { r: 238, g: 238, b: 238 },
+        RgbColor { r: 8, g: 8, b: 8 },
+        RgbColor {
+            r: 18,
+            g: 18,
+            b: 18,
+        },
+        RgbColor {
+            r: 28,
+            g: 28,
+            b: 28,
+        },
+        RgbColor {
+            r: 38,
+            g: 38,
+            b: 38,
+        },
+        RgbColor {
+            r: 48,
+            g: 48,
+            b: 48,
+        },
+        RgbColor {
+            r: 58,
+            g: 58,
+            b: 58,
+        },
+        RgbColor {
+            r: 68,
+            g: 68,
+            b: 68,
+        },
+        RgbColor {
+            r: 78,
+            g: 78,
+            b: 78,
+        },
+        RgbColor {
+            r: 88,
+            g: 88,
+            b: 88,
+        },
+        RgbColor {
+            r: 98,
+            g: 98,
+            b: 98,
+        },
+        RgbColor {
+            r: 108,
+            g: 108,
+            b: 108,
+        },
+        RgbColor {
+            r: 118,
+            g: 118,
+            b: 118,
+        },
+        RgbColor {
+            r: 128,
+            g: 128,
+            b: 128,
+        },
+        RgbColor {
+            r: 138,
+            g: 138,
+            b: 138,
+        },
+        RgbColor {
+            r: 148,
+            g: 148,
+            b: 148,
+        },
+        RgbColor {
+            r: 158,
+            g: 158,
+            b: 158,
+        },
+        RgbColor {
+            r: 168,
+            g: 168,
+            b: 168,
+        },
+        RgbColor {
+            r: 178,
+            g: 178,
+            b: 178,
+        },
+        RgbColor {
+            r: 188,
+            g: 188,
+            b: 188,
+        },
+        RgbColor {
+            r: 198,
+            g: 198,
+            b: 198,
+        },
+        RgbColor {
+            r: 208,
+            g: 208,
+            b: 208,
+        },
+        RgbColor {
+            r: 218,
+            g: 218,
+            b: 218,
+        },
+        RgbColor {
+            r: 228,
+            g: 228,
+            b: 228,
+        },
+        RgbColor {
+            r: 238,
+            g: 238,
+            b: 238,
+        },
     ]
 };
 
@@ -156,7 +1270,9 @@ pub fn rotate_hue(hsv: HsvColor, degrees: f32) -> HsvColor {
 }
 
 pub fn rgb_to_256(rgb: RgbColor) -> u8 {
-    let gray_diff = (rgb.r as i16 - rgb.g as i16).abs() + (rgb.g as i16 - rgb.b as i16).abs() + (rgb.b as i16 - rgb.r as i16).abs();
+    let gray_diff = (rgb.r as i16 - rgb.g as i16).abs()
+        + (rgb.g as i16 - rgb.b as i16).abs()
+        + (rgb.b as i16 - rgb.r as i16).abs();
     if gray_diff < 3 {
         if rgb.r < 8 {
             return 16;
@@ -169,9 +1285,9 @@ pub fn rgb_to_256(rgb: RgbColor) -> u8 {
     }
 
     for (i, c) in ANSI_256_TO_RGB.iter().enumerate().take(16) {
-        let dist = ((rgb.r as i32 - c.r as i32).pow(2) +
-                    (rgb.g as i32 - c.g as i32).pow(2) +
-                    (rgb.b as i32 - c.b as i32).pow(2)) as u32;
+        let dist = ((rgb.r as i32 - c.r as i32).pow(2)
+            + (rgb.g as i32 - c.g as i32).pow(2)
+            + (rgb.b as i32 - c.b as i32).pow(2)) as u32;
         if dist < 2000 {
             return i as u8;
         }
@@ -199,209 +1315,765 @@ pub fn invert_256_color(color_code: u8) -> u8 {
 const ORGANIC_GRADIENT: [u8; 11] = [232, 22, 28, 34, 40, 46, 82, 118, 154, 190, 226];
 
 const ORGANIC_RGB: [RgbColor; 11] = [
-    RgbColor { r: 18, g: 18, b: 18 },
-    RgbColor { r: 40, g: 40, b: 40 },
-    RgbColor { r: 70, g: 20, b: 20 },
-    RgbColor { r: 100, g: 40, b: 40 },
-    RgbColor { r: 130, g: 50, b: 40 },
-    RgbColor { r: 160, g: 50, b: 50 },
-    RgbColor { r: 120, g: 100, b: 50 },
-    RgbColor { r: 100, g: 130, b: 60 },
-    RgbColor { r: 80, g: 160, b: 80 },
-    RgbColor { r: 100, g: 190, b: 130 },
-    RgbColor { r: 150, g: 220, b: 200 },
+    RgbColor {
+        r: 18,
+        g: 18,
+        b: 18,
+    },
+    RgbColor {
+        r: 40,
+        g: 40,
+        b: 40,
+    },
+    RgbColor {
+        r: 70,
+        g: 20,
+        b: 20,
+    },
+    RgbColor {
+        r: 100,
+        g: 40,
+        b: 40,
+    },
+    RgbColor {
+        r: 130,
+        g: 50,
+        b: 40,
+    },
+    RgbColor {
+        r: 160,
+        g: 50,
+        b: 50,
+    },
+    RgbColor {
+        r: 120,
+        g: 100,
+        b: 50,
+    },
+    RgbColor {
+        r: 100,
+        g: 130,
+        b: 60,
+    },
+    RgbColor {
+        r: 80,
+        g: 160,
+        b: 80,
+    },
+    RgbColor {
+        r: 100,
+        g: 190,
+        b: 130,
+    },
+    RgbColor {
+        r: 150,
+        g: 220,
+        b: 200,
+    },
 ];
 
 const HEAT_GRADIENT: [u8; 11] = [232, 52, 88, 124, 160, 196, 202, 208, 214, 220, 226];
 
 const HEAT_RGB: [RgbColor; 11] = [
-    RgbColor { r: 40, g: 20, b: 20 },
-    RgbColor { r: 40, g: 20, b: 20 },
-    RgbColor { r: 70, g: 20, b: 20 },
-    RgbColor { r: 110, g: 20, b: 20 },
-    RgbColor { r: 150, g: 20, b: 20 },
-    RgbColor { r: 190, g: 40, b: 30 },
-    RgbColor { r: 200, g: 70, b: 40 },
-    RgbColor { r: 210, g: 100, b: 50 },
-    RgbColor { r: 220, g: 140, b: 60 },
-    RgbColor { r: 230, g: 180, b: 80 },
-    RgbColor { r: 240, g: 220, b: 180 },
+    RgbColor {
+        r: 40,
+        g: 20,
+        b: 20,
+    },
+    RgbColor {
+        r: 40,
+        g: 20,
+        b: 20,
+    },
+    RgbColor {
+        r: 70,
+        g: 20,
+        b: 20,
+    },
+    RgbColor {
+        r: 110,
+        g: 20,
+        b: 20,
+    },
+    RgbColor {
+        r: 150,
+        g: 20,
+        b: 20,
+    },
+    RgbColor {
+        r: 190,
+        g: 40,
+        b: 30,
+    },
+    RgbColor {
+        r: 200,
+        g: 70,
+        b: 40,
+    },
+    RgbColor {
+        r: 210,
+        g: 100,
+        b: 50,
+    },
+    RgbColor {
+        r: 220,
+        g: 140,
+        b: 60,
+    },
+    RgbColor {
+        r: 230,
+        g: 180,
+        b: 80,
+    },
+    RgbColor {
+        r: 240,
+        g: 220,
+        b: 180,
+    },
 ];
 
 const OCEAN_GRADIENT: [u8; 11] = [232, 17, 18, 19, 20, 21, 27, 33, 39, 45, 51];
 
 const OCEAN_RGB: [RgbColor; 11] = [
-    RgbColor { r: 18, g: 18, b: 18 },
-    RgbColor { r: 20, g: 20, b: 50 },
-    RgbColor { r: 20, g: 25, b: 60 },
-    RgbColor { r: 20, g: 30, b: 70 },
-    RgbColor { r: 20, g: 40, b: 80 },
-    RgbColor { r: 25, g: 50, b: 100 },
-    RgbColor { r: 30, g: 70, b: 130 },
-    RgbColor { r: 40, g: 90, b: 160 },
-    RgbColor { r: 50, g: 110, b: 190 },
-    RgbColor { r: 60, g: 140, b: 220 },
-    RgbColor { r: 80, g: 170, b: 240 },
+    RgbColor {
+        r: 18,
+        g: 18,
+        b: 18,
+    },
+    RgbColor {
+        r: 20,
+        g: 20,
+        b: 50,
+    },
+    RgbColor {
+        r: 20,
+        g: 25,
+        b: 60,
+    },
+    RgbColor {
+        r: 20,
+        g: 30,
+        b: 70,
+    },
+    RgbColor {
+        r: 20,
+        g: 40,
+        b: 80,
+    },
+    RgbColor {
+        r: 25,
+        g: 50,
+        b: 100,
+    },
+    RgbColor {
+        r: 30,
+        g: 70,
+        b: 130,
+    },
+    RgbColor {
+        r: 40,
+        g: 90,
+        b: 160,
+    },
+    RgbColor {
+        r: 50,
+        g: 110,
+        b: 190,
+    },
+    RgbColor {
+        r: 60,
+        g: 140,
+        b: 220,
+    },
+    RgbColor {
+        r: 80,
+        g: 170,
+        b: 240,
+    },
 ];
 
 const MONO_GRADIENT: [u8; 11] = [232, 234, 236, 238, 240, 242, 244, 246, 248, 250, 252];
 
 const MONO_RGB: [RgbColor; 11] = [
-    RgbColor { r: 18, g: 18, b: 18 },
-    RgbColor { r: 35, g: 35, b: 35 },
-    RgbColor { r: 55, g: 55, b: 55 },
-    RgbColor { r: 75, g: 75, b: 75 },
-    RgbColor { r: 95, g: 95, b: 95 },
-    RgbColor { r: 115, g: 115, b: 115 },
-    RgbColor { r: 135, g: 135, b: 135 },
-    RgbColor { r: 155, g: 155, b: 155 },
-    RgbColor { r: 175, g: 175, b: 175 },
-    RgbColor { r: 195, g: 195, b: 195 },
-    RgbColor { r: 215, g: 215, b: 215 },
+    RgbColor {
+        r: 18,
+        g: 18,
+        b: 18,
+    },
+    RgbColor {
+        r: 35,
+        g: 35,
+        b: 35,
+    },
+    RgbColor {
+        r: 55,
+        g: 55,
+        b: 55,
+    },
+    RgbColor {
+        r: 75,
+        g: 75,
+        b: 75,
+    },
+    RgbColor {
+        r: 95,
+        g: 95,
+        b: 95,
+    },
+    RgbColor {
+        r: 115,
+        g: 115,
+        b: 115,
+    },
+    RgbColor {
+        r: 135,
+        g: 135,
+        b: 135,
+    },
+    RgbColor {
+        r: 155,
+        g: 155,
+        b: 155,
+    },
+    RgbColor {
+        r: 175,
+        g: 175,
+        b: 175,
+    },
+    RgbColor {
+        r: 195,
+        g: 195,
+        b: 195,
+    },
+    RgbColor {
+        r: 215,
+        g: 215,
+        b: 215,
+    },
 ];
 
 const FOREST_GRADIENT: [u8; 11] = [22, 22, 34, 34, 40, 40, 118, 118, 154, 118, 40];
 
 const FOREST_RGB: [RgbColor; 11] = [
-    RgbColor { r: 20, g: 40, b: 20 },
-    RgbColor { r: 30, g: 50, b: 25 },
-    RgbColor { r: 40, g: 60, b: 30 },
-    RgbColor { r: 50, g: 80, b: 35 },
-    RgbColor { r: 60, g: 100, b: 40 },
-    RgbColor { r: 70, g: 120, b: 50 },
-    RgbColor { r: 80, g: 140, b: 60 },
-    RgbColor { r: 100, g: 160, b: 80 },
-    RgbColor { r: 120, g: 180, b: 100 },
-    RgbColor { r: 150, g: 200, b: 130 },
-    RgbColor { r: 180, g: 220, b: 170 },
+    RgbColor {
+        r: 20,
+        g: 40,
+        b: 20,
+    },
+    RgbColor {
+        r: 30,
+        g: 50,
+        b: 25,
+    },
+    RgbColor {
+        r: 40,
+        g: 60,
+        b: 30,
+    },
+    RgbColor {
+        r: 50,
+        g: 80,
+        b: 35,
+    },
+    RgbColor {
+        r: 60,
+        g: 100,
+        b: 40,
+    },
+    RgbColor {
+        r: 70,
+        g: 120,
+        b: 50,
+    },
+    RgbColor {
+        r: 80,
+        g: 140,
+        b: 60,
+    },
+    RgbColor {
+        r: 100,
+        g: 160,
+        b: 80,
+    },
+    RgbColor {
+        r: 120,
+        g: 180,
+        b: 100,
+    },
+    RgbColor {
+        r: 150,
+        g: 200,
+        b: 130,
+    },
+    RgbColor {
+        r: 180,
+        g: 220,
+        b: 170,
+    },
 ];
 
 const NEON_GRADIENT: [u8; 11] = [17, 27, 39, 51, 87, 123, 159, 195, 201, 225, 195];
 
 const NEON_RGB: [RgbColor; 11] = [
     RgbColor { r: 30, g: 0, b: 50 },
-    RgbColor { r: 40, g: 10, b: 60 },
-    RgbColor { r: 50, g: 20, b: 80 },
-    RgbColor { r: 60, g: 40, b: 100 },
-    RgbColor { r: 80, g: 70, b: 130 },
-    RgbColor { r: 100, g: 100, b: 160 },
-    RgbColor { r: 120, g: 130, b: 190 },
-    RgbColor { r: 140, g: 160, b: 220 },
-    RgbColor { r: 170, g: 190, b: 240 },
-    RgbColor { r: 200, g: 220, b: 255 },
-    RgbColor { r: 150, g: 60, b: 200 },
+    RgbColor {
+        r: 40,
+        g: 10,
+        b: 60,
+    },
+    RgbColor {
+        r: 50,
+        g: 20,
+        b: 80,
+    },
+    RgbColor {
+        r: 60,
+        g: 40,
+        b: 100,
+    },
+    RgbColor {
+        r: 80,
+        g: 70,
+        b: 130,
+    },
+    RgbColor {
+        r: 100,
+        g: 100,
+        b: 160,
+    },
+    RgbColor {
+        r: 120,
+        g: 130,
+        b: 190,
+    },
+    RgbColor {
+        r: 140,
+        g: 160,
+        b: 220,
+    },
+    RgbColor {
+        r: 170,
+        g: 190,
+        b: 240,
+    },
+    RgbColor {
+        r: 200,
+        g: 220,
+        b: 255,
+    },
+    RgbColor {
+        r: 150,
+        g: 60,
+        b: 200,
+    },
 ];
 
 const WARM_GRADIENT: [u8; 11] = [52, 94, 130, 166, 202, 208, 214, 220, 226, 226, 226];
 
 const WARM_RGB: [RgbColor; 11] = [
-    RgbColor { r: 40, g: 20, b: 20 },
-    RgbColor { r: 60, g: 30, b: 20 },
-    RgbColor { r: 80, g: 40, b: 25 },
-    RgbColor { r: 110, g: 55, b: 30 },
-    RgbColor { r: 140, g: 70, b: 35 },
-    RgbColor { r: 170, g: 90, b: 45 },
-    RgbColor { r: 200, g: 110, b: 60 },
-    RgbColor { r: 210, g: 140, b: 80 },
-    RgbColor { r: 220, g: 170, b: 100 },
-    RgbColor { r: 230, g: 200, b: 140 },
-    RgbColor { r: 240, g: 230, b: 200 },
+    RgbColor {
+        r: 40,
+        g: 20,
+        b: 20,
+    },
+    RgbColor {
+        r: 60,
+        g: 30,
+        b: 20,
+    },
+    RgbColor {
+        r: 80,
+        g: 40,
+        b: 25,
+    },
+    RgbColor {
+        r: 110,
+        g: 55,
+        b: 30,
+    },
+    RgbColor {
+        r: 140,
+        g: 70,
+        b: 35,
+    },
+    RgbColor {
+        r: 170,
+        g: 90,
+        b: 45,
+    },
+    RgbColor {
+        r: 200,
+        g: 110,
+        b: 60,
+    },
+    RgbColor {
+        r: 210,
+        g: 140,
+        b: 80,
+    },
+    RgbColor {
+        r: 220,
+        g: 170,
+        b: 100,
+    },
+    RgbColor {
+        r: 230,
+        g: 200,
+        b: 140,
+    },
+    RgbColor {
+        r: 240,
+        g: 230,
+        b: 200,
+    },
 ];
 
 const VIBRANT_GRADIENT: [u8; 11] = [197, 209, 221, 193, 157, 121, 85, 49, 51, 87, 231];
 
 const VIBRANT_RGB: [RgbColor; 11] = [
-    RgbColor { r: 50, g: 20, b: 60 },
-    RgbColor { r: 60, g: 40, b: 80 },
-    RgbColor { r: 80, g: 60, b: 100 },
-    RgbColor { r: 100, g: 80, b: 80 },
-    RgbColor { r: 120, g: 100, b: 60 },
-    RgbColor { r: 140, g: 120, b: 40 },
-    RgbColor { r: 160, g: 140, b: 30 },
-    RgbColor { r: 180, g: 160, b: 30 },
-    RgbColor { r: 200, g: 150, b: 40 },
-    RgbColor { r: 220, g: 140, b: 60 },
-    RgbColor { r: 240, g: 130, b: 80 },
+    RgbColor {
+        r: 50,
+        g: 20,
+        b: 60,
+    },
+    RgbColor {
+        r: 60,
+        g: 40,
+        b: 80,
+    },
+    RgbColor {
+        r: 80,
+        g: 60,
+        b: 100,
+    },
+    RgbColor {
+        r: 100,
+        g: 80,
+        b: 80,
+    },
+    RgbColor {
+        r: 120,
+        g: 100,
+        b: 60,
+    },
+    RgbColor {
+        r: 140,
+        g: 120,
+        b: 40,
+    },
+    RgbColor {
+        r: 160,
+        g: 140,
+        b: 30,
+    },
+    RgbColor {
+        r: 180,
+        g: 160,
+        b: 30,
+    },
+    RgbColor {
+        r: 200,
+        g: 150,
+        b: 40,
+    },
+    RgbColor {
+        r: 220,
+        g: 140,
+        b: 60,
+    },
+    RgbColor {
+        r: 240,
+        g: 130,
+        b: 80,
+    },
 ];
 
 const LEGIBLEMONO_GRADIENT: [u8; 11] = [236, 240, 244, 248, 250, 251, 252, 253, 254, 255, 255];
 
 const LEGIBLEMONO_RGB: [RgbColor; 11] = [
-    RgbColor { r: 30, g: 30, b: 30 },
-    RgbColor { r: 50, g: 50, b: 50 },
-    RgbColor { r: 70, g: 70, b: 70 },
-    RgbColor { r: 90, g: 90, b: 90 },
-    RgbColor { r: 110, g: 110, b: 110 },
-    RgbColor { r: 130, g: 130, b: 130 },
-    RgbColor { r: 150, g: 150, b: 150 },
-    RgbColor { r: 170, g: 170, b: 170 },
-    RgbColor { r: 190, g: 190, b: 190 },
-    RgbColor { r: 210, g: 210, b: 210 },
-    RgbColor { r: 230, g: 230, b: 230 },
+    RgbColor {
+        r: 30,
+        g: 30,
+        b: 30,
+    },
+    RgbColor {
+        r: 50,
+        g: 50,
+        b: 50,
+    },
+    RgbColor {
+        r: 70,
+        g: 70,
+        b: 70,
+    },
+    RgbColor {
+        r: 90,
+        g: 90,
+        b: 90,
+    },
+    RgbColor {
+        r: 110,
+        g: 110,
+        b: 110,
+    },
+    RgbColor {
+        r: 130,
+        g: 130,
+        b: 130,
+    },
+    RgbColor {
+        r: 150,
+        g: 150,
+        b: 150,
+    },
+    RgbColor {
+        r: 170,
+        g: 170,
+        b: 170,
+    },
+    RgbColor {
+        r: 190,
+        g: 190,
+        b: 190,
+    },
+    RgbColor {
+        r: 210,
+        g: 210,
+        b: 210,
+    },
+    RgbColor {
+        r: 230,
+        g: 230,
+        b: 230,
+    },
 ];
 
 const SLIME_GRADIENT: [u8; 11] = [22, 28, 34, 40, 76, 82, 118, 154, 190, 226, 231];
 
 const SLIME_RGB: [RgbColor; 11] = [
-    RgbColor { r: 20, g: 40, b: 20 },
+    RgbColor {
+        r: 20,
+        g: 40,
+        b: 20,
+    },
     RgbColor { r: 0, g: 95, b: 0 },
-    RgbColor { r: 0, g: 135, b: 35 },
+    RgbColor {
+        r: 0,
+        g: 135,
+        b: 35,
+    },
     RgbColor { r: 0, g: 175, b: 0 },
-    RgbColor { r: 50, g: 200, b: 50 },
-    RgbColor { r: 95, g: 215, b: 0 },
-    RgbColor { r: 130, g: 230, b: 130 },
-    RgbColor { r: 160, g: 240, b: 150 },
-    RgbColor { r: 190, g: 250, b: 180 },
-    RgbColor { r: 220, g: 255, b: 200 },
-    RgbColor { r: 255, g: 255, b: 255 },
+    RgbColor {
+        r: 50,
+        g: 200,
+        b: 50,
+    },
+    RgbColor {
+        r: 95,
+        g: 215,
+        b: 0,
+    },
+    RgbColor {
+        r: 130,
+        g: 230,
+        b: 130,
+    },
+    RgbColor {
+        r: 160,
+        g: 240,
+        b: 150,
+    },
+    RgbColor {
+        r: 190,
+        g: 250,
+        b: 180,
+    },
+    RgbColor {
+        r: 220,
+        g: 255,
+        b: 200,
+    },
+    RgbColor {
+        r: 255,
+        g: 255,
+        b: 255,
+    },
 ];
 
 const MOLD_GRADIENT: [u8; 11] = [236, 100, 106, 112, 142, 148, 149, 150, 191, 192, 193];
 
 const MOLD_RGB: [RgbColor; 11] = [
-    RgbColor { r: 40, g: 40, b: 40 },
-    RgbColor { r: 135, g: 135, b: 0 },
-    RgbColor { r: 175, g: 165, b: 0 },
-    RgbColor { r: 195, g: 185, b: 40 },
-    RgbColor { r: 215, g: 200, b: 80 },
-    RgbColor { r: 225, g: 210, b: 120 },
-    RgbColor { r: 230, g: 215, b: 130 },
-    RgbColor { r: 235, g: 220, b: 145 },
-    RgbColor { r: 175, g: 235, b: 175 },
-    RgbColor { r: 180, g: 240, b: 180 },
-    RgbColor { r: 185, g: 245, b: 185 },
+    RgbColor {
+        r: 40,
+        g: 40,
+        b: 40,
+    },
+    RgbColor {
+        r: 135,
+        g: 135,
+        b: 0,
+    },
+    RgbColor {
+        r: 175,
+        g: 165,
+        b: 0,
+    },
+    RgbColor {
+        r: 195,
+        g: 185,
+        b: 40,
+    },
+    RgbColor {
+        r: 215,
+        g: 200,
+        b: 80,
+    },
+    RgbColor {
+        r: 225,
+        g: 210,
+        b: 120,
+    },
+    RgbColor {
+        r: 230,
+        g: 215,
+        b: 130,
+    },
+    RgbColor {
+        r: 235,
+        g: 220,
+        b: 145,
+    },
+    RgbColor {
+        r: 175,
+        g: 235,
+        b: 175,
+    },
+    RgbColor {
+        r: 180,
+        g: 240,
+        b: 180,
+    },
+    RgbColor {
+        r: 185,
+        g: 245,
+        b: 185,
+    },
 ];
 
 const FUNGUS_GRADIENT: [u8; 11] = [232, 54, 90, 126, 125, 163, 164, 165, 137, 143, 223];
 
 const FUNGUS_RGB: [RgbColor; 11] = [
-    RgbColor { r: 25, g: 20, b: 25 },
+    RgbColor {
+        r: 25,
+        g: 20,
+        b: 25,
+    },
     RgbColor { r: 95, g: 0, b: 95 },
-    RgbColor { r: 135, g: 0, b: 135 },
-    RgbColor { r: 195, g: 0, b: 195 },
-    RgbColor { r: 215, g: 0, b: 175 },
-    RgbColor { r: 155, g: 105, b: 145 },
-    RgbColor { r: 165, g: 115, b: 155 },
-    RgbColor { r: 175, g: 125, b: 165 },
-    RgbColor { r: 175, g: 150, b: 75 },
-    RgbColor { r: 215, g: 205, b: 100 },
-    RgbColor { r: 230, g: 240, b: 255 },
+    RgbColor {
+        r: 135,
+        g: 0,
+        b: 135,
+    },
+    RgbColor {
+        r: 195,
+        g: 0,
+        b: 195,
+    },
+    RgbColor {
+        r: 215,
+        g: 0,
+        b: 175,
+    },
+    RgbColor {
+        r: 155,
+        g: 105,
+        b: 145,
+    },
+    RgbColor {
+        r: 165,
+        g: 115,
+        b: 155,
+    },
+    RgbColor {
+        r: 175,
+        g: 125,
+        b: 165,
+    },
+    RgbColor {
+        r: 175,
+        g: 150,
+        b: 75,
+    },
+    RgbColor {
+        r: 215,
+        g: 205,
+        b: 100,
+    },
+    RgbColor {
+        r: 230,
+        g: 240,
+        b: 255,
+    },
 ];
 
 const SWAMP_GRADIENT: [u8; 11] = [232, 233, 234, 236, 239, 242, 65, 66, 72, 78, 79];
 
 const SWAMP_RGB: [RgbColor; 11] = [
-    RgbColor { r: 18, g: 18, b: 18 },
-    RgbColor { r: 35, g: 35, b: 35 },
-    RgbColor { r: 55, g: 55, b: 55 },
-    RgbColor { r: 80, g: 85, b: 75 },
-    RgbColor { r: 105, g: 110, b: 100 },
-    RgbColor { r: 130, g: 140, b: 125 },
-    RgbColor { r: 0, g: 130, b: 90 },
-    RgbColor { r: 0, g: 135, b: 110 },
-    RgbColor { r: 0, g: 150, b: 120 },
-    RgbColor { r: 0, g: 175, b: 140 },
-    RgbColor { r: 0, g: 190, b: 150 },
+    RgbColor {
+        r: 18,
+        g: 18,
+        b: 18,
+    },
+    RgbColor {
+        r: 35,
+        g: 35,
+        b: 35,
+    },
+    RgbColor {
+        r: 55,
+        g: 55,
+        b: 55,
+    },
+    RgbColor {
+        r: 80,
+        g: 85,
+        b: 75,
+    },
+    RgbColor {
+        r: 105,
+        g: 110,
+        b: 100,
+    },
+    RgbColor {
+        r: 130,
+        g: 140,
+        b: 125,
+    },
+    RgbColor {
+        r: 0,
+        g: 130,
+        b: 90,
+    },
+    RgbColor {
+        r: 0,
+        g: 135,
+        b: 110,
+    },
+    RgbColor {
+        r: 0,
+        g: 150,
+        b: 120,
+    },
+    RgbColor {
+        r: 0,
+        g: 175,
+        b: 140,
+    },
+    RgbColor {
+        r: 0,
+        g: 190,
+        b: 150,
+    },
 ];
 
 fn get_256_gradient(palette: Palette) -> &'static [u8; 11] {
@@ -480,7 +2152,13 @@ fn invert_rgb(rgb: RgbColor) -> RgbColor {
     }
 }
 
-pub fn map_brightness_rgb(brightness: f32, palette: Palette, reverse: bool, invert: bool, hue_shift: f32) -> RgbColor {
+pub fn map_brightness_rgb(
+    brightness: f32,
+    palette: Palette,
+    reverse: bool,
+    invert: bool,
+    hue_shift: f32,
+) -> RgbColor {
     let mut brightness = brightness.clamp(0.0, 1.0);
     let gradient = get_rgb_gradient(palette);
 
@@ -842,14 +2520,22 @@ mod tests {
     #[test]
     fn test_rgb_to_hsv_cyan_complementary_to_red() {
         let red_hsv = rgb_to_hsv(RgbColor { r: 255, g: 0, b: 0 });
-        let cyan_hsv = rgb_to_hsv(RgbColor { r: 0, g: 255, b: 255 });
+        let cyan_hsv = rgb_to_hsv(RgbColor {
+            r: 0,
+            g: 255,
+            b: 255,
+        });
         let hue_diff = (cyan_hsv.h - red_hsv.h).abs();
         assert!(hue_diff > 178.0 && hue_diff < 182.0);
     }
 
     #[test]
     fn test_hsv_to_rgb_roundtrip() {
-        let original = RgbColor { r: 128, g: 64, b: 255 };
+        let original = RgbColor {
+            r: 128,
+            g: 64,
+            b: 255,
+        };
         let hsv = rgb_to_hsv(original);
         let result = hsv_to_rgb(hsv);
         assert!((result.r as i16 - original.r as i16).abs() <= 1);
@@ -859,14 +2545,22 @@ mod tests {
 
     #[test]
     fn test_rotate_hue_180_degrees() {
-        let hsv = HsvColor { h: 0.0, s: 1.0, v: 1.0 };
+        let hsv = HsvColor {
+            h: 0.0,
+            s: 1.0,
+            v: 1.0,
+        };
         let rotated = rotate_hue(hsv, 180.0);
         assert!((rotated.h - 180.0).abs() < 0.01);
     }
 
     #[test]
     fn test_rotate_hue_wraps_around() {
-        let hsv = HsvColor { h: 300.0, s: 1.0, v: 1.0 };
+        let hsv = HsvColor {
+            h: 300.0,
+            s: 1.0,
+            v: 1.0,
+        };
         let rotated = rotate_hue(hsv, 100.0);
         assert!((rotated.h - 40.0).abs() < 0.01);
     }
@@ -899,7 +2593,11 @@ mod tests {
     fn test_invert_256_grayscale_unchanged() {
         for code in 232..=255 {
             let inverted = invert_256_color(code);
-            assert_eq!(inverted, code, "Grayscale color {} should remain unchanged when inverted", code);
+            assert_eq!(
+                inverted, code,
+                "Grayscale color {} should remain unchanged when inverted",
+                code
+            );
         }
     }
 
@@ -909,10 +2607,15 @@ mod tests {
             let rgb = ANSI_256_TO_RGB[code];
             let back = rgb_to_256(rgb);
             let back_rgb = ANSI_256_TO_RGB[back as usize];
-            let dist_orig = ((rgb.r as i32 - back_rgb.r as i32).pow(2) +
-                            (rgb.g as i32 - back_rgb.g as i32).pow(2) +
-                            (rgb.b as i32 - back_rgb.b as i32).pow(2)) as f32;
-            assert!(dist_orig < 5000.0, "Color {} should round-trip close to itself, got dist {}", code, dist_orig);
+            let dist_orig = ((rgb.r as i32 - back_rgb.r as i32).pow(2)
+                + (rgb.g as i32 - back_rgb.g as i32).pow(2)
+                + (rgb.b as i32 - back_rgb.b as i32).pow(2)) as f32;
+            assert!(
+                dist_orig < 5000.0,
+                "Color {} should round-trip close to itself, got dist {}",
+                code,
+                dist_orig
+            );
         }
     }
 
@@ -996,14 +2699,20 @@ mod tests {
     fn test_map_brightness_rgb_hue_shift_positive() {
         let color_no_shift = map_brightness_rgb(0.5, Palette::Neon, false, false, 0.0);
         let color_shifted = map_brightness_rgb(0.5, Palette::Neon, false, false, 90.0);
-        assert!(color_no_shift != color_shifted, "Color should change with hue shift");
+        assert!(
+            color_no_shift != color_shifted,
+            "Color should change with hue shift"
+        );
     }
 
     #[test]
     fn test_map_brightness_rgb_hue_shift_negative() {
         let color_no_shift = map_brightness_rgb(0.5, Palette::Neon, false, false, 0.0);
         let color_shifted = map_brightness_rgb(0.5, Palette::Neon, false, false, -90.0);
-        assert!(color_no_shift != color_shifted, "Color should change with negative hue shift");
+        assert!(
+            color_no_shift != color_shifted,
+            "Color should change with negative hue shift"
+        );
     }
 
     #[test]

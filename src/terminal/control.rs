@@ -1,6 +1,6 @@
 use crate::cli::Palette;
-use crate::simulation::config::Preset;
 use crate::simulation::config::InitMode;
+use crate::simulation::config::Preset;
 use crossterm::event::KeyEvent;
 
 const ALL_PALETTES: [Palette; 13] = [
@@ -44,7 +44,13 @@ pub struct RuntimeState {
 }
 
 impl RuntimeState {
-    pub fn new(seed: u64, init_mode: InitMode, initial_preset: Preset, initial_palette_index: usize, show_help: bool) -> Self {
+    pub fn new(
+        seed: u64,
+        init_mode: InitMode,
+        initial_preset: Preset,
+        initial_palette_index: usize,
+        show_help: bool,
+    ) -> Self {
         Self {
             is_paused: false,
             show_help,
@@ -106,7 +112,9 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('4') => ControlAction::SetPreset(Preset::Organic),
         KeyCode::Char('+') | KeyCode::Char('=') => ControlAction::AdjustTimeScale(0.5),
         KeyCode::Char('-') | KeyCode::Char('_') => ControlAction::AdjustTimeScale(-0.5),
-        KeyCode::Char('C') if key_event.modifiers.contains(KeyModifiers::SHIFT) => ControlAction::CyclePaletteReverse,
+        KeyCode::Char('C') if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
+            ControlAction::CyclePaletteReverse
+        }
         KeyCode::Char('c') => ControlAction::CyclePalette,
         KeyCode::Char('h') | KeyCode::Char('H') => ControlAction::ToggleHelp,
         KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => ControlAction::Quit,

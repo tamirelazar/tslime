@@ -493,7 +493,11 @@ impl Args {
             config.diffusion_sigma = 0.5;
         }
 
-        config.attractors = self.attract.iter().map(|a| Attractor::new(a.x, a.y, a.strength)).collect();
+        config.attractors = self
+            .attract
+            .iter()
+            .map(|a| Attractor::new(a.x, a.y, a.strength))
+            .collect();
         config.attractor_strength = self.attractor_strength;
 
         config

@@ -1,6 +1,6 @@
 use crate::cli::Palette;
-use crate::simulation::config::Preset;
 use crate::simulation::config::Attractor;
+use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
 pub struct OverlayRenderer;
@@ -18,7 +18,10 @@ impl OverlayRenderer {
         let palette_text = palette_name(palette);
         let time_text = format!("{:.1}x", time_scale);
 
-        format!("{} | {} | {} | {}", preset_text, time_text, palette_text, paused_text)
+        format!(
+            "{} | {} | {} | {}",
+            preset_text, time_text, palette_text, paused_text
+        )
     }
 
     pub fn status_line_x(status_line: &str, width: usize) -> usize {
@@ -34,10 +37,7 @@ impl OverlayRenderer {
         _width.saturating_sub(paused_text.len() + 2)
     }
 
-    pub fn build_help_with_attractors(
-        base_help: &[&str],
-        attractors: &[Attractor],
-    ) -> Vec<String> {
+    pub fn build_help_with_attractors(base_help: &[&str], attractors: &[Attractor]) -> Vec<String> {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
         if !attractors.is_empty() {
@@ -45,7 +45,11 @@ impl OverlayRenderer {
             lines.push("┌─ Attractors─────────────────────────────┐".to_string());
 
             for (i, attractor) in attractors.iter().enumerate() {
-                let kind = if attractor.strength > 0.0 { "attract" } else { "repel" };
+                let kind = if attractor.strength > 0.0 {
+                    "attract"
+                } else {
+                    "repel"
+                };
                 let strength = attractor.strength.abs();
                 lines.push(format!(
                     "│{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}          │",
@@ -83,7 +87,9 @@ impl OverlayRenderer {
             return true;
         }
         let target_len = attractor_lines[0].chars().count();
-        attractor_lines.iter().all(|line| line.chars().count() == target_len)
+        attractor_lines
+            .iter()
+            .all(|line| line.chars().count() == target_len)
     }
 }
 
@@ -113,9 +119,14 @@ mod tests {
             "└─────────────────────────────────────────┘",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
-        assert!(lines.len() > base_help.len(), "Should add attractor section");
-        assert!(OverlayRenderer::check_attractor_section_lengths(&lines, base_help.len()),
-            "Single attractor overlay should have consistent line lengths");
+        assert!(
+            lines.len() > base_help.len(),
+            "Should add attractor section"
+        );
+        assert!(
+            OverlayRenderer::check_attractor_section_lengths(&lines, base_help.len()),
+            "Single attractor overlay should have consistent line lengths"
+        );
     }
 
     #[test]
@@ -127,9 +138,14 @@ mod tests {
             "└─────────────────────────────────────────┘",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
-        assert!(lines.len() > base_help.len(), "Should add attractor section");
-        assert!(OverlayRenderer::check_attractor_section_lengths(&lines, base_help.len()),
-            "Max strength attractor should still have consistent line lengths");
+        assert!(
+            lines.len() > base_help.len(),
+            "Should add attractor section"
+        );
+        assert!(
+            OverlayRenderer::check_attractor_section_lengths(&lines, base_help.len()),
+            "Max strength attractor should still have consistent line lengths"
+        );
     }
 
     #[test]
@@ -141,9 +157,14 @@ mod tests {
             "└─────────────────────────────────────────┘",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
-        assert!(lines.len() > base_help.len(), "Should add attractor section");
-        assert!(OverlayRenderer::check_attractor_section_lengths(&lines, base_help.len()),
-            "Negative coordinates should still have consistent line lengths");
+        assert!(
+            lines.len() > base_help.len(),
+            "Should add attractor section"
+        );
+        assert!(
+            OverlayRenderer::check_attractor_section_lengths(&lines, base_help.len()),
+            "Negative coordinates should still have consistent line lengths"
+        );
     }
 
     #[test]
@@ -159,8 +180,13 @@ mod tests {
             "└─────────────────────────────────────────┘",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
-        assert!(lines.len() > base_help.len(), "Should add attractor section");
-        assert!(OverlayRenderer::check_attractor_section_lengths(&lines, base_help.len()),
-            "Multiple attractors should have consistent line lengths");
+        assert!(
+            lines.len() > base_help.len(),
+            "Should add attractor section"
+        );
+        assert!(
+            OverlayRenderer::check_attractor_section_lengths(&lines, base_help.len()),
+            "Multiple attractors should have consistent line lengths"
+        );
     }
 }

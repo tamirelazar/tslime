@@ -1,9 +1,9 @@
+use crate::cli::ColorMode;
 use crate::cli::Palette;
 use crate::render::charset::{self, Charset};
 use crate::render::downsample::Cell as DownsampleCell;
 use crate::render::palette;
 use crate::render::palette::RgbColor;
-use crate::cli::ColorMode;
 use crossterm::{execute, Command};
 use std::fmt;
 use std::io::{self, Stdout};
@@ -57,7 +57,14 @@ impl FrameBuffer {
         }
     }
 
-    pub fn draw_text_overlay<T: AsRef<str>>(&mut self, text_lines: &[T], start_x: usize, start_y: usize, fg_color: u8, bg_color: Option<u8>) {
+    pub fn draw_text_overlay<T: AsRef<str>>(
+        &mut self,
+        text_lines: &[T],
+        start_x: usize,
+        start_y: usize,
+        fg_color: u8,
+        bg_color: Option<u8>,
+    ) {
         for (dy, line) in text_lines.iter().enumerate() {
             let y = start_y + dy;
             if y >= self.height {
@@ -371,7 +378,12 @@ impl FrameBuffer {
             }
         }
 
-        if !plain_output && (last_fg_256.is_some() || last_bg_256.is_some() || last_fg_rgb.is_some() || last_bg_rgb.is_some()) {
+        if !plain_output
+            && (last_fg_256.is_some()
+                || last_bg_256.is_some()
+                || last_fg_rgb.is_some()
+                || last_bg_rgb.is_some())
+        {
             output.push_str("\x1b[0m");
         }
 
@@ -518,12 +530,24 @@ impl TerminalRenderer {
 
         if let Some((line, x)) = status_line {
             let line_chars: Vec<char> = line.chars().collect();
-            buffer.draw_text_overlay(&[&line_chars.iter().collect::<String>()], x, self.height.saturating_sub(2), 14, Some(234));
+            buffer.draw_text_overlay(
+                &[&line_chars.iter().collect::<String>()],
+                x,
+                self.height.saturating_sub(2),
+                14,
+                Some(234),
+            );
         }
 
         if let Some((text, x)) = paused_line {
             let text_chars: Vec<char> = text.chars().collect();
-            buffer.draw_text_overlay(&[&text_chars.iter().collect::<String>()], x, 2, 15, Some(196));
+            buffer.draw_text_overlay(
+                &[&text_chars.iter().collect::<String>()],
+                x,
+                2,
+                15,
+                Some(196),
+            );
         }
 
         execute!(self.stdout, &buffer)
@@ -749,7 +773,16 @@ mod tests {
     #[test]
     fn test_create_cell_braille_top_only() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256, 0.0);
+        let cell = buffer.create_cell(
+            1.0,
+            0.0,
+            &Palette::Organic,
+            Charset::Braille,
+            false,
+            false,
+            ColorMode::Bits256,
+            0.0,
+        );
         assert_eq!(cell.char, '\u{2807}');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -758,7 +791,16 @@ mod tests {
     #[test]
     fn test_create_cell_braille_bottom_only() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256, 0.0);
+        let cell = buffer.create_cell(
+            0.0,
+            1.0,
+            &Palette::Organic,
+            Charset::Braille,
+            false,
+            false,
+            ColorMode::Bits256,
+            0.0,
+        );
         assert_eq!(cell.char, '\u{2838}');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -767,7 +809,16 @@ mod tests {
     #[test]
     fn test_create_cell_braille_top_half_brightness() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256, 0.0);
+        let cell = buffer.create_cell(
+            0.5,
+            0.0,
+            &Palette::Organic,
+            Charset::Braille,
+            false,
+            false,
+            ColorMode::Bits256,
+            0.0,
+        );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -776,7 +827,16 @@ mod tests {
     #[test]
     fn test_create_cell_braille_bottom_half_brightness() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(0.0, 0.5, &Palette::Organic, Charset::Braille, false, false, ColorMode::Bits256, 0.0);
+        let cell = buffer.create_cell(
+            0.0,
+            0.5,
+            &Palette::Organic,
+            Charset::Braille,
+            false,
+            false,
+            ColorMode::Bits256,
+            0.0,
+        );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -785,7 +845,16 @@ mod tests {
     #[test]
     fn test_create_cell_ascii_top_only() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(1.0, 0.0, &Palette::Organic, Charset::Ascii, false, false, ColorMode::Bits256, 0.0);
+        let cell = buffer.create_cell(
+            1.0,
+            0.0,
+            &Palette::Organic,
+            Charset::Ascii,
+            false,
+            false,
+            ColorMode::Bits256,
+            0.0,
+        );
         assert_eq!(cell.char, '^');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -794,7 +863,16 @@ mod tests {
     #[test]
     fn test_create_cell_ascii_bottom_only() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(0.0, 1.0, &Palette::Organic, Charset::Ascii, false, false, ColorMode::Bits256, 0.0);
+        let cell = buffer.create_cell(
+            0.0,
+            1.0,
+            &Palette::Organic,
+            Charset::Ascii,
+            false,
+            false,
+            ColorMode::Bits256,
+            0.0,
+        );
         assert_eq!(cell.char, 'v');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -803,7 +881,16 @@ mod tests {
     #[test]
     fn test_create_cell_ascii_top_half_brightness() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(0.5, 0.0, &Palette::Organic, Charset::Ascii, false, false, ColorMode::Bits256, 0.0);
+        let cell = buffer.create_cell(
+            0.5,
+            0.0,
+            &Palette::Organic,
+            Charset::Ascii,
+            false,
+            false,
+            ColorMode::Bits256,
+            0.0,
+        );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -812,7 +899,16 @@ mod tests {
     #[test]
     fn test_create_cell_ascii_bottom_half_brightness() {
         let buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
-        let cell = buffer.create_cell(0.0, 0.5, &Palette::Organic, Charset::Ascii, false, false, ColorMode::Bits256, 0.0);
+        let cell = buffer.create_cell(
+            0.0,
+            0.5,
+            &Palette::Organic,
+            Charset::Ascii,
+            false,
+            false,
+            ColorMode::Bits256,
+            0.0,
+        );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
         assert!(cell.bg_color_256.is_none());
@@ -863,7 +959,11 @@ mod tests {
             char: '█',
             fg_color_256: None,
             bg_color_256: None,
-            fg_color_rgb: Some(RgbColor { r: 255, g: 128, b: 64 }),
+            fg_color_rgb: Some(RgbColor {
+                r: 255,
+                g: 128,
+                b: 64,
+            }),
             bg_color_rgb: None,
         };
         let frame_str = buffer.build_frame_string(false, ColorMode::TrueColor);
@@ -932,24 +1032,45 @@ mod tests {
 
     #[test]
     fn test_terminal_renderer_creation() {
-        let renderer =
-            TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock, false, false, ColorMode::Bits256);
+        let renderer = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::Bits256,
+        );
         assert_eq!(renderer.width, 80);
         assert_eq!(renderer.height, 24);
     }
 
     #[test]
     fn test_terminal_renderer_creation_truecolor() {
-        let renderer =
-            TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock, false, false, ColorMode::TrueColor);
+        let renderer = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+        );
         assert_eq!(renderer.width, 80);
         assert_eq!(renderer.height, 24);
     }
 
     #[test]
     fn test_terminal_renderer_set_dimensions() {
-        let mut renderer =
-            TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock, false, false, ColorMode::Bits256);
+        let mut renderer = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::Bits256,
+        );
         renderer.set_dimensions(100, 30);
         assert_eq!(renderer.width, 100);
         assert_eq!(renderer.height, 30);
@@ -957,16 +1078,30 @@ mod tests {
 
     #[test]
     fn test_terminal_renderer_set_palette() {
-        let mut renderer =
-            TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock, false, false, ColorMode::Bits256);
+        let mut renderer = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::Bits256,
+        );
         renderer.set_palette(Palette::Heat);
         assert_eq!(renderer.palette, Palette::Heat);
     }
 
     #[test]
     fn test_terminal_renderer_set_charset() {
-        let mut renderer =
-            TerminalRenderer::new(80, 24, Palette::Organic, Charset::HalfBlock, false, false, ColorMode::Bits256);
+        let mut renderer = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::Bits256,
+        );
         renderer.set_charset(Charset::Ascii);
         assert_eq!(renderer.charset, Charset::Ascii);
     }

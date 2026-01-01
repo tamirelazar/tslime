@@ -32,9 +32,12 @@ fn bench_agent_sense_rotate_move_deposit(c: &mut Criterion) {
             let right_x = self.x + right_angle.cos() * sensor_offset;
             let right_y = self.y + right_angle.sin() * sensor_offset;
 
-            let left_idx = (left_y as usize).min(height - 1) * width + (left_x as usize).min(width - 1);
-            let center_idx = (center_y as usize).min(height - 1) * width + (center_x as usize).min(width - 1);
-            let right_idx = (right_y as usize).min(height - 1) * width + (right_x as usize).min(width - 1);
+            let left_idx =
+                (left_y as usize).min(height - 1) * width + (left_x as usize).min(width - 1);
+            let center_idx =
+                (center_y as usize).min(height - 1) * width + (center_x as usize).min(width - 1);
+            let right_idx =
+                (right_y as usize).min(height - 1) * width + (right_x as usize).min(width - 1);
 
             (
                 trail.get(left_idx).copied().unwrap_or(0.0),
@@ -43,10 +46,21 @@ fn bench_agent_sense_rotate_move_deposit(c: &mut Criterion) {
             )
         }
 
-        fn rotate(&mut self, left: f32, center: f32, right: f32, rotation_angle: f32, _rng: &mut impl rand::Rng) {
+        fn rotate(
+            &mut self,
+            left: f32,
+            center: f32,
+            right: f32,
+            rotation_angle: f32,
+            _rng: &mut impl rand::Rng,
+        ) {
             if center > left && center > right {
             } else if center < left && center < right {
-                self.heading += if _rng.gen_bool(0.5) { rotation_angle } else { -rotation_angle };
+                self.heading += if _rng.gen_bool(0.5) {
+                    rotation_angle
+                } else {
+                    -rotation_angle
+                };
             } else if left > right {
                 self.heading -= rotation_angle;
             } else if right > left {
@@ -57,8 +71,12 @@ fn bench_agent_sense_rotate_move_deposit(c: &mut Criterion) {
         fn move_forward(&mut self, step_size: f32, width: usize, height: usize) {
             self.x = (self.x + step_size * self.heading.cos()).abs();
             self.y = (self.y + step_size * self.heading.sin()).abs();
-            if self.x >= width as f32 { self.x -= width as f32; }
-            if self.y >= height as f32 { self.y -= height as f32; }
+            if self.x >= width as f32 {
+                self.x -= width as f32;
+            }
+            if self.y >= height as f32 {
+                self.y -= height as f32;
+            }
         }
 
         fn deposit(&self, trail: &mut [f32], width: usize, height: usize, amount: f32) {
@@ -82,7 +100,11 @@ fn bench_agent_sense_rotate_move_deposit(c: &mut Criterion) {
     let agents: Vec<Agent> = (0..50000)
         .map(|i| {
             let angle = (i as f32 / 50000.0) * std::f32::consts::PI * 2.0;
-            Agent::new(200.0 + angle.cos() * 100.0, 200.0 + angle.sin() * 100.0, angle)
+            Agent::new(
+                200.0 + angle.cos() * 100.0,
+                200.0 + angle.sin() * 100.0,
+                angle,
+            )
         })
         .collect();
 
@@ -102,13 +124,8 @@ fn bench_agent_sense_rotate_move_deposit(c: &mut Criterion) {
             let mut trail = trail_map.clone();
             let mut agents = agents.clone();
             for agent in &mut agents {
-                let (left, center, right) = agent.sense(
-                    &trail,
-                    width,
-                    height,
-                    sensor_angle,
-                    sensor_distance,
-                );
+                let (left, center, right) =
+                    agent.sense(&trail, width, height, sensor_angle, sensor_distance);
 
                 agent.rotate(left, center, right, rotation_angle, &mut rng);
                 agent.move_forward(step_size, width, height);
@@ -132,7 +149,14 @@ fn bench_agent_update_full_frame(c: &mut Criterion) {
             Self { x, y, heading }
         }
 
-        fn sense(&self, trail: &[f32], width: usize, height: usize, sensor_angle: f32, sensor_distance: f32) -> (f32, f32, f32) {
+        fn sense(
+            &self,
+            trail: &[f32],
+            width: usize,
+            height: usize,
+            sensor_angle: f32,
+            sensor_distance: f32,
+        ) -> (f32, f32, f32) {
             let sensor_offset = sensor_distance;
             let left_angle = self.heading - sensor_angle;
             let right_angle = self.heading + sensor_angle;
@@ -151,10 +175,21 @@ fn bench_agent_update_full_frame(c: &mut Criterion) {
             (trail[left_idx], trail[center_idx], trail[right_idx])
         }
 
-        fn rotate(&mut self, left: f32, center: f32, right: f32, rotation_angle: f32, rng: &mut impl rand::Rng) {
+        fn rotate(
+            &mut self,
+            left: f32,
+            center: f32,
+            right: f32,
+            rotation_angle: f32,
+            rng: &mut impl rand::Rng,
+        ) {
             if center > left && center > right {
             } else if center < left && center < right {
-                self.heading += if rng.gen_bool(0.5) { rotation_angle } else { -rotation_angle };
+                self.heading += if rng.gen_bool(0.5) {
+                    rotation_angle
+                } else {
+                    -rotation_angle
+                };
             } else if left > right {
                 self.heading -= rotation_angle;
             } else if right > left {
@@ -165,8 +200,12 @@ fn bench_agent_update_full_frame(c: &mut Criterion) {
         fn move_forward(&mut self, step_size: f32, width: usize, height: usize) {
             self.x = (self.x + step_size * self.heading.cos()).abs();
             self.y = (self.y + step_size * self.heading.sin()).abs();
-            if self.x >= width as f32 { self.x -= width as f32; }
-            if self.y >= height as f32 { self.y -= height as f32; }
+            if self.x >= width as f32 {
+                self.x -= width as f32;
+            }
+            if self.y >= height as f32 {
+                self.y -= height as f32;
+            }
         }
 
         fn deposit(&self, trail: &mut [f32], width: usize, height: usize, amount: f32) {
@@ -178,7 +217,11 @@ fn bench_agent_update_full_frame(c: &mut Criterion) {
     let mut agents: Vec<Agent> = (0..50000)
         .map(|i| {
             let angle = (i as f32 / 50000.0) * std::f32::consts::PI * 2.0;
-            Agent::new(200.0 + angle.cos() * 100.0, 200.0 + angle.sin() * 100.0, angle)
+            Agent::new(
+                200.0 + angle.cos() * 100.0,
+                200.0 + angle.sin() * 100.0,
+                angle,
+            )
         })
         .collect();
 
@@ -196,7 +239,8 @@ fn bench_agent_update_full_frame(c: &mut Criterion) {
             let mut trail = vec![0.0f32; 400 * 400];
 
             for agent in &mut agents {
-                let (left, center, right) = agent.sense(&trail, width, height, sensor_angle, sensor_distance);
+                let (left, center, right) =
+                    agent.sense(&trail, width, height, sensor_angle, sensor_distance);
                 agent.rotate(left, center, right, rotation_angle, &mut rng);
                 agent.move_forward(step_size, width, height);
                 agent.deposit(&mut trail, width, height, deposit_amount);
@@ -227,7 +271,11 @@ fn bench_agent_update_varying_population(c: &mut Criterion) {
         let agents: Vec<Agent> = (0..population)
             .map(|i| {
                 let angle = (i as f32 / population as f32) * std::f32::consts::PI * 2.0;
-                Agent::new(200.0 + angle.cos() * 100.0, 200.0 + angle.sin() * 100.0, angle)
+                Agent::new(
+                    200.0 + angle.cos() * 100.0,
+                    200.0 + angle.sin() * 100.0,
+                    angle,
+                )
             })
             .collect();
 
@@ -238,8 +286,8 @@ fn bench_agent_update_varying_population(c: &mut Criterion) {
                 let mut agents = agents.clone();
 
                 for agent in &mut agents {
-                use rand::Rng;
-                let left_x = (agent.x + (agent.heading - 0.785).cos() * 9.0) as usize;
+                    use rand::Rng;
+                    let left_x = (agent.x + (agent.heading - 0.785).cos() * 9.0) as usize;
                     let left_y = (agent.y + (agent.heading - 0.785).sin() * 9.0) as usize;
                     let center_x = (agent.x + agent.heading.cos() * 9.0) as usize;
                     let center_y = (agent.y + agent.heading.sin() * 9.0) as usize;
@@ -263,8 +311,12 @@ fn bench_agent_update_varying_population(c: &mut Criterion) {
 
                     agent.x = (agent.x + agent.heading.cos()).abs();
                     agent.y = (agent.y + agent.heading.sin()).abs();
-                    if agent.x >= 400.0 { agent.x -= 400.0; }
-                    if agent.y >= 400.0 { agent.y -= 400.0; }
+                    if agent.x >= 400.0 {
+                        agent.x -= 400.0;
+                    }
+                    if agent.y >= 400.0 {
+                        agent.y -= 400.0;
+                    }
 
                     let idx = (agent.y as usize) * 400 + (agent.x as usize);
                     trail[idx] = (trail[idx] + 5.0).min(1000.0);
@@ -288,7 +340,13 @@ fn bench_downsampling(c: &mut Criterion) {
         d
     };
 
-    fn downsample(trail: &[f32], sim_w: usize, sim_h: usize, term_w: usize, term_h: usize) -> Vec<(f32, f32)> {
+    fn downsample(
+        trail: &[f32],
+        sim_w: usize,
+        sim_h: usize,
+        term_w: usize,
+        term_h: usize,
+    ) -> Vec<(f32, f32)> {
         let cell_w = sim_w as f32 / term_w as f32;
         let cell_h = sim_h as f32 / term_h as f32;
         let mut cells = Vec::with_capacity(term_w * term_h);
