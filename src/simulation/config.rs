@@ -114,6 +114,7 @@ pub struct SimConfig {
     pub attractor_strength: f32,
     pub species_configs: Vec<SpeciesConfig>,
     pub separate_species_trails: bool,
+    pub use_simd: bool,
 }
 
 impl Default for SimConfig {
@@ -132,6 +133,7 @@ impl Default for SimConfig {
             attractor_strength: 1.0,
             species_configs: vec![SpeciesConfig::default()],
             separate_species_trails: false,
+            use_simd: true,
         }
     }
 }
@@ -247,6 +249,7 @@ impl From<Preset> for SimConfig {
                     color: "228b22".to_string(),
                 }],
                 separate_species_trails: false,
+                use_simd: true,
             },
             Preset::Exploratory => Self {
                 sensor_angle: 45.0,
@@ -270,6 +273,7 @@ impl From<Preset> for SimConfig {
                     color: "228b22".to_string(),
                 }],
                 separate_species_trails: false,
+                use_simd: true,
             },
             Preset::Tendrils => Self {
                 sensor_angle: 30.0,
@@ -293,6 +297,7 @@ impl From<Preset> for SimConfig {
                     color: "228b22".to_string(),
                 }],
                 separate_species_trails: false,
+                use_simd: true,
             },
             Preset::Organic => Self::default(),
             Preset::Minimal => Self {
@@ -317,6 +322,7 @@ impl From<Preset> for SimConfig {
                     color: "228b22".to_string(),
                 }],
                 separate_species_trails: false,
+                use_simd: true,
             },
             Preset::Moss => Self {
                 sensor_angle: 22.0,
@@ -340,6 +346,7 @@ impl From<Preset> for SimConfig {
                     color: "4a7a4a".to_string(),
                 }],
                 separate_species_trails: false,
+                use_simd: true,
             },
         }
     }

@@ -601,6 +601,12 @@ pub struct Args {
         help = "Enable species-specific rendering using each species' configured color. Automatically enables --separate-species-trails."
     )]
     pub species_colors: bool,
+
+    #[arg(
+        long = "simd-off",
+        help = "Disable SIMD acceleration for diffusion (use scalar fallback)"
+    )]
+    pub simd_off: bool,
 }
 
 impl Args {
@@ -682,6 +688,8 @@ impl Args {
         config.attractor_strength = self.attractor_strength;
 
         config.separate_species_trails = self.separate_species_trails || self.species_colors;
+
+        config.use_simd = !self.simd_off;
 
         if !self.species.is_empty() {
             config.species_configs = self
@@ -806,6 +814,7 @@ impl Default for Args {
             species: Vec::new(),
             separate_species_trails: false,
             species_colors: false,
+            simd_off: false,
         }
     }
 }
@@ -865,6 +874,7 @@ mod tests {
             species: Vec::new(),
             separate_species_trails: false,
             species_colors: false,
+            simd_off: false,
         };
         assert_eq!(args.mode(), Mode::Default);
     }

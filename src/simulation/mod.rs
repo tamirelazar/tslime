@@ -486,10 +486,13 @@ impl Simulation {
         }
 
         for trail_map in &mut self.trail_maps {
-            trail_map.diffuse_with_kernel(matches!(
-                self.config.diffusion_kernel,
-                crate::simulation::config::DiffusionKernel::Gaussian
-            ));
+            trail_map.diffuse_with_kernel(
+                self.config.use_simd,
+                matches!(
+                    self.config.diffusion_kernel,
+                    crate::simulation::config::DiffusionKernel::Gaussian
+                ),
+            );
             trail_map.decay(effective_decay);
         }
 
