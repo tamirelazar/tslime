@@ -9,7 +9,7 @@ A lightweight terminal screensaver simulating the mesmerizing growth patterns of
 [![Build Status](https://github.com/yourusername/tslime/workflows/CI/badge.svg)](https://github.com/yourusername/tslime/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[![Exploratory Demo](assets/demos/exploratory.gif)] · [Screenshots](#screenshots) · [Installation](#installation) · [Usage](#usage)
+[![Network Demo](assets/demos/network.gif)] · [Screenshots](#screenshots) · [Installation](#installation) · [Usage](#usage)
 
 </div>
 
@@ -19,17 +19,34 @@ A lightweight terminal screensaver simulating the mesmerizing growth patterns of
 
 Watch the magic of slime mold in action:
 
+### Featured: Network Formation
+
+Dense, interconnected networks forming in real-time (400x400, 60 frames):
+
+![Network Demo](assets/demos/network.gif)
+
 ### Presets in Action
 
-**Network** | **Exploratory** | **Organic** | **Tendrils**
-:---:|:---:|:---:|:---:
-![Network Demo](assets/demos/network.gif) | ![Exploratory Demo](assets/demos/exploratory.gif) | ![Organic Demo](assets/demos/organic.gif) | ![Tendrils Demo](assets/demos/tendrils.gif)
+Each preset creates distinct visual patterns:
+
+| Network | Exploratory | Organic | Tendrils |
+|:-------:|:-----------:|:-------:|:--------:|
+| ![Network](assets/demos/network_small.gif) | ![Exploratory](assets/demos/exploratory_small.gif) | ![Organic](assets/demos/organic_small.gif) | ![Tendrils](assets/demos/tendrils_small.gif) |
+| Dense branching | Wide exploration | Balanced growth | Long arms |
 
 ### Color Palettes
 
-**Heat** | **Ocean** | **ASCII**
-:---:|:---:|:---:
-![Heat Demo](assets/demos/heat.gif) | ![Ocean Demo](assets/demos/ocean.gif) | ![ASCII Demo](assets/demos/ascii.gif)
+Choose from 12+ built-in palettes for different moods:
+
+| Heat | Ocean | Neon | Slime |
+|:----:|:-----:|:----:|:-----:|
+| ![Heat](assets/demos/heat_small.gif) | ![Ocean](assets/demos/ocean_small.gif) | ![Neon](assets/demos/neon_small.gif) | ![Slime](assets/demos/slime_small.gif) |
+
+### Special Effects
+
+**Multi-species mode** - Different agents with distinct colors:
+
+![Species Demo](assets/demos/species.gif)
 
 ---
 
@@ -45,8 +62,9 @@ The simulation runs at higher resolution than the terminal display, downsampling
 - **Lightweight**: < 5% CPU, < 10MB memory
 - **Cross-Platform**: Linux, macOS, Windows, and SSH
 - **Zero Runtime Dependencies**: Single static binary
-- **Configurable**: Multiple presets and tunable parameters
+- **Configurable**: Multiple presets, palettes, and tunable parameters
 - **Multiple Modes**: Screensaver, live animation, print mode
+- **GIF Export**: Capture beautiful animations to share
 
 ---
 
@@ -90,7 +108,7 @@ Press any key to exit, or `Ctrl+C` to quit.
 
 ### Presets
 
-tslime includes four carefully tuned presets for different visual styles:
+tslime includes several carefully tuned presets for different visual styles. See the [Demo](#-demo) section for animated examples.
 
 #### Network Preset
 Dense network formation with rapid branching.
@@ -99,16 +117,12 @@ Dense network formation with rapid branching.
 tslime -S --preset network
 ```
 
-![Network Demo](assets/demos/network.gif)
-
 #### Exploratory Preset
 Scattered, searching behavior with long tentacles.
 
 ```bash
 tslime -S --preset exploratory
 ```
-
-![Exploratory Demo](assets/demos/exploratory.gif)
 
 #### Organic Preset (Default)
 Balanced, natural appearance.
@@ -117,8 +131,6 @@ Balanced, natural appearance.
 tslime -S --preset organic
 ```
 
-![Organic Demo](assets/demos/organic.gif)
-
 #### Tendrils Preset
 Long branching arms stretching across the terminal.
 
@@ -126,26 +138,30 @@ Long branching arms stretching across the terminal.
 tslime -S --preset tendrils
 ```
 
-![Tendrils Demo](assets/demos/tendrils.gif)
-
 ### Color Palettes
 
-Choose from four built-in color palettes:
+Choose from 12+ built-in color palettes for different moods:
 
-| Palette | Command | Description |
-|---------|---------|-------------|
+| Palette | Flag | Description |
+|---------|------|-------------|
 | Organic (default) | `--palette organic` | Green/yellow gradient |
-| Heat | `--palette heat` | Black to red/orange gradient |
+| Heat | `--palette heat` | Black to red/orange |
 | Ocean | `--palette ocean` | Blue to cyan gradient |
+| Neon | `--palette neon` | Purple/pink electric |
+| Slime | `--palette slime` | Bright green glow |
 | Mono | `--palette mono` | Grayscale ramp |
+| Forest | `--palette forest` | Natural greens |
+| Warm | `--palette warm` | Earth tones |
+| Vibrant | `--palette vibrant` | Saturated colors |
+| Mold | `--palette mold` | Yellow/olive tones |
+| Fungus | `--palette fungus` | Brown/green fungi |
+| Swamp | `--palette swamp` | Dark murky greens |
 
 Example:
 
 ```bash
 tslime -S --palette ocean
 ```
-
-![Ocean Demo](assets/demos/ocean.gif)
 
 ### ASCII Mode
 
@@ -154,8 +170,6 @@ For older terminals or pure text output:
 ```bash
 tslime -S --ascii --colors 16
 ```
-
-![ASCII Demo](assets/demos/ascii.gif)
 
 ---
 
@@ -172,6 +186,29 @@ MODES:
     -S, --screensaver  Screensaver mode (exit on any keypress)
     -p, --print     Print single frame and exit (for piping/screenshots)
 ```
+
+### Exporting GIFs
+
+Generate high-quality GIF animations from the simulation:
+
+```bash
+# Basic GIF export
+tslime --export-gif output.gif --export-frames 50 --export-fps 30
+
+# With specific preset and resolution
+tslime --export-gif organic.gif --preset organic --resolution 400x400 --export-frames 100
+
+# With custom color palette
+tslime --export-gif heat_demo.gif --palette heat --export-frames 60 --export-fps 20
+```
+
+**Options:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--export-gif <PATH>` | — | Output GIF file path |
+| `--export-frames <N>` | 50 | Number of frames to capture |
+| `--export-fps <N>` | 30 | GIF playback speed (frames/second) |
+| `--frame-skip <N>` | 50 | Simulation steps between frames |
 
 ### Common Examples
 
@@ -243,6 +280,9 @@ tslime -S --fps 15
 | Seed | `-s`, `--seed INT` | Random seed for reproducibility |
 | Preset | `--preset NAME` | Use named preset (network, exploratory, tendrils, organic) |
 | Palette | `--palette NAME` | Color palette (organic, heat, ocean, mono) |
+| Export GIF | `--export-gif PATH` | Export simulation to GIF file |
+| Export Frames | `--export-frames N` | Number of frames for GIF (default: 50) |
+| Export FPS | `--export-fps N` | GIF playback speed (default: 30) |
 | Verbose | `-v`, `--verbose` | Print performance stats to stderr |
 | Help | `-h`, `--help` | Print help information |
 | Version | `-V`, `--version` | Print version |

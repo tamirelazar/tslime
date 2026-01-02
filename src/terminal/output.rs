@@ -461,6 +461,25 @@ impl FrameBuffer {
 
         output
     }
+
+    pub fn get_rgb_pixels(&self) -> Vec<u8> {
+        let mut pixels = Vec::with_capacity(self.width * self.height * 3);
+        for cell in &self.cells {
+            let rgb = if let Some(c) = cell.fg_color_rgb {
+                c
+            } else if let Some(c) = cell.bg_color_rgb {
+                c
+            } else if let Some(c) = cell.fg_color_256 {
+                palette::ANSI_256_TO_RGB[c as usize]
+            } else {
+                RgbColor { r: 0, g: 0, b: 0 }
+            };
+            pixels.push(rgb.r);
+            pixels.push(rgb.g);
+            pixels.push(rgb.b);
+        }
+        pixels
+    }
 }
 
 #[allow(dead_code)]

@@ -14,6 +14,7 @@ pub enum Mode {
     Screensaver,
     Print,
     CaptureFrames,
+    GifExport,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -621,6 +622,29 @@ pub struct Args {
         help = "Disable SIMD acceleration for diffusion (use scalar fallback)"
     )]
     pub simd_off: bool,
+
+    #[arg(
+        long = "export-gif",
+        value_name = "PATH",
+        help = "Export simulation to GIF file"
+    )]
+    pub export_gif: Option<String>,
+
+    #[arg(
+        long = "export-frames",
+        value_name = "INT",
+        default_value = "50",
+        help = "Number of frames to capture for GIF export"
+    )]
+    pub export_frames: usize,
+
+    #[arg(
+        long = "export-fps",
+        value_name = "INT",
+        default_value = "30",
+        help = "GIF playback speed (frames per second)"
+    )]
+    pub export_fps: usize,
 }
 
 impl Args {
@@ -633,6 +657,8 @@ impl Args {
             Mode::Print
         } else if self.capture_frames {
             Mode::CaptureFrames
+        } else if self.export_gif.is_some() {
+            Mode::GifExport
         } else {
             Mode::Default
         }
@@ -858,6 +884,9 @@ impl Default for Args {
             separate_species_trails: false,
             species_colors: false,
             simd_off: false,
+            export_gif: None,
+            export_frames: 50,
+            export_fps: 30,
         }
     }
 }
@@ -920,6 +949,9 @@ mod tests {
             separate_species_trails: false,
             species_colors: false,
             simd_off: false,
+            export_gif: None,
+            export_frames: 50,
+            export_fps: 30,
         };
         assert_eq!(args.mode(), Mode::Default);
     }
