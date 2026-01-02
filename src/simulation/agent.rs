@@ -127,13 +127,15 @@ impl Agent {
         width: usize,
         height: usize,
         obstacles: &[Obstacle],
+        obstacle_masks: &[Option<super::config::ObstacleMask>],
     ) {
         self.x += self.heading.cos() * step_size;
         self.y += self.heading.sin() * step_size;
 
-        for obstacle in obstacles {
-            if obstacle.contains(self.x, self.y) {
-                self.heading = obstacle.bounce(self.x, self.y, self.heading);
+        for (i, obstacle) in obstacles.iter().enumerate() {
+            let mask = obstacle_masks.get(i).cloned().flatten();
+            if obstacle.contains(self.x, self.y, mask.as_ref()) {
+                self.heading = obstacle.bounce(self.x, self.y, self.heading, mask.as_ref());
                 self.x += self.heading.cos() * step_size;
                 self.y += self.heading.sin() * step_size;
             }
@@ -201,7 +203,7 @@ mod tests {
     #[test]
     fn test_move_forward() {
         let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
-        agent.move_forward(1.0, 400, 400, &[]);
+        agent.move_forward(1.0, 400, 400, &[], &[]);
         assert!((agent.x - 101.0).abs() < 0.001);
         assert!((agent.y - 100.0).abs() < 0.001);
     }
@@ -209,7 +211,7 @@ mod tests {
     #[test]
     fn test_move_with_heading_90() {
         let mut agent = Agent::new(100.0, 100.0, PI / 2.0, 0);
-        agent.move_forward(1.0, 400, 400, &[]);
+        agent.move_forward(1.0, 400, 400, &[], &[]);
         assert!((agent.x - 100.0).abs() < 0.001);
         assert!((agent.y - 101.0).abs() < 0.001);
     }
@@ -217,7 +219,7 @@ mod tests {
     #[test]
     fn test_boundary_handling() {
         let mut agent = Agent::new(0.5, 200.0, PI, 0);
-        agent.move_forward(2.0, 400, 400, &[]);
+        agent.move_forward(2.0, 400, 400, &[], &[]);
         assert!(agent.x >= 0.0);
     }
 

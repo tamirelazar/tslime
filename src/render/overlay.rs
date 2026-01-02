@@ -109,6 +109,27 @@ impl OverlayRenderer {
                             height,
                         ));
                     }
+                    Obstacle::Image {
+                        path,
+                        x: _,
+                        y: _,
+                        width,
+                        height,
+                        invert: _,
+                        threshold: _,
+                    } => {
+                        let filename = std::path::Path::new(path)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| path.clone());
+                        lines.push(format!(
+                            "│{:2}: image {:>20} {:>3}x{:>3}    │",
+                            i + 1,
+                            &filename[..filename.len().min(20)],
+                            width,
+                            height,
+                        ));
+                    }
                 }
             }
 

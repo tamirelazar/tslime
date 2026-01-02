@@ -278,7 +278,7 @@ pub struct ObstacleArg {
 impl std::str::FromStr for ObstacleArg {
     type Err = String;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self, String> {
         if let Some(circle_part) = s.strip_prefix("circle:") {
             let parts: Vec<&str> = circle_part.split(',').collect();
             if parts.len() != 3 {
@@ -336,9 +336,59 @@ impl std::str::FromStr for ObstacleArg {
                     height,
                 },
             })
+        } else if let Some(img_part) = s.strip_prefix("image:") {
+            let parts: Vec<&str> = img_part.split(',').collect();
+            if parts.len() != 7 {
+                return Err(format!(
+                    "Image obstacle must be in image:path,x,y,w,h,invert,threshold format, got: {}",
+                    s
+                ));
+            }
+            let path = parts[0].to_string();
+            let x = parts[1]
+                .parse::<f32>()
+                .map_err(|e| format!("Invalid x coordinate: {}", e))?;
+            let y = parts[2]
+                .parse::<f32>()
+                .map_err(|e| format!("Invalid y coordinate: {}", e))?;
+            let width = parts[3]
+                .parse::<usize>()
+                .map_err(|e| format!("Invalid width: {}", e))?;
+            let height = parts[4]
+                .parse::<usize>()
+                .map_err(|e| format!("Invalid height: {}", e))?;
+            let invert = parts[5]
+                .parse::<bool>()
+                .map_err(|e| format!("Invalid invert: {}", e))?;
+            let threshold = parts[6]
+                .parse::<f32>()
+                .map_err(|e| format!("Invalid threshold: {}", e))?;
+            if width == 0 || height == 0 {
+                return Err(format!(
+                    "Width and height must be positive, got: {}x{}",
+                    width, height
+                ));
+            }
+            if threshold < 0.0 || threshold > 1.0 {
+                return Err(format!(
+                    "Threshold must be between 0.0 and 1.0, got: {}",
+                    threshold
+                ));
+            }
+            Ok(ObstacleArg {
+                obstacle: Obstacle::Image {
+                    path,
+                    x,
+                    y,
+                    width,
+                    height,
+                    invert,
+                    threshold,
+                },
+            })
         } else {
             Err(format!(
-                "Obstacle must start with 'circle:' or 'rect:', got: {}",
+                "Obstacle must start with 'circle:', 'rect:', or 'image:', got: {}",
                 s
             ))
         }
@@ -649,7 +699,7 @@ pub struct Args {
     #[arg(
         long = "obstacle",
         value_name = "TYPE:X,Y,PARAMS",
-        help = "Add obstacle (circle:x,y,r or rect:x,y,w,h). Can be specified multiple times. Example: --obstacle circle:200,200,50"
+        help = "Add obstacle (circle:x,y,r or rect:x,y,w,h or image:path,x,y,w,h,invert,threshold). Can be specified multiple times. Example: --obstacle circle:200,200,50"
     )]
     pub obstacle: Vec<ObstacleArg>,
 
@@ -852,7 +902,8 @@ impl Args {
             .collect();
         config.attractor_strength = self.attractor_strength;
 
-        config.obstacles = self.obstacle.iter().map(|o| o.obstacle).collect();
+        config.obstacles = self.obstacle.iter().map(|o| o.obstacle.clone()).collect();
+        let _ = config.load_obstacle_masks();
 
         config.separate_species_trails = self.separate_species_trails || self.species_colors;
 
@@ -1309,5 +1360,71 @@ mod tests {
     fn test_obstacle_arg_negative_dimensions() {
         assert!("rect:100,200,-50,30".parse::<ObstacleArg>().is_err());
         assert!("rect:100,200,50,-30".parse::<ObstacleArg>().is_err());
+    }
+
+    #[test]
+    fn test_obstacle_image_parsing() {
+        let arg: ObstacleArg = "image:test.png,100,200,50,50,false,0.5".parse().unwrap();
+        match &arg.obstacle {
+            Obstacle::Image {
+                path,
+                x,
+                y,
+                width,
+                height,
+                invert,
+                threshold,
+            } => {
+                assert_eq!(path, "test.png");
+                assert_eq!(*x, 100.0);
+                assert_eq!(*y, 200.0);
+                assert_eq!(*width, 50);
+                assert_eq!(*height, 50);
+                assert!(!*invert);
+                assert!((*threshold - 0.5).abs() < 0.001);
+            }
+            _ => panic!("Expected Image obstacle"),
+        }
+
+        let arg: ObstacleArg = "image:logo.png,0,0,100,100,true,0.8".parse().unwrap();
+        match &arg.obstacle {
+            Obstacle::Image {
+                path,
+                x,
+                y,
+                width,
+                height,
+                invert,
+                threshold,
+            } => {
+                assert_eq!(path, "logo.png");
+                assert_eq!(*x, 0.0);
+                assert_eq!(*y, 0.0);
+                assert_eq!(*width, 100);
+                assert_eq!(*height, 100);
+                assert!(*invert);
+                assert!((*threshold - 0.8).abs() < 0.001);
+            }
+            _ => panic!("Expected Image obstacle"),
+        }
+    }
+
+    #[test]
+    fn test_obstacle_image_invalid() {
+        assert!("image:test.png".parse::<ObstacleArg>().is_err());
+        assert!("image:test.png,100".parse::<ObstacleArg>().is_err());
+        assert!("image:test.png,100,200,50".parse::<ObstacleArg>().is_err());
+        assert!("image:test.png,100,200,50,abc,0.5"
+            .parse::<ObstacleArg>()
+            .is_err());
+        assert!("image:test.png,100,200,0,50,false,0.5"
+            .parse::<ObstacleArg>()
+            .is_err());
+        assert!("image:test.png,100,200,50,0,false,0.5"
+            .parse::<ObstacleArg>()
+            .is_err());
+        assert!("image:test.png,100,200,50,50,false,1.5"
+            .parse::<ObstacleArg>()
+            .is_err());
     }
 }

@@ -491,6 +491,7 @@ impl Simulation {
         let attractor_strength = self.config.attractor_strength * dt;
 
         let obstacles = &self.config.obstacles;
+        let obstacle_masks = &self.config.obstacle_masks;
 
         let separate_trails = self.config.separate_species_trails;
 
@@ -524,7 +525,13 @@ impl Simulation {
 
                         agent.apply_attractor_forces(attractors, attractor_strength, width, height);
 
-                        agent.move_forward(effective_step_size, width, height, obstacles);
+                        agent.move_forward(
+                            effective_step_size,
+                            width,
+                            height,
+                            obstacles,
+                            obstacle_masks,
+                        );
                     }
                 }
 
@@ -566,7 +573,13 @@ impl Simulation {
 
                     agent.apply_attractor_forces(attractors, attractor_strength, width, height);
 
-                    agent.move_forward(effective_step_size, width, height, obstacles);
+                    agent.move_forward(
+                        effective_step_size,
+                        width,
+                        height,
+                        obstacles,
+                        obstacle_masks,
+                    );
                 }
             }
 

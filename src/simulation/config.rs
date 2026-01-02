@@ -1,3 +1,6 @@
+use image::io::Reader as ImageReader;
+use std::path::Path;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffusionKernel {
     Mean3x3,
@@ -39,7 +42,59 @@ impl Attractor {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObstacleMask {
+    pub pixels: Vec<f32>,
+    pub width: usize,
+    pub height: usize,
+}
+
+impl ObstacleMask {
+    pub fn from_image(
+        image_path: &str,
+        target_width: usize,
+        target_height: usize,
+        invert: bool,
+    ) -> Result<Self, String> {
+        let path = Path::new(image_path);
+
+        if !path.exists() {
+            return Err(format!("Image file not found: {}", image_path));
+        }
+
+        let img = ImageReader::open(path)
+            .map_err(|e| format!("Failed to open image: {}", e))?
+            .decode()
+            .map_err(|e| format!("Failed to decode image: {}", e))?;
+
+        let resized = img.resize_exact(
+            target_width as u32,
+            target_height as u32,
+            image::imageops::FilterType::Nearest,
+        );
+
+        let pixels: Vec<f32> = resized
+            .to_luma8()
+            .pixels()
+            .map(|p| {
+                let brightness = p[0] as f32 / 255.0;
+                if invert {
+                    1.0 - brightness
+                } else {
+                    brightness
+                }
+            })
+            .collect();
+
+        Ok(Self {
+            pixels,
+            width: target_width,
+            height: target_height,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Obstacle {
     Circle {
         x: f32,
@@ -52,10 +107,19 @@ pub enum Obstacle {
         width: f32,
         height: f32,
     },
+    Image {
+        path: String,
+        x: f32,
+        y: f32,
+        width: usize,
+        height: usize,
+        invert: bool,
+        threshold: f32,
+    },
 }
 
 impl Obstacle {
-    pub fn contains(&self, px: f32, py: f32) -> bool {
+    pub fn contains(&self, px: f32, py: f32, mask: Option<&ObstacleMask>) -> bool {
         match self {
             Obstacle::Circle { x, y, radius } => {
                 let dx = px - x;
@@ -68,10 +132,37 @@ impl Obstacle {
                 width,
                 height,
             } => px >= *x && px <= *x + *width && py >= *y && py <= *y + *height,
+            Obstacle::Image {
+                path: _,
+                x,
+                y,
+                width,
+                height,
+                invert: _,
+                threshold,
+            } => {
+                let lx = px - x;
+                let ly = py - y;
+                if lx < 0.0 || lx >= *width as f32 || ly < 0.0 || ly >= *height as f32 {
+                    return false;
+                }
+                if let Some(m) = mask {
+                    let ix = lx as usize;
+                    let iy = ly as usize;
+                    let idx = iy * m.width + ix;
+                    if idx >= m.pixels.len() {
+                        return false;
+                    }
+                    let is_obstacle = m.pixels[idx] >= *threshold;
+                    is_obstacle
+                } else {
+                    false
+                }
+            }
         }
     }
 
-    pub fn bounce(&self, px: f32, py: f32, heading: f32) -> f32 {
+    pub fn bounce(&self, px: f32, py: f32, heading: f32, _mask: Option<&ObstacleMask>) -> f32 {
         match self {
             Obstacle::Circle { x, y, radius: _ } => {
                 let dx = px - x;
@@ -102,6 +193,15 @@ impl Obstacle {
                     -heading
                 }
             }
+            Obstacle::Image {
+                path: _,
+                x: _,
+                y: _,
+                width: _,
+                height: _,
+                invert: _,
+                threshold: _,
+            } => -heading,
         }
     }
 }
@@ -186,6 +286,7 @@ pub struct SimConfig {
     pub food_image_path: Option<String>,
     pub food_image_invert: bool,
     pub obstacles: Vec<Obstacle>,
+    pub obstacle_masks: Vec<Option<ObstacleMask>>,
 }
 
 impl Default for SimConfig {
@@ -208,6 +309,7 @@ impl Default for SimConfig {
             food_image_path: None,
             food_image_invert: false,
             obstacles: Vec::new(),
+            obstacle_masks: Vec::new(),
         }
     }
 }
@@ -296,6 +398,28 @@ impl SimConfig {
     pub fn total_population(&self) -> usize {
         self.species_configs.iter().map(|s| s.count).sum()
     }
+
+    pub fn load_obstacle_masks(&mut self) -> Result<(), String> {
+        self.obstacle_masks.clear();
+        for obstacle in &self.obstacles {
+            match obstacle {
+                Obstacle::Image {
+                    path,
+                    width,
+                    height,
+                    invert,
+                    ..
+                } => {
+                    let mask = ObstacleMask::from_image(path, *width, *height, *invert)?;
+                    self.obstacle_masks.push(Some(mask));
+                }
+                _ => {
+                    self.obstacle_masks.push(None);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl From<Preset> for SimConfig {
@@ -327,6 +451,7 @@ impl From<Preset> for SimConfig {
                 food_image_path: None,
                 food_image_invert: false,
                 obstacles: Vec::new(),
+                obstacle_masks: Vec::new(),
             },
             Preset::Exploratory => Self {
                 sensor_angle: 45.0,
@@ -354,6 +479,7 @@ impl From<Preset> for SimConfig {
                 food_image_path: None,
                 food_image_invert: false,
                 obstacles: Vec::new(),
+                obstacle_masks: Vec::new(),
             },
             Preset::Tendrils => Self {
                 sensor_angle: 30.0,
@@ -381,6 +507,7 @@ impl From<Preset> for SimConfig {
                 food_image_path: None,
                 food_image_invert: false,
                 obstacles: Vec::new(),
+                obstacle_masks: Vec::new(),
             },
             Preset::Organic => Self::default(),
             Preset::Minimal => Self {
@@ -409,6 +536,7 @@ impl From<Preset> for SimConfig {
                 food_image_path: None,
                 food_image_invert: false,
                 obstacles: Vec::new(),
+                obstacle_masks: Vec::new(),
             },
             Preset::Moss => Self {
                 sensor_angle: 22.0,
@@ -436,6 +564,7 @@ impl From<Preset> for SimConfig {
                 food_image_path: None,
                 food_image_invert: false,
                 obstacles: Vec::new(),
+                obstacle_masks: Vec::new(),
             },
         }
     }
@@ -632,11 +761,11 @@ mod tests {
             y: 100.0,
             radius: 50.0,
         };
-        assert!(circle.contains(100.0, 100.0));
-        assert!(circle.contains(100.0, 150.0));
-        assert!(circle.contains(150.0, 100.0));
-        assert!(!circle.contains(200.0, 100.0));
-        assert!(!circle.contains(100.0, 200.0));
+        assert!(circle.contains(100.0, 100.0, None));
+        assert!(circle.contains(100.0, 150.0, None));
+        assert!(circle.contains(150.0, 100.0, None));
+        assert!(!circle.contains(200.0, 100.0, None));
+        assert!(!circle.contains(100.0, 200.0, None));
     }
 
     #[test]
@@ -647,12 +776,12 @@ mod tests {
             width: 50.0,
             height: 50.0,
         };
-        assert!(rect.contains(100.0, 100.0));
-        assert!(rect.contains(150.0, 150.0));
-        assert!(!rect.contains(99.0, 100.0));
-        assert!(!rect.contains(100.0, 99.0));
-        assert!(!rect.contains(151.0, 100.0));
-        assert!(!rect.contains(100.0, 151.0));
+        assert!(rect.contains(100.0, 100.0, None));
+        assert!(rect.contains(150.0, 150.0, None));
+        assert!(!rect.contains(99.0, 100.0, None));
+        assert!(!rect.contains(100.0, 99.0, None));
+        assert!(!rect.contains(151.0, 100.0, None));
+        assert!(!rect.contains(100.0, 151.0, None));
     }
 
     #[test]
@@ -662,7 +791,7 @@ mod tests {
             y: 100.0,
             radius: 50.0,
         };
-        let heading = circle.bounce(100.0, 60.0, 0.0);
+        let heading = circle.bounce(100.0, 60.0, 0.0, None);
         assert!(
             heading.is_finite(),
             "Bounce should return a valid heading, got {}",
@@ -678,11 +807,32 @@ mod tests {
             width: 50.0,
             height: 50.0,
         };
-        let heading = rect.bounce(120.0, 100.0, 0.0);
+        let heading = rect.bounce(120.0, 100.0, 0.0, None);
         assert!(
             heading.is_finite(),
             "Bounce should return a valid heading, got {}",
             heading
         );
+    }
+
+    #[test]
+    fn test_obstacle_mask_from_image_nonexistent() {
+        let result = ObstacleMask::from_image("nonexistent.png", 100, 100, false);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn test_sim_config_load_obstacle_masks() {
+        let mut config = SimConfig::default();
+        config.obstacles = vec![Obstacle::Circle {
+            x: 100.0,
+            y: 100.0,
+            radius: 50.0,
+        }];
+        let result = config.load_obstacle_masks();
+        assert!(result.is_ok());
+        assert_eq!(config.obstacle_masks.len(), 1);
+        assert!(config.obstacle_masks[0].is_none());
     }
 }

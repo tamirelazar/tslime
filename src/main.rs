@@ -583,6 +583,8 @@ fn run_simulation(
                     new_config.attractor_strength = sim.config().attractor_strength;
                     new_config.food_image_path = sim.config().food_image_path.clone();
                     new_config.food_image_invert = sim.config().food_image_invert;
+                    new_config.obstacles = sim.config().obstacles.clone();
+                    new_config.obstacle_masks = sim.config().obstacle_masks.clone();
                     sim.update_config(new_config);
                 }
                 ControlAction::AdjustTimeScale(delta) => {
