@@ -47,6 +47,7 @@ pub struct RuntimeState {
     pub original_seed: u64,
     pub original_init_mode: InitMode,
     pub dither_mode: DitherMode,
+    pub last_dither_mode: Option<DitherMode>,
 }
 
 impl RuntimeState {
@@ -66,6 +67,7 @@ impl RuntimeState {
             original_seed: seed,
             original_init_mode: init_mode,
             dither_mode: DitherMode::None,
+            last_dither_mode: None,
         }
     }
 
@@ -104,11 +106,20 @@ impl RuntimeState {
 
     pub fn toggle_dither(&mut self) {
         self.dither_mode = match self.dither_mode {
-            DitherMode::None => DitherMode::Ordered {
-                intensity: 0.5,
-                matrix: DitherMatrix::Bayer4x4,
-            },
-            _ => DitherMode::None,
+            DitherMode::None => {
+                if let Some(last) = self.last_dither_mode {
+                    last
+                } else {
+                    DitherMode::Ordered {
+                        intensity: 0.5,
+                        matrix: DitherMatrix::Bayer4x4,
+                    }
+                }
+            }
+            mode => {
+                self.last_dither_mode = Some(mode);
+                DitherMode::None
+            }
         };
     }
 
@@ -118,9 +129,10 @@ impl RuntimeState {
                 intensity: 0.5,
                 matrix: DitherMatrix::Bayer4x4,
             },
-            DitherMode::Ordered { intensity, matrix } => {
-                DitherMode::ErrorDiffusion { serpentine: true }
-            }
+            DitherMode::Ordered {
+                intensity: _,
+                matrix: _,
+            } => DitherMode::ErrorDiffusion { serpentine: true },
             DitherMode::ErrorDiffusion { .. } => DitherMode::Hybrid {
                 edge_threshold: 0.15,
                 intensity: 0.5,
@@ -128,6 +140,9 @@ impl RuntimeState {
             },
             DitherMode::Hybrid { .. } => DitherMode::None,
         };
+        if self.dither_mode != DitherMode::None {
+            self.last_dither_mode = Some(self.dither_mode);
+        }
     }
 
     pub fn adjust_dither_intensity(&mut self, delta: f32) {

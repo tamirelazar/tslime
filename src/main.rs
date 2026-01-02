@@ -374,7 +374,7 @@ fn run_simulation(
         hue_offset %= 360.0;
         renderer.set_hue_shift(hue_offset);
 
-        static HELP_LINES: [&str; 11] = [
+        static HELP_LINES: [&str; 12] = [
             "┌─ tslime controls ───────────────────────┐",
             "│ p: Pause/Resume                         │",
             "│ r: Restart                              │",
@@ -382,6 +382,7 @@ fn run_simulation(
             "│ +/-: Time scale (0.5x - 4.0x)           │",
             "│ c: Cycle palette (Shift+C reverse)      │",
             "│ d: Toggle dithering                    │",
+            "│ m: Cycle dither mode                   │",
             "│ []: Adjust dither intensity (0.0-1.0)   │",
             "│ h: Toggle this help                     │",
             "│ q: Quit                                 │",
