@@ -486,12 +486,21 @@ fn run_simulation(
         ];
 
         let help_lines = if runtime_state.show_help {
-            Some(
-                render::overlay::OverlayRenderer::build_help_with_attractors(
-                    &HELP_LINES,
-                    &sim.config().attractors,
-                ),
-            )
+            let attractor_lines = render::overlay::OverlayRenderer::build_help_with_attractors(
+                &HELP_LINES,
+                &sim.config().attractors,
+            );
+            let obstacle_lines = render::overlay::OverlayRenderer::build_help_with_obstacles(
+                &[],
+                &sim.config().obstacles,
+            );
+            if obstacle_lines.is_empty() {
+                Some(attractor_lines)
+            } else {
+                let mut combined = attractor_lines;
+                combined.extend(obstacle_lines);
+                Some(combined)
+            }
         } else {
             None
         };

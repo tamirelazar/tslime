@@ -2,7 +2,7 @@ use rand::Rng as RandRng;
 use rand_xoshiro::Xoshiro256PlusPlus as Rng;
 use std::f32::consts::PI;
 
-use super::config::Attractor;
+use super::config::{Attractor, Obstacle};
 
 #[derive(Clone, Copy)]
 pub struct Agent {
@@ -121,9 +121,23 @@ impl Agent {
         }
     }
 
-    pub fn move_forward(&mut self, step_size: f32, width: usize, height: usize) {
+    pub fn move_forward(
+        &mut self,
+        step_size: f32,
+        width: usize,
+        height: usize,
+        obstacles: &[Obstacle],
+    ) {
         self.x += self.heading.cos() * step_size;
         self.y += self.heading.sin() * step_size;
+
+        for obstacle in obstacles {
+            if obstacle.contains(self.x, self.y) {
+                self.heading = obstacle.bounce(self.x, self.y, self.heading);
+                self.x += self.heading.cos() * step_size;
+                self.y += self.heading.sin() * step_size;
+            }
+        }
 
         if self.x < 0.0 {
             self.x = 0.0;
@@ -187,7 +201,7 @@ mod tests {
     #[test]
     fn test_move_forward() {
         let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
-        agent.move_forward(1.0, 400, 400);
+        agent.move_forward(1.0, 400, 400, &[]);
         assert!((agent.x - 101.0).abs() < 0.001);
         assert!((agent.y - 100.0).abs() < 0.001);
     }
@@ -195,7 +209,7 @@ mod tests {
     #[test]
     fn test_move_with_heading_90() {
         let mut agent = Agent::new(100.0, 100.0, PI / 2.0, 0);
-        agent.move_forward(1.0, 400, 400);
+        agent.move_forward(1.0, 400, 400, &[]);
         assert!((agent.x - 100.0).abs() < 0.001);
         assert!((agent.y - 101.0).abs() < 0.001);
     }
@@ -203,7 +217,7 @@ mod tests {
     #[test]
     fn test_boundary_handling() {
         let mut agent = Agent::new(0.5, 200.0, PI, 0);
-        agent.move_forward(2.0, 400, 400);
+        agent.move_forward(2.0, 400, 400, &[]);
         assert!(agent.x >= 0.0);
     }
 

@@ -39,6 +39,73 @@ impl Attractor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Obstacle {
+    Circle {
+        x: f32,
+        y: f32,
+        radius: f32,
+    },
+    Rect {
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    },
+}
+
+impl Obstacle {
+    pub fn contains(&self, px: f32, py: f32) -> bool {
+        match self {
+            Obstacle::Circle { x, y, radius } => {
+                let dx = px - x;
+                let dy = py - y;
+                dx * dx + dy * dy <= radius * radius
+            }
+            Obstacle::Rect {
+                x,
+                y,
+                width,
+                height,
+            } => px >= *x && px <= *x + *width && py >= *y && py <= *y + *height,
+        }
+    }
+
+    pub fn bounce(&self, px: f32, py: f32, heading: f32) -> f32 {
+        match self {
+            Obstacle::Circle { x, y, radius: _ } => {
+                let dx = px - x;
+                let dy = py - y;
+                let normal_angle = dy.atan2(dx);
+                let mut new_heading = 2.0 * normal_angle - heading + std::f32::consts::PI;
+                while new_heading > std::f32::consts::PI {
+                    new_heading -= 2.0 * std::f32::consts::PI;
+                }
+                while new_heading < -std::f32::consts::PI {
+                    new_heading += 2.0 * std::f32::consts::PI;
+                }
+                new_heading
+            }
+            Obstacle::Rect {
+                x,
+                y,
+                width,
+                height,
+            } => {
+                let nearest_x = px.clamp(*x, *x + *width);
+                let nearest_y = py.clamp(*y, *y + *height);
+                let dx = px - nearest_x;
+                let dy = py - nearest_y;
+                if dx.abs() > dy.abs() {
+                    -heading + std::f32::consts::PI
+                } else {
+                    -heading
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpeciesConfig {
     pub name: String,
@@ -118,6 +185,7 @@ pub struct SimConfig {
     pub use_simd: bool,
     pub food_image_path: Option<String>,
     pub food_image_invert: bool,
+    pub obstacles: Vec<Obstacle>,
 }
 
 impl Default for SimConfig {
@@ -139,6 +207,7 @@ impl Default for SimConfig {
             use_simd: true,
             food_image_path: None,
             food_image_invert: false,
+            obstacles: Vec::new(),
         }
     }
 }
@@ -257,6 +326,7 @@ impl From<Preset> for SimConfig {
                 use_simd: true,
                 food_image_path: None,
                 food_image_invert: false,
+                obstacles: Vec::new(),
             },
             Preset::Exploratory => Self {
                 sensor_angle: 45.0,
@@ -283,6 +353,7 @@ impl From<Preset> for SimConfig {
                 use_simd: true,
                 food_image_path: None,
                 food_image_invert: false,
+                obstacles: Vec::new(),
             },
             Preset::Tendrils => Self {
                 sensor_angle: 30.0,
@@ -309,6 +380,7 @@ impl From<Preset> for SimConfig {
                 use_simd: true,
                 food_image_path: None,
                 food_image_invert: false,
+                obstacles: Vec::new(),
             },
             Preset::Organic => Self::default(),
             Preset::Minimal => Self {
@@ -336,6 +408,7 @@ impl From<Preset> for SimConfig {
                 use_simd: true,
                 food_image_path: None,
                 food_image_invert: false,
+                obstacles: Vec::new(),
             },
             Preset::Moss => Self {
                 sensor_angle: 22.0,
@@ -362,6 +435,7 @@ impl From<Preset> for SimConfig {
                 use_simd: true,
                 food_image_path: None,
                 food_image_invert: false,
+                obstacles: Vec::new(),
             },
         }
     }
@@ -549,5 +623,66 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(config.total_population(), 30000);
+    }
+
+    #[test]
+    fn test_obstacle_circle_contains() {
+        let circle = Obstacle::Circle {
+            x: 100.0,
+            y: 100.0,
+            radius: 50.0,
+        };
+        assert!(circle.contains(100.0, 100.0));
+        assert!(circle.contains(100.0, 150.0));
+        assert!(circle.contains(150.0, 100.0));
+        assert!(!circle.contains(200.0, 100.0));
+        assert!(!circle.contains(100.0, 200.0));
+    }
+
+    #[test]
+    fn test_obstacle_rect_contains() {
+        let rect = Obstacle::Rect {
+            x: 100.0,
+            y: 100.0,
+            width: 50.0,
+            height: 50.0,
+        };
+        assert!(rect.contains(100.0, 100.0));
+        assert!(rect.contains(150.0, 150.0));
+        assert!(!rect.contains(99.0, 100.0));
+        assert!(!rect.contains(100.0, 99.0));
+        assert!(!rect.contains(151.0, 100.0));
+        assert!(!rect.contains(100.0, 151.0));
+    }
+
+    #[test]
+    fn test_obstacle_circle_bounce() {
+        let circle = Obstacle::Circle {
+            x: 100.0,
+            y: 100.0,
+            radius: 50.0,
+        };
+        let heading = circle.bounce(100.0, 60.0, 0.0);
+        assert!(
+            heading.is_finite(),
+            "Bounce should return a valid heading, got {}",
+            heading
+        );
+    }
+
+    #[test]
+    fn test_obstacle_rect_bounce() {
+        let rect = Obstacle::Rect {
+            x: 100.0,
+            y: 100.0,
+            width: 50.0,
+            height: 50.0,
+        };
+        let heading = rect.bounce(120.0, 100.0, 0.0);
+        assert!(
+            heading.is_finite(),
+            "Bounce should return a valid heading, got {}",
+            heading
+        );
     }
 }

@@ -1,6 +1,7 @@
 use crate::cli::Palette;
 use crate::render::dither::DitherMode;
 use crate::simulation::config::Attractor;
+use crate::simulation::config::Obstacle;
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
@@ -8,14 +9,14 @@ pub struct OverlayRenderer;
 
 impl OverlayRenderer {
     pub fn build_status_line(
-        is_paused: bool,
+        _is_paused: bool,
         preset: Preset,
         time_scale: f32,
         palette: Palette,
         dither_mode: DitherMode,
-        width: usize,
+        _width: usize,
     ) -> String {
-        let paused_text = if is_paused { " [PAUSED]" } else { "" };
+        let paused_text = if _is_paused { " [PAUSED]" } else { "" };
         let preset_text = preset_name(preset);
         let palette_text = palette_name(palette);
         let time_text = format!("{:.1}x", time_scale);
@@ -67,6 +68,48 @@ impl OverlayRenderer {
                     kind,
                     strength,
                 ));
+            }
+
+            lines.push("└─────────────────────────────────────────┘".to_string());
+        }
+
+        lines
+    }
+
+    pub fn build_help_with_obstacles(base_help: &[&str], obstacles: &[Obstacle]) -> Vec<String> {
+        let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
+
+        if !obstacles.is_empty() {
+            lines.push(String::new());
+            lines.push("┌─ Obstacles──────────────────────────────┐".to_string());
+
+            for (i, obstacle) in obstacles.iter().enumerate() {
+                match obstacle {
+                    Obstacle::Circle { x, y, radius } => {
+                        lines.push(format!(
+                            "│{:2}: circle ({:>4},{:>4}) r: {:>4.1}        │",
+                            i + 1,
+                            *x as i32,
+                            *y as i32,
+                            radius,
+                        ));
+                    }
+                    Obstacle::Rect {
+                        x,
+                        y,
+                        width,
+                        height,
+                    } => {
+                        lines.push(format!(
+                            "│{:2}: rect  ({:>4},{:>4}) {:>4.1}x{:>4.1}   │",
+                            i + 1,
+                            *x as i32,
+                            *y as i32,
+                            width,
+                            height,
+                        ));
+                    }
+                }
             }
 
             lines.push("└─────────────────────────────────────────┘".to_string());

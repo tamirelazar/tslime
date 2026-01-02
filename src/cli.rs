@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::simulation::config::{
-    Attractor, DiffusionKernel, InitMode, Preset, SimConfig, SpeciesConfig,
+    Attractor, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig, SpeciesConfig,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -267,6 +267,81 @@ impl std::str::FromStr for AttractorArg {
             .map_err(|e| format!("Invalid strength: {}", e))?;
 
         Ok(AttractorArg { x, y, strength })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ObstacleArg {
+    pub obstacle: Obstacle,
+}
+
+impl std::str::FromStr for ObstacleArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(circle_part) = s.strip_prefix("circle:") {
+            let parts: Vec<&str> = circle_part.split(',').collect();
+            if parts.len() != 3 {
+                return Err(format!(
+                    "Circle obstacle must be in circle:x,y,r format, got: {}",
+                    s
+                ));
+            }
+            let x = parts[0]
+                .parse::<f32>()
+                .map_err(|e| format!("Invalid x coordinate: {}", e))?;
+            let y = parts[1]
+                .parse::<f32>()
+                .map_err(|e| format!("Invalid y coordinate: {}", e))?;
+            let radius = parts[2]
+                .parse::<f32>()
+                .map_err(|e| format!("Invalid radius: {}", e))?;
+            if radius <= 0.0 {
+                return Err(format!("Radius must be positive, got: {}", radius));
+            }
+            Ok(ObstacleArg {
+                obstacle: Obstacle::Circle { x, y, radius },
+            })
+        } else if let Some(rect_part) = s.strip_prefix("rect:") {
+            let parts: Vec<&str> = rect_part.split(',').collect();
+            if parts.len() != 4 {
+                return Err(format!(
+                    "Rect obstacle must be in rect:x,y,w,h format, got: {}",
+                    s
+                ));
+            }
+            let x = parts[0]
+                .parse::<f32>()
+                .map_err(|e| format!("Invalid x coordinate: {}", e))?;
+            let y = parts[1]
+                .parse::<f32>()
+                .map_err(|e| format!("Invalid y coordinate: {}", e))?;
+            let width = parts[2]
+                .parse::<f32>()
+                .map_err(|e| format!("Invalid width: {}", e))?;
+            let height = parts[3]
+                .parse::<f32>()
+                .map_err(|e| format!("Invalid height: {}", e))?;
+            if width <= 0.0 {
+                return Err(format!("Width must be positive, got: {}", width));
+            }
+            if height <= 0.0 {
+                return Err(format!("Height must be positive, got: {}", height));
+            }
+            Ok(ObstacleArg {
+                obstacle: Obstacle::Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+            })
+        } else {
+            Err(format!(
+                "Obstacle must start with 'circle:' or 'rect:', got: {}",
+                s
+            ))
+        }
     }
 }
 
@@ -572,6 +647,13 @@ pub struct Args {
     pub attract: Vec<AttractorArg>,
 
     #[arg(
+        long = "obstacle",
+        value_name = "TYPE:X,Y,PARAMS",
+        help = "Add obstacle (circle:x,y,r or rect:x,y,w,h). Can be specified multiple times. Example: --obstacle circle:200,200,50"
+    )]
+    pub obstacle: Vec<ObstacleArg>,
+
+    #[arg(
         long = "attractor-strength",
         value_name = "FLOAT",
         default_value = "1.0",
@@ -770,6 +852,8 @@ impl Args {
             .collect();
         config.attractor_strength = self.attractor_strength;
 
+        config.obstacles = self.obstacle.iter().map(|o| o.obstacle).collect();
+
         config.separate_species_trails = self.separate_species_trails || self.species_colors;
 
         config.use_simd = !self.simd_off;
@@ -905,6 +989,7 @@ impl Default for Args {
             export_gif: None,
             export_frames: 50,
             export_fps: 30,
+            obstacle: Vec::new(),
         }
     }
 }
@@ -972,6 +1057,7 @@ mod tests {
             export_gif: None,
             export_frames: 50,
             export_fps: 30,
+            obstacle: Vec::new(),
         };
         assert_eq!(args.mode(), Mode::Default);
     }
@@ -1172,5 +1258,56 @@ mod tests {
     fn test_species_arg_invalid_format() {
         assert!("red".parse::<SpeciesArg>().is_err());
         assert!("red:invalid".parse::<SpeciesArg>().is_err());
+    }
+
+    #[test]
+    fn test_obstacle_arg_circle_parsing() {
+        let arg: ObstacleArg = "circle:200,300,50".parse().unwrap();
+        match arg.obstacle {
+            Obstacle::Circle { x, y, radius } => {
+                assert_eq!(x, 200.0);
+                assert_eq!(y, 300.0);
+                assert_eq!(radius, 50.0);
+            }
+            _ => panic!("Expected Circle obstacle"),
+        }
+    }
+
+    #[test]
+    fn test_obstacle_arg_rect_parsing() {
+        let arg: ObstacleArg = "rect:100,150,80,60".parse().unwrap();
+        match arg.obstacle {
+            Obstacle::Rect {
+                x,
+                y,
+                width,
+                height,
+            } => {
+                assert_eq!(x, 100.0);
+                assert_eq!(y, 150.0);
+                assert_eq!(width, 80.0);
+                assert_eq!(height, 60.0);
+            }
+            _ => panic!("Expected Rect obstacle"),
+        }
+    }
+
+    #[test]
+    fn test_obstacle_arg_invalid_format() {
+        assert!("circle:100,200".parse::<ObstacleArg>().is_err());
+        assert!("circle:100,200,abc".parse::<ObstacleArg>().is_err());
+        assert!("rect:100,200,50".parse::<ObstacleArg>().is_err());
+        assert!("invalid:100,200,50".parse::<ObstacleArg>().is_err());
+    }
+
+    #[test]
+    fn test_obstacle_arg_negative_radius() {
+        assert!("circle:100,200,-50".parse::<ObstacleArg>().is_err());
+    }
+
+    #[test]
+    fn test_obstacle_arg_negative_dimensions() {
+        assert!("rect:100,200,-50,30".parse::<ObstacleArg>().is_err());
+        assert!("rect:100,200,50,-30".parse::<ObstacleArg>().is_err());
     }
 }
