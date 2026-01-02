@@ -1,4 +1,5 @@
 use crate::cli::Palette;
+use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::simulation::config::InitMode;
 use crate::simulation::config::Preset;
 use crossterm::event::KeyEvent;
@@ -30,6 +31,7 @@ pub enum ControlAction {
     CyclePaletteReverse,
     ToggleHelp,
     ToggleDither,
+    CycleDitherMode,
     AdjustDitherIntensity(f32),
     Quit,
     None,
@@ -44,8 +46,7 @@ pub struct RuntimeState {
     pub palette_index: usize,
     pub original_seed: u64,
     pub original_init_mode: InitMode,
-    pub dither_enabled: bool,
-    pub dither_intensity: f32,
+    pub dither_mode: DitherMode,
 }
 
 impl RuntimeState {
@@ -64,8 +65,7 @@ impl RuntimeState {
             palette_index: initial_palette_index,
             original_seed: seed,
             original_init_mode: init_mode,
-            dither_enabled: false,
-            dither_intensity: 0.5,
+            dither_mode: DitherMode::None,
         }
     }
 
@@ -103,12 +103,56 @@ impl RuntimeState {
     }
 
     pub fn toggle_dither(&mut self) {
-        self.dither_enabled = !self.dither_enabled;
+        self.dither_mode = match self.dither_mode {
+            DitherMode::None => DitherMode::Ordered {
+                intensity: 0.5,
+                matrix: DitherMatrix::Bayer4x4,
+            },
+            _ => DitherMode::None,
+        };
+    }
+
+    pub fn cycle_dither_mode(&mut self) {
+        self.dither_mode = match self.dither_mode {
+            DitherMode::None => DitherMode::Ordered {
+                intensity: 0.5,
+                matrix: DitherMatrix::Bayer4x4,
+            },
+            DitherMode::Ordered { intensity, matrix } => {
+                DitherMode::ErrorDiffusion { serpentine: true }
+            }
+            DitherMode::ErrorDiffusion { .. } => DitherMode::Hybrid {
+                edge_threshold: 0.15,
+                intensity: 0.5,
+                matrix: DitherMatrix::Bayer4x4,
+            },
+            DitherMode::Hybrid { .. } => DitherMode::None,
+        };
     }
 
     pub fn adjust_dither_intensity(&mut self, delta: f32) {
-        let new_intensity = (self.dither_intensity + delta).clamp(0.0, 1.0);
-        self.dither_intensity = new_intensity;
+        self.dither_mode = match self.dither_mode {
+            DitherMode::Ordered { intensity, matrix } => {
+                let new_intensity = (intensity + delta).clamp(0.0, 1.0);
+                DitherMode::Ordered {
+                    intensity: new_intensity,
+                    matrix,
+                }
+            }
+            DitherMode::Hybrid {
+                edge_threshold,
+                intensity,
+                matrix,
+            } => {
+                let new_intensity = (intensity + delta).clamp(0.0, 1.0);
+                DitherMode::Hybrid {
+                    edge_threshold,
+                    intensity: new_intensity,
+                    matrix,
+                }
+            }
+            _ => self.dither_mode,
+        };
     }
 }
 
@@ -136,6 +180,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('c') => ControlAction::CyclePalette,
         KeyCode::Char('h') | KeyCode::Char('H') => ControlAction::ToggleHelp,
         KeyCode::Char('d') | KeyCode::Char('D') => ControlAction::ToggleDither,
+        KeyCode::Char('m') | KeyCode::Char('M') => ControlAction::CycleDitherMode,
         KeyCode::Char('[') | KeyCode::Char('{') => ControlAction::AdjustDitherIntensity(-0.1),
         KeyCode::Char(']') | KeyCode::Char('}') => ControlAction::AdjustDitherIntensity(0.1),
         KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => ControlAction::Quit,

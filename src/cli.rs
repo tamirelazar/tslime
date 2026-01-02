@@ -2,6 +2,7 @@ use clap::Parser;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
+use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::simulation::config::{
     Attractor, DiffusionKernel, InitMode, Preset, SimConfig, SpeciesConfig,
 };
@@ -564,24 +565,37 @@ pub struct Args {
     pub attractor_strength: f32,
 
     #[arg(
-        long = "dither",
-        help = "Enable ordered dithering for smoother color gradients on limited color terminals"
+        long = "dither-mode",
+        value_name = "MODE",
+        default_value = "none",
+        help = "Dithering mode: none, ordered, error-diffusion, hybrid"
     )]
-    pub dither: bool,
+    pub dither_mode: String,
 
     #[arg(
         long = "dither-intensity",
         value_name = "FLOAT",
         default_value = "0.5",
-        help = "Dithering intensity (0.0-1.0, higher = more dithering effect)"
+        help = "Dithering intensity for ordered/hybrid modes (0.0-1.0, higher = more dithering effect)"
     )]
     pub dither_intensity: f32,
 
     #[arg(
-        long = "error-diffusion",
-        help = "Enable Floyd-Steinberg error diffusion for smoother gradients (replaces ordered dither)"
+        long = "dither-matrix",
+        value_name = "MATRIX",
+        default_value = "4x4",
+        help = "Dither matrix for ordered mode: 4x4, 8x8"
     )]
-    pub error_diffusion: bool,
+    pub dither_matrix: String,
+
+    #[arg(
+        long = "dither-swap",
+        help = "Swap to next dither mode (cycle through none -> ordered -> error-diffusion -> hybrid)"
+    )]
+    pub dither_swap: bool,
+
+    #[arg(long = "error-diffusion-swap", help = "Toggle error diffusion mode")]
+    pub error_diffusion_swap: bool,
 
     #[arg(
         long = "species",
@@ -650,6 +664,33 @@ impl Args {
             "fungus" => Ok(Palette::Fungus),
             "swamp" => Ok(Palette::Swamp),
             _ => Err(format!("Invalid palette: {}", self.palette)),
+        }
+    }
+
+    pub fn dither_mode(&self) -> Result<DitherMode, String> {
+        match self.dither_mode.as_str() {
+            "none" => Ok(DitherMode::None),
+            "ordered" => Ok(DitherMode::Ordered {
+                intensity: self.dither_intensity.clamp(0.0, 1.0),
+                matrix: self.parse_dither_matrix()?,
+            }),
+            "error-diffusion" | "error_diffusion" => {
+                Ok(DitherMode::ErrorDiffusion { serpentine: true })
+            }
+            "hybrid" => Ok(DitherMode::Hybrid {
+                edge_threshold: 0.15,
+                intensity: self.dither_intensity.clamp(0.0, 1.0),
+                matrix: self.parse_dither_matrix()?,
+            }),
+            _ => Err(format!("Invalid dither mode: {}", self.dither_mode)),
+        }
+    }
+
+    fn parse_dither_matrix(&self) -> Result<DitherMatrix, String> {
+        match self.dither_matrix.as_str() {
+            "4x4" | "4" => Ok(DitherMatrix::Bayer4x4),
+            "8x8" | "8" => Ok(DitherMatrix::Bayer8x8),
+            _ => Err(format!("Invalid dither matrix: {}", self.dither_matrix)),
         }
     }
 
@@ -808,9 +849,11 @@ impl Default for Args {
             frame_count: 50,
             frame_skip: 50,
             frame_dir: "frames".to_string(),
-            dither: false,
+            dither_mode: "none".to_string(),
             dither_intensity: 0.5,
-            error_diffusion: false,
+            dither_matrix: "4x4".to_string(),
+            dither_swap: false,
+            error_diffusion_swap: false,
             species: Vec::new(),
             separate_species_trails: false,
             species_colors: false,
@@ -868,9 +911,11 @@ mod tests {
             frame_count: 50,
             frame_skip: 50,
             frame_dir: "frames".to_string(),
-            dither: false,
+            dither_mode: "none".to_string(),
             dither_intensity: 0.5,
-            error_diffusion: false,
+            dither_matrix: "4x4".to_string(),
+            dither_swap: false,
+            error_diffusion_swap: false,
             species: Vec::new(),
             separate_species_trails: false,
             species_colors: false,

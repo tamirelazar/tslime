@@ -1,7 +1,7 @@
 use crate::cli::ColorMode;
 use crate::cli::Palette;
 use crate::render::charset::{self, Charset};
-use crate::render::dither::apply_dither;
+use crate::render::dither::{self, DitherMode};
 use crate::render::downsample::{downsample_multi_species, Cell as DownsampleCell};
 use crate::render::error_diffusion::ErrorDiffusion;
 use crate::render::palette;
@@ -24,7 +24,6 @@ pub struct FrameBuffer {
     height: usize,
     cells: Vec<Cell>,
     color_mode: ColorMode,
-    error_diffusion: Option<ErrorDiffusion>,
     species_colors_enabled: bool,
     species_rgb_colors: Vec<RgbColor>,
 }
@@ -53,7 +52,6 @@ impl FrameBuffer {
                 width * height
             ],
             color_mode,
-            error_diffusion: None,
             species_colors_enabled: false,
             species_rgb_colors: Vec::new(),
         }
@@ -115,21 +113,12 @@ impl FrameBuffer {
         invert_palette: bool,
         color_mode: ColorMode,
         hue_shift: f32,
-        dither_enabled: bool,
-        dither_intensity: f32,
-        error_diffusion_enabled: bool,
-        error_reset_interval: usize,
+        dither_mode: DitherMode,
+        error_diffusion: &mut Option<ErrorDiffusion>,
         species_colors_enabled: bool,
         species_rgb_colors: Option<Vec<RgbColor>>,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode);
-
-        let error_diffusion = if error_diffusion_enabled {
-            Some(ErrorDiffusion::new(width, height, error_reset_interval))
-        } else {
-            None
-        };
-        buffer.error_diffusion = error_diffusion;
         buffer.species_colors_enabled = species_colors_enabled;
 
         let species_colors_slice = species_rgb_colors.as_deref();
@@ -141,6 +130,12 @@ impl FrameBuffer {
 
             let x = idx % width;
             let y = idx / width;
+
+            if let Some(ref mut ed) = error_diffusion {
+                if x == 0 {
+                    ed.start_row(y);
+                }
+            }
 
             let top_brightness = if max_trail_value > 0.0 {
                 dcell.top / max_trail_value
@@ -154,7 +149,6 @@ impl FrameBuffer {
             };
 
             let cell = buffer.create_cell(
-                idx,
                 x,
                 y,
                 top_brightness,
@@ -165,8 +159,8 @@ impl FrameBuffer {
                 invert_palette,
                 color_mode,
                 hue_shift,
-                dither_enabled,
-                dither_intensity,
+                dither_mode,
+                error_diffusion,
                 species_colors_enabled,
                 species_colors_slice,
             );
@@ -178,22 +172,9 @@ impl FrameBuffer {
         buffer
     }
 
-    pub fn reset_error(&mut self) {
-        if let Some(ref mut ed) = self.error_diffusion {
-            ed.reset();
-        }
-    }
-
-    pub fn tick_error(&mut self) {
-        if let Some(ref mut ed) = self.error_diffusion {
-            ed.tick();
-        }
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn create_cell(
         &mut self,
-        idx: usize,
         x: usize,
         y: usize,
         top: f32,
@@ -204,27 +185,57 @@ impl FrameBuffer {
         invert_palette: bool,
         color_mode: ColorMode,
         hue_shift: f32,
-        dither_enabled: bool,
-        dither_intensity: f32,
+        dither_mode: DitherMode,
+        error_diffusion: &mut Option<ErrorDiffusion>,
         species_colors_enabled: bool,
         species_rgb_colors: Option<&[RgbColor]>,
     ) -> Cell {
         const THRESHOLD: f32 = 0.05;
 
-        let (top_adj, bottom_adj) = if self.error_diffusion.is_some() {
-            let ed = self.error_diffusion.as_mut().unwrap();
-            let top_quantized = top.clamp(0.0, 1.0);
-            let bottom_quantized = bottom.clamp(0.0, 1.0);
-            let top_adjusted = ed.apply_and_distribute(idx, top, top_quantized);
-            let bottom_adjusted = ed.apply_and_distribute(idx, bottom, bottom_quantized);
-            (top_adjusted, bottom_adjusted)
-        } else if dither_enabled {
-            (
-                apply_dither(x, y, top, dither_intensity),
-                apply_dither(x, y, bottom, dither_intensity),
-            )
-        } else {
-            (top, bottom)
+        let levels = charset::charset_level_count(charset);
+
+        let (top_adj, bottom_adj) = match dither_mode {
+            DitherMode::None => (top, bottom),
+            DitherMode::Ordered { intensity, matrix } => (
+                dither::apply_ordered_dither(x, y, top, intensity, matrix),
+                dither::apply_ordered_dither(x, y, bottom, intensity, matrix),
+            ),
+            DitherMode::ErrorDiffusion { serpentine } => {
+                if let Some(ed) = error_diffusion {
+                    let top_quantized = dither::quantize_to_levels(top, levels);
+                    let bottom_quantized = dither::quantize_to_levels(bottom, levels);
+                    (
+                        ed.apply_and_distribute(x, y, top, top_quantized, true, serpentine),
+                        ed.apply_and_distribute(x, y, bottom, bottom_quantized, false, serpentine),
+                    )
+                } else {
+                    (top, bottom)
+                }
+            }
+            DitherMode::Hybrid {
+                edge_threshold,
+                intensity,
+                matrix,
+            } => {
+                let variance = dither::local_variance(&[], self.width, x, y, 1);
+                let top_adj = if variance > edge_threshold {
+                    dither::apply_ordered_dither(x, y, top, intensity, matrix)
+                } else if let Some(ed) = error_diffusion {
+                    let quantized = dither::quantize_to_levels(top, levels);
+                    ed.apply_and_distribute(x, y, top, quantized, true, true)
+                } else {
+                    top
+                };
+                let bottom_adj = if variance > edge_threshold {
+                    dither::apply_ordered_dither(x, y, bottom, intensity, matrix)
+                } else if let Some(ed) = error_diffusion {
+                    let quantized = dither::quantize_to_levels(bottom, levels);
+                    ed.apply_and_distribute(x, y, bottom, quantized, false, true)
+                } else {
+                    bottom
+                };
+                (top_adj, bottom_adj)
+            }
         };
 
         if top_adj < THRESHOLD && bottom_adj < THRESHOLD {
@@ -463,13 +474,14 @@ pub fn render_frame(
     invert_palette: bool,
     color_mode: ColorMode,
     hue_shift: f32,
-    dither_enabled: bool,
-    dither_intensity: f32,
-    error_diffusion_enabled: bool,
-    error_reset_interval: usize,
+    dither_mode: DitherMode,
     species_colors_enabled: bool,
     species_rgb_colors: Option<Vec<RgbColor>>,
+    error_diffusion: &mut Option<ErrorDiffusion>,
 ) -> io::Result<()> {
+    if let Some(ref mut ed) = error_diffusion {
+        ed.reset();
+    }
     let buffer = FrameBuffer::from_downsampled(
         downsampled,
         width,
@@ -481,10 +493,8 @@ pub fn render_frame(
         invert_palette,
         color_mode,
         hue_shift,
-        dither_enabled,
-        dither_intensity,
-        error_diffusion_enabled,
-        error_reset_interval,
+        dither_mode,
+        error_diffusion,
         species_colors_enabled,
         species_rgb_colors,
     );
@@ -502,10 +512,8 @@ pub struct TerminalRenderer {
     invert_palette: bool,
     color_mode: ColorMode,
     hue_shift: f32,
-    dither_enabled: bool,
-    dither_intensity: f32,
-    error_diffusion_enabled: bool,
-    error_reset_interval: usize,
+    dither_mode: DitherMode,
+    error_diffusion: Option<ErrorDiffusion>,
     species_colors_enabled: bool,
     species_rgb_colors: Vec<RgbColor>,
 }
@@ -530,28 +538,39 @@ impl TerminalRenderer {
             invert_palette,
             color_mode,
             hue_shift: 0.0,
-            dither_enabled: false,
-            dither_intensity: 0.5,
-            error_diffusion_enabled: false,
-            error_reset_interval: 60,
+            dither_mode: DitherMode::None,
+            error_diffusion: None,
             species_colors_enabled: false,
             species_rgb_colors: Vec::new(),
         }
     }
 
-    pub fn set_dither(&mut self, enabled: bool, intensity: f32) {
-        self.dither_enabled = enabled;
-        self.dither_intensity = intensity;
+    pub fn set_dither_mode(&mut self, mode: DitherMode) {
+        self.dither_mode = mode;
+        self.error_diffusion = match mode {
+            DitherMode::ErrorDiffusion { .. } | DitherMode::Hybrid { .. } => {
+                let mut ed = ErrorDiffusion::new(self.width, self.height);
+                ed.resize(self.width, self.height);
+                Some(ed)
+            }
+            _ => None,
+        };
     }
 
-    #[allow(dead_code)]
-    pub fn set_error_diffusion(&mut self, enabled: bool) {
-        self.error_diffusion_enabled = enabled;
+    pub fn dither_mode(&self) -> DitherMode {
+        self.dither_mode
     }
 
-    #[allow(dead_code)]
-    pub fn set_error_reset_interval(&mut self, interval: usize) {
-        self.error_reset_interval = interval;
+    pub fn reset_error_diffusion(&mut self) {
+        if let Some(ref mut ed) = self.error_diffusion {
+            ed.reset();
+        }
+    }
+
+    pub fn resize_error_diffusion(&mut self, width: usize, height: usize) {
+        if let Some(ref mut ed) = self.error_diffusion {
+            ed.resize(width, height);
+        }
     }
 
     pub fn set_dimensions(&mut self, width: usize, height: usize) {
@@ -590,6 +609,9 @@ impl TerminalRenderer {
         downsampled: &[DownsampleCell],
         max_trail_value: f32,
     ) -> io::Result<()> {
+        if let Some(ref mut ed) = self.error_diffusion {
+            ed.reset();
+        }
         let buffer = FrameBuffer::from_downsampled(
             downsampled,
             self.width,
@@ -601,10 +623,8 @@ impl TerminalRenderer {
             self.invert_palette,
             self.color_mode,
             self.hue_shift,
-            self.dither_enabled,
-            self.dither_intensity,
-            self.error_diffusion_enabled,
-            self.error_reset_interval,
+            self.dither_mode,
+            &mut self.error_diffusion,
             self.species_colors_enabled,
             if self.species_colors_enabled {
                 Some(self.species_rgb_colors.clone())
@@ -624,6 +644,9 @@ impl TerminalRenderer {
         status_line: Option<(String, usize)>,
         paused_line: Option<(String, usize)>,
     ) -> io::Result<()> {
+        if let Some(ref mut ed) = self.error_diffusion {
+            ed.reset();
+        }
         let mut buffer = FrameBuffer::from_downsampled(
             downsampled,
             self.width,
@@ -635,10 +658,8 @@ impl TerminalRenderer {
             self.invert_palette,
             self.color_mode,
             self.hue_shift,
-            self.dither_enabled,
-            self.dither_intensity,
-            self.error_diffusion_enabled,
-            self.error_reset_interval,
+            self.dither_mode,
+            &mut self.error_diffusion,
             self.species_colors_enabled,
             if self.species_colors_enabled {
                 Some(self.species_rgb_colors.clone())
@@ -687,6 +708,10 @@ impl TerminalRenderer {
         status_line: Option<(String, usize)>,
         paused_line: Option<(String, usize)>,
     ) -> io::Result<()> {
+        if let Some(ref mut ed) = self.error_diffusion {
+            ed.reset();
+        }
+
         let mut buffer = FrameBuffer::new(self.width, self.height, self.color_mode);
         buffer.species_colors_enabled = true;
         buffer.species_rgb_colors = self.species_rgb_colors.clone();
@@ -701,7 +726,7 @@ impl TerminalRenderer {
             );
 
             let species_color_vec = vec![*species_color];
-            let species_buffer = FrameBuffer::from_downsampled(
+            let mut species_buffer = FrameBuffer::from_downsampled(
                 downsampled.cells(),
                 self.width,
                 self.height,
@@ -712,10 +737,8 @@ impl TerminalRenderer {
                 self.invert_palette,
                 self.color_mode,
                 self.hue_shift,
-                self.dither_enabled,
-                self.dither_intensity,
-                self.error_diffusion_enabled,
-                self.error_reset_interval,
+                self.dither_mode,
+                &mut self.error_diffusion,
                 true,
                 Some(species_color_vec),
             );
@@ -843,9 +866,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_empty() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             0.0,
@@ -856,8 +879,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -870,9 +893,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_full() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             1.0,
@@ -883,8 +906,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -897,9 +920,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_full_truecolor() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::TrueColor);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             1.0,
@@ -910,8 +933,8 @@ mod tests {
             false,
             ColorMode::TrueColor,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -924,9 +947,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_halfblock_top_only_uses_half_height() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             1.0,
@@ -937,8 +960,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -949,9 +972,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_halfblock_bottom_only_uses_half_height() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             0.0,
@@ -962,8 +985,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -974,9 +997,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_halfblock_top_half_brightness() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             0.5,
@@ -987,8 +1010,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -999,9 +1022,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_bottom_only() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             0.0,
@@ -1012,8 +1035,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -1024,9 +1047,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_braille_top_only() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             1.0,
@@ -1037,8 +1060,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -1049,9 +1072,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_braille_bottom_only() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             0.0,
@@ -1062,8 +1085,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -1074,9 +1097,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_braille_top_half_brightness() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             0.5,
@@ -1087,8 +1110,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -1099,9 +1122,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_braille_bottom_half_brightness() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             0.0,
@@ -1112,8 +1135,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -1124,9 +1147,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_ascii_top_only() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             1.0,
@@ -1137,8 +1160,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -1149,9 +1172,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_ascii_bottom_only() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             0.0,
@@ -1162,8 +1185,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -1174,9 +1197,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_ascii_top_half_brightness() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             0.5,
@@ -1187,8 +1210,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -1199,9 +1222,9 @@ mod tests {
 
     #[test]
     fn test_create_cell_ascii_bottom_half_brightness() {
+        use crate::render::dither::DitherMode;
         let mut buffer = FrameBuffer::new(10, 10, ColorMode::Bits256);
         let cell = buffer.create_cell(
-            0,
             0,
             0,
             0.0,
@@ -1212,8 +1235,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -1299,10 +1322,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
-            false,
-            60,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );
@@ -1337,10 +1358,8 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
-            false,
-            0.5,
-            false,
-            60,
+            DitherMode::None,
+            &mut None,
             false,
             None,
         );

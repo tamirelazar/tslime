@@ -111,6 +111,14 @@ pub fn map_ascii_directional(brightness: f32, is_top: bool) -> char {
     chars[index]
 }
 
+pub fn charset_level_count(charset: Charset) -> usize {
+    match charset {
+        Charset::HalfBlock => 9,
+        Charset::Ascii => 10,
+        Charset::Braille => 16,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,5 +394,20 @@ mod tests {
         assert_eq!(map_brightness(1.0, Some(0.0), Charset::Braille), '\u{2807}');
         assert_eq!(map_brightness(0.0, Some(1.0), Charset::Braille), '\u{2838}');
         assert_eq!(map_brightness(0.0, Some(0.0), Charset::Braille), '\u{2800}');
+    }
+
+    #[test]
+    fn test_charset_level_count_halfblock() {
+        assert_eq!(charset_level_count(Charset::HalfBlock), 9);
+    }
+
+    #[test]
+    fn test_charset_level_count_ascii() {
+        assert_eq!(charset_level_count(Charset::Ascii), 10);
+    }
+
+    #[test]
+    fn test_charset_level_count_braille() {
+        assert_eq!(charset_level_count(Charset::Braille), 16);
     }
 }

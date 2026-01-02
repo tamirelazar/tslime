@@ -731,6 +731,7 @@ dependencies = [
  "enable-ansi-support",
  "rand",
  "rand_xoshiro",
+ "serde",
  "serde_json",
  "signal-hook",
 ]

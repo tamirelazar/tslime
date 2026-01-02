@@ -1,4 +1,5 @@
 use crate::cli::Palette;
+use crate::render::dither::DitherMode;
 use crate::simulation::config::Attractor;
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
@@ -11,18 +12,18 @@ impl OverlayRenderer {
         preset: Preset,
         time_scale: f32,
         palette: Palette,
-        dither_enabled: bool,
-        dither_intensity: f32,
-        _width: usize,
+        dither_mode: DitherMode,
+        width: usize,
     ) -> String {
         let paused_text = if is_paused { " [PAUSED]" } else { "" };
         let preset_text = preset_name(preset);
         let palette_text = palette_name(palette);
         let time_text = format!("{:.1}x", time_scale);
-        let dither_text = if dither_enabled {
-            format!(" D:{:.1}", dither_intensity)
-        } else {
-            "".to_string()
+        let dither_text = match dither_mode {
+            DitherMode::None => "".to_string(),
+            DitherMode::Ordered { intensity, .. } => format!(" D:{:.1}", intensity),
+            DitherMode::ErrorDiffusion { .. } => " ED".to_string(),
+            DitherMode::Hybrid { intensity, .. } => format!(" H:{:.1}", intensity),
         };
 
         format!(

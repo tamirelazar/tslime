@@ -9,6 +9,7 @@ mod terminal;
 use cli::{Args, ColorMode, Mode};
 use render::adaptive_brightness::AdaptiveBrightness;
 use render::charset::Charset;
+use render::dither::DitherMode;
 use render::downsample::downsample;
 use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{Preset, SimConfig};
@@ -111,21 +112,21 @@ fn print_mode(
         None
     };
 
+    let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
+
     let buffer = FrameBuffer::from_downsampled(
         downsampled.cells(),
         term_width,
         term_height,
         max_brightness,
-        palette,
+        palette.clone(),
         charset,
         args.reverse_palette,
         args.invert_palette,
         color_mode,
         0.0,
-        args.dither,
-        args.dither_intensity,
-        args.error_diffusion,
-        60,
+        dither_mode,
+        &mut None,
         args.species_colors,
         species_rgb_colors,
     );
@@ -198,10 +199,8 @@ fn capture_frames_mode(
             args.invert_palette,
             color_mode,
             0.0,
-            args.dither,
-            args.dither_intensity,
-            args.error_diffusion,
-            60,
+            args.dither_mode().unwrap_or(DitherMode::None),
+            &mut None,
             args.species_colors,
             species_rgb_colors,
         );
@@ -265,7 +264,8 @@ fn run_simulation(
         args.invert_palette,
         color_mode,
     );
-    renderer.set_dither(args.dither, args.dither_intensity);
+    let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
+    renderer.set_dither_mode(dither_mode);
     let mut timer = FrameTimer::with_time_scale(args.fps, args.frame_delay, args.time_scale);
     let input_poller = InputPoller::new();
 
@@ -312,9 +312,8 @@ fn run_simulation(
         initial_palette_index,
         show_help_by_default,
     );
-    runtime_state.dither_enabled = args.dither;
-    runtime_state.dither_intensity = args.dither_intensity;
-    renderer.set_dither(args.dither, args.dither_intensity);
+    runtime_state.dither_mode = dither_mode;
+    renderer.set_dither_mode(dither_mode);
 
     let config = args.to_sim_config();
     if args.species_colors {
@@ -405,8 +404,7 @@ fn run_simulation(
             runtime_state.current_preset,
             runtime_state.time_scale,
             current_palette,
-            runtime_state.dither_enabled,
-            runtime_state.dither_intensity,
+            runtime_state.dither_mode,
             term_width as usize,
         );
         let status_x =
@@ -495,13 +493,15 @@ fn run_simulation(
                 }
                 ControlAction::ToggleDither => {
                     runtime_state.toggle_dither();
-                    renderer
-                        .set_dither(runtime_state.dither_enabled, runtime_state.dither_intensity);
+                    renderer.set_dither_mode(runtime_state.dither_mode);
+                }
+                ControlAction::CycleDitherMode => {
+                    runtime_state.cycle_dither_mode();
+                    renderer.set_dither_mode(runtime_state.dither_mode);
                 }
                 ControlAction::AdjustDitherIntensity(delta) => {
                     runtime_state.adjust_dither_intensity(delta);
-                    renderer
-                        .set_dither(runtime_state.dither_enabled, runtime_state.dither_intensity);
+                    renderer.set_dither_mode(runtime_state.dither_mode);
                 }
                 ControlAction::ToggleHelp => {
                     runtime_state.toggle_help();

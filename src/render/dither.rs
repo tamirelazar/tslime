@@ -1,9 +1,138 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DitherMatrix {
+    Bayer4x4,
+    Bayer8x8,
+}
+
+impl Default for DitherMatrix {
+    fn default() -> Self {
+        DitherMatrix::Bayer4x4
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum DitherMode {
+    None,
+    Ordered {
+        intensity: f32,
+        matrix: DitherMatrix,
+    },
+    ErrorDiffusion {
+        serpentine: bool,
+    },
+    Hybrid {
+        edge_threshold: f32,
+        intensity: f32,
+        matrix: DitherMatrix,
+    },
+}
+
+impl Default for DitherMode {
+    fn default() -> Self {
+        DitherMode::None
+    }
+}
+
 pub const BAYER_4X4: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
 
-pub fn apply_dither(x: usize, y: usize, brightness: f32, intensity: f32) -> f32 {
-    let threshold = (BAYER_4X4[y % 4][x % 4] as f32) / 16.0;
-    let dithered = brightness + (threshold - 0.5) * intensity * 0.1;
+pub const BAYER_8X8: [[u8; 8]; 8] = [
+    [0, 48, 12, 60, 3, 51, 15, 63],
+    [32, 16, 44, 28, 35, 19, 47, 31],
+    [8, 56, 4, 52, 11, 59, 7, 55],
+    [40, 24, 36, 20, 43, 27, 39, 23],
+    [2, 50, 14, 62, 1, 49, 13, 61],
+    [34, 18, 46, 30, 33, 17, 45, 29],
+    [10, 58, 6, 54, 9, 57, 5, 53],
+    [42, 26, 38, 22, 41, 25, 37, 21],
+];
+
+fn bayer_threshold(x: usize, y: usize, matrix: DitherMatrix) -> f32 {
+    match matrix {
+        DitherMatrix::Bayer4x4 => BAYER_4X4[y % 4][x % 4] as f32 / 16.0,
+        DitherMatrix::Bayer8x8 => BAYER_8X8[y % 8][x % 8] as f32 / 64.0,
+    }
+}
+
+pub fn apply_ordered_dither(
+    x: usize,
+    y: usize,
+    brightness: f32,
+    intensity: f32,
+    matrix: DitherMatrix,
+) -> f32 {
+    let threshold = bayer_threshold(x, y, matrix);
+    let dithered = brightness + (threshold - 0.5) * intensity;
     dithered.clamp(0.0, 1.0)
+}
+
+pub fn apply_ordered_dither_with_frame(
+    x: usize,
+    y: usize,
+    brightness: f32,
+    intensity: f32,
+    matrix: DitherMatrix,
+    frame: usize,
+) -> f32 {
+    let threshold = bayer_threshold(x, y, matrix);
+    let phase = (frame as f32 * 0.1) % 1.0;
+    let modulated = if threshold < phase { 1.0 } else { 0.0 };
+    let dithered = brightness + (modulated - 0.5) * intensity;
+    dithered.clamp(0.0, 1.0)
+}
+
+pub fn quantize_to_levels(brightness: f32, num_levels: usize) -> f32 {
+    if num_levels <= 1 {
+        return 0.0;
+    }
+    let levels_minus_one = num_levels - 1;
+    let quantized = (brightness * levels_minus_one as f32).round() as usize;
+    quantized as f32 / levels_minus_one as f32
+}
+
+pub fn local_variance(
+    downsampled: &[crate::render::downsample::Cell],
+    width: usize,
+    x: usize,
+    y: usize,
+    radius: usize,
+) -> f32 {
+    if radius == 0 {
+        return 0.0;
+    }
+    let mut sum = 0.0;
+    let mut sum_sq = 0.0;
+    let mut count = 0;
+
+    for dy in -(radius as i32)..=radius as i32 {
+        for dx in -(radius as i32)..=radius as i32 {
+            let nx = x as i32 + dx;
+            let ny = y as i32 + dy;
+            if nx >= 0 && nx < width as i32 && ny >= 0 {
+                let idx = (ny as usize) * width + nx as usize;
+                if idx < downsampled.len() {
+                    let brightness = (downsampled[idx].top + downsampled[idx].bottom) / 2.0;
+                    sum += brightness;
+                    sum_sq += brightness * brightness;
+                    count += 1;
+                }
+            }
+        }
+    }
+
+    if count == 0 {
+        return 0.0;
+    }
+
+    let mean = sum / count as f32;
+    let variance = (sum_sq / count as f32) - (mean * mean);
+    variance.sqrt()
+}
+
+#[deprecated(since = "0.1.0", note = "Use apply_ordered_dither instead")]
+pub fn apply_dither(x: usize, y: usize, brightness: f32, intensity: f32) -> f32 {
+    apply_ordered_dither(x, y, brightness, intensity, DitherMatrix::Bayer4x4)
 }
 
 #[cfg(test)]
