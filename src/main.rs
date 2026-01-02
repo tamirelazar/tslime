@@ -572,6 +572,8 @@ fn run_simulation(
                     let mut new_config = SimConfig::from(preset);
                     new_config.attractors = sim.config().attractors.clone();
                     new_config.attractor_strength = sim.config().attractor_strength;
+                    new_config.food_image_path = sim.config().food_image_path.clone();
+                    new_config.food_image_invert = sim.config().food_image_invert;
                     sim.update_config(new_config);
                 }
                 ControlAction::AdjustTimeScale(delta) => {

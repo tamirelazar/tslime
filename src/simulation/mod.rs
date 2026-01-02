@@ -1,9 +1,11 @@
 pub mod agent;
 pub mod config;
+pub mod food;
 pub mod trail_map;
 
 use crate::simulation::agent::Agent;
 use crate::simulation::config::{InitMode, SimConfig};
+use crate::simulation::food::{get_brightness_at, load_image_grayscale};
 use crate::simulation::trail_map::TrailMap;
 use rand::Rng as RandRng;
 use rand::SeedableRng;
@@ -99,6 +101,9 @@ impl Simulation {
         let total_population = config.total_population();
         let mut agents = Vec::with_capacity(total_population);
 
+        let food_path = config.food_image_path.as_deref();
+        let food_invert = config.food_image_invert;
+
         for (species_id, species_config) in config.species_configs.iter().enumerate() {
             Self::init_species(
                 &mut rng,
@@ -108,6 +113,8 @@ impl Simulation {
                 species_config.count,
                 init_mode,
                 species_id as u8,
+                food_path,
+                food_invert,
             );
         }
 
@@ -146,6 +153,8 @@ impl Simulation {
         population: usize,
         init_mode: InitMode,
         species_id: u8,
+        food_image_path: Option<&str>,
+        food_image_invert: bool,
     ) {
         match init_mode {
             InitMode::Random => {
@@ -168,6 +177,23 @@ impl Simulation {
             }
             InitMode::RandomClusters => {
                 Self::init_random_clusters(rng, width, height, agents, population, species_id);
+            }
+            InitMode::Food => {
+                if let Some(path) = food_image_path {
+                    Self::init_from_food(
+                        rng,
+                        width,
+                        height,
+                        agents,
+                        population,
+                        species_id,
+                        path,
+                        food_image_invert,
+                    );
+                } else {
+                    eprintln!("Warning: Food mode selected but no image path provided, falling back to random");
+                    Self::init_random(rng, width, height, agents, population, species_id);
+                }
             }
         }
     }
@@ -335,6 +361,69 @@ impl Simulation {
                 let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
                 agents.push(Agent::new(x, y, heading, species_id));
             }
+        }
+    }
+
+    fn init_from_food(
+        rng: &mut Rng,
+        width: usize,
+        height: usize,
+        agents: &mut Vec<Agent>,
+        population: usize,
+        species_id: u8,
+        food_path: &str,
+        food_image_invert: bool,
+    ) {
+        let brightness_map = match load_image_grayscale(food_path, width, height, food_image_invert)
+        {
+            Ok(map) => map,
+            Err(e) => {
+                eprintln!("Warning: Failed to load food image '{}': {}", food_path, e);
+                eprintln!("Falling back to random initialization");
+                return Self::init_random(rng, width, height, agents, population, species_id);
+            }
+        };
+
+        let total_brightness: f32 = brightness_map.iter().sum();
+        if total_brightness == 0.0 {
+            eprintln!(
+                "Warning: Food image is completely dark, falling back to random initialization"
+            );
+            return Self::init_random(rng, width, height, agents, population, species_id);
+        }
+
+        let agents_per_brightness_unit = population as f32 / total_brightness;
+
+        for y in 0..height {
+            for x in 0..width {
+                let brightness = get_brightness_at(&brightness_map, width, x, y);
+                let expected_agents = brightness * agents_per_brightness_unit;
+
+                let base_x = x as f32;
+                let base_y = y as f32;
+
+                let mut agents_to_spawn = expected_agents as usize;
+
+                if rng.gen::<f32>() < expected_agents - agents_to_spawn as f32 {
+                    agents_to_spawn += 1;
+                }
+
+                for _ in 0..agents_to_spawn {
+                    let offset_x = rng.gen_range(-0.5..0.5);
+                    let offset_y = rng.gen_range(-0.5..0.5);
+                    let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
+                    agents.push(Agent::new(
+                        base_x + offset_x,
+                        base_y + offset_y,
+                        heading,
+                        species_id,
+                    ));
+                }
+            }
+        }
+
+        if agents.len() > population {
+            agents.truncate(population);
         }
     }
 
@@ -526,6 +615,9 @@ impl Simulation {
         let width = self.width();
         let height = self.height();
 
+        let food_path = self.config.food_image_path.as_deref();
+        let food_invert = self.config.food_image_invert;
+
         for (species_id, species_config) in self.config.species_configs.iter().enumerate() {
             Self::init_species(
                 &mut self.rng,
@@ -535,6 +627,8 @@ impl Simulation {
                 species_config.count,
                 init_mode,
                 species_id as u8,
+                food_path,
+                food_invert,
             );
         }
 

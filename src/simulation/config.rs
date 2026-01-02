@@ -23,6 +23,7 @@ pub enum InitMode {
     WaveFront,
     Spiral,
     RandomClusters,
+    Food,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -115,6 +116,8 @@ pub struct SimConfig {
     pub species_configs: Vec<SpeciesConfig>,
     pub separate_species_trails: bool,
     pub use_simd: bool,
+    pub food_image_path: Option<String>,
+    pub food_image_invert: bool,
 }
 
 impl Default for SimConfig {
@@ -134,6 +137,8 @@ impl Default for SimConfig {
             species_configs: vec![SpeciesConfig::default()],
             separate_species_trails: false,
             use_simd: true,
+            food_image_path: None,
+            food_image_invert: false,
         }
     }
 }
@@ -250,6 +255,8 @@ impl From<Preset> for SimConfig {
                 }],
                 separate_species_trails: false,
                 use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
             },
             Preset::Exploratory => Self {
                 sensor_angle: 45.0,
@@ -274,6 +281,8 @@ impl From<Preset> for SimConfig {
                 }],
                 separate_species_trails: false,
                 use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
             },
             Preset::Tendrils => Self {
                 sensor_angle: 30.0,
@@ -298,6 +307,8 @@ impl From<Preset> for SimConfig {
                 }],
                 separate_species_trails: false,
                 use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
             },
             Preset::Organic => Self::default(),
             Preset::Minimal => Self {
@@ -323,6 +334,8 @@ impl From<Preset> for SimConfig {
                 }],
                 separate_species_trails: false,
                 use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
             },
             Preset::Moss => Self {
                 sensor_angle: 22.0,
@@ -347,6 +360,8 @@ impl From<Preset> for SimConfig {
                 }],
                 separate_species_trails: false,
                 use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
             },
         }
     }

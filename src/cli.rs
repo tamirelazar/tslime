@@ -228,8 +228,9 @@ impl FromStr for InitMode {
             "wave" => Ok(InitMode::WaveFront),
             "spiral" => Ok(InitMode::Spiral),
             "clusters" => Ok(InitMode::RandomClusters),
+            "food" => Ok(InitMode::Food),
             _ => Err(format!(
-                "Invalid init mode: {}. Must be one of: random, central, circle, gradient, wave, spiral, clusters",
+                "Invalid init mode: {}. Must be one of: random, central, circle, gradient, wave, spiral, clusters, food",
                 s
             )),
         }
@@ -430,9 +431,22 @@ pub struct Args {
         long = "init",
         value_name = "MODE",
         default_value = "random",
-        help = "Initialization mode (random, central, circle, gradient, wave, spiral, clusters)"
+        help = "Initialization mode (random, central, circle, gradient, wave, spiral, clusters, food)"
     )]
     pub init: InitMode,
+
+    #[arg(
+        long = "food",
+        value_name = "PATH",
+        help = "Load agents from PNG image. High-brightness areas spawn more agents. Use with --init food"
+    )]
+    pub food: Option<String>,
+
+    #[arg(
+        long = "food-invert",
+        help = "Invert the food image values (dark areas spawn more agents instead of bright areas)"
+    )]
+    pub food_invert: bool,
 
     #[arg(
         short = 't',
@@ -733,6 +747,8 @@ impl Args {
         config.step_size = self.step_size;
         config.decay_factor = self.decay_factor;
         config.max_brightness = self.max_brightness;
+        config.food_image_path = self.food.clone();
+        config.food_image_invert = self.food_invert;
 
         if let Some(kernel) = self.diffusion_kernel {
             config.diffusion_kernel = kernel;
@@ -849,6 +865,8 @@ impl Default for Args {
             diffusion_sigma: None,
             preset: Option::<Preset>::None,
             init: InitMode::Random,
+            food: None,
+            food_invert: false,
             frame_delay: 0.033,
             fps: 30,
             time_scale: 1.0,
@@ -914,6 +932,8 @@ mod tests {
             diffusion_sigma: None,
             preset: Option::<Preset>::None,
             init: InitMode::Random,
+            food: None,
+            food_invert: false,
             frame_delay: 0.033,
             fps: 30,
             time_scale: 1.0,
