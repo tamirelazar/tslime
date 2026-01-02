@@ -105,6 +105,7 @@ impl Simulation {
 
         let food_path = config.food_image_path.as_deref();
         let food_invert = config.food_image_invert;
+        let food_scale = config.food_image_scale;
 
         for (species_id, species_config) in config.species_configs.iter().enumerate() {
             Self::init_species(
@@ -117,6 +118,7 @@ impl Simulation {
                 species_id as u8,
                 food_path,
                 food_invert,
+                food_scale,
             );
         }
 
@@ -161,6 +163,7 @@ impl Simulation {
         species_id: u8,
         food_image_path: Option<&str>,
         food_image_invert: bool,
+        food_image_scale: f32,
     ) {
         match init_mode {
             InitMode::Random => {
@@ -195,6 +198,7 @@ impl Simulation {
                         species_id,
                         path,
                         food_image_invert,
+                        food_image_scale,
                     );
                 } else {
                     eprintln!("Warning: Food mode selected but no image path provided, falling back to random");
@@ -379,9 +383,15 @@ impl Simulation {
         species_id: u8,
         food_path: &str,
         food_image_invert: bool,
+        food_image_scale: f32,
     ) {
-        let brightness_map = match load_image_grayscale(food_path, width, height, food_image_invert)
-        {
+        let brightness_map = match load_image_grayscale(
+            food_path,
+            width,
+            height,
+            food_image_invert,
+            food_image_scale,
+        ) {
             Ok(map) => map,
             Err(e) => {
                 eprintln!("Warning: Failed to load food image '{}': {}", food_path, e);
@@ -650,6 +660,7 @@ impl Simulation {
 
         let food_path = self.config.food_image_path.as_deref();
         let food_invert = self.config.food_image_invert;
+        let food_scale = self.config.food_image_scale;
 
         for (species_id, species_config) in self.config.species_configs.iter().enumerate() {
             Self::init_species(
@@ -662,6 +673,7 @@ impl Simulation {
                 species_id as u8,
                 food_path,
                 food_invert,
+                food_scale,
             );
         }
 

@@ -603,6 +603,14 @@ pub struct Args {
     pub food_invert: bool,
 
     #[arg(
+        long = "food-scale",
+        value_name = "FLOAT",
+        default_value = "1.0",
+        help = "Scale factor for food image relative to canvas (0.1-5.0, e.g., 0.5 = half size, 2.0 = double size)"
+    )]
+    pub food_scale: f32,
+
+    #[arg(
         short = 't',
         long = "time",
         value_name = "FLOAT",
@@ -933,6 +941,7 @@ impl Args {
         config.max_brightness = self.max_brightness;
         config.food_image_path = self.food.clone();
         config.food_image_invert = self.food_invert;
+        config.food_image_scale = self.food_scale;
 
         if let Some(kernel) = self.diffusion_kernel {
             config.diffusion_kernel = kernel;
@@ -1046,6 +1055,12 @@ impl Args {
                 return Err(format!("Invalid wind: {}", e));
             }
         }
+        if self.food_scale < 0.1 || self.food_scale > 5.0 {
+            return Err(format!(
+                "food_scale must be between 0.1 and 5.0, got {}",
+                self.food_scale
+            ));
+        }
         Ok(())
     }
 
@@ -1079,6 +1094,7 @@ impl Default for Args {
             init: InitMode::Random,
             food: None,
             food_invert: false,
+            food_scale: 1.0,
             frame_delay: 0.033,
             fps: 30,
             time_scale: 1.0,
@@ -1150,6 +1166,7 @@ mod tests {
             init: InitMode::Random,
             food: None,
             food_invert: false,
+            food_scale: 1.0,
             frame_delay: 0.033,
             fps: 30,
             time_scale: 1.0,

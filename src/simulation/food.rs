@@ -6,6 +6,7 @@ pub fn load_image_grayscale(
     target_width: usize,
     target_height: usize,
     invert: bool,
+    scale: f32,
 ) -> Result<Vec<f32>, String> {
     let path = Path::new(image_path);
 
@@ -21,9 +22,12 @@ pub fn load_image_grayscale(
     let _ = img.width() as usize;
     let _ = img.height() as usize;
 
+    let scaled_width = (target_width as f32 * scale) as usize;
+    let scaled_height = (target_height as f32 * scale) as usize;
+
     let resized = img.resize_exact(
-        target_width as u32,
-        target_height as u32,
+        scaled_width as u32,
+        scaled_height as u32,
         image::imageops::FilterType::Nearest,
     );
 
@@ -40,7 +44,29 @@ pub fn load_image_grayscale(
         })
         .collect();
 
-    Ok(grayscale)
+    let mut result = vec![0.0f32; target_width * target_height];
+
+    let offset_x = (target_width as isize - scaled_width as isize) / 2;
+    let offset_y = (target_height as isize - scaled_height as isize) / 2;
+
+    for y in 0..scaled_height {
+        for x in 0..scaled_width {
+            let src_idx = y * scaled_width + x;
+            let dst_x = offset_x + x as isize;
+            let dst_y = offset_y + y as isize;
+
+            if dst_x >= 0
+                && dst_x < target_width as isize
+                && dst_y >= 0
+                && dst_y < target_height as isize
+            {
+                let dst_idx = (dst_y * target_width as isize + dst_x) as usize;
+                result[dst_idx] = grayscale[src_idx];
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 pub fn get_brightness_at(brightness_map: &[f32], width: usize, x: usize, y: usize) -> f32 {
@@ -56,14 +82,14 @@ mod tests {
 
     #[test]
     fn test_load_image_grayscale_nonexistent() {
-        let result = load_image_grayscale("nonexistent.png", 100, 100, false);
+        let result = load_image_grayscale("nonexistent.png", 100, 100, false, 1.0);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
     }
 
     #[test]
     fn test_load_image_grayscale_invalid() {
-        let result = load_image_grayscale("/dev/null", 100, 100, false);
+        let result = load_image_grayscale("/dev/null", 100, 100, false, 1.0);
         assert!(result.is_err());
     }
 
