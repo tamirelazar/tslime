@@ -29,6 +29,96 @@ pub enum InitMode {
     Food,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerrainType {
+    None,
+    Smooth,
+    Turbulent,
+    Mixed,
+}
+
+impl Default for TerrainType {
+    fn default() -> Self {
+        TerrainType::None
+    }
+}
+
+impl std::str::FromStr for TerrainType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "none" | "off" | "disabled" => Ok(TerrainType::None),
+            "smooth" => Ok(TerrainType::Smooth),
+            "turbulent" => Ok(TerrainType::Turbulent),
+            "mixed" => Ok(TerrainType::Mixed),
+            _ => Err(format!(
+                "Invalid terrain type: {}. Must be one of: none, smooth, turbulent, mixed",
+                s
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Wind {
+    pub dx: f32,
+    pub dy: f32,
+}
+
+impl Wind {
+    pub fn new(dx: f32, dy: f32) -> Self {
+        Self { dx, dy }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.dx < -1.0 || self.dx > 1.0 {
+            return Err(format!(
+                "wind.dx must be between -1.0 and 1.0, got {}",
+                self.dx
+            ));
+        }
+        if self.dy < -1.0 || self.dy > 1.0 {
+            return Err(format!(
+                "wind.dy must be between -1.0 and 1.0, got {}",
+                self.dy
+            ));
+        }
+        if self.dx.abs() < 0.001 && self.dy.abs() < 0.001 {
+            return Err("wind cannot be zero vector".to_string());
+        }
+        Ok(())
+    }
+}
+
+impl Default for Wind {
+    fn default() -> Self {
+        Self { dx: 0.0, dy: 0.0 }
+    }
+}
+
+impl std::str::FromStr for Wind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(',').collect();
+        if parts.len() != 2 {
+            return Err(format!("Wind must be in dx,dy format, got: {}", s));
+        }
+
+        let dx = parts[0]
+            .parse::<f32>()
+            .map_err(|e| format!("Invalid dx: {}", e))?;
+        let dy = parts[1]
+            .parse::<f32>()
+            .map_err(|e| format!("Invalid dy: {}", e))?;
+
+        let wind = Wind::new(dx, dy);
+        wind.validate()?;
+        Ok(wind)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Attractor {
     pub x: f32,
@@ -287,6 +377,9 @@ pub struct SimConfig {
     pub food_image_invert: bool,
     pub obstacles: Vec<Obstacle>,
     pub obstacle_masks: Vec<Option<ObstacleMask>>,
+    pub wind: Option<Wind>,
+    pub terrain: TerrainType,
+    pub terrain_strength: f32,
 }
 
 impl Default for SimConfig {
@@ -310,6 +403,9 @@ impl Default for SimConfig {
             food_image_invert: false,
             obstacles: Vec::new(),
             obstacle_masks: Vec::new(),
+            wind: None,
+            terrain: TerrainType::None,
+            terrain_strength: 1.0,
         }
     }
 }
@@ -392,6 +488,15 @@ impl SimConfig {
         for species in &self.species_configs {
             species.validate()?;
         }
+        if self.terrain_strength < 0.1 || self.terrain_strength > 5.0 {
+            return Err(format!(
+                "terrain_strength must be between 0.1 and 5.0, got {}",
+                self.terrain_strength
+            ));
+        }
+        if let Some(ref wind) = self.wind {
+            wind.validate()?;
+        }
         Ok(())
     }
 
@@ -452,6 +557,9 @@ impl From<Preset> for SimConfig {
                 food_image_invert: false,
                 obstacles: Vec::new(),
                 obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
             },
             Preset::Exploratory => Self {
                 sensor_angle: 45.0,
@@ -480,6 +588,9 @@ impl From<Preset> for SimConfig {
                 food_image_invert: false,
                 obstacles: Vec::new(),
                 obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
             },
             Preset::Tendrils => Self {
                 sensor_angle: 30.0,
@@ -508,8 +619,33 @@ impl From<Preset> for SimConfig {
                 food_image_invert: false,
                 obstacles: Vec::new(),
                 obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
             },
-            Preset::Organic => Self::default(),
+            Preset::Organic => Self {
+                sensor_angle: 22.5,
+                sensor_distance: 9.0,
+                rotation_angle: 45.0,
+                step_size: 1.0,
+                decay_factor: 0.5,
+                deposit_amount: 5.0,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+                diffusion_sigma: 1.0,
+                max_brightness: 20.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
+                species_configs: vec![SpeciesConfig::default()],
+                separate_species_trails: false,
+                use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
+                obstacles: Vec::new(),
+                obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
+            },
             Preset::Minimal => Self {
                 sensor_angle: 30.0,
                 sensor_distance: 9.0,
@@ -537,6 +673,9 @@ impl From<Preset> for SimConfig {
                 food_image_invert: false,
                 obstacles: Vec::new(),
                 obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
             },
             Preset::Moss => Self {
                 sensor_angle: 22.0,
@@ -565,6 +704,9 @@ impl From<Preset> for SimConfig {
                 food_image_invert: false,
                 obstacles: Vec::new(),
                 obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
             },
         }
     }
@@ -834,5 +976,135 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(config.obstacle_masks.len(), 1);
         assert!(config.obstacle_masks[0].is_none());
+    }
+
+    #[test]
+    fn test_wind_creation() {
+        let wind = Wind::new(0.5, 0.5);
+        assert_eq!(wind.dx, 0.5);
+        assert_eq!(wind.dy, 0.5);
+    }
+
+    #[test]
+    fn test_wind_validate_valid() {
+        let wind = Wind::new(1.0, 1.0);
+        assert!(wind.validate().is_ok());
+
+        let wind = Wind::new(-1.0, 0.0);
+        assert!(wind.validate().is_ok());
+
+        let wind = Wind::new(0.0, -1.0);
+        assert!(wind.validate().is_ok());
+    }
+
+    #[test]
+    fn test_wind_validate_invalid_dx() {
+        let wind = Wind::new(1.5, 0.0);
+        assert!(wind.validate().is_err());
+    }
+
+    #[test]
+    fn test_wind_validate_invalid_dy() {
+        let wind = Wind::new(0.0, 1.5);
+        assert!(wind.validate().is_err());
+    }
+
+    #[test]
+    fn test_wind_validate_zero() {
+        let wind = Wind::new(0.0, 0.0);
+        assert!(wind.validate().is_err());
+    }
+
+    #[test]
+    fn test_wind_parse() {
+        let wind: Wind = "0.5,0.5".parse().unwrap();
+        assert_eq!(wind.dx, 0.5);
+        assert_eq!(wind.dy, 0.5);
+
+        let wind: Wind = "-0.3,0.7".parse().unwrap();
+        assert_eq!(wind.dx, -0.3);
+        assert_eq!(wind.dy, 0.7);
+    }
+
+    #[test]
+    fn test_wind_parse_invalid() {
+        assert!("0.5".parse::<Wind>().is_err());
+        assert!("0.5,0.5,extra".parse::<Wind>().is_err());
+        assert!("abc,def".parse::<Wind>().is_err());
+    }
+
+    #[test]
+    fn test_terrain_type_parse() {
+        assert_eq!("none".parse::<TerrainType>().unwrap(), TerrainType::None);
+        assert_eq!("off".parse::<TerrainType>().unwrap(), TerrainType::None);
+        assert_eq!(
+            "smooth".parse::<TerrainType>().unwrap(),
+            TerrainType::Smooth
+        );
+        assert_eq!(
+            "turbulent".parse::<TerrainType>().unwrap(),
+            TerrainType::Turbulent
+        );
+        assert_eq!("mixed".parse::<TerrainType>().unwrap(), TerrainType::Mixed);
+
+        assert_eq!("NONE".parse::<TerrainType>().unwrap(), TerrainType::None);
+        assert_eq!(
+            "Smooth".parse::<TerrainType>().unwrap(),
+            TerrainType::Smooth
+        );
+    }
+
+    #[test]
+    fn test_terrain_type_parse_invalid() {
+        assert!("invalid".parse::<TerrainType>().is_err());
+        assert!("chaos".parse::<TerrainType>().is_err());
+    }
+
+    #[test]
+    fn test_sim_config_wind_field() {
+        let config = SimConfig {
+            wind: Some(Wind::new(0.5, 0.0)),
+            ..Default::default()
+        };
+        assert!(config.wind.is_some());
+        assert_eq!(config.wind.unwrap().dx, 0.5);
+    }
+
+    #[test]
+    fn test_sim_config_terrain_field() {
+        let config = SimConfig {
+            terrain: TerrainType::Turbulent,
+            terrain_strength: 2.0,
+            ..Default::default()
+        };
+        assert_eq!(config.terrain, TerrainType::Turbulent);
+        assert_eq!(config.terrain_strength, 2.0);
+    }
+
+    #[test]
+    fn test_validate_terrain_strength_too_low() {
+        let config = SimConfig {
+            terrain_strength: 0.05,
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_terrain_strength_too_high() {
+        let config = SimConfig {
+            terrain_strength: 10.0,
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_wind_invalid() {
+        let config = SimConfig {
+            wind: Some(Wind::new(1.5, 0.0)),
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
     }
 }

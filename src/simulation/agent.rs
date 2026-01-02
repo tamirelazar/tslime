@@ -2,7 +2,29 @@ use rand::Rng as RandRng;
 use rand_xoshiro::Xoshiro256PlusPlus as Rng;
 use std::f32::consts::PI;
 
-use super::config::{Attractor, Obstacle};
+use super::config::{Attractor, Obstacle, TerrainType, Wind};
+
+pub struct NoiseWrapper {
+    seed: noise::Seed,
+    seed_val: u32,
+}
+
+impl NoiseWrapper {
+    pub fn new(seed: u32) -> Self {
+        Self {
+            seed: noise::Seed::new(seed),
+            seed_val: seed,
+        }
+    }
+
+    pub fn get(&self, x: f64, y: f64) -> f64 {
+        noise::perlin2(&self.seed, &[x, y])
+    }
+
+    pub fn seed_value(&self) -> u32 {
+        self.seed_val
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct Agent {
@@ -118,6 +140,110 @@ impl Agent {
 
             let steer_strength = 0.1;
             self.heading += normalized_diff * steer_strength;
+        }
+    }
+
+    pub fn apply_wind_force(&mut self, wind: Option<Wind>, strength_multiplier: f32) {
+        if let Some(w) = wind {
+            let wind_strength = 0.05 * w.dx * strength_multiplier;
+            let wind_strength_y = 0.05 * w.dy * strength_multiplier;
+
+            if wind_strength.abs() > 0.0001 || wind_strength_y.abs() > 0.0001 {
+                let target_heading = wind_strength_y.atan2(wind_strength);
+                let diff = target_heading - self.heading;
+
+                let mut normalized_diff = diff;
+                while normalized_diff > PI {
+                    normalized_diff -= 2.0 * PI;
+                }
+                while normalized_diff < -PI {
+                    normalized_diff += 2.0 * PI;
+                }
+
+                let steer_strength = 0.3;
+                self.heading += normalized_diff * steer_strength;
+            }
+        }
+    }
+
+    pub fn apply_terrain_bias(
+        &mut self,
+        terrain: TerrainType,
+        terrain_strength: f32,
+        noise: &NoiseWrapper,
+    ) {
+        let seed_val = noise.seed_value() as f64;
+        match terrain {
+            TerrainType::None => {}
+            TerrainType::Smooth => {
+                let scale = 0.005;
+                let nx = self.x as f64 * scale + seed_val;
+                let ny = self.y as f64 * scale + seed_val;
+                let noise_val = noise.get(nx, ny);
+
+                let angle = (noise_val as f32 - 0.5) * PI * 2.0 * terrain_strength;
+                let diff = angle - self.heading;
+
+                let mut normalized_diff = diff;
+                while normalized_diff > PI {
+                    normalized_diff -= 2.0 * PI;
+                }
+                while normalized_diff < -PI {
+                    normalized_diff += 2.0 * PI;
+                }
+
+                let steer_strength = 0.1;
+                self.heading += normalized_diff * steer_strength;
+            }
+            TerrainType::Turbulent => {
+                let scale = 0.02;
+                let nx = self.x as f64 * scale + seed_val + 100.0;
+                let ny = self.y as f64 * scale + seed_val + 100.0;
+                let noise_val = noise.get(nx, ny);
+
+                let angle = (noise_val as f32 - 0.5) * PI * 2.0 * terrain_strength;
+                let diff = angle - self.heading;
+
+                let mut normalized_diff = diff;
+                while normalized_diff > PI {
+                    normalized_diff -= 2.0 * PI;
+                }
+                while normalized_diff < -PI {
+                    normalized_diff += 2.0 * PI;
+                }
+
+                let steer_strength = 0.2;
+                self.heading += normalized_diff * steer_strength;
+            }
+            TerrainType::Mixed => {
+                let smooth_scale = 0.005;
+                let turb_scale = 0.02;
+
+                let nx = self.x as f64 * smooth_scale + seed_val;
+                let ny = self.y as f64 * smooth_scale + seed_val;
+                let smooth_val = noise.get(nx, ny);
+
+                let nx = self.x as f64 * turb_scale + seed_val + 100.0;
+                let ny = self.y as f64 * turb_scale + seed_val + 100.0;
+                let turb_val = noise.get(nx, ny);
+
+                let smooth_angle = (smooth_val as f32 - 0.5) * PI * 2.0 * terrain_strength;
+                let turb_angle = (turb_val as f32 - 0.5) * PI * 2.0 * terrain_strength * 0.5;
+
+                let combined_angle = smooth_angle + turb_angle;
+                let diff = combined_angle - self.heading;
+
+                let mut normalized_diff = diff;
+                while normalized_diff > PI {
+                    normalized_diff -= 2.0 * PI;
+                }
+                while normalized_diff < -PI {
+                    normalized_diff += 2.0 * PI;
+                }
+
+                let steer_strength = 0.15;
+                self.heading += normalized_diff * steer_strength;
+            }
         }
     }
 
@@ -306,5 +432,68 @@ mod tests {
             Attractor::new(300.0, 200.0, 1.0),
         ];
         agent.apply_attractor_forces(&attractors, 1.0, 400, 400);
+    }
+
+    #[test]
+    fn test_apply_wind_force_no_wind() {
+        let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
+        let original_heading = agent.heading;
+        agent.apply_wind_force(None, 1.0);
+        assert_eq!(agent.heading, original_heading);
+    }
+
+    #[test]
+    fn test_apply_wind_force_with_wind() {
+        let mut agent = Agent::new(100.0, 100.0, PI / 2.0, 0);
+        let original_heading = agent.heading;
+        agent.apply_wind_force(Some(Wind::new(1.0, 0.0)), 1.0);
+        assert!(
+            (agent.heading - original_heading).abs() > 0.1,
+            "heading should change with wind force, got {} (original was {})",
+            agent.heading,
+            original_heading
+        );
+    }
+
+    #[test]
+    fn test_apply_terrain_bias_none() {
+        let noise = NoiseWrapper::new(42);
+        let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
+        let original_heading = agent.heading;
+        agent.apply_terrain_bias(TerrainType::None, 1.0, &noise);
+        assert_eq!(agent.heading, original_heading);
+    }
+
+    #[test]
+    fn test_apply_terrain_bias_smooth() {
+        let noise = NoiseWrapper::new(42);
+        let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
+        agent.apply_terrain_bias(TerrainType::Smooth, 1.0, &noise);
+        assert!(
+            agent.heading.is_finite(),
+            "heading should be finite after terrain bias"
+        );
+    }
+
+    #[test]
+    fn test_apply_terrain_bias_turbulent() {
+        let noise = NoiseWrapper::new(42);
+        let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
+        agent.apply_terrain_bias(TerrainType::Turbulent, 1.0, &noise);
+        assert!(
+            agent.heading.is_finite(),
+            "heading should be finite after terrain bias"
+        );
+    }
+
+    #[test]
+    fn test_apply_terrain_bias_mixed() {
+        let noise = NoiseWrapper::new(42);
+        let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
+        agent.apply_terrain_bias(TerrainType::Mixed, 1.0, &noise);
+        assert!(
+            agent.heading.is_finite(),
+            "heading should be finite after terrain bias"
+        );
     }
 }

@@ -4,7 +4,8 @@ use std::str::FromStr;
 
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::simulation::config::{
-    Attractor, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig, SpeciesConfig,
+    Attractor, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig, SpeciesConfig, TerrainType,
+    Wind,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -267,6 +268,34 @@ impl std::str::FromStr for AttractorArg {
             .map_err(|e| format!("Invalid strength: {}", e))?;
 
         Ok(AttractorArg { x, y, strength })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WindArg {
+    pub dx: f32,
+    pub dy: f32,
+}
+
+impl std::str::FromStr for WindArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(',').collect();
+        if parts.len() != 2 {
+            return Err(format!("Wind must be in dx,dy format, got: {}", s));
+        }
+
+        let dx = parts[0]
+            .parse::<f32>()
+            .map_err(|e| format!("Invalid dx: {}", e))?;
+        let dy = parts[1]
+            .parse::<f32>()
+            .map_err(|e| format!("Invalid dy: {}", e))?;
+
+        let wind = Wind::new(dx, dy);
+        wind.validate()?;
+        Ok(WindArg { dx, dy })
     }
 }
 
@@ -770,6 +799,29 @@ pub struct Args {
     pub simd_off: bool,
 
     #[arg(
+        long = "wind",
+        value_name = "DX,DY",
+        help = "Apply constant wind force (dx,dy from -1.0 to 1.0). Example: --wind 0.5,0.0 for rightward wind"
+    )]
+    pub wind: Option<WindArg>,
+
+    #[arg(
+        long = "terrain",
+        value_name = "TYPE",
+        default_value = "none",
+        help = "Terrain type for organic movement patterns: none, smooth, turbulent, mixed"
+    )]
+    pub terrain: String,
+
+    #[arg(
+        long = "terrain-strength",
+        value_name = "FLOAT",
+        default_value = "1.0",
+        help = "Strength of terrain influence (0.1-5.0)"
+    )]
+    pub terrain_strength: f32,
+
+    #[arg(
         long = "export-gif",
         value_name = "PATH",
         help = "Export simulation to GIF file"
@@ -935,6 +987,13 @@ impl Args {
             }];
         }
 
+        config.wind = self.wind.as_ref().map(|w| Wind::new(w.dx, w.dy));
+        config.terrain = self
+            .terrain
+            .parse::<TerrainType>()
+            .unwrap_or(TerrainType::None);
+        config.terrain_strength = self.terrain_strength;
+
         config
     }
 
@@ -968,6 +1027,24 @@ impl Args {
                 "dither_intensity must be between 0.0 and 1.0, got {}",
                 self.dither_intensity
             ));
+        }
+        if self.terrain_strength < 0.1 || self.terrain_strength > 5.0 {
+            return Err(format!(
+                "terrain_strength must be between 0.1 and 5.0, got {}",
+                self.terrain_strength
+            ));
+        }
+        if self.terrain.parse::<TerrainType>().is_err() {
+            return Err(format!(
+                "Invalid terrain type: {}. Must be one of: none, smooth, turbulent, mixed",
+                self.terrain
+            ));
+        }
+        if let Some(ref wind) = self.wind {
+            let w = Wind::new(wind.dx, wind.dy);
+            if let Err(e) = w.validate() {
+                return Err(format!("Invalid wind: {}", e));
+            }
         }
         Ok(())
     }
@@ -1037,6 +1114,9 @@ impl Default for Args {
             separate_species_trails: false,
             species_colors: false,
             simd_off: false,
+            wind: None,
+            terrain: "none".to_string(),
+            terrain_strength: 1.0,
             export_gif: None,
             export_frames: 50,
             export_fps: 30,
@@ -1105,6 +1185,9 @@ mod tests {
             separate_species_trails: false,
             species_colors: false,
             simd_off: false,
+            wind: None,
+            terrain: "none".to_string(),
+            terrain_strength: 1.0,
             export_gif: None,
             export_frames: 50,
             export_fps: 30,
@@ -1426,5 +1509,100 @@ mod tests {
         assert!("image:test.png,100,200,50,50,false,1.5"
             .parse::<ObstacleArg>()
             .is_err());
+    }
+
+    #[test]
+    fn test_wind_arg_parsing() {
+        let arg: WindArg = "0.5,0.5".parse().unwrap();
+        assert_eq!(arg.dx, 0.5);
+        assert_eq!(arg.dy, 0.5);
+
+        let arg: WindArg = "-0.3,0.7".parse().unwrap();
+        assert_eq!(arg.dx, -0.3);
+        assert_eq!(arg.dy, 0.7);
+    }
+
+    #[test]
+    fn test_wind_arg_invalid() {
+        assert!("0.5".parse::<WindArg>().is_err());
+        assert!("0.5,0.5,extra".parse::<WindArg>().is_err());
+        assert!("abc,def".parse::<WindArg>().is_err());
+    }
+
+    #[test]
+    fn test_terrain_type_in_args() {
+        let args = Args {
+            terrain: "smooth".to_string(),
+            ..Default::default()
+        };
+        let config = args.to_sim_config();
+        assert_eq!(config.terrain, TerrainType::Smooth);
+
+        let args = Args {
+            terrain: "turbulent".to_string(),
+            ..Default::default()
+        };
+        let config = args.to_sim_config();
+        assert_eq!(config.terrain, TerrainType::Turbulent);
+
+        let args = Args {
+            terrain: "mixed".to_string(),
+            ..Default::default()
+        };
+        let config = args.to_sim_config();
+        assert_eq!(config.terrain, TerrainType::Mixed);
+
+        let args = Args {
+            terrain: "none".to_string(),
+            ..Default::default()
+        };
+        let config = args.to_sim_config();
+        assert_eq!(config.terrain, TerrainType::None);
+    }
+
+    #[test]
+    fn test_terrain_strength_in_args() {
+        let args = Args {
+            terrain_strength: 2.0,
+            ..Default::default()
+        };
+        let config = args.to_sim_config();
+        assert_eq!(config.terrain_strength, 2.0);
+    }
+
+    #[test]
+    fn test_wind_in_args() {
+        let args = Args {
+            wind: Some(WindArg { dx: 0.5, dy: 0.0 }),
+            ..Default::default()
+        };
+        let config = args.to_sim_config();
+        assert!(config.wind.is_some());
+        assert_eq!(config.wind.unwrap().dx, 0.5);
+        assert_eq!(config.wind.unwrap().dy, 0.0);
+    }
+
+    #[test]
+    fn test_validate_terrain_strength() {
+        let args = Args {
+            terrain_strength: 0.05,
+            ..Default::default()
+        };
+        assert!(args.validate().is_err());
+
+        let args = Args {
+            terrain_strength: 10.0,
+            ..Default::default()
+        };
+        assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_terrain_type() {
+        let args = Args {
+            terrain: "invalid".to_string(),
+            ..Default::default()
+        };
+        assert!(args.validate().is_err());
     }
 }

@@ -4,6 +4,7 @@ pub mod food;
 pub mod trail_map;
 
 use crate::simulation::agent::Agent;
+use crate::simulation::agent::NoiseWrapper;
 use crate::simulation::config::{InitMode, SimConfig};
 use crate::simulation::food::{get_brightness_at, load_image_grayscale};
 use crate::simulation::trail_map::TrailMap;
@@ -86,6 +87,7 @@ pub struct Simulation {
     trail_maps: Vec<TrailMap>,
     rng: Rng,
     trail_history: Option<TrailHistory>,
+    noise: NoiseWrapper,
 }
 
 impl Simulation {
@@ -136,12 +138,16 @@ impl Simulation {
             trail_maps.push(TrailMap::new_with_sigma(width, height, sigma));
         }
 
+        let noise_seed = (seed % u64::MAX as u64) as u32;
+        let noise = NoiseWrapper::new(noise_seed);
+
         Self {
             config,
             agents,
             trail_maps,
             rng,
             trail_history,
+            noise,
         }
     }
 
@@ -493,6 +499,10 @@ impl Simulation {
         let obstacles = &self.config.obstacles;
         let obstacle_masks = &self.config.obstacle_masks;
 
+        let wind = self.config.wind;
+        let terrain = self.config.terrain;
+        let terrain_strength = self.config.terrain_strength * dt;
+
         let separate_trails = self.config.separate_species_trails;
 
         if separate_trails {
@@ -524,6 +534,10 @@ impl Simulation {
                         );
 
                         agent.apply_attractor_forces(attractors, attractor_strength, width, height);
+
+                        agent.apply_wind_force(wind, dt);
+
+                        agent.apply_terrain_bias(terrain, terrain_strength, &self.noise);
 
                         agent.move_forward(
                             effective_step_size,
@@ -572,6 +586,10 @@ impl Simulation {
                     );
 
                     agent.apply_attractor_forces(attractors, attractor_strength, width, height);
+
+                    agent.apply_wind_force(wind, dt);
+
+                    agent.apply_terrain_bias(terrain, terrain_strength, &self.noise);
 
                     agent.move_forward(
                         effective_step_size,
