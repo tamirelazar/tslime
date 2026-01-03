@@ -578,16 +578,19 @@ impl TerminalRenderer {
         };
     }
 
+    #[allow(dead_code)]
     pub fn dither_mode(&self) -> DitherMode {
         self.dither_mode
     }
 
+    #[allow(dead_code)]
     pub fn reset_error_diffusion(&mut self) {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
         }
     }
 
+    #[allow(dead_code)]
     pub fn resize_error_diffusion(&mut self, width: usize, height: usize) {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.resize(width, height);
@@ -768,7 +771,7 @@ impl TerminalRenderer {
             );
 
             let species_color_vec = vec![*species_color];
-            let mut species_buffer = FrameBuffer::from_downsampled(
+            let species_buffer = FrameBuffer::from_downsampled(
                 downsampled.cells(),
                 self.width,
                 self.height,

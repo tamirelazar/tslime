@@ -30,18 +30,13 @@ pub enum InitMode {
     Food,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TerrainType {
+    #[default]
     None,
     Smooth,
     Turbulent,
     Mixed,
-}
-
-impl Default for TerrainType {
-    fn default() -> Self {
-        TerrainType::None
-    }
 }
 
 impl std::str::FromStr for TerrainType {
@@ -269,8 +264,7 @@ impl Obstacle {
                     if idx >= m.pixels.len() {
                         return false;
                     }
-                    let is_obstacle = m.pixels[idx] >= *threshold;
-                    is_obstacle
+                    m.pixels[idx] >= *threshold
                 } else {
                     false
                 }
@@ -1067,12 +1061,14 @@ mod tests {
 
     #[test]
     fn test_sim_config_load_obstacle_masks() {
-        let mut config = SimConfig::default();
-        config.obstacles = vec![Obstacle::Circle {
-            x: 100.0,
-            y: 100.0,
-            radius: 50.0,
-        }];
+        let mut config = SimConfig {
+            obstacles: vec![Obstacle::Circle {
+                x: 100.0,
+                y: 100.0,
+                radius: 50.0,
+            }],
+            ..Default::default()
+        };
         let result = config.load_obstacle_masks();
         assert!(result.is_ok());
         assert_eq!(config.obstacle_masks.len(), 1);

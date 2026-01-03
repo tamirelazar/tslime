@@ -1,19 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum DitherMatrix {
+    #[default]
     Bayer4x4,
     Bayer8x8,
 }
 
-impl Default for DitherMatrix {
-    fn default() -> Self {
-        DitherMatrix::Bayer4x4
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum DitherMode {
+    #[default]
     None,
     Ordered {
         intensity: f32,
@@ -27,12 +23,6 @@ pub enum DitherMode {
         intensity: f32,
         matrix: DitherMatrix,
     },
-}
-
-impl Default for DitherMode {
-    fn default() -> Self {
-        DitherMode::None
-    }
 }
 
 pub const BAYER_4X4: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
@@ -67,6 +57,7 @@ pub fn apply_ordered_dither(
     dithered.clamp(0.0, 1.0)
 }
 
+#[allow(dead_code)]
 pub fn apply_ordered_dither_with_frame(
     x: usize,
     y: usize,
@@ -131,11 +122,13 @@ pub fn local_variance(
 }
 
 #[deprecated(since = "0.1.0", note = "Use apply_ordered_dither instead")]
+#[allow(dead_code)]
 pub fn apply_dither(x: usize, y: usize, brightness: f32, intensity: f32) -> f32 {
     apply_ordered_dither(x, y, brightness, intensity, DitherMatrix::Bayer4x4)
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

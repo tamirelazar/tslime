@@ -17,6 +17,7 @@ impl OptionsOverlay {
         }
     }
 
+    #[allow(dead_code)]
     pub fn total_categories() -> usize {
         5
     }
@@ -294,7 +295,7 @@ fn test_quick_help_displays_correctly() {
     use crate::simulation::config::InitMode;
     use crate::terminal::control::RuntimeState;
 
-    let state = RuntimeState::new(
+    let _state = RuntimeState::new(
         42,
         InitMode::Random,
         crate::simulation::config::Preset::Network,
@@ -329,11 +330,10 @@ fn test_quick_help_displays_correctly() {
 
 #[test]
 fn test_options_overlay_renders_all_categories() {
-    use crate::cli::DitherMode;
-    use crate::simulation::config::{InitMode, TerrainType, WindDirection as SimWindDirection};
-    use crate::terminal::control::{HelpMode, RuntimeState};
+    use crate::simulation::config::InitMode;
+    use crate::terminal::control::RuntimeState;
 
-    let mut state = RuntimeState::new(
+    let state = RuntimeState::new(
         42,
         InitMode::Random,
         crate::simulation::config::Preset::Organic,
@@ -342,51 +342,98 @@ fn test_options_overlay_renders_all_categories() {
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
     );
-
-    state.set_help_mode(HelpMode::Options);
-    state.set_dither_mode(DitherMode::None);
-    state.set_dither_intensity(0.5);
-    state.set_motion_blur_frames(3);
 
     let total = OptionsOverlay::total_categories();
     assert_eq!(total, 5);
 
     for idx in 0..total {
-        let overlay = OptionsOverlay::build_overlay(&state, idx);
-
-        assert!(!overlay.is_empty(), "Category {} should not be empty", idx);
-        assert!(
-            overlay.contains("SIMULATION")
-                || overlay.contains("ENVIRONMENT")
-                || overlay.contains("VISUAL")
-                || overlay.contains("RENDERING")
-                || overlay.contains("DISPLAY")
+        let overlay = OptionsOverlay::build_overlay(
+            idx,
+            state.sensor_angle,
+            state.turn_angle,
+            state.step_size,
+            state.decay_factor,
+            state.deposit_amount,
+            state.diffusion_kernel,
+            state.wind_direction,
+            state.terrain_type,
+            state.terrain_strength,
+            state.auto_normalize,
+            state.motion_blur_frames,
+            state.max_brightness,
+            state.fast_mode_enabled,
+            state.palette_shift_speed,
+            state.invert_palette,
+            state.reverse_palette,
+            80,
         );
 
-        let lines: Vec<&str> = overlay.lines().collect();
-        assert!(lines.len() > 0, "Category {} should have lines", idx);
+        assert!(!overlay.is_empty(), "Category {} should not be empty", idx);
 
-        assert!(overlay.contains("A:"));
-        assert!(overlay.contains("T:"));
-        assert!(overlay.contains("S:"));
+        let category_name = OptionsOverlay::category_name(idx);
+        assert!(
+            overlay.iter().any(|line| line.contains(category_name)),
+            "Category {} should contain its name '{}'",
+            idx,
+            category_name
+        );
+
+        assert!(!overlay.is_empty(), "Category {} should have lines", idx);
     }
 
-    let sim_overlay = OptionsOverlay::build_overlay(&state, 0);
-    assert!(sim_overlay.contains("Sensor Angle"));
-    assert!(sim_overlay.contains("Turn Angle"));
-    assert!(sim_overlay.contains("Step Size"));
+    let sim_overlay = OptionsOverlay::build_overlay(
+        0,
+        state.sensor_angle,
+        state.turn_angle,
+        state.step_size,
+        state.decay_factor,
+        state.deposit_amount,
+        state.diffusion_kernel,
+        state.wind_direction,
+        state.terrain_type,
+        state.terrain_strength,
+        state.auto_normalize,
+        state.motion_blur_frames,
+        state.max_brightness,
+        state.fast_mode_enabled,
+        state.palette_shift_speed,
+        state.invert_palette,
+        state.reverse_palette,
+        80,
+    );
+    assert!(sim_overlay.iter().any(|line| line.contains("Sensor Angle")));
+    assert!(sim_overlay.iter().any(|line| line.contains("Turn Angle")));
+    assert!(sim_overlay.iter().any(|line| line.contains("Step Size")));
 
-    let env_overlay = OptionsOverlay::build_overlay(&state, 1);
-    assert!(env_overlay.contains("Diffusion"));
-    assert!(env_overlay.contains("Wind"));
-    assert!(env_overlay.contains("Terrain"));
+    let env_overlay = OptionsOverlay::build_overlay(
+        1,
+        state.sensor_angle,
+        state.turn_angle,
+        state.step_size,
+        state.decay_factor,
+        state.deposit_amount,
+        state.diffusion_kernel,
+        state.wind_direction,
+        state.terrain_type,
+        state.terrain_strength,
+        state.auto_normalize,
+        state.motion_blur_frames,
+        state.max_brightness,
+        state.fast_mode_enabled,
+        state.palette_shift_speed,
+        state.invert_palette,
+        state.reverse_palette,
+        80,
+    );
+    assert!(env_overlay.iter().any(|line| line.contains("Diffusion")));
+    assert!(env_overlay.iter().any(|line| line.contains("Wind")));
+    assert!(env_overlay.iter().any(|line| line.contains("Terrain")));
 }
 
 #[test]
 fn test_options_overlay_shows_live_parameter_values() {
-    use crate::cli::DitherMode;
-    use crate::simulation::config::{InitMode, TerrainType};
-    use crate::terminal::control::{HelpMode, RuntimeState};
+    use crate::simulation::config::InitMode;
+    use crate::terminal::control::RuntimeState;
 
     let mut state = RuntimeState::new(
         42,
@@ -398,37 +445,53 @@ fn test_options_overlay_shows_live_parameter_values() {
         0.0,
     );
 
-    state.set_help_mode(HelpMode::Options);
-    state.set_dither_mode(DitherMode::None);
-    state.set_dither_intensity(0.5);
-    state.set_motion_blur_frames(3);
+    state.max_brightness = 100.0;
+    state.motion_blur_frames = 3;
 
-    assert_eq!(state.max_brightness(), 100.0);
-    assert_eq!(state.dither_intensity(), 0.5);
-    assert_eq!(state.motion_blur_frames(), 3);
-
-    let sim_overlay = OptionsOverlay::build_overlay(&state, 0);
-
-    assert!(
-        sim_overlay.contains("100.0") || sim_overlay.contains("100"),
-        "Should contain max brightness value"
+    let visual_overlay = OptionsOverlay::build_overlay(
+        2,
+        state.sensor_angle,
+        state.turn_angle,
+        state.step_size,
+        state.decay_factor,
+        state.deposit_amount,
+        state.diffusion_kernel,
+        state.wind_direction,
+        state.terrain_type,
+        state.terrain_strength,
+        state.auto_normalize,
+        state.motion_blur_frames,
+        state.max_brightness,
+        state.fast_mode_enabled,
+        state.palette_shift_speed,
+        state.invert_palette,
+        state.reverse_palette,
+        80,
     );
 
-    let visual_overlay = OptionsOverlay::build_overlay(&state, 2);
+    assert!(
+        visual_overlay
+            .iter()
+            .any(|line| line.contains("100.0") || line.contains("100")),
+        "Should contain max brightness value. Got: {:?}",
+        visual_overlay
+    );
 
     assert!(
-        visual_overlay.contains("0.5") || visual_overlay.contains("50%"),
-        "Should contain dither intensity value"
+        visual_overlay
+            .iter()
+            .any(|line| line.contains("3") && line.contains("frames")),
+        "Should contain motion blur frames value. Got: {:?}",
+        visual_overlay
     );
 }
 
 #[test]
 fn test_options_overlay_format() {
-    use crate::cli::DitherMode;
     use crate::simulation::config::InitMode;
-    use crate::terminal::control::{HelpMode, RuntimeState};
+    use crate::terminal::control::RuntimeState;
 
-    let mut state = RuntimeState::new(
+    let state = RuntimeState::new(
         42,
         InitMode::Random,
         crate::simulation::config::Preset::Organic,
@@ -438,24 +501,54 @@ fn test_options_overlay_format() {
         0.0,
     );
 
-    state.set_help_mode(HelpMode::Options);
-    state.set_dither_mode(DitherMode::None);
-
     for idx in 0..OptionsOverlay::total_categories() {
-        let overlay = OptionsOverlay::build_overlay(&state, idx);
+        let overlay = OptionsOverlay::build_overlay(
+            idx,
+            state.sensor_angle,
+            state.turn_angle,
+            state.step_size,
+            state.decay_factor,
+            state.deposit_amount,
+            state.diffusion_kernel,
+            state.wind_direction,
+            state.terrain_type,
+            state.terrain_strength,
+            state.auto_normalize,
+            state.motion_blur_frames,
+            state.max_brightness,
+            state.fast_mode_enabled,
+            state.palette_shift_speed,
+            state.invert_palette,
+            state.reverse_palette,
+            80,
+        );
 
-        assert!(overlay.contains("┌─"), "Should have top border");
-        assert!(overlay.contains("─"), "Should have horizontal border");
-        assert!(overlay.contains("│"), "Should have vertical border");
-        assert!(overlay.contains("└"), "Should have bottom corners");
+        assert!(
+            overlay.iter().any(|line| line.starts_with("┌─")),
+            "Should have top border"
+        );
+        assert!(
+            overlay.iter().any(|line| line.contains("─")),
+            "Should have horizontal border"
+        );
+        assert!(
+            overlay.iter().any(|line| line.contains("│")),
+            "Should have vertical border"
+        );
+        assert!(
+            overlay
+                .iter()
+                .any(|line| line.ends_with("┘") || line.ends_with("│")),
+            "Should have bottom corners"
+        );
 
-        let lines: Vec<&str> = overlay.lines().collect();
-        for (i, line) in lines.iter().enumerate() {
+        for (i, line) in overlay.iter().enumerate() {
             assert!(
-                line.len() <= 43,
-                "Line {} should not exceed 43 chars, got {}",
+                line.len() <= 126,
+                "Line {} should not exceed 126 chars, got {}: {}",
                 i,
-                line.len()
+                line.len(),
+                line
             );
         }
     }

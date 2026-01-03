@@ -2944,8 +2944,8 @@ mod tests {
     #[test]
     fn test_map_species_brightness_reverse() {
         let base_color = RgbColor { r: 0, g: 0, b: 255 };
-        let dark = map_species_brightness(0.0, base_color, false);
-        let light = map_species_brightness(1.0, base_color, false);
+        let _dark = map_species_brightness(0.0, base_color, false);
+        let _light = map_species_brightness(1.0, base_color, false);
         let dark_rev = map_species_brightness(0.0, base_color, true);
         let light_rev = map_species_brightness(1.0, base_color, true);
         assert_ne!(

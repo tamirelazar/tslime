@@ -4,6 +4,7 @@ use crate::render::palette;
 use image::{Rgb, RgbImage};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[allow(clippy::too_many_arguments)]
 pub fn save_frame_as_png(
     downsampled: &[Cell],
     width: usize,
@@ -79,7 +80,6 @@ fn generate_timestamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::palette::RgbColor;
 
     #[test]
     fn test_save_frame_basic() {

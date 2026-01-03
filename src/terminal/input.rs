@@ -19,6 +19,7 @@ pub struct InputPoller {
 }
 
 impl InputPoller {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             poll_timeout: Duration::from_millis(0),
@@ -30,6 +31,7 @@ impl InputPoller {
         self.poll_timeout = timeout;
     }
 
+    #[allow(dead_code)]
     pub fn poll_keypress(&self) -> io::Result<Option<KeyEvent>> {
         if event::poll(self.poll_timeout)? {
             if let Event::Key(key_event) = event::read()? {
@@ -41,6 +43,7 @@ impl InputPoller {
         Ok(None)
     }
 
+    #[allow(dead_code)]
     pub fn poll_mouse_event(&self) -> io::Result<Option<(MousePosition, MouseEventType)>> {
         if event::poll(Duration::from_millis(1))? {
             if let Event::Mouse(mouse_event) = event::read()? {

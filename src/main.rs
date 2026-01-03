@@ -446,7 +446,7 @@ fn run_simulation(
     let mut hue_offset: f32 = 0.0;
 
     let mut current_auto_normalize = args.auto_normalize;
-    let mut current_max_brightness = args.max_brightness;
+    let mut _current_max_brightness = args.max_brightness;
 
     loop {
         if is_shutdown_requested() {
@@ -527,7 +527,7 @@ fn run_simulation(
             "└─────────────────────────────────────────┘",
         ];
 
-        static QUICK_HELP_LINES: [&str; 12] = [
+        static _QUICK_HELP_LINES: [&str; 12] = [
             "┌─ tslime controls ───────────────────────┐",
             "│ p: Pause/Resume                         │",
             "│ r: Restart                              │",
@@ -865,7 +865,7 @@ fn run_simulation(
                         }
                         ControlAction::AdjustMaxBrightness(delta) => {
                             let at_bound = runtime_state.adjust_max_brightness(delta);
-                            current_max_brightness = runtime_state.max_brightness;
+                            _current_max_brightness = runtime_state.max_brightness;
                             if at_bound {
                                 runtime_state.show_notification(format!(
                                     "Max brightness at {:.1}",
@@ -930,7 +930,7 @@ fn run_simulation(
                             runtime_state.reset_to_defaults();
                             let new_config = SimConfig::from(runtime_state.current_preset);
                             sim.update_config(new_config);
-                            current_max_brightness = runtime_state.max_brightness;
+                            _current_max_brightness = runtime_state.max_brightness;
                             renderer.set_invert_palette(runtime_state.invert_palette);
                             renderer.set_reverse_palette(runtime_state.reverse_palette);
                             runtime_state.show_notification("Reset to defaults".to_string());

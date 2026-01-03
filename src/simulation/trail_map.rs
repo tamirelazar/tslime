@@ -346,6 +346,7 @@ impl TrailMap {
 
         scratch.copy_from_slice(current);
 
+        #[allow(clippy::needless_bool)]
         let has_simd = if cfg!(target_arch = "aarch64") {
             std::arch::is_aarch64_feature_detected!("neon")
         } else if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
@@ -621,6 +622,7 @@ impl TrailMap {
 
         scratch.copy_from_slice(current);
 
+        #[allow(clippy::needless_bool)]
         let has_simd = if cfg!(target_arch = "aarch64") {
             std::arch::is_aarch64_feature_detected!("neon")
         } else if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
@@ -659,12 +661,10 @@ impl TrailMap {
             } else {
                 self.diffuse_simd();
             }
+        } else if use_gaussian {
+            self.diffuse_gaussian();
         } else {
-            if use_gaussian {
-                self.diffuse_gaussian();
-            } else {
-                self.diffuse();
-            }
+            self.diffuse();
         }
     }
 

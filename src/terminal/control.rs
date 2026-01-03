@@ -73,6 +73,7 @@ pub enum WindDirection {
 }
 
 impl WindDirection {
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_wind(&self) -> Option<Wind> {
         match self {
             WindDirection::None => None,
@@ -103,6 +104,7 @@ impl WindDirection {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum ControlAction {
     TogglePause,
     Restart,
@@ -654,13 +656,13 @@ mod tests {
             0.0,
         );
 
-        assert_eq!(state.invert_palette, false);
+        assert!(!state.invert_palette);
 
         state.toggle_invert_palette();
-        assert_eq!(state.invert_palette, true);
+        assert!(state.invert_palette);
 
         state.toggle_invert_palette();
-        assert_eq!(state.invert_palette, false);
+        assert!(!state.invert_palette);
     }
 
     #[test]
@@ -675,13 +677,13 @@ mod tests {
             0.0,
         );
 
-        assert_eq!(state.reverse_palette, false);
+        assert!(!state.reverse_palette);
 
         state.toggle_reverse_palette();
-        assert_eq!(state.reverse_palette, true);
+        assert!(state.reverse_palette);
 
         state.toggle_reverse_palette();
-        assert_eq!(state.reverse_palette, false);
+        assert!(!state.reverse_palette);
     }
 
     #[test]
@@ -704,8 +706,8 @@ mod tests {
         state.reset_to_defaults();
 
         assert_eq!(state.sensor_angle, 22.5);
-        assert_eq!(state.invert_palette, false);
-        assert_eq!(state.reverse_palette, false);
+        assert!(!state.invert_palette);
+        assert!(!state.reverse_palette);
         assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Off);
     }
 

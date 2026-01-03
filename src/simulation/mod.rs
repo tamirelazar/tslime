@@ -140,7 +140,7 @@ impl Simulation {
             trail_maps.push(TrailMap::new_with_sigma(width, height, sigma));
         }
 
-        let noise_seed = (seed % u64::MAX as u64) as u32;
+        let noise_seed = (seed % u64::MAX) as u32;
         let noise = NoiseWrapper::new(noise_seed);
 
         Self {
@@ -153,6 +153,7 @@ impl Simulation {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn init_species(
         rng: &mut Rng,
         width: usize,
@@ -374,6 +375,7 @@ impl Simulation {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn init_from_food(
         rng: &mut Rng,
         width: usize,
