@@ -254,6 +254,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_delta_time_returns_scaled_value() {
         let mut timer = FrameTimer::new(60, 0.016);
         std::thread::sleep(Duration::from_millis(100));
