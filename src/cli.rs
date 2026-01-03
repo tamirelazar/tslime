@@ -211,8 +211,9 @@ impl FromStr for Preset {
             "minimal" => Ok(Preset::Minimal),
             "moss" => Ok(Preset::Moss),
             "cosmic" => Ok(Preset::Cosmic),
+            "fire" => Ok(Preset::Fire),
             _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic",
+                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire",
                 s
             )),
         }

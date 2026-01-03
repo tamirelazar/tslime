@@ -591,6 +591,7 @@ pub fn preset_name(preset: Preset) -> &'static str {
         Preset::Minimal => "Minimal",
         Preset::Moss => "Moss",
         Preset::Cosmic => "Cosmic",
+        Preset::Fire => "Fire",
     }
 }
 
