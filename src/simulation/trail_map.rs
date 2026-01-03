@@ -198,7 +198,7 @@ impl TrailMap {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx")]
     unsafe fn diffuse_avx_impl(current: &[f32], scratch: &mut [f32], width: usize, height: usize) {
-        use std::arch::x86::*;
+        use std::arch::x86_64::*;
 
         let simd_width = 8;
         let limit = width.saturating_sub(simd_width + 1);
@@ -346,21 +346,20 @@ impl TrailMap {
 
         scratch.copy_from_slice(current);
 
-        #[allow(clippy::needless_bool)]
-        let has_simd = if cfg!(target_arch = "aarch64") {
-            std::arch::is_aarch64_feature_detected!("neon")
-        } else if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
-            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-            {
-                std::arch::is_x86_feature_detected!("avx")
-            }
-            #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-            {
-                false
-            }
-        } else {
-            false
-        };
+        #[cfg(target_arch = "aarch64")]
+        let has_simd = std::arch::is_aarch64_feature_detected!("neon");
+
+        #[cfg(target_arch = "aarch64")]
+        let _has_avx = false;
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        let has_avx = std::arch::is_x86_feature_detected!("avx");
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        let has_simd = has_avx;
+
+        #[cfg(not(any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")))]
+        let has_simd = false;
 
         if has_simd {
             #[cfg(target_arch = "aarch64")]
@@ -622,21 +621,20 @@ impl TrailMap {
 
         scratch.copy_from_slice(current);
 
-        #[allow(clippy::needless_bool)]
-        let has_simd = if cfg!(target_arch = "aarch64") {
-            std::arch::is_aarch64_feature_detected!("neon")
-        } else if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
-            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-            {
-                std::arch::is_x86_feature_detected!("avx")
-            }
-            #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-            {
-                false
-            }
-        } else {
-            false
-        };
+        #[cfg(target_arch = "aarch64")]
+        let has_simd = std::arch::is_aarch64_feature_detected!("neon");
+
+        #[cfg(target_arch = "aarch64")]
+        let _has_avx = false;
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        let has_avx = std::arch::is_x86_feature_detected!("avx");
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        let has_simd = has_avx;
+
+        #[cfg(not(any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")))]
+        let has_simd = false;
 
         if has_simd {
             #[cfg(target_arch = "aarch64")]
