@@ -587,6 +587,7 @@ pub fn preset_name(preset: Preset) -> &'static str {
         Preset::Organic => "Organic",
         Preset::Minimal => "Minimal",
         Preset::Moss => "Moss",
+        Preset::Cosmic => "Cosmic",
     }
 }
 
@@ -606,6 +607,7 @@ pub fn palette_name(palette: Palette) -> &'static str {
         Palette::Fungus => "Fungus",
         Palette::Swamp => "Swamp",
         Palette::Moss => "Moss",
+        Palette::Cosmic => "Cosmic",
     }
 }
 

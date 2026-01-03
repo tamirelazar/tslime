@@ -2196,6 +2196,66 @@ const MOSS_RGB: [RgbColor; 11] = [
     },
 ];
 
+const COSMIC_GRADIENT: [u8; 11] = [53, 57, 98, 129, 165, 201, 207, 213, 219, 225, 231];
+
+const COSMIC_RGB: [RgbColor; 11] = [
+    RgbColor {
+        r: 20,
+        g: 10,
+        b: 40,
+    },
+    RgbColor {
+        r: 30,
+        g: 15,
+        b: 60,
+    },
+    RgbColor {
+        r: 50,
+        g: 20,
+        b: 90,
+    },
+    RgbColor {
+        r: 70,
+        g: 30,
+        b: 120,
+    },
+    RgbColor {
+        r: 90,
+        g: 50,
+        b: 150,
+    },
+    RgbColor {
+        r: 120,
+        g: 80,
+        b: 180,
+    },
+    RgbColor {
+        r: 150,
+        g: 110,
+        b: 200,
+    },
+    RgbColor {
+        r: 180,
+        g: 140,
+        b: 220,
+    },
+    RgbColor {
+        r: 200,
+        g: 170,
+        b: 235,
+    },
+    RgbColor {
+        r: 220,
+        g: 200,
+        b: 245,
+    },
+    RgbColor {
+        r: 240,
+        g: 230,
+        b: 255,
+    },
+];
+
 fn get_256_gradient(palette: Palette) -> &'static [u8; 11] {
     match palette {
         Palette::Organic => &ORGANIC_GRADIENT,
@@ -2212,6 +2272,7 @@ fn get_256_gradient(palette: Palette) -> &'static [u8; 11] {
         Palette::Fungus => &FUNGUS_GRADIENT,
         Palette::Swamp => &SWAMP_GRADIENT,
         Palette::Moss => &MOSS_GRADIENT,
+        Palette::Cosmic => &COSMIC_GRADIENT,
     }
 }
 
@@ -2231,6 +2292,7 @@ fn get_rgb_gradient(palette: Palette) -> &'static [RgbColor; 11] {
         Palette::Fungus => &FUNGUS_RGB,
         Palette::Swamp => &SWAMP_RGB,
         Palette::Moss => &MOSS_RGB,
+        Palette::Cosmic => &COSMIC_RGB,
     }
 }
 
