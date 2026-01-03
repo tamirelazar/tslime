@@ -248,7 +248,72 @@ tslime -S --fps 15
 - **Live/Default mode**: Press `q` or `Ctrl+C` to exit
 
 ---
+ 
+## ⌨️ Runtime Controls
 
+In live or screensaver mode, you can adjust simulation parameters in real-time using keyboard shortcuts:
+
+### Essential Controls
+
+| Key | Action |
+|------|----------|
+| `p` | Pause/Resume simulation |
+| `r` | Restart with same seed |
+| `+` / `-` | Adjust time scale (0.5x - 4.0x) |
+| `c` | Cycle to next palette (Shift+C for reverse) |
+| `d` | Toggle dithering |
+| `h` | Toggle help overlay (quick → options → none) |
+| `q` / `Esc` | Quit |
+
+### Simulation Parameters
+
+| Key | Action | Range |
+|------|----------|--------|
+| `A` / `a` | Adjust sensor angle | 5° - 90° (±1°) |
+| `T` / `t` | Adjust turn angle | 5° - 90° (±1°) |
+| `S` / `s` | Adjust step size | 0.5 - 5.0 (±0.5) |
+| `E` / `e` | Adjust decay factor | 0.5 - 0.99 (±0.02) |
+| `I` / `i` | Adjust deposit amount | 1.0 - 20.0 (±1.0) |
+| `1`-`6` | Switch to preset | Network, Exploratory, Tendrils, Organic, Minimal, Moss |
+
+### Environment & Physics
+
+| Key | Action |
+|------|----------|
+| `K` | Cycle diffusion kernel | 3×3 mean ↔ Gaussian (5×5) |
+| `W` | Cycle wind direction | None → N → NE → E → SE → S → SW → W → NW → None |
+| `Y` / `y` | Adjust terrain strength | 0.1 - 5.0 (±0.5) |
+| `U` | Cycle terrain type | None → Smooth → Turbulent → Mixed |
+
+### Visual Effects
+
+| Key | Action |
+|------|----------|
+| `B` | Toggle auto-normalize brightness | On/Off |
+| `V` | Cycle motion blur | 0 → 3 → 5 → 7 → 0 frames |
+| `N` / `n` | Adjust max brightness | 1.0 - 100.0 (±5.0) |
+
+### Rendering Options
+
+| Key | Action |
+|------|----------|
+| `F` | Toggle fast mode | Skip every 2nd frame (performance) |
+| `O` | Cycle palette shift speed | Off → Slow (5°/s) → Medium (15°/s) → Fast (45°/s) |
+| `X` | Toggle invert palette | Complementary colors (180° hue rotation) |
+| `Z` | Toggle reverse palette | Swap gradient start/end |
+| `G` / `g` | Save frame to PNG | Timestamped filename |
+
+### Display & Navigation
+
+| Key | Action |
+|------|----------|
+| `Tab` | Cycle options category | Sim → Env → Vis → Ren → Dis (Shift+Tab for reverse) |
+| `0` | Reset to defaults | Restore preset settings and clear runtime state |
+
+**Note:** Press `h` to toggle help overlay showing current parameter values. Notifications appear for 2-3 seconds when values reach min/max bounds or actions complete.
+
+---
+ 
 ## ⚙️ Configuration Reference
 
 ### Simulation Parameters

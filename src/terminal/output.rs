@@ -614,6 +614,14 @@ impl TerminalRenderer {
         self.charset = charset;
     }
 
+    pub fn set_invert_palette(&mut self, invert: bool) {
+        self.invert_palette = invert;
+    }
+
+    pub fn set_reverse_palette(&mut self, reverse: bool) {
+        self.reverse_palette = reverse;
+    }
+
     pub fn set_species_colors(&mut self, enabled: bool, colors: Vec<RgbColor>) {
         self.species_colors_enabled = enabled;
         self.species_rgb_colors = colors;
@@ -664,6 +672,7 @@ impl TerminalRenderer {
         help_lines: Option<(&[T], usize, usize)>,
         status_line: Option<(String, usize)>,
         paused_line: Option<(String, usize)>,
+        notification_line: Option<(String, usize)>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -715,6 +724,17 @@ impl TerminalRenderer {
             );
         }
 
+        if let Some((text, x)) = notification_line {
+            let text_chars: Vec<char> = text.chars().collect();
+            buffer.draw_text_overlay(
+                &[&text_chars.iter().collect::<String>()],
+                x,
+                self.height.saturating_sub(4),
+                15,
+                Some(22),
+            );
+        }
+
         execute!(self.stdout, &buffer)
     }
 
@@ -728,6 +748,7 @@ impl TerminalRenderer {
         help_lines: Option<(&[T], usize, usize)>,
         status_line: Option<(String, usize)>,
         paused_line: Option<(String, usize)>,
+        notification_line: Option<(String, usize)>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -794,6 +815,17 @@ impl TerminalRenderer {
                 2,
                 15,
                 Some(196),
+            );
+        }
+
+        if let Some((text, x)) = notification_line {
+            let text_chars: Vec<char> = text.chars().collect();
+            buffer.draw_text_overlay(
+                &[&text_chars.iter().collect::<String>()],
+                x,
+                self.height.saturating_sub(4),
+                15,
+                Some(22),
             );
         }
 

@@ -1,7 +1,6 @@
 use crate::cli::Palette;
 use crate::render::dither::{DitherMatrix, DitherMode};
-use crate::simulation::config::InitMode;
-use crate::simulation::config::Preset;
+use crate::simulation::config::{DiffusionKernel, InitMode, Preset, TerrainType, Wind};
 use crossterm::event::KeyEvent;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -34,6 +33,75 @@ const ALL_PALETTES: [Palette; 14] = [
     Palette::Moss,
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HelpMode {
+    None,
+    Quick,
+    Options,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaletteShiftSpeed {
+    Off,
+    Slow,
+    Medium,
+    Fast,
+}
+
+impl PaletteShiftSpeed {
+    pub fn degrees_per_second(&self) -> f32 {
+        match self {
+            PaletteShiftSpeed::Off => 0.0,
+            PaletteShiftSpeed::Slow => 5.0,
+            PaletteShiftSpeed::Medium => 15.0,
+            PaletteShiftSpeed::Fast => 45.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindDirection {
+    None,
+    North,
+    Northeast,
+    East,
+    Southeast,
+    South,
+    Southwest,
+    West,
+    Northwest,
+}
+
+impl WindDirection {
+    pub fn to_wind(&self) -> Option<Wind> {
+        match self {
+            WindDirection::None => None,
+            WindDirection::North => Some(Wind::new(0.0, -1.0)),
+            WindDirection::Northeast => Some(Wind::new(0.7, -0.7)),
+            WindDirection::East => Some(Wind::new(1.0, 0.0)),
+            WindDirection::Southeast => Some(Wind::new(0.7, 0.7)),
+            WindDirection::South => Some(Wind::new(0.0, 1.0)),
+            WindDirection::Southwest => Some(Wind::new(-0.7, 0.7)),
+            WindDirection::West => Some(Wind::new(-1.0, 0.0)),
+            WindDirection::Northwest => Some(Wind::new(-0.7, -0.7)),
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            WindDirection::None => "None",
+            WindDirection::North => "N",
+            WindDirection::Northeast => "NE",
+            WindDirection::East => "E",
+            WindDirection::Southeast => "SE",
+            WindDirection::South => "S",
+            WindDirection::Southwest => "SW",
+            WindDirection::West => "W",
+            WindDirection::Northwest => "NW",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ControlAction {
     TogglePause,
@@ -47,6 +115,26 @@ pub enum ControlAction {
     CycleDitherMode,
     AdjustDitherIntensity(f32),
     Quit,
+    AdjustSensorAngle(f32),
+    AdjustTurnAngle(f32),
+    AdjustStepSize(f32),
+    AdjustDecay(f32),
+    AdjustDeposit(f32),
+    CycleDiffusionKernel,
+    CycleWindDirection,
+    AdjustTerrainStrength(f32),
+    CycleTerrainType,
+    ToggleAutoNormalize,
+    CycleMotionBlur,
+    AdjustMaxBrightness(f32),
+    SaveFrameToPng,
+    ToggleFastMode,
+    CyclePaletteShiftSpeed,
+    ToggleInvertPalette,
+    ToggleReversePalette,
+    ResetToDefaults,
+    ShowOptionsOverlay,
+    CycleOptionsCategory,
     None,
 }
 
@@ -54,6 +142,8 @@ pub enum ControlAction {
 pub struct RuntimeState {
     pub is_paused: bool,
     pub show_help: bool,
+    pub help_mode: HelpMode,
+    pub options_category_idx: usize,
     pub time_scale: f32,
     pub current_preset: Preset,
     pub palette_index: usize,
@@ -63,6 +153,23 @@ pub struct RuntimeState {
     pub last_dither_mode: Option<DitherMode>,
     pub mouse_mode: MouseInteractionMode,
     pub mouse_timeout: f32,
+    pub sensor_angle: f32,
+    pub turn_angle: f32,
+    pub step_size: f32,
+    pub decay_factor: f32,
+    pub deposit_amount: f32,
+    pub diffusion_kernel: DiffusionKernel,
+    pub wind_direction: WindDirection,
+    pub terrain_type: TerrainType,
+    pub terrain_strength: f32,
+    pub auto_normalize: bool,
+    pub motion_blur_frames: usize,
+    pub max_brightness: f32,
+    pub fast_mode_enabled: bool,
+    pub palette_shift_speed: PaletteShiftSpeed,
+    pub invert_palette: bool,
+    pub reverse_palette: bool,
+    pub notification: Option<(String, std::time::Instant)>,
 }
 
 impl RuntimeState {
@@ -78,6 +185,12 @@ impl RuntimeState {
         Self {
             is_paused: false,
             show_help,
+            help_mode: if show_help {
+                HelpMode::Quick
+            } else {
+                HelpMode::None
+            },
+            options_category_idx: 0,
             time_scale: 1.0,
             current_preset: initial_preset,
             palette_index: initial_palette_index,
@@ -87,6 +200,23 @@ impl RuntimeState {
             last_dither_mode: None,
             mouse_mode,
             mouse_timeout,
+            sensor_angle: 22.5,
+            turn_angle: 45.0,
+            step_size: 1.0,
+            decay_factor: 0.5,
+            deposit_amount: 5.0,
+            diffusion_kernel: DiffusionKernel::Mean3x3,
+            wind_direction: WindDirection::None,
+            terrain_type: TerrainType::None,
+            terrain_strength: 1.0,
+            auto_normalize: false,
+            motion_blur_frames: 0,
+            max_brightness: 20.0,
+            fast_mode_enabled: false,
+            palette_shift_speed: PaletteShiftSpeed::Off,
+            invert_palette: false,
+            reverse_palette: false,
+            notification: None,
         }
     }
 
@@ -95,7 +225,24 @@ impl RuntimeState {
     }
 
     pub fn toggle_help(&mut self) {
-        self.show_help = !self.show_help;
+        self.help_mode = match self.help_mode {
+            HelpMode::None => HelpMode::Quick,
+            HelpMode::Quick => HelpMode::Options,
+            HelpMode::Options => HelpMode::None,
+        };
+        self.show_help = self.help_mode != HelpMode::None;
+    }
+
+    pub fn cycle_options_category(&mut self, forward: bool) {
+        if forward {
+            self.options_category_idx = (self.options_category_idx + 1) % 5;
+        } else {
+            self.options_category_idx = if self.options_category_idx == 0 {
+                4
+            } else {
+                self.options_category_idx - 1
+            };
+        }
     }
 
     pub fn set_preset(&mut self, preset: Preset) {
@@ -188,6 +335,155 @@ impl RuntimeState {
             _ => self.dither_mode,
         };
     }
+
+    pub fn adjust_sensor_angle(&mut self, delta: f32) -> bool {
+        let new_value = (self.sensor_angle + delta).clamp(5.0, 90.0);
+        let at_bound = (new_value - self.sensor_angle).abs() < 0.01;
+        self.sensor_angle = new_value;
+        at_bound
+    }
+
+    pub fn adjust_turn_angle(&mut self, delta: f32) -> bool {
+        let new_value = (self.turn_angle + delta).clamp(5.0, 90.0);
+        let at_bound = (new_value - self.turn_angle).abs() < 0.01;
+        self.turn_angle = new_value;
+        at_bound
+    }
+
+    pub fn adjust_step_size(&mut self, delta: f32) -> bool {
+        let new_value = (self.step_size + delta).clamp(0.5, 5.0);
+        let at_bound = (new_value - self.step_size).abs() < 0.01;
+        self.step_size = new_value;
+        at_bound
+    }
+
+    pub fn adjust_decay(&mut self, delta: f32) -> bool {
+        let new_value = (self.decay_factor + delta).clamp(0.5, 0.99);
+        let at_bound = (new_value - self.decay_factor).abs() < 0.001;
+        self.decay_factor = new_value;
+        at_bound
+    }
+
+    pub fn adjust_deposit(&mut self, delta: f32) -> bool {
+        let new_value = (self.deposit_amount + delta).clamp(1.0, 20.0);
+        let at_bound = (new_value - self.deposit_amount).abs() < 0.01;
+        self.deposit_amount = new_value;
+        at_bound
+    }
+
+    pub fn cycle_diffusion_kernel(&mut self) {
+        self.diffusion_kernel = match self.diffusion_kernel {
+            DiffusionKernel::Mean3x3 => DiffusionKernel::Gaussian,
+            DiffusionKernel::Gaussian => DiffusionKernel::Mean3x3,
+        };
+    }
+
+    pub fn cycle_wind_direction(&mut self) {
+        self.wind_direction = match self.wind_direction {
+            WindDirection::None => WindDirection::North,
+            WindDirection::North => WindDirection::Northeast,
+            WindDirection::Northeast => WindDirection::East,
+            WindDirection::East => WindDirection::Southeast,
+            WindDirection::Southeast => WindDirection::South,
+            WindDirection::South => WindDirection::Southwest,
+            WindDirection::Southwest => WindDirection::West,
+            WindDirection::West => WindDirection::Northwest,
+            WindDirection::Northwest => WindDirection::None,
+        };
+    }
+
+    pub fn adjust_terrain_strength(&mut self, delta: f32) -> bool {
+        let new_value = (self.terrain_strength + delta).clamp(0.1, 5.0);
+        let at_bound = (new_value - self.terrain_strength).abs() < 0.01;
+        self.terrain_strength = new_value;
+        at_bound
+    }
+
+    pub fn cycle_terrain_type(&mut self) {
+        self.terrain_type = match self.terrain_type {
+            TerrainType::None => TerrainType::Smooth,
+            TerrainType::Smooth => TerrainType::Turbulent,
+            TerrainType::Turbulent => TerrainType::Mixed,
+            TerrainType::Mixed => TerrainType::None,
+        };
+    }
+
+    pub fn toggle_auto_normalize(&mut self) {
+        self.auto_normalize = !self.auto_normalize;
+    }
+
+    pub fn cycle_motion_blur(&mut self) {
+        self.motion_blur_frames = match self.motion_blur_frames {
+            0 => 3,
+            3 => 5,
+            5 => 7,
+            7 => 0,
+            _ => 0,
+        };
+    }
+
+    pub fn adjust_max_brightness(&mut self, delta: f32) -> bool {
+        let new_value = (self.max_brightness + delta).clamp(1.0, 100.0);
+        let at_bound = (new_value - self.max_brightness).abs() < 0.01;
+        self.max_brightness = new_value;
+        at_bound
+    }
+
+    pub fn toggle_fast_mode(&mut self) {
+        self.fast_mode_enabled = !self.fast_mode_enabled;
+    }
+
+    pub fn cycle_palette_shift_speed(&mut self) {
+        self.palette_shift_speed = match self.palette_shift_speed {
+            PaletteShiftSpeed::Off => PaletteShiftSpeed::Slow,
+            PaletteShiftSpeed::Slow => PaletteShiftSpeed::Medium,
+            PaletteShiftSpeed::Medium => PaletteShiftSpeed::Fast,
+            PaletteShiftSpeed::Fast => PaletteShiftSpeed::Off,
+        };
+    }
+
+    pub fn toggle_invert_palette(&mut self) {
+        self.invert_palette = !self.invert_palette;
+    }
+
+    pub fn toggle_reverse_palette(&mut self) {
+        self.reverse_palette = !self.reverse_palette;
+    }
+
+    pub fn reset_to_defaults(&mut self) {
+        self.sensor_angle = 22.5;
+        self.turn_angle = 45.0;
+        self.step_size = 1.0;
+        self.decay_factor = 0.5;
+        self.deposit_amount = 5.0;
+        self.diffusion_kernel = DiffusionKernel::Mean3x3;
+        self.wind_direction = WindDirection::None;
+        self.terrain_type = TerrainType::None;
+        self.terrain_strength = 1.0;
+        self.auto_normalize = false;
+        self.motion_blur_frames = 0;
+        self.max_brightness = 20.0;
+        self.fast_mode_enabled = false;
+        self.palette_shift_speed = PaletteShiftSpeed::Off;
+        self.invert_palette = false;
+        self.reverse_palette = false;
+    }
+
+    pub fn show_notification(&mut self, message: String) {
+        self.notification = Some((message, std::time::Instant::now()));
+    }
+
+    pub fn update_notifications(&mut self) {
+        if let Some((_, time)) = self.notification {
+            if time.elapsed().as_secs() >= 3 {
+                self.notification = None;
+            }
+        }
+    }
+
+    pub fn current_notification(&self) -> Option<&String> {
+        self.notification.as_ref().map(|(msg, _)| msg)
+    }
 }
 
 pub fn num_palettes() -> usize {
@@ -218,6 +514,67 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('[') | KeyCode::Char('{') => ControlAction::AdjustDitherIntensity(-0.1),
         KeyCode::Char(']') | KeyCode::Char('}') => ControlAction::AdjustDitherIntensity(0.1),
         KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => ControlAction::Quit,
+        KeyCode::Tab => ControlAction::CycleOptionsCategory,
+        KeyCode::Char('A') | KeyCode::Char('a') => {
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                ControlAction::AdjustSensorAngle(-1.0)
+            } else {
+                ControlAction::AdjustSensorAngle(1.0)
+            }
+        }
+        KeyCode::Char('T') | KeyCode::Char('t') => {
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                ControlAction::AdjustTurnAngle(-1.0)
+            } else {
+                ControlAction::AdjustTurnAngle(1.0)
+            }
+        }
+        KeyCode::Char('S') | KeyCode::Char('s') => {
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                ControlAction::AdjustStepSize(-0.5)
+            } else {
+                ControlAction::AdjustStepSize(0.5)
+            }
+        }
+        KeyCode::Char('E') | KeyCode::Char('e') => {
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                ControlAction::AdjustDecay(-0.01)
+            } else {
+                ControlAction::AdjustDecay(0.01)
+            }
+        }
+        KeyCode::Char('I') | KeyCode::Char('i') => {
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                ControlAction::AdjustDeposit(-1.0)
+            } else {
+                ControlAction::AdjustDeposit(1.0)
+            }
+        }
+        KeyCode::Char('K') | KeyCode::Char('k') => ControlAction::CycleDiffusionKernel,
+        KeyCode::Char('W') | KeyCode::Char('w') => ControlAction::CycleWindDirection,
+        KeyCode::Char('Y') | KeyCode::Char('y') => {
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                ControlAction::AdjustTerrainStrength(-0.5)
+            } else {
+                ControlAction::AdjustTerrainStrength(0.5)
+            }
+        }
+        KeyCode::Char('U') | KeyCode::Char('u') => ControlAction::CycleTerrainType,
+        KeyCode::Char('B') | KeyCode::Char('b') => ControlAction::ToggleAutoNormalize,
+        KeyCode::Char('V') | KeyCode::Char('v') => ControlAction::CycleMotionBlur,
+        KeyCode::Char('N') | KeyCode::Char('n') => {
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                ControlAction::AdjustMaxBrightness(-5.0)
+            } else {
+                ControlAction::AdjustMaxBrightness(5.0)
+            }
+        }
+        KeyCode::Char('G') | KeyCode::Char('g') => ControlAction::SaveFrameToPng,
+        KeyCode::Char('F') | KeyCode::Char('f') => ControlAction::ToggleFastMode,
+        KeyCode::Char('O') | KeyCode::Char('o') => ControlAction::CyclePaletteShiftSpeed,
+        KeyCode::Char('X') | KeyCode::Char('x') => ControlAction::ToggleInvertPalette,
+        KeyCode::Char('Z') | KeyCode::Char('z') => ControlAction::ToggleReversePalette,
+        KeyCode::Char('0') => ControlAction::ResetToDefaults,
         _ => ControlAction::None,
     }
 }
@@ -249,5 +606,251 @@ pub fn palette_name(palette: Palette) -> &'static str {
         Palette::Fungus => "Fungus",
         Palette::Swamp => "Swamp",
         Palette::Moss => "Moss",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_palette_shift_speed_cycling() {
+        let mut state = RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            crate::simulation::config::Preset::Network,
+            0,
+            false,
+            MouseInteractionMode::Disabled,
+            0.0,
+        );
+
+        assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Off);
+
+        state.cycle_palette_shift_speed();
+        assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Slow);
+
+        state.cycle_palette_shift_speed();
+        assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Medium);
+
+        state.cycle_palette_shift_speed();
+        assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Fast);
+
+        state.cycle_palette_shift_speed();
+        assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Off);
+    }
+
+    #[test]
+    fn test_invert_palette_toggle() {
+        let mut state = RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            crate::simulation::config::Preset::Network,
+            0,
+            false,
+            MouseInteractionMode::Disabled,
+            0.0,
+        );
+
+        assert_eq!(state.invert_palette, false);
+
+        state.toggle_invert_palette();
+        assert_eq!(state.invert_palette, true);
+
+        state.toggle_invert_palette();
+        assert_eq!(state.invert_palette, false);
+    }
+
+    #[test]
+    fn test_reverse_palette_toggle() {
+        let mut state = RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            crate::simulation::config::Preset::Network,
+            0,
+            false,
+            MouseInteractionMode::Disabled,
+            0.0,
+        );
+
+        assert_eq!(state.reverse_palette, false);
+
+        state.toggle_reverse_palette();
+        assert_eq!(state.reverse_palette, true);
+
+        state.toggle_reverse_palette();
+        assert_eq!(state.reverse_palette, false);
+    }
+
+    #[test]
+    fn test_reset_to_defaults() {
+        let mut state = RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            crate::simulation::config::Preset::Network,
+            0,
+            false,
+            MouseInteractionMode::Disabled,
+            0.0,
+        );
+
+        state.sensor_angle = 90.0;
+        state.invert_palette = true;
+        state.reverse_palette = true;
+        state.palette_shift_speed = PaletteShiftSpeed::Fast;
+
+        state.reset_to_defaults();
+
+        assert_eq!(state.sensor_angle, 22.5);
+        assert_eq!(state.invert_palette, false);
+        assert_eq!(state.reverse_palette, false);
+        assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Off);
+    }
+
+    #[test]
+    fn test_help_mode_cycling() {
+        let mut state = RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            crate::simulation::config::Preset::Network,
+            0,
+            false,
+            MouseInteractionMode::Disabled,
+            0.0,
+        );
+
+        assert_eq!(state.help_mode, HelpMode::None);
+
+        state.toggle_help();
+        assert_eq!(state.help_mode, HelpMode::Quick);
+
+        state.toggle_help();
+        assert_eq!(state.help_mode, HelpMode::Options);
+
+        state.toggle_help();
+        assert_eq!(state.help_mode, HelpMode::None);
+    }
+
+    #[test]
+    fn test_options_category_cycling() {
+        let mut state = RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            crate::simulation::config::Preset::Network,
+            0,
+            false,
+            MouseInteractionMode::Disabled,
+            0.0,
+        );
+
+        assert_eq!(state.options_category_idx, 0);
+
+        state.cycle_options_category(true);
+        assert_eq!(state.options_category_idx, 1);
+
+        state.cycle_options_category(true);
+        assert_eq!(state.options_category_idx, 2);
+
+        state.cycle_options_category(true);
+        assert_eq!(state.options_category_idx, 3);
+
+        state.cycle_options_category(true);
+        assert_eq!(state.options_category_idx, 4);
+
+        state.cycle_options_category(true);
+        assert_eq!(state.options_category_idx, 0);
+
+        state.cycle_options_category(false);
+        assert_eq!(state.options_category_idx, 4);
+    }
+
+    #[test]
+    fn test_wind_direction_cycling() {
+        let mut state = RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            crate::simulation::config::Preset::Network,
+            0,
+            false,
+            MouseInteractionMode::Disabled,
+            0.0,
+        );
+
+        assert_eq!(state.wind_direction, WindDirection::None);
+
+        state.cycle_wind_direction();
+        assert_eq!(state.wind_direction, WindDirection::North);
+
+        state.cycle_wind_direction();
+        assert_eq!(state.wind_direction, WindDirection::Northeast);
+
+        state.cycle_wind_direction();
+        assert_eq!(state.wind_direction, WindDirection::East);
+
+        state.cycle_wind_direction();
+        assert_eq!(state.wind_direction, WindDirection::Southeast);
+
+        state.cycle_wind_direction();
+        assert_eq!(state.wind_direction, WindDirection::South);
+
+        state.cycle_wind_direction();
+        assert_eq!(state.wind_direction, WindDirection::Southwest);
+
+        state.cycle_wind_direction();
+        assert_eq!(state.wind_direction, WindDirection::West);
+
+        state.cycle_wind_direction();
+        assert_eq!(state.wind_direction, WindDirection::Northwest);
+
+        state.cycle_wind_direction();
+        assert_eq!(state.wind_direction, WindDirection::None);
+    }
+
+    #[test]
+    fn test_wind_direction_names() {
+        assert_eq!(WindDirection::None.name(), "None");
+        assert_eq!(WindDirection::North.name(), "N");
+        assert_eq!(WindDirection::Northeast.name(), "NE");
+        assert_eq!(WindDirection::East.name(), "E");
+        assert_eq!(WindDirection::Southeast.name(), "SE");
+        assert_eq!(WindDirection::South.name(), "S");
+        assert_eq!(WindDirection::Southwest.name(), "SW");
+        assert_eq!(WindDirection::West.name(), "W");
+        assert_eq!(WindDirection::Northwest.name(), "NW");
+    }
+
+    #[test]
+    fn test_palette_shift_speed_degrees() {
+        assert_eq!(PaletteShiftSpeed::Off.degrees_per_second(), 0.0);
+        assert_eq!(PaletteShiftSpeed::Slow.degrees_per_second(), 5.0);
+        assert_eq!(PaletteShiftSpeed::Medium.degrees_per_second(), 15.0);
+        assert_eq!(PaletteShiftSpeed::Fast.degrees_per_second(), 45.0);
+    }
+
+    #[test]
+    fn test_motion_blur_cycling() {
+        let mut state = RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            crate::simulation::config::Preset::Network,
+            0,
+            false,
+            MouseInteractionMode::Disabled,
+            0.0,
+        );
+
+        assert_eq!(state.motion_blur_frames, 0);
+
+        state.cycle_motion_blur();
+        assert_eq!(state.motion_blur_frames, 3);
+
+        state.cycle_motion_blur();
+        assert_eq!(state.motion_blur_frames, 5);
+
+        state.cycle_motion_blur();
+        assert_eq!(state.motion_blur_frames, 7);
+
+        state.cycle_motion_blur();
+        assert_eq!(state.motion_blur_frames, 0);
     }
 }

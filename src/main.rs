@@ -14,11 +14,13 @@ use render::adaptive_brightness::AdaptiveBrightness;
 use render::charset::Charset;
 use render::dither::DitherMode;
 use render::downsample::downsample;
+use render::options_overlay::OptionsOverlay;
 use render::palette::{hex_to_rgb, RgbColor};
-use simulation::config::{Preset, SimConfig};
+use simulation::config::{DiffusionKernel, Preset, SimConfig, TerrainType};
 use simulation::Simulation;
 use terminal::control::{
-    handle_key_event, num_palettes, ControlAction, MouseInteractionMode, RuntimeState,
+    handle_key_event, num_palettes, ControlAction, HelpMode, MouseInteractionMode,
+    PaletteShiftSpeed, RuntimeState,
 };
 use terminal::input::{InputPoller, MouseEventType};
 use terminal::output::FrameBuffer;
@@ -443,6 +445,9 @@ fn run_simulation(
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
     let mut hue_offset: f32 = 0.0;
 
+    let mut current_auto_normalize = args.auto_normalize;
+    let mut current_max_brightness = args.max_brightness;
+
     loop {
         if is_shutdown_requested() {
             break;
@@ -488,7 +493,8 @@ fn run_simulation(
 
         let current_palette = runtime_state.current_palette(&palette_list);
 
-        hue_offset += args.palette_shift * dt;
+        let shift_degrees = runtime_state.palette_shift_speed.degrees_per_second();
+        hue_offset += shift_degrees * dt;
         hue_offset %= 360.0;
         renderer.set_hue_shift(hue_offset);
 
@@ -521,52 +527,91 @@ fn run_simulation(
             "└─────────────────────────────────────────┘",
         ];
 
-        let help_lines = if runtime_state.show_help {
-            let attractor_lines = render::overlay::OverlayRenderer::build_help_with_attractors(
-                &HELP_LINES,
-                &sim.config().attractors,
-            );
-            let obstacle_lines = render::overlay::OverlayRenderer::build_help_with_obstacles(
-                &[],
-                &sim.config().obstacles,
-            );
-            let mouse_attractor_lines =
-                render::overlay::OverlayRenderer::build_help_with_mouse_attractors(
-                    &[],
-                    &sim.config().mouse_attractors,
-                    sim.width(),
-                    sim.height(),
+        static QUICK_HELP_LINES: [&str; 12] = [
+            "┌─ tslime controls ───────────────────────┐",
+            "│ p: Pause/Resume                         │",
+            "│ r: Restart                              │",
+            "│ +/-: Time scale                         │",
+            "│ c: Cycle palette                        │",
+            "│ h: Toggle help (Tab for options)        │",
+            "│ q: Quit                                 │",
+            "│                                        │",
+            "│ SIMULATION (A,T,S,E,I)                  │",
+            "│ ENVIRONMENT (K,W,Y,U)                   │",
+            "│ VISUAL (B,V,N)                          │",
+            "└─────────────────────────────────────────┘",
+        ];
+
+        let help_lines = match runtime_state.help_mode {
+            HelpMode::None => None,
+            HelpMode::Quick => {
+                let attractor_lines = render::overlay::OverlayRenderer::build_help_with_attractors(
+                    &HELP_LINES,
+                    &sim.config().attractors,
                 );
+                let obstacle_lines = render::overlay::OverlayRenderer::build_help_with_obstacles(
+                    &[],
+                    &sim.config().obstacles,
+                );
+                let mouse_attractor_lines =
+                    render::overlay::OverlayRenderer::build_help_with_mouse_attractors(
+                        &[],
+                        &sim.config().mouse_attractors,
+                        sim.width(),
+                        sim.height(),
+                    );
 
-            let mut result = if obstacle_lines.is_empty() {
-                attractor_lines
-            } else {
-                let mut combined = attractor_lines;
-                combined.extend(obstacle_lines);
-                combined
-            };
+                let mut result = if obstacle_lines.is_empty() {
+                    attractor_lines
+                } else {
+                    let mut combined = attractor_lines;
+                    combined.extend(obstacle_lines);
+                    combined
+                };
 
-            if !mouse_attractor_lines.is_empty() {
-                result.extend(mouse_attractor_lines);
+                if !mouse_attractor_lines.is_empty() {
+                    result.extend(mouse_attractor_lines);
+                }
+
+                if !mouse_help.is_empty() {
+                    result.push(String::new());
+                    result.push("┌─ Mouse Interaction ─────────────────────┐".to_string());
+                    result.push(mouse_help);
+                    result.push("└─────────────────────────────────────────┘".to_string());
+                }
+
+                Some(result)
             }
-
-            if !mouse_help.is_empty() {
-                result.push(String::new());
-                result.push("┌─ Mouse Interaction ─────────────────────┐".to_string());
-                result.push(mouse_help);
-                result.push("└─────────────────────────────────────────┘".to_string());
+            HelpMode::Options => {
+                let options_overlay = OptionsOverlay::build_overlay(
+                    runtime_state.options_category_idx,
+                    runtime_state.sensor_angle,
+                    runtime_state.turn_angle,
+                    runtime_state.step_size,
+                    runtime_state.decay_factor,
+                    runtime_state.deposit_amount,
+                    runtime_state.diffusion_kernel,
+                    runtime_state.wind_direction,
+                    runtime_state.terrain_type,
+                    runtime_state.terrain_strength,
+                    runtime_state.auto_normalize,
+                    runtime_state.motion_blur_frames,
+                    runtime_state.max_brightness,
+                    runtime_state.fast_mode_enabled,
+                    runtime_state.palette_shift_speed,
+                    runtime_state.invert_palette,
+                    runtime_state.reverse_palette,
+                    term_width as usize,
+                );
+                Some(options_overlay)
             }
-
-            Some(result)
-        } else {
-            None
         };
 
         let status_line = render::overlay::OverlayRenderer::build_status_line(
             runtime_state.is_paused,
             runtime_state.current_preset,
             runtime_state.time_scale,
-            current_palette,
+            current_palette.clone(),
             runtime_state.dither_mode,
             term_width as usize,
         );
@@ -586,6 +631,16 @@ fn run_simulation(
             None
         };
 
+        let notification_data = runtime_state.current_notification().map(|msg| {
+            let notification_text = format!("[ {} ]", msg);
+            let notification_x = if notification_text.len() < term_width as usize {
+                (term_width as usize - notification_text.len()) / 2
+            } else {
+                0
+            };
+            (notification_text, notification_x)
+        });
+
         if max_brightness > 0.0 {
             if args.species_colors && sim.config().separate_species_trails {
                 let species_trail_maps = sim.trail_maps_for_species_colors();
@@ -603,6 +658,7 @@ fn run_simulation(
                     help_lines.as_ref().map(|v| (v.as_slice(), 2, 2)),
                     status_data,
                     paused_data,
+                    notification_data,
                 )?;
             } else {
                 renderer.render_with_overlay(
@@ -611,6 +667,7 @@ fn run_simulation(
                     help_lines.as_ref().map(|v| (v.as_slice(), 2, 2)),
                     status_data,
                     paused_data,
+                    notification_data,
                 )?;
             }
         }
@@ -677,6 +734,214 @@ fn run_simulation(
                         }
                         ControlAction::ToggleHelp => {
                             runtime_state.toggle_help();
+                        }
+                        ControlAction::CycleOptionsCategory => {
+                            runtime_state.cycle_options_category(true);
+                        }
+                        ControlAction::AdjustSensorAngle(delta) => {
+                            let at_bound = runtime_state.adjust_sensor_angle(delta);
+                            let mut new_config = sim.config().clone();
+                            new_config.sensor_angle = runtime_state.sensor_angle;
+                            sim.update_config(new_config);
+                            if at_bound {
+                                runtime_state.show_notification(format!(
+                                    "Sensor angle at {}°",
+                                    runtime_state.sensor_angle
+                                ));
+                            }
+                        }
+                        ControlAction::AdjustTurnAngle(delta) => {
+                            let at_bound = runtime_state.adjust_turn_angle(delta);
+                            let mut new_config = sim.config().clone();
+                            new_config.rotation_angle = runtime_state.turn_angle;
+                            sim.update_config(new_config);
+                            if at_bound {
+                                runtime_state.show_notification(format!(
+                                    "Turn angle at {}°",
+                                    runtime_state.turn_angle
+                                ));
+                            }
+                        }
+                        ControlAction::AdjustStepSize(delta) => {
+                            let at_bound = runtime_state.adjust_step_size(delta);
+                            let mut new_config = sim.config().clone();
+                            new_config.step_size = runtime_state.step_size;
+                            sim.update_config(new_config);
+                            if at_bound {
+                                runtime_state.show_notification(format!(
+                                    "Step size at {:.1}",
+                                    runtime_state.step_size
+                                ));
+                            }
+                        }
+                        ControlAction::AdjustDecay(delta) => {
+                            let at_bound = runtime_state.adjust_decay(delta);
+                            let mut new_config = sim.config().clone();
+                            new_config.decay_factor = runtime_state.decay_factor;
+                            sim.update_config(new_config);
+                            if at_bound {
+                                runtime_state.show_notification(format!(
+                                    "Decay factor at {:.3}",
+                                    runtime_state.decay_factor
+                                ));
+                            }
+                        }
+                        ControlAction::AdjustDeposit(delta) => {
+                            let at_bound = runtime_state.adjust_deposit(delta);
+                            let mut new_config = sim.config().clone();
+                            new_config.deposit_amount = runtime_state.deposit_amount;
+                            sim.update_config(new_config);
+                            if at_bound {
+                                runtime_state.show_notification(format!(
+                                    "Deposit amount at {:.1}",
+                                    runtime_state.deposit_amount
+                                ));
+                            }
+                        }
+                        ControlAction::CycleDiffusionKernel => {
+                            runtime_state.cycle_diffusion_kernel();
+                            let mut new_config = sim.config().clone();
+                            new_config.diffusion_kernel = runtime_state.diffusion_kernel;
+                            sim.update_config(new_config);
+                            runtime_state.show_notification(format!(
+                                "Diffusion kernel: {}",
+                                match runtime_state.diffusion_kernel {
+                                    DiffusionKernel::Mean3x3 => "Mean3x3",
+                                    DiffusionKernel::Gaussian => "Gaussian",
+                                }
+                            ));
+                        }
+                        ControlAction::CycleWindDirection => {
+                            runtime_state.cycle_wind_direction();
+                            let mut new_config = sim.config().clone();
+                            new_config.wind = runtime_state.wind_direction.to_wind();
+                            sim.update_config(new_config);
+                            runtime_state.show_notification(format!(
+                                "Wind: {}",
+                                runtime_state.wind_direction.name()
+                            ));
+                        }
+                        ControlAction::AdjustTerrainStrength(delta) => {
+                            let at_bound = runtime_state.adjust_terrain_strength(delta);
+                            let mut new_config = sim.config().clone();
+                            new_config.terrain_strength = runtime_state.terrain_strength;
+                            sim.update_config(new_config);
+                            if at_bound {
+                                runtime_state.show_notification(format!(
+                                    "Terrain strength at {:.1}",
+                                    runtime_state.terrain_strength
+                                ));
+                            }
+                        }
+                        ControlAction::CycleTerrainType => {
+                            runtime_state.cycle_terrain_type();
+                            let mut new_config = sim.config().clone();
+                            new_config.terrain = runtime_state.terrain_type;
+                            sim.update_config(new_config);
+                            runtime_state.show_notification(format!(
+                                "Terrain: {}",
+                                match runtime_state.terrain_type {
+                                    TerrainType::None => "None",
+                                    TerrainType::Smooth => "Smooth",
+                                    TerrainType::Turbulent => "Turbulent",
+                                    TerrainType::Mixed => "Mixed",
+                                }
+                            ));
+                        }
+                        ControlAction::ToggleAutoNormalize => {
+                            runtime_state.toggle_auto_normalize();
+                            current_auto_normalize = runtime_state.auto_normalize;
+                            adaptive_brightness = AdaptiveBrightness::new(
+                                args.normalize_window,
+                                current_auto_normalize,
+                            );
+                        }
+                        ControlAction::CycleMotionBlur => {
+                            runtime_state.cycle_motion_blur();
+                            runtime_state.show_notification(format!(
+                                "Motion blur: {} frames",
+                                runtime_state.motion_blur_frames
+                            ));
+                        }
+                        ControlAction::AdjustMaxBrightness(delta) => {
+                            let at_bound = runtime_state.adjust_max_brightness(delta);
+                            current_max_brightness = runtime_state.max_brightness;
+                            if at_bound {
+                                runtime_state.show_notification(format!(
+                                    "Max brightness at {:.1}",
+                                    runtime_state.max_brightness
+                                ));
+                            }
+                        }
+                        ControlAction::SaveFrameToPng => {
+                            use crate::export::png::save_frame_as_png;
+
+                            match save_frame_as_png(
+                                downsampled.cells(),
+                                term_width as usize,
+                                term_height as usize,
+                                current_palette.clone(),
+                                runtime_state.reverse_palette,
+                                runtime_state.invert_palette,
+                                hue_offset,
+                                max_brightness,
+                            ) {
+                                Ok(filename) => {
+                                    runtime_state
+                                        .show_notification(format!("Frame saved: {}", filename));
+                                }
+                                Err(e) => {
+                                    runtime_state.show_notification(format!("Error: {}", e));
+                                }
+                            }
+                        }
+                        ControlAction::ToggleFastMode => {
+                            runtime_state.toggle_fast_mode();
+                            runtime_state.show_notification(format!(
+                                "Fast mode: {}",
+                                if runtime_state.fast_mode_enabled {
+                                    "On"
+                                } else {
+                                    "Off"
+                                }
+                            ));
+                        }
+                        ControlAction::CyclePaletteShiftSpeed => {
+                            runtime_state.cycle_palette_shift_speed();
+                            runtime_state.show_notification(format!(
+                                "Palette shift: {}",
+                                match runtime_state.palette_shift_speed {
+                                    PaletteShiftSpeed::Off => "Off",
+                                    PaletteShiftSpeed::Slow => "Slow (5°/s)",
+                                    PaletteShiftSpeed::Medium => "Medium (15°/s)",
+                                    PaletteShiftSpeed::Fast => "Fast (45°/s)",
+                                }
+                            ));
+                        }
+                        ControlAction::ToggleInvertPalette => {
+                            runtime_state.toggle_invert_palette();
+                            renderer.set_invert_palette(runtime_state.invert_palette);
+                        }
+                        ControlAction::ToggleReversePalette => {
+                            runtime_state.toggle_reverse_palette();
+                            renderer.set_reverse_palette(runtime_state.reverse_palette);
+                        }
+                        ControlAction::ResetToDefaults => {
+                            runtime_state.reset_to_defaults();
+                            let new_config = SimConfig::from(runtime_state.current_preset);
+                            sim.update_config(new_config);
+                            current_max_brightness = runtime_state.max_brightness;
+                            renderer.set_invert_palette(runtime_state.invert_palette);
+                            renderer.set_reverse_palette(runtime_state.reverse_palette);
+                            runtime_state.show_notification("Reset to defaults".to_string());
+                        }
+                        ControlAction::ShowOptionsOverlay => {
+                            if runtime_state.help_mode == HelpMode::Options {
+                                runtime_state.toggle_help();
+                            } else {
+                                runtime_state.help_mode = HelpMode::Options;
+                                runtime_state.show_help = true;
+                            }
                         }
                         ControlAction::Quit => {
                             should_exit = true;
@@ -780,6 +1045,7 @@ fn run_simulation(
             break;
         }
 
+        runtime_state.update_notifications();
         timer.tick();
     }
 
