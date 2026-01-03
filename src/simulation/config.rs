@@ -132,6 +132,31 @@ impl Attractor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MouseAttractor {
+    pub x: f32,
+    pub y: f32,
+    pub strength: f32,
+    pub created_at: std::time::Instant,
+    pub timeout_seconds: f32,
+}
+
+impl MouseAttractor {
+    pub fn new(x: f32, y: f32, strength: f32, timeout_seconds: f32) -> Self {
+        Self {
+            x,
+            y,
+            strength,
+            created_at: std::time::Instant::now(),
+            timeout_seconds,
+        }
+    }
+
+    pub fn is_expired(&self) -> bool {
+        self.created_at.elapsed().as_secs_f32() >= self.timeout_seconds
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObstacleMask {
     pub pixels: Vec<f32>,
@@ -370,6 +395,8 @@ pub struct SimConfig {
     pub max_brightness: f32,
     pub attractors: Vec<Attractor>,
     pub attractor_strength: f32,
+    pub mouse_attractors: Vec<MouseAttractor>,
+    pub mouse_timeout: f32,
     pub species_configs: Vec<SpeciesConfig>,
     pub separate_species_trails: bool,
     pub use_simd: bool,
@@ -397,6 +424,8 @@ impl Default for SimConfig {
             max_brightness: 20.0,
             attractors: Vec::new(),
             attractor_strength: 1.0,
+            mouse_attractors: Vec::new(),
+            mouse_timeout: 3.0,
             species_configs: vec![SpeciesConfig::default()],
             separate_species_trails: false,
             use_simd: true,
@@ -527,6 +556,23 @@ impl SimConfig {
         }
         Ok(())
     }
+
+    pub fn add_mouse_attractor(&mut self, x: f32, y: f32, strength: f32) {
+        self.mouse_attractors
+            .push(MouseAttractor::new(x, y, strength, self.mouse_timeout));
+    }
+
+    pub fn remove_expired_mouse_attractors(&mut self) {
+        self.mouse_attractors.retain(|ma| !ma.is_expired());
+    }
+
+    pub fn effective_attractors(&self) -> Vec<Attractor> {
+        let mut result = self.attractors.clone();
+        for ma in &self.mouse_attractors {
+            result.push(Attractor::new(ma.x, ma.y, ma.strength));
+        }
+        result
+    }
 }
 
 impl From<Preset> for SimConfig {
@@ -544,6 +590,8 @@ impl From<Preset> for SimConfig {
                 max_brightness: 20.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 50_000,
@@ -576,6 +624,8 @@ impl From<Preset> for SimConfig {
                 max_brightness: 12.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 30_000,
@@ -608,6 +658,8 @@ impl From<Preset> for SimConfig {
                 max_brightness: 16.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 40_000,
@@ -640,6 +692,8 @@ impl From<Preset> for SimConfig {
                 max_brightness: 20.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig::default()],
                 separate_species_trails: false,
                 use_simd: true,
@@ -664,6 +718,8 @@ impl From<Preset> for SimConfig {
                 max_brightness: 15.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 15_000,
@@ -696,6 +752,8 @@ impl From<Preset> for SimConfig {
                 max_brightness: 18.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 35_000,

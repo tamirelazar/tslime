@@ -4,6 +4,19 @@ use crate::simulation::config::InitMode;
 use crate::simulation::config::Preset;
 use crossterm::event::KeyEvent;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MousePosition {
+    pub x: usize,
+    pub y: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MouseInteractionMode {
+    Disabled,
+    Attract,
+    Repel,
+}
+
 const ALL_PALETTES: [Palette; 14] = [
     Palette::Organic,
     Palette::Heat,
@@ -48,6 +61,8 @@ pub struct RuntimeState {
     pub original_init_mode: InitMode,
     pub dither_mode: DitherMode,
     pub last_dither_mode: Option<DitherMode>,
+    pub mouse_mode: MouseInteractionMode,
+    pub mouse_timeout: f32,
 }
 
 impl RuntimeState {
@@ -57,6 +72,8 @@ impl RuntimeState {
         initial_preset: Preset,
         initial_palette_index: usize,
         show_help: bool,
+        mouse_mode: MouseInteractionMode,
+        mouse_timeout: f32,
     ) -> Self {
         Self {
             is_paused: false,
@@ -68,6 +85,8 @@ impl RuntimeState {
             original_init_mode: init_mode,
             dither_mode: DitherMode::None,
             last_dither_mode: None,
+            mouse_mode,
+            mouse_timeout,
         }
     }
 

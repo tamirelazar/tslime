@@ -1,6 +1,7 @@
 use crate::cli::Palette;
 use crate::render::dither::DitherMode;
 use crate::simulation::config::Attractor;
+use crate::simulation::config::MouseAttractor;
 use crate::simulation::config::Obstacle;
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
@@ -131,6 +132,47 @@ impl OverlayRenderer {
                         ));
                     }
                 }
+            }
+
+            lines.push("└─────────────────────────────────────────┘".to_string());
+        }
+
+        lines
+    }
+
+    pub fn build_help_with_mouse_attractors(
+        base_help: &[&str],
+        mouse_attractors: &[MouseAttractor],
+        _sim_width: usize,
+        _sim_height: usize,
+    ) -> Vec<String> {
+        let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
+
+        if !mouse_attractors.is_empty() {
+            lines.push(String::new());
+            lines.push("┌─ Mouse Attractors ──────────────────────┐".to_string());
+
+            for (i, ma) in mouse_attractors.iter().enumerate() {
+                let kind = if ma.strength > 0.0 {
+                    "attract"
+                } else {
+                    "repel"
+                };
+                let remaining = ma.timeout_seconds - ma.created_at.elapsed().as_secs_f32();
+                let remaining_str = if remaining > 0.0 {
+                    format!("{:.1}s", remaining)
+                } else {
+                    "expired".to_string()
+                };
+                lines.push(format!(
+                    "│{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1} {:>6} │",
+                    i + 1,
+                    ma.x as i32,
+                    ma.y as i32,
+                    kind,
+                    ma.strength.abs(),
+                    remaining_str,
+                ));
             }
 
             lines.push("└─────────────────────────────────────────┘".to_string());

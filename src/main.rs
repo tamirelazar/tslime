@@ -1,4 +1,5 @@
 use clap::Parser;
+use crossterm::event::Event;
 use std::io::{self, Write};
 
 mod cli;
@@ -16,8 +17,10 @@ use render::downsample::downsample;
 use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{Preset, SimConfig};
 use simulation::Simulation;
-use terminal::control::{handle_key_event, num_palettes, ControlAction, RuntimeState};
-use terminal::input::InputPoller;
+use terminal::control::{
+    handle_key_event, num_palettes, ControlAction, MouseInteractionMode, RuntimeState,
+};
+use terminal::input::{InputPoller, MouseEventType};
 use terminal::output::FrameBuffer;
 use terminal::screen::TerminalScreen;
 use terminal::signal::is_shutdown_requested;
@@ -349,6 +352,23 @@ fn run_simulation(
     let mut screen = TerminalScreen::new();
     screen.setup()?;
 
+    let mouse_mode = if args.mouse_attract {
+        MouseInteractionMode::Attract
+    } else if args.mouse_repel {
+        MouseInteractionMode::Repel
+    } else {
+        MouseInteractionMode::Disabled
+    };
+
+    if mouse_mode != MouseInteractionMode::Disabled {
+        if let Err(e) = terminal::enable_mouse_tracking() {
+            eprintln!(
+                "Warning: Failed to enable mouse tracking: {}. Mouse interaction disabled.",
+                e
+            );
+        }
+    }
+
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
     let mut renderer = crate::terminal::output::TerminalRenderer::new(
@@ -407,6 +427,8 @@ fn run_simulation(
         initial_preset,
         initial_palette_index,
         show_help_by_default,
+        mouse_mode,
+        args.mouse_timeout,
     );
     runtime_state.dither_mode = dither_mode;
     renderer.set_dither_mode(dither_mode);
@@ -470,6 +492,20 @@ fn run_simulation(
         hue_offset %= 360.0;
         renderer.set_hue_shift(hue_offset);
 
+        let mouse_help = if runtime_state.mouse_mode != MouseInteractionMode::Disabled {
+            let mode_str = match runtime_state.mouse_mode {
+                MouseInteractionMode::Attract => "attract",
+                MouseInteractionMode::Repel => "repel",
+                MouseInteractionMode::Disabled => "",
+            };
+            format!(
+                "│ Click: {} agents ({:.1}s timeout)         │",
+                mode_str, runtime_state.mouse_timeout
+            )
+        } else {
+            String::new()
+        };
+
         static HELP_LINES: [&str; 12] = [
             "┌─ tslime controls ───────────────────────┐",
             "│ p: Pause/Resume                         │",
@@ -494,13 +530,34 @@ fn run_simulation(
                 &[],
                 &sim.config().obstacles,
             );
-            if obstacle_lines.is_empty() {
-                Some(attractor_lines)
+            let mouse_attractor_lines =
+                render::overlay::OverlayRenderer::build_help_with_mouse_attractors(
+                    &[],
+                    &sim.config().mouse_attractors,
+                    sim.width(),
+                    sim.height(),
+                );
+
+            let mut result = if obstacle_lines.is_empty() {
+                attractor_lines
             } else {
                 let mut combined = attractor_lines;
                 combined.extend(obstacle_lines);
-                Some(combined)
+                combined
+            };
+
+            if !mouse_attractor_lines.is_empty() {
+                result.extend(mouse_attractor_lines);
             }
+
+            if !mouse_help.is_empty() {
+                result.push(String::new());
+                result.push("┌─ Mouse Interaction ─────────────────────┐".to_string());
+                result.push(mouse_help);
+                result.push("└─────────────────────────────────────────┘".to_string());
+            }
+
+            Some(result)
         } else {
             None
         };
@@ -560,66 +617,151 @@ fn run_simulation(
 
         timer.end_render();
 
-        if let Some(key_event) = input_poller.poll_keypress()? {
-            if InputPoller::is_exit_key(&key_event) {
-                break;
-            }
+        let mut should_exit = false;
+        let events = input_poller.drain_all_events()?;
+        for event in events {
+            match event {
+                Event::Key(key_event) => {
+                    if InputPoller::is_exit_key(&key_event) {
+                        should_exit = true;
+                        break;
+                    }
 
-            let action = handle_key_event(&key_event);
-            match action {
-                ControlAction::TogglePause => {
-                    runtime_state.toggle_pause();
+                    let action = handle_key_event(&key_event);
+                    match action {
+                        ControlAction::TogglePause => {
+                            runtime_state.toggle_pause();
+                        }
+                        ControlAction::Restart => {
+                            sim.reset(
+                                runtime_state.original_seed,
+                                runtime_state.original_init_mode,
+                            );
+                        }
+                        ControlAction::SetPreset(preset) => {
+                            runtime_state.set_preset(preset);
+                            let mut new_config = SimConfig::from(preset);
+                            new_config.attractors = sim.config().attractors.clone();
+                            new_config.attractor_strength = sim.config().attractor_strength;
+                            new_config.food_image_path = sim.config().food_image_path.clone();
+                            new_config.food_image_invert = sim.config().food_image_invert;
+                            new_config.obstacles = sim.config().obstacles.clone();
+                            new_config.obstacle_masks = sim.config().obstacle_masks.clone();
+                            sim.update_config(new_config);
+                        }
+                        ControlAction::AdjustTimeScale(delta) => {
+                            runtime_state.adjust_time_scale(delta);
+                            timer.set_time_scale(runtime_state.time_scale);
+                        }
+                        ControlAction::CyclePalette => {
+                            runtime_state.cycle_palette(num_palettes());
+                            let new_palette = runtime_state.current_palette(&palette_list);
+                            renderer.set_palette(new_palette);
+                        }
+                        ControlAction::CyclePaletteReverse => {
+                            runtime_state.cycle_palette_reverse(num_palettes());
+                            let new_palette = runtime_state.current_palette(&palette_list);
+                            renderer.set_palette(new_palette);
+                        }
+                        ControlAction::ToggleDither => {
+                            runtime_state.toggle_dither();
+                            renderer.set_dither_mode(runtime_state.dither_mode);
+                        }
+                        ControlAction::CycleDitherMode => {
+                            runtime_state.cycle_dither_mode();
+                            renderer.set_dither_mode(runtime_state.dither_mode);
+                        }
+                        ControlAction::AdjustDitherIntensity(delta) => {
+                            runtime_state.adjust_dither_intensity(delta);
+                            renderer.set_dither_mode(runtime_state.dither_mode);
+                        }
+                        ControlAction::ToggleHelp => {
+                            runtime_state.toggle_help();
+                        }
+                        ControlAction::Quit => {
+                            should_exit = true;
+                            break;
+                        }
+                        ControlAction::None => {}
+                    }
                 }
-                ControlAction::Restart => {
-                    sim.reset(
-                        runtime_state.original_seed,
-                        runtime_state.original_init_mode,
-                    );
+                Event::Mouse(mouse_event) => {
+                    if runtime_state.mouse_mode == MouseInteractionMode::Disabled {
+                        continue;
+                    }
+
+                    let event_type =
+                        if matches!(mouse_event.kind, crossterm::event::MouseEventKind::Down(_)) {
+                            MouseEventType::Down
+                        } else if matches!(
+                            mouse_event.kind,
+                            crossterm::event::MouseEventKind::Drag(_)
+                        ) {
+                            MouseEventType::Drag
+                        } else if matches!(
+                            mouse_event.kind,
+                            crossterm::event::MouseEventKind::Moved
+                        ) {
+                            MouseEventType::Moved
+                        } else {
+                            continue;
+                        };
+
+                    if term_width == 0 || term_height == 0 {
+                        continue;
+                    }
+
+                    let term_x = mouse_event.column as usize - 1;
+                    let term_y = mouse_event.row as usize - 1;
+
+                    let sim_x = (term_x as f32 / term_width as f32) * sim.width() as f32;
+                    let sim_y = (term_y as f32 / term_height as f32) * sim.height() as f32;
+
+                    let strength = match runtime_state.mouse_mode {
+                        MouseInteractionMode::Attract => 2.0,
+                        MouseInteractionMode::Repel => -2.0,
+                        MouseInteractionMode::Disabled => 0.0,
+                    };
+
+                    match event_type {
+                        MouseEventType::Down => {
+                            sim.add_mouse_attractor(sim_x, sim_y, strength);
+                            if args.verbose {
+                                eprintln!(
+                                    "[Mouse] {} at ({:.0}, {:.0})",
+                                    match runtime_state.mouse_mode {
+                                        MouseInteractionMode::Attract => "Attractor",
+                                        MouseInteractionMode::Repel => "Repeller",
+                                        _ => "Effect",
+                                    },
+                                    sim_x,
+                                    sim_y
+                                );
+                            }
+                        }
+                        MouseEventType::Drag => {
+                            sim.add_mouse_attractor(sim_x, sim_y, strength);
+                            if args.verbose {
+                                eprintln!(
+                                    "[Mouse] Drag {} at ({:.0}, {:.0})",
+                                    match runtime_state.mouse_mode {
+                                        MouseInteractionMode::Attract => "attract",
+                                        MouseInteractionMode::Repel => "repel",
+                                        _ => "effect",
+                                    },
+                                    sim_x,
+                                    sim_y
+                                );
+                            }
+                        }
+                        MouseEventType::Moved => {
+                            if args.verbose {
+                                eprintln!("[Mouse] Move at ({:.0}, {:.0})", sim_x, sim_y);
+                            }
+                        }
+                    }
                 }
-                ControlAction::SetPreset(preset) => {
-                    runtime_state.set_preset(preset);
-                    let mut new_config = SimConfig::from(preset);
-                    new_config.attractors = sim.config().attractors.clone();
-                    new_config.attractor_strength = sim.config().attractor_strength;
-                    new_config.food_image_path = sim.config().food_image_path.clone();
-                    new_config.food_image_invert = sim.config().food_image_invert;
-                    new_config.obstacles = sim.config().obstacles.clone();
-                    new_config.obstacle_masks = sim.config().obstacle_masks.clone();
-                    sim.update_config(new_config);
-                }
-                ControlAction::AdjustTimeScale(delta) => {
-                    runtime_state.adjust_time_scale(delta);
-                    timer.set_time_scale(runtime_state.time_scale);
-                }
-                ControlAction::CyclePalette => {
-                    runtime_state.cycle_palette(num_palettes());
-                    let new_palette = runtime_state.current_palette(&palette_list);
-                    renderer.set_palette(new_palette);
-                }
-                ControlAction::CyclePaletteReverse => {
-                    runtime_state.cycle_palette_reverse(num_palettes());
-                    let new_palette = runtime_state.current_palette(&palette_list);
-                    renderer.set_palette(new_palette);
-                }
-                ControlAction::ToggleDither => {
-                    runtime_state.toggle_dither();
-                    renderer.set_dither_mode(runtime_state.dither_mode);
-                }
-                ControlAction::CycleDitherMode => {
-                    runtime_state.cycle_dither_mode();
-                    renderer.set_dither_mode(runtime_state.dither_mode);
-                }
-                ControlAction::AdjustDitherIntensity(delta) => {
-                    runtime_state.adjust_dither_intensity(delta);
-                    renderer.set_dither_mode(runtime_state.dither_mode);
-                }
-                ControlAction::ToggleHelp => {
-                    runtime_state.toggle_help();
-                }
-                ControlAction::Quit => {
-                    break;
-                }
-                ControlAction::None => {}
+                _ => {}
             }
         }
 
@@ -634,7 +776,15 @@ fn run_simulation(
             );
         }
 
+        if should_exit {
+            break;
+        }
+
         timer.tick();
+    }
+
+    if runtime_state.mouse_mode != MouseInteractionMode::Disabled {
+        let _ = terminal::disable_mouse_tracking();
     }
 
     Ok(())

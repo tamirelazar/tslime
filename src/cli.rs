@@ -851,6 +851,26 @@ pub struct Args {
         help = "GIF playback speed (frames per second)"
     )]
     pub export_fps: usize,
+
+    #[arg(
+        long = "mouse-attract",
+        help = "Enable mouse clicks to create temporary attractors at cursor position"
+    )]
+    pub mouse_attract: bool,
+
+    #[arg(
+        long = "mouse-repel",
+        help = "Enable mouse clicks to create temporary repellers at cursor position"
+    )]
+    pub mouse_repel: bool,
+
+    #[arg(
+        long = "mouse-timeout",
+        value_name = "FLOAT",
+        default_value = "3.0",
+        help = "Time in seconds before mouse-created attractors/repellers expire (0.1-30.0)"
+    )]
+    pub mouse_timeout: f32,
 }
 
 impl Args {
@@ -1061,6 +1081,18 @@ impl Args {
                 self.food_scale
             ));
         }
+        if self.mouse_attract && self.mouse_repel {
+            return Err(
+                "Cannot specify both --mouse-attract and --mouse-repel. Choose one mode."
+                    .to_string(),
+            );
+        }
+        if self.mouse_timeout < 0.1 || self.mouse_timeout > 30.0 {
+            return Err(format!(
+                "mouse_timeout must be between 0.1 and 30.0, got {}",
+                self.mouse_timeout
+            ));
+        }
         Ok(())
     }
 
@@ -1137,6 +1169,9 @@ impl Default for Args {
             export_frames: 50,
             export_fps: 30,
             obstacle: Vec::new(),
+            mouse_attract: false,
+            mouse_repel: false,
+            mouse_timeout: 3.0,
         }
     }
 }
@@ -1209,6 +1244,9 @@ mod tests {
             export_frames: 50,
             export_fps: 30,
             obstacle: Vec::new(),
+            mouse_attract: false,
+            mouse_repel: false,
+            mouse_timeout: 3.0,
         };
         assert_eq!(args.mode(), Mode::Default);
     }

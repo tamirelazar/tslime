@@ -503,7 +503,7 @@ impl Simulation {
         let effective_step_size = self.config.step_size * dt;
         let effective_decay = self.config.decay_factor.powf(dt);
 
-        let attractors = &self.config.attractors;
+        let attractors = self.config.effective_attractors();
         let attractor_strength = self.config.attractor_strength * dt;
 
         let obstacles = &self.config.obstacles;
@@ -543,7 +543,12 @@ impl Simulation {
                             &mut self.rng,
                         );
 
-                        agent.apply_attractor_forces(attractors, attractor_strength, width, height);
+                        agent.apply_attractor_forces(
+                            &attractors,
+                            attractor_strength,
+                            width,
+                            height,
+                        );
 
                         agent.apply_wind_force(wind, dt);
 
@@ -595,7 +600,7 @@ impl Simulation {
                         &mut self.rng,
                     );
 
-                    agent.apply_attractor_forces(attractors, attractor_strength, width, height);
+                    agent.apply_attractor_forces(&attractors, attractor_strength, width, height);
 
                     agent.apply_wind_force(wind, dt);
 
@@ -627,6 +632,8 @@ impl Simulation {
             );
             trail_map.decay(effective_decay);
         }
+
+        self.config.remove_expired_mouse_attractors();
 
         if let Some(ref mut history) = self.trail_history {
             if self.config.separate_species_trails {
@@ -699,6 +706,10 @@ impl Simulation {
                 self.config.diffusion_sigma,
             ));
         }
+    }
+
+    pub fn add_mouse_attractor(&mut self, x: f32, y: f32, strength: f32) {
+        self.config.add_mouse_attractor(x, y, strength);
     }
 }
 

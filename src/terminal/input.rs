@@ -1,6 +1,18 @@
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, MouseEventKind};
 use std::io;
 use std::time::Duration;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MousePosition {
+    pub x: usize,
+    pub y: usize,
+}
+
+pub enum MouseEventType {
+    Down,
+    Drag,
+    Moved,
+}
 
 pub struct InputPoller {
     poll_timeout: Duration,
@@ -27,6 +39,39 @@ impl InputPoller {
             }
         }
         Ok(None)
+    }
+
+    pub fn poll_mouse_event(&self) -> io::Result<Option<(MousePosition, MouseEventType)>> {
+        if event::poll(Duration::from_millis(1))? {
+            if let Event::Mouse(mouse_event) = event::read()? {
+                let event_type = if matches!(mouse_event.kind, MouseEventKind::Down(_)) {
+                    MouseEventType::Down
+                } else if matches!(mouse_event.kind, MouseEventKind::Drag(_)) {
+                    MouseEventType::Drag
+                } else if matches!(mouse_event.kind, MouseEventKind::Moved) {
+                    MouseEventType::Moved
+                } else {
+                    return Ok(None);
+                };
+
+                return Ok(Some((
+                    MousePosition {
+                        x: mouse_event.column as usize - 1,
+                        y: mouse_event.row as usize - 1,
+                    },
+                    event_type,
+                )));
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn drain_all_events(&self) -> io::Result<Vec<Event>> {
+        let mut events = Vec::new();
+        while event::poll(Duration::from_millis(0))? {
+            events.push(event::read()?);
+        }
+        Ok(events)
     }
 
     pub fn is_exit_key(key_event: &KeyEvent) -> bool {
