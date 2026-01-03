@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(unix)]
 pub fn request_shutdown() {
     SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
 }
@@ -15,7 +16,7 @@ pub fn clear_shutdown_request() {
     SHUTDOWN_REQUESTED.store(false, Ordering::SeqCst);
 }
 
-#[cfg(test)]
+#[cfg(all(unix, test))]
 mod tests {
     use super::*;
 

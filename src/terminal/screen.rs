@@ -1,9 +1,12 @@
+#[cfg(unix)]
 use crate::terminal::signal::request_shutdown;
 use crossterm::{
     cursor, execute,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
+#[cfg(unix)]
 use signal_hook::low_level::{register, unregister};
+#[cfg(unix)]
 use signal_hook::SigId;
 use std::io::{self, Stdout};
 use std::sync::atomic::{AtomicBool, Ordering};
