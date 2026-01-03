@@ -594,6 +594,8 @@ pub fn preset_name(preset: Preset) -> &'static str {
         Preset::Cosmic => "Cosmic",
         Preset::Fire => "Fire",
         Preset::Zen => "Zen",
+        Preset::Storm => "Storm",
+        Preset::River => "River",
     }
 }
 
