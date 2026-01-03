@@ -264,8 +264,8 @@ fn export_gif_mode(sim: &mut Simulation, args: &Args, palette: cli::Palette) -> 
     let config = args.to_sim_config();
     let charset = Charset::Ascii;
 
-    let mut gif_exporter = GifExporter::new(width, height, output_path, args.export_fps)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let mut gif_exporter =
+        GifExporter::new(width, height, output_path, args.export_fps).map_err(io::Error::other)?;
 
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
@@ -331,9 +331,7 @@ fn export_gif_mode(sim: &mut Simulation, args: &Args, palette: cli::Palette) -> 
         }
     }
 
-    gif_exporter
-        .finish(output_path)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    gif_exporter.finish(output_path).map_err(io::Error::other)?;
 
     eprintln!(
         "Done! Exported {} frames to {}",

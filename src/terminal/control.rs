@@ -4,6 +4,7 @@ use crate::simulation::config::{DiffusionKernel, InitMode, Preset, TerrainType, 
 use crossterm::event::KeyEvent;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub struct MousePosition {
     pub x: usize,
     pub y: usize,
