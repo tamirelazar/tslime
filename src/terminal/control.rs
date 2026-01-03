@@ -505,6 +505,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('4') => ControlAction::SetPreset(Preset::Organic),
         KeyCode::Char('5') => ControlAction::SetPreset(Preset::Minimal),
         KeyCode::Char('6') => ControlAction::SetPreset(Preset::Moss),
+        KeyCode::Char('7') => ControlAction::SetPreset(Preset::Zen),
         KeyCode::Char('+') | KeyCode::Char('=') => ControlAction::AdjustTimeScale(0.5),
         KeyCode::Char('-') | KeyCode::Char('_') => ControlAction::AdjustTimeScale(-0.5),
         KeyCode::Char('C') if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -592,6 +593,7 @@ pub fn preset_name(preset: Preset) -> &'static str {
         Preset::Moss => "Moss",
         Preset::Cosmic => "Cosmic",
         Preset::Fire => "Fire",
+        Preset::Zen => "Zen",
     }
 }
 
