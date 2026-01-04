@@ -419,9 +419,9 @@ impl Default for SimConfig {
             step_size: 1.0,
             decay_factor: 0.5,
             deposit_amount: 5.0,
-            diffusion_kernel: DiffusionKernel::Mean3x3,
+            diffusion_kernel: DiffusionKernel::Gaussian,
             diffusion_sigma: 1.0,
-            max_brightness: 20.0,
+            max_brightness: 100.0,
             attractors: Vec::new(),
             attractor_strength: 1.0,
             mouse_attractors: Vec::new(),
@@ -996,7 +996,7 @@ mod tests {
         assert_eq!(config.step_size, 1.0);
         assert_eq!(config.decay_factor, 0.5);
         assert_eq!(config.deposit_amount, 5.0);
-        assert_eq!(config.max_brightness, 20.0);
+        assert_eq!(config.max_brightness, 100.0);
     }
 
     #[test]

@@ -564,7 +564,7 @@ pub struct Args {
     #[arg(
         long = "max-brightness",
         value_name = "FLOAT",
-        default_value = "20.0",
+        default_value = "100.0",
         help = "Fixed maximum brightness for normalization (prevents flickering)"
     )]
     pub max_brightness: f32,
@@ -593,7 +593,7 @@ pub struct Args {
     #[arg(
         long = "init",
         value_name = "MODE",
-        default_value = "random",
+        default_value = "food",
         help = "Initialization mode (random, central, circle, gradient, wave, spiral, clusters, food)"
     )]
     pub init: InitMode,
@@ -601,12 +601,14 @@ pub struct Args {
     #[arg(
         long = "food",
         value_name = "PATH",
+        default_value = "assets/tslime_logo.png",
         help = "Load agents from PNG image. High-brightness areas spawn more agents. Use with --init food"
     )]
-    pub food: Option<String>,
+    pub food: String,
 
     #[arg(
         long = "food-invert",
+        default_value_t = true,
         help = "Invert the food image values (dark areas spawn more agents instead of bright areas)"
     )]
     pub food_invert: bool,
@@ -614,7 +616,7 @@ pub struct Args {
     #[arg(
         long = "food-scale",
         value_name = "FLOAT",
-        default_value = "1.0",
+        default_value = "1.5",
         help = "Scale factor for food image relative to canvas (0.1-5.0, e.g., 0.5 = half size, 2.0 = double size)"
     )]
     pub food_scale: f32,
@@ -647,7 +649,7 @@ pub struct Args {
     #[arg(
         long = "resolution",
         value_name = "WxH",
-        default_value = "400x400",
+        default_value = "400x200",
         help = "Simulation resolution"
     )]
     pub resolution: Resolution,
@@ -663,7 +665,7 @@ pub struct Args {
     #[arg(
         long = "colors",
         value_name = "MODE",
-        default_value = "256",
+        default_value = "true",
         help = "Color mode (8, 16, 256, true)"
     )]
     pub colors: String,
@@ -980,7 +982,7 @@ impl Args {
         config.step_size = self.step_size;
         config.decay_factor = self.decay_factor;
         config.max_brightness = self.max_brightness;
-        config.food_image_path = self.food.clone();
+        config.food_image_path = Some(self.food.clone());
         config.food_image_invert = self.food_invert;
         config.food_image_scale = self.food_scale;
 
@@ -1140,23 +1142,23 @@ impl Default for Args {
             step_size: 1.0,
             decay_factor: 0.9,
             deposit_amount: 5.0,
-            max_brightness: 20.0,
+            max_brightness: 100.0,
             diffusion_kernel: None,
             diffusion_sigma: None,
             preset: Option::<Preset>::None,
-            init: InitMode::Random,
-            food: None,
-            food_invert: false,
-            food_scale: 1.0,
+            init: InitMode::Food,
+            food: "assets/tslime_logo.png".to_string(),
+            food_invert: true,
+            food_scale: 1.5,
             frame_delay: 0.033,
             fps: 30,
             time_scale: 1.0,
             resolution: Resolution {
                 width: 400,
-                height: 400,
+                height: 200,
             },
             palette: "forest".to_string(),
-            colors: "256".to_string(),
+            colors: "true".to_string(),
             ascii: false,
             braille: false,
             plain_output: false,
@@ -1216,23 +1218,23 @@ mod tests {
             step_size: 1.0,
             decay_factor: 0.9,
             deposit_amount: 5.0,
-            max_brightness: 20.0,
+            max_brightness: 100.0,
             diffusion_kernel: None,
             diffusion_sigma: None,
             preset: Option::<Preset>::None,
-            init: InitMode::Random,
-            food: None,
-            food_invert: false,
-            food_scale: 1.0,
+            init: InitMode::Food,
+            food: "assets/tslime_logo.png".to_string(),
+            food_invert: true,
+            food_scale: 1.5,
             frame_delay: 0.033,
             fps: 30,
             time_scale: 1.0,
             resolution: Resolution {
                 width: 400,
-                height: 400,
+                height: 200,
             },
             palette: "forest".to_string(),
-            colors: "256".to_string(),
+            colors: "true".to_string(),
             ascii: false,
             braille: false,
             plain_output: false,
