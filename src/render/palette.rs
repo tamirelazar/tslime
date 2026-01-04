@@ -2256,6 +2256,66 @@ const COSMIC_RGB: [RgbColor; 11] = [
     },
 ];
 
+const ETHEREAL_GRADIENT: [u8; 11] = [232, 183, 189, 195, 201, 207, 218, 224, 225, 225, 224];
+
+const ETHEREAL_RGB: [RgbColor; 11] = [
+    RgbColor {
+        r: 15,
+        g: 15,
+        b: 20,
+    },
+    RgbColor {
+        r: 60,
+        g: 50,
+        b: 80,
+    },
+    RgbColor {
+        r: 90,
+        g: 80,
+        b: 110,
+    },
+    RgbColor {
+        r: 120,
+        g: 110,
+        b: 140,
+    },
+    RgbColor {
+        r: 150,
+        g: 140,
+        b: 170,
+    },
+    RgbColor {
+        r: 180,
+        g: 170,
+        b: 200,
+    },
+    RgbColor {
+        r: 210,
+        g: 200,
+        b: 225,
+    },
+    RgbColor {
+        r: 230,
+        g: 220,
+        b: 240,
+    },
+    RgbColor {
+        r: 245,
+        g: 235,
+        b: 250,
+    },
+    RgbColor {
+        r: 250,
+        g: 240,
+        b: 255,
+    },
+    RgbColor {
+        r: 255,
+        g: 240,
+        b: 250,
+    },
+];
+
 fn get_256_gradient(palette: Palette) -> &'static [u8; 11] {
     match palette {
         Palette::Organic => &ORGANIC_GRADIENT,
@@ -2273,6 +2333,7 @@ fn get_256_gradient(palette: Palette) -> &'static [u8; 11] {
         Palette::Swamp => &SWAMP_GRADIENT,
         Palette::Moss => &MOSS_GRADIENT,
         Palette::Cosmic => &COSMIC_GRADIENT,
+        Palette::Ethereal => &ETHEREAL_GRADIENT,
     }
 }
 
@@ -2293,6 +2354,7 @@ fn get_rgb_gradient(palette: Palette) -> &'static [RgbColor; 11] {
         Palette::Swamp => &SWAMP_RGB,
         Palette::Moss => &MOSS_RGB,
         Palette::Cosmic => &COSMIC_RGB,
+        Palette::Ethereal => &ETHEREAL_RGB,
     }
 }
 

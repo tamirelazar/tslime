@@ -596,6 +596,7 @@ pub fn preset_name(preset: Preset) -> &'static str {
         Preset::Zen => "Zen",
         Preset::Storm => "Storm",
         Preset::River => "River",
+        Preset::Ethereal => "Ethereal",
     }
 }
 
@@ -616,6 +617,7 @@ pub fn palette_name(palette: Palette) -> &'static str {
         Palette::Swamp => "Swamp",
         Palette::Moss => "Moss",
         Palette::Cosmic => "Cosmic",
+        Palette::Ethereal => "Ethereal",
     }
 }
 

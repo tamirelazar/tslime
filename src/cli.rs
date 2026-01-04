@@ -43,6 +43,7 @@ pub enum Palette {
     Swamp,
     Moss,
     Cosmic,
+    Ethereal,
 }
 
 #[derive(Debug, Clone)]
@@ -215,8 +216,9 @@ impl FromStr for Preset {
             "zen" => Ok(Preset::Zen),
             "storm" => Ok(Preset::Storm),
             "river" => Ok(Preset::River),
+            "ethereal" => Ok(Preset::Ethereal),
             _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river",
+                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal",
                 s
             )),
         }
@@ -653,7 +655,7 @@ pub struct Args {
         long = "palette",
         value_name = "NAME",
         default_value = "forest",
-        help = "Color palette (organic, heat, ocean, mono, forest, neon, warm, vibrant, legiblemono, slime, mold, fungus, swamp, moss, cosmic)"
+        help = "Color palette (organic, heat, ocean, mono, forest, neon, warm, vibrant, legiblemono, slime, mold, fungus, swamp, moss, cosmic, ethereal)"
     )]
     pub palette: String,
 
@@ -923,6 +925,7 @@ impl Args {
             "swamp" => Ok(Palette::Swamp),
             "moss" => Ok(Palette::Moss),
             "cosmic" => Ok(Palette::Cosmic),
+            "ethereal" => Ok(Palette::Ethereal),
             _ => Err(format!("Invalid palette: {}", self.palette)),
         }
     }
