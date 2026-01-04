@@ -16,6 +16,7 @@ pub enum Mode {
     Print,
     CaptureFrames,
     GifExport,
+    WebmExport,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -845,6 +846,13 @@ pub struct Args {
     pub export_gif: Option<String>,
 
     #[arg(
+        long = "export-webm",
+        value_name = "PATH",
+        help = "Export simulation to WebM video file (requires FFmpeg)"
+    )]
+    pub export_webm: Option<String>,
+
+    #[arg(
         long = "export-frames",
         value_name = "INT",
         default_value = "50",
@@ -893,6 +901,8 @@ impl Args {
             Mode::CaptureFrames
         } else if self.export_gif.is_some() {
             Mode::GifExport
+        } else if self.export_webm.is_some() {
+            Mode::WebmExport
         } else {
             Mode::Default
         }
@@ -1177,6 +1187,7 @@ impl Default for Args {
             terrain: "none".to_string(),
             terrain_strength: 1.0,
             export_gif: None,
+            export_webm: None,
             export_frames: 50,
             export_fps: 30,
             obstacle: Vec::new(),
@@ -1252,6 +1263,7 @@ mod tests {
             terrain: "none".to_string(),
             terrain_strength: 1.0,
             export_gif: None,
+            export_webm: None,
             export_frames: 50,
             export_fps: 30,
             obstacle: Vec::new(),

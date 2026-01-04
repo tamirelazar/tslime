@@ -10,6 +10,7 @@ mod terminal;
 
 use cli::{Args, ColorMode, Mode};
 use export::GifExporter;
+use export::WebmExporter;
 use render::adaptive_brightness::AdaptiveBrightness;
 use render::charset::Charset;
 use render::dither::DitherMode;
@@ -74,6 +75,8 @@ fn main() -> io::Result<()> {
         capture_frames_mode(&mut sim, &args, palette, charset)?;
     } else if mode == Mode::GifExport {
         export_gif_mode(&mut sim, &args, palette)?;
+    } else if mode == Mode::WebmExport {
+        export_webm_mode(&mut sim, &args, palette)?;
     } else {
         run_simulation(&mut sim, &args, mode, palette, charset)?;
     }
@@ -332,6 +335,100 @@ fn export_gif_mode(sim: &mut Simulation, args: &Args, palette: cli::Palette) -> 
     }
 
     gif_exporter.finish(output_path).map_err(io::Error::other)?;
+
+    eprintln!(
+        "Done! Exported {} frames to {}",
+        args.export_frames, output_path
+    );
+
+    Ok(())
+}
+
+fn export_webm_mode(sim: &mut Simulation, args: &Args, palette: cli::Palette) -> io::Result<()> {
+    let output_path = args.export_webm.as_ref().unwrap();
+    let width = sim.width();
+    let height = sim.height();
+
+    eprintln!(
+        "Exporting WebM to {} ({}x{}, {} frames @ {} fps)...",
+        output_path, width, height, args.export_frames, args.export_fps
+    );
+    eprintln!("Note: Requires FFmpeg to be installed with libvpx-vp9 encoder");
+
+    let config = args.to_sim_config();
+
+    let mut webm_exporter =
+        WebmExporter::new(width, height, output_path, args.export_fps).map_err(io::Error::other)?;
+
+    let mut adaptive_brightness =
+        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+
+    let frame_skip = args.frame_skip.max(1);
+
+    for frame_idx in 0..args.export_frames {
+        for _ in 0..frame_skip {
+            sim.update(1.0);
+        }
+
+        let blended_trail = sim.trail_map_blended();
+        let term_width = width;
+        let term_height = height;
+        let downsampled = downsample(
+            &blended_trail,
+            sim.width(),
+            sim.height(),
+            term_width,
+            term_height,
+        );
+
+        adaptive_brightness.update(downsampled.cells());
+        let max_brightness = if args.auto_normalize {
+            adaptive_brightness.get_max_brightness()
+        } else {
+            config.max_brightness
+        };
+
+        let species_rgb_colors = if args.species_colors {
+            Some(extract_species_rgb_colors(&config))
+        } else {
+            None
+        };
+
+        let buffer = FrameBuffer::from_downsampled(
+            downsampled.cells(),
+            term_width,
+            term_height,
+            max_brightness,
+            palette.clone(),
+            Charset::Ascii,
+            args.reverse_palette,
+            args.invert_palette,
+            ColorMode::TrueColor,
+            0.0,
+            args.dither_mode().unwrap_or(DitherMode::None),
+            &mut None,
+            args.species_colors,
+            species_rgb_colors,
+        );
+
+        let pixels = buffer.get_rgb_pixels();
+        webm_exporter
+            .add_frame_png(&pixels)
+            .map_err(io::Error::other)?;
+
+        if args.verbose || frame_idx % 10 == 0 || frame_idx + 1 == args.export_frames {
+            eprintln!(
+                "Frame {}/{} (sim step: {})",
+                frame_idx + 1,
+                args.export_frames,
+                (frame_idx + 1) * frame_skip
+            );
+        }
+    }
+
+    webm_exporter
+        .finish(output_path)
+        .map_err(io::Error::other)?;
 
     eprintln!(
         "Done! Exported {} frames to {}",
