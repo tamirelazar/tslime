@@ -296,3 +296,207 @@ mod tests {
         );
     }
 }
+
+pub struct StatsOverlay;
+
+impl StatsOverlay {
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_overlay(
+        agent_count: usize,
+        trail_sum: f32,
+        trail_capacity: f32,
+        entropy: f32,
+        fps: f32,
+        avg_fps: f32,
+        frame_count: u64,
+        elapsed_seconds: f32,
+        term_width: usize,
+    ) -> Vec<String> {
+        let mut lines = Vec::new();
+
+        let trail_percent = if trail_capacity > 0.0 {
+            (trail_sum / trail_capacity * 100.0).min(99.9)
+        } else {
+            0.0
+        };
+
+        let elapsed_str = format_elapsed_time(elapsed_seconds);
+
+        lines.push(format!("┌─ STATS {:─<38}┐", ""));
+
+        lines.push(format!(
+            "│{:18} {:>15}      │",
+            "Agents:",
+            agent_count
+        ));
+
+        lines.push(format!(
+            "│{:18} {:>12.1}%    │",
+            "Trail:",
+            trail_percent
+        ));
+
+        lines.push(format!(
+            "│{:18} {:>14.2}    │",
+            "Entropy:",
+            entropy
+        ));
+
+        lines.push(format!(
+            "│{:18} {:>6.1} ({:4.1})   │",
+            "FPS:",
+            fps,
+            avg_fps
+        ));
+
+        lines.push(format!(
+            "│{:18} {:>15}      │",
+            "Frames:",
+            frame_count
+        ));
+
+        lines.push(format!(
+            "│{:18} {:>15}      │",
+            "Time:",
+            elapsed_str
+        ));
+
+        lines.push(format!("└{:─<44}┘", ""));
+
+        let max_line_len = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+        let start_x = if term_width > max_line_len {
+            term_width.saturating_sub(max_line_len + 1)
+        } else {
+            1
+        };
+
+        let _ = start_x;
+
+        lines
+    }
+
+    pub fn calculate_entropy(trail_map: &[f32], sample_rate: usize) -> f32 {
+        if trail_map.is_empty() {
+            return 0.0;
+        }
+
+        const NUM_BINS: usize = 16;
+        let mut bins = [0usize; NUM_BINS];
+        let mut total_samples = 0usize;
+
+        for (i, &value) in trail_map.iter().enumerate() {
+            if i % sample_rate == 0 && value > 0.01 {
+                let normalized = (value / 10.0).clamp(0.0, 0.9999);
+                let bin_idx = (normalized * NUM_BINS as f32) as usize;
+                bins[bin_idx] += 1;
+                total_samples += 1;
+            }
+        }
+
+        if total_samples < 2 {
+            return 0.0;
+        }
+
+        let mut entropy = 0.0f32;
+        for &count in bins.iter() {
+            if count > 0 {
+                let p = count as f32 / total_samples as f32;
+                entropy -= p * p.log2();
+            }
+        }
+
+        let max_entropy = (NUM_BINS as f32).log2();
+        if max_entropy > 0.0 {
+            (entropy / max_entropy * 8.0).clamp(0.0, 8.0)
+        } else {
+            0.0
+        }
+    }
+}
+
+fn format_elapsed_time(seconds: f32) -> String {
+    let total_secs = seconds as u64;
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let secs = total_secs % 60;
+
+    if hours > 0 {
+        format!("{}:{:02}:{:02}", hours, minutes, secs)
+    } else {
+        format!("{}:{:02}", minutes, secs)
+    }
+}
+
+#[cfg(test)]
+mod stats_tests {
+    use super::*;
+
+    #[test]
+    fn test_stats_overlay_format() {
+        let lines = StatsOverlay::build_overlay(
+            50000,
+            1234567.0,
+            8000000.0,
+            5.5,
+            30.0,
+            28.5,
+            1234,
+            125.5,
+            80,
+        );
+
+        assert!(!lines.is_empty());
+        assert!(lines[0].starts_with('┌'));
+        assert!(lines.last().unwrap().starts_with('└'));
+        assert!(lines.iter().all(|l| l.starts_with('│') || l.starts_with('┌') || l.starts_with('└')));
+
+        let max_len = lines.iter().map(|l| l.chars().count()).max().unwrap();
+        assert!(max_len <= 50);
+    }
+
+    #[test]
+    fn test_stats_overlay_with_zero_values() {
+        let lines = StatsOverlay::build_overlay(
+            0,
+            0.0,
+            1000000.0,
+            0.0,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            80,
+        );
+
+        assert!(!lines.is_empty());
+        assert!(lines.iter().any(|l| l.contains("0.0%")));
+    }
+
+    #[test]
+    fn test_entropy_calculation() {
+        let uniform = vec![1.0; 40000];
+        let entropy_uniform = StatsOverlay::calculate_entropy(&uniform, 100);
+        eprintln!("uniform entropy: {}", entropy_uniform);
+        assert!(entropy_uniform < 2.0, "uniform should have low entropy, got {}", entropy_uniform);
+
+        let varied: Vec<f32> = (0..40000).map(|i| i as f32 / 400.0).collect();
+        let entropy_varied = StatsOverlay::calculate_entropy(&varied, 100);
+        eprintln!("varied entropy: {}", entropy_varied);
+        assert!(entropy_varied > entropy_uniform, "varied ({}) should have higher entropy than uniform ({})", entropy_varied, entropy_uniform);
+    }
+
+    #[test]
+    fn test_entropy_empty_trail() {
+        let empty: Vec<f32> = vec![];
+        let entropy = StatsOverlay::calculate_entropy(&empty, 10);
+        assert_eq!(entropy, 0.0);
+    }
+
+    #[test]
+    fn test_format_elapsed_time() {
+        assert_eq!(format_elapsed_time(30.0), "0:30");
+        assert_eq!(format_elapsed_time(90.0), "1:30");
+        assert_eq!(format_elapsed_time(3661.0), "1:01:01");
+        assert_eq!(format_elapsed_time(0.0), "0:00");
+    }
+}

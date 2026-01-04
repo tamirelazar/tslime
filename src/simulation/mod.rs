@@ -453,6 +453,10 @@ impl Simulation {
         self.trail_maps.first().map(|tm| tm.height()).unwrap_or(0)
     }
 
+    pub fn agent_count(&self) -> usize {
+        self.agents.len()
+    }
+
     #[allow(dead_code)]
     pub fn trail_maps(&self) -> &[TrailMap] {
         &self.trail_maps

@@ -668,6 +668,7 @@ impl TerminalRenderer {
         execute!(self.stdout, &buffer)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render_with_overlay<T: AsRef<str>>(
         &mut self,
         downsampled: &[DownsampleCell],
@@ -676,6 +677,7 @@ impl TerminalRenderer {
         status_line: Option<(String, usize)>,
         paused_line: Option<(String, usize)>,
         notification_line: Option<(String, usize)>,
+        stats_lines: Option<&[String]>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -738,6 +740,10 @@ impl TerminalRenderer {
             );
         }
 
+        if let Some(lines) = stats_lines {
+            buffer.draw_text_overlay(lines, 1, 2, 14, Some(236));
+        }
+
         execute!(self.stdout, &buffer)
     }
 
@@ -752,6 +758,7 @@ impl TerminalRenderer {
         status_line: Option<(String, usize)>,
         paused_line: Option<(String, usize)>,
         notification_line: Option<(String, usize)>,
+        stats_lines: Option<&[String]>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -830,6 +837,10 @@ impl TerminalRenderer {
                 15,
                 Some(22),
             );
+        }
+
+        if let Some(lines) = stats_lines {
+            buffer.draw_text_overlay(lines, 1, 2, 14, Some(236));
         }
 
         execute!(self.stdout, &buffer)

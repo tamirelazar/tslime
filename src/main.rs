@@ -16,6 +16,7 @@ use render::charset::Charset;
 use render::dither::DitherMode;
 use render::downsample::downsample;
 use render::options_overlay::OptionsOverlay;
+use render::overlay::StatsOverlay;
 use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{DiffusionKernel, Preset, SimConfig, TerrainType};
 use simulation::Simulation;
@@ -528,6 +529,7 @@ fn run_simulation(
         args.mouse_timeout,
     );
     runtime_state.dither_mode = dither_mode;
+    runtime_state.show_stats = args.stats;
     renderer.set_dither_mode(dither_mode);
 
     let config = args.to_sim_config();
@@ -542,6 +544,7 @@ fn run_simulation(
 
     let mut current_auto_normalize = args.auto_normalize;
     let mut _current_max_brightness = args.max_brightness;
+    let start_time = std::time::Instant::now();
 
     loop {
         if is_shutdown_requested() {
@@ -736,6 +739,27 @@ fn run_simulation(
             (notification_text, notification_x)
         });
 
+        let stats_lines: Option<Vec<String>> = if runtime_state.show_stats {
+            let blended_trail = sim.trail_map_blended();
+            let trail_capacity = (sim.width() * sim.height()) as f32 * 10.0;
+            let entropy = StatsOverlay::calculate_entropy(&blended_trail, 100);
+            let elapsed = start_time.elapsed().as_secs_f32();
+
+            Some(StatsOverlay::build_overlay(
+                sim.agent_count(),
+                blended_trail.iter().sum(),
+                trail_capacity,
+                entropy,
+                timer.current_fps() as f32,
+                timer.average_fps() as f32,
+                timer.frame_count(),
+                elapsed,
+                term_width as usize,
+            ))
+        } else {
+            None
+        };
+
         if max_brightness > 0.0 {
             if args.species_colors && sim.config().separate_species_trails {
                 let species_trail_maps = sim.trail_maps_for_species_colors();
@@ -754,6 +778,7 @@ fn run_simulation(
                     status_data,
                     paused_data,
                     notification_data,
+                    stats_lines.as_deref(),
                 )?;
             } else {
                 renderer.render_with_overlay(
@@ -763,6 +788,7 @@ fn run_simulation(
                     status_data,
                     paused_data,
                     notification_data,
+                    stats_lines.as_deref(),
                 )?;
             }
         }
@@ -1037,6 +1063,13 @@ fn run_simulation(
                                 runtime_state.help_mode = HelpMode::Options;
                                 runtime_state.show_help = true;
                             }
+                        }
+                        ControlAction::ToggleStats => {
+                            runtime_state.toggle_stats();
+                            runtime_state.show_notification(format!(
+                                "Stats: {}",
+                                if runtime_state.show_stats { "On" } else { "Off" }
+                            ));
                         }
                         ControlAction::Quit => {
                             should_exit = true;

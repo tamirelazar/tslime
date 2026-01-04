@@ -65,6 +65,7 @@ impl WebmExporter {
 
         eprintln!("Encoding WebM video with FFmpeg...");
 
+        #[allow(clippy::needless_borrows_for_generic_args)]
         let status = Command::new("ffmpeg")
             .args(&[
                 "-y",
@@ -115,6 +116,7 @@ impl WebmExporter {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn frame_count(&self) -> usize {
         self.frames.len()
     }

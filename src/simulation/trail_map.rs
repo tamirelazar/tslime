@@ -4,6 +4,7 @@ pub struct TrailMap {
     current: Vec<f32>,
     scratch: Vec<f32>,
     gaussian_kernel: [f32; 25],
+    trail_sum: f32,
 }
 
 const GAUSSIAN_KERNEL_SIZE: usize = 5;
@@ -41,6 +42,7 @@ impl TrailMap {
             current: vec![0.0; size],
             scratch: vec![0.0; size],
             gaussian_kernel,
+            trail_sum: 0.0,
         }
     }
 
@@ -53,6 +55,7 @@ impl TrailMap {
             current: vec![0.0; size],
             scratch: vec![0.0; size],
             gaussian_kernel,
+            trail_sum: 0.0,
         }
     }
 
@@ -111,6 +114,7 @@ impl TrailMap {
     pub fn add(&mut self, x: usize, y: usize, value: f32) {
         if x < self.width && y < self.height {
             self.current[y * self.width + x] += value;
+            self.trail_sum += value;
         }
     }
 
@@ -127,11 +131,17 @@ impl TrailMap {
     pub fn clear(&mut self) {
         self.current.fill(0.0);
         self.scratch.fill(0.0);
+        self.trail_sum = 0.0;
     }
 
     #[allow(dead_code)]
     pub fn size(&self) -> usize {
         self.width * self.height
+    }
+
+    #[allow(dead_code)]
+    pub fn trail_sum(&self) -> f32 {
+        self.trail_sum
     }
 
     pub fn diffuse(&mut self) {
@@ -670,6 +680,7 @@ impl TrailMap {
         for value in &mut self.current {
             *value *= factor;
         }
+        self.trail_sum *= factor;
     }
 }
 

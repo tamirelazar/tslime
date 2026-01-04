@@ -548,7 +548,7 @@ pub struct Args {
     #[arg(
         long = "decay",
         value_name = "FLOAT",
-        default_value = "0.9",
+        default_value = "0.5",
         help = "Trail decay factor"
     )]
     pub decay_factor: f32,
@@ -889,6 +889,13 @@ pub struct Args {
         help = "Time in seconds before mouse-created attractors/repellers expire (0.1-30.0)"
     )]
     pub mouse_timeout: f32,
+
+    #[arg(
+        short = 'S',
+        long = "stats",
+        help = "Display real-time statistics overlay"
+    )]
+    pub stats: bool,
 }
 
 impl Args {
@@ -1140,7 +1147,7 @@ impl Default for Args {
             sensor_distance: 9.0,
             rotation_angle: 45.0,
             step_size: 1.0,
-            decay_factor: 0.9,
+            decay_factor: 0.5,
             deposit_amount: 5.0,
             max_brightness: 100.0,
             diffusion_kernel: None,
@@ -1196,6 +1203,7 @@ impl Default for Args {
             mouse_attract: false,
             mouse_repel: false,
             mouse_timeout: 3.0,
+            stats: false,
         }
     }
 }
@@ -1216,7 +1224,7 @@ mod tests {
             sensor_distance: 9.0,
             rotation_angle: 45.0,
             step_size: 1.0,
-            decay_factor: 0.9,
+            decay_factor: 0.5,
             deposit_amount: 5.0,
             max_brightness: 100.0,
             diffusion_kernel: None,
@@ -1272,6 +1280,7 @@ mod tests {
             mouse_attract: false,
             mouse_repel: false,
             mouse_timeout: 3.0,
+            stats: false,
         };
         assert_eq!(args.mode(), Mode::Default);
     }

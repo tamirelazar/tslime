@@ -138,6 +138,7 @@ pub enum ControlAction {
     ResetToDefaults,
     ShowOptionsOverlay,
     CycleOptionsCategory,
+    ToggleStats,
     None,
 }
 
@@ -172,6 +173,7 @@ pub struct RuntimeState {
     pub palette_shift_speed: PaletteShiftSpeed,
     pub invert_palette: bool,
     pub reverse_palette: bool,
+    pub show_stats: bool,
     pub notification: Option<(String, std::time::Instant)>,
 }
 
@@ -219,6 +221,7 @@ impl RuntimeState {
             palette_shift_speed: PaletteShiftSpeed::Off,
             invert_palette: false,
             reverse_palette: false,
+            show_stats: false,
             notification: None,
         }
     }
@@ -453,6 +456,10 @@ impl RuntimeState {
         self.reverse_palette = !self.reverse_palette;
     }
 
+    pub fn toggle_stats(&mut self) {
+        self.show_stats = !self.show_stats;
+    }
+
     pub fn reset_to_defaults(&mut self) {
         self.sensor_angle = 22.5;
         self.turn_angle = 45.0;
@@ -579,6 +586,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('X') | KeyCode::Char('x') => ControlAction::ToggleInvertPalette,
         KeyCode::Char('Z') | KeyCode::Char('z') => ControlAction::ToggleReversePalette,
         KeyCode::Char('0') => ControlAction::ResetToDefaults,
+        KeyCode::Char('\\') => ControlAction::ToggleStats,
         _ => ControlAction::None,
     }
 }
