@@ -696,6 +696,10 @@ impl Simulation {
         if let Some(ref mut history) = self.trail_history {
             history.clear();
         }
+
+        // Re-seed noise
+        let noise_seed = (seed % u64::MAX) as u32;
+        self.noise = NoiseWrapper::new(noise_seed);
     }
 
     pub fn update_config(&mut self, config: SimConfig) {
@@ -716,6 +720,47 @@ impl Simulation {
 
     pub fn add_mouse_attractor(&mut self, x: f32, y: f32, strength: f32) {
         self.config.add_mouse_attractor(x, y, strength);
+    }
+
+    pub fn create_food_attractors(
+        width: usize,
+        height: usize,
+        food_path: &str,
+        food_invert: bool,
+        food_scale: f32,
+        strength: f32,
+        brightness_threshold: f32,
+    ) -> Vec<crate::simulation::config::Attractor> {
+        let brightness_map = match load_image_grayscale(
+            food_path,
+            width,
+            height,
+            food_invert,
+            food_scale,
+        ) {
+            Ok(map) => map,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut attractors = Vec::new();
+
+        // Sample at lower resolution to avoid too many attractors
+        let step_size = 5; // Sample every 5 pixels
+
+        for y in (0..height).step_by(step_size) {
+            for x in (0..width).step_by(step_size) {
+                let brightness = get_brightness_at(&brightness_map, width, x, y);
+                if brightness > brightness_threshold {
+                    attractors.push(crate::simulation::config::Attractor::new(
+                        x as f32,
+                        y as f32,
+                        strength * brightness, // Scale strength by brightness
+                    ));
+                }
+            }
+        }
+
+        attractors
     }
 }
 

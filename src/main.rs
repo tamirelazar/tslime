@@ -16,9 +16,9 @@ use render::charset::Charset;
 use render::dither::DitherMode;
 use render::downsample::downsample;
 use render::options_overlay::ControlsOverlay;
-use render::overlay::{HelpOverlay, StatsOverlay};
+use render::overlay::{HelpOverlay, StatsOverlay, WarmupOverlay};
 use render::palette::{hex_to_rgb, RgbColor};
-use simulation::config::{DiffusionKernel, Preset, SimConfig, TerrainType};
+use simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType};
 use simulation::Simulation;
 use terminal::control::{
     handle_key_event, num_palettes, ControlAction, MouseInteractionMode, PaletteShiftSpeed,
@@ -67,6 +67,24 @@ fn main() -> io::Result<()> {
         args.init,
         args.effective_trail_history(),
     );
+
+    // Setup food persistence if enabled
+    if args.food_persist && args.init == InitMode::Food {
+        let attractors = Simulation::create_food_attractors(
+            args.resolution.width,
+            args.resolution.height,
+            &args.food,
+            args.food_invert,
+            args.food_scale,
+            args.food_persist_strength,
+            0.3, // brightness threshold
+        );
+
+        // Add attractors to simulation config
+        let mut new_config = sim.config().clone();
+        new_config.attractors.extend(attractors.clone());
+        sim.update_config(new_config);
+    }
 
     let mode = args.mode();
 
@@ -532,6 +550,20 @@ fn run_simulation(
     runtime_state.show_stats = args.stats;
     renderer.set_dither_mode(dither_mode);
 
+    // Initialize food persistence
+    if args.food_persist && args.init == InitMode::Food {
+        runtime_state.food_persist_enabled = true;
+        runtime_state.initial_food_attractors = Simulation::create_food_attractors(
+            args.resolution.width,
+            args.resolution.height,
+            &args.food,
+            args.food_invert,
+            args.food_scale,
+            args.food_persist_strength,
+            0.3,
+        );
+    }
+
     let config = args.to_sim_config();
     if args.species_colors {
         let species_rgb_colors = extract_species_rgb_colors(&config);
@@ -562,9 +594,21 @@ fn run_simulation(
 
         let dt = timer.delta_time();
 
+        // Check if we're in warmup phase
+        let in_warmup = !args.skip_warmup && runtime_state.is_in_warmup(args.warmup_frames);
+
         if !runtime_state.is_paused {
             timer.start_sim();
-            sim.update(dt / REFERENCE_TIME_STEP);
+
+            if in_warmup {
+                // During warmup: slow agent movement, high decay, bright display
+                let warmup_dt = dt * 0.3; // 30% speed
+                sim.update(warmup_dt / REFERENCE_TIME_STEP);
+                runtime_state.increment_warmup();
+            } else {
+                sim.update(dt / REFERENCE_TIME_STEP);
+            }
+
             timer.end_sim_start_render();
         } else {
             timer.start_sim();
@@ -583,11 +627,16 @@ fn run_simulation(
         let current_config = args.to_sim_config();
 
         adaptive_brightness.update(downsampled.cells());
-        let max_brightness = if args.auto_normalize {
+        let mut max_brightness = if args.auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
             current_config.max_brightness
         };
+
+        // Apply warmup brightness multiplier
+        if in_warmup {
+            max_brightness *= args.warmup_brightness_multiplier;
+        }
 
         let current_palette = runtime_state.current_palette(&palette_list);
 
@@ -653,22 +702,35 @@ fn run_simulation(
             None
         };
 
-        // Notification at bottom center
-        let notification_data = runtime_state.current_notification().map(|msg| {
-            let notification_text = format!("[ {} ]", msg);
-            let notification_x = if notification_text.len() < term_width as usize {
-                (term_width as usize - notification_text.len()) / 2
+        // Notification at bottom center (or warmup message during warmup)
+        let notification_data = if in_warmup {
+            // Show warmup message during warmup phase
+            let progress = (runtime_state.warmup_counter as f32 / 30.0 * std::f32::consts::PI).sin().abs();
+            let opacity = (progress * 3.0) as usize;
+            let dots = ".".repeat(opacity.min(3));
+            let warmup_text = format!("[ Press any key to begin{} ]", dots);
+            let warmup_x = if warmup_text.len() < term_width as usize {
+                (term_width as usize - warmup_text.len()) / 2
             } else {
                 0
             };
-            (notification_text, notification_x)
-        });
+            Some((warmup_text, warmup_x))
+        } else {
+            runtime_state.current_notification().map(|msg| {
+                let notification_text = format!("[ {} ]", msg);
+                let notification_x = if notification_text.len() < term_width as usize {
+                    (term_width as usize - notification_text.len()) / 2
+                } else {
+                    0
+                };
+                (notification_text, notification_x)
+            })
+        };
 
         // Stats overlay at top-right
+        let entropy = StatsOverlay::calculate_entropy(&blended_trail, 100);
         let stats_lines: Option<Vec<String>> = if runtime_state.show_stats {
-            let blended_trail = sim.trail_map_blended();
             let trail_capacity = (sim.width() * sim.height()) as f32 * 10.0;
-            let entropy = StatsOverlay::calculate_entropy(&blended_trail, 100);
             let elapsed = start_time.elapsed().as_secs_f32();
 
             Some(StatsOverlay::build_overlay(
@@ -686,6 +748,61 @@ fn run_simulation(
             None
         };
         let stats_x = StatsOverlay::calculate_x_position(term_width as usize);
+
+        // Food persistence fade-out
+        if runtime_state.food_persist_enabled && !runtime_state.is_paused && args.food_persist_duration > 0 {
+            runtime_state.food_persist_counter += 1;
+
+            if runtime_state.food_persist_counter <= args.food_persist_duration {
+                // Calculate fade factor using quadratic easing
+                let progress = runtime_state.food_persist_counter as f32 / args.food_persist_duration as f32;
+                let fade_factor = (1.0 - progress).powi(2); // Quadratic fade-out
+
+                // Update attractor strengths
+                let mut new_config = sim.config().clone();
+                new_config.attractors.clear();
+
+                for attractor in &runtime_state.initial_food_attractors {
+                    new_config.attractors.push(crate::simulation::config::Attractor::new(
+                        attractor.x,
+                        attractor.y,
+                        attractor.strength * fade_factor,
+                    ));
+                }
+
+                sim.update_config(new_config);
+            } else if runtime_state.food_persist_counter == args.food_persist_duration + 1 {
+                // Remove all food attractors when duration expires
+                let mut new_config = sim.config().clone();
+                new_config.attractors.clear();
+                sim.update_config(new_config);
+            }
+        }
+
+        // Entropy-based auto-reset
+        if args.auto_reset && !runtime_state.is_paused {
+            let should_reset = runtime_state.track_entropy(
+                entropy,
+                args.collapse_entropy_threshold,
+                args.collapse_duration_frames,
+            );
+            if should_reset {
+                // Generate new seed
+                let new_seed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                // Reset simulation
+                sim.reset(new_seed, args.init);
+                runtime_state.reset_collapse_counter();
+                runtime_state.reset_warmup();
+                runtime_state.food_persist_counter = 0; // Reset food persistence counter
+                runtime_state.show_notification(
+                    format!("Simulation collapsed - restarting with seed {}", new_seed)
+                );
+            }
+        }
 
         if max_brightness > 0.0 {
             if args.species_colors && sim.config().separate_species_trails {
@@ -731,6 +848,12 @@ fn run_simulation(
         for event in events {
             match event {
                 Event::Key(key_event) => {
+                    // Skip warmup on any key press
+                    if in_warmup {
+                        runtime_state.warmup_counter = args.warmup_frames; // Skip to end
+                        continue; // Don't process the key event during warmup
+                    }
+
                     if InputPoller::is_exit_key(&key_event) {
                         should_exit = true;
                         break;

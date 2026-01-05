@@ -896,6 +896,145 @@ pub struct Args {
         help = "Display real-time statistics overlay"
     )]
     pub stats: bool,
+
+    // ===== Warmup frames =====
+    #[arg(
+        long = "warmup-frames",
+        value_name = "INT",
+        default_value = "60",
+        help = "Number of frames to display logo before simulation (0 to disable)"
+    )]
+    pub warmup_frames: usize,
+
+    #[arg(
+        long = "warmup-brightness",
+        value_name = "FLOAT",
+        default_value = "2.5",
+        help = "Brightness multiplier during warmup phase"
+    )]
+    pub warmup_brightness_multiplier: f32,
+
+    #[arg(
+        long = "warmup-decay",
+        value_name = "FLOAT",
+        default_value = "0.99",
+        help = "Decay factor during warmup (higher = logo persists longer)"
+    )]
+    pub warmup_decay: f32,
+
+    #[arg(
+        long = "skip-warmup",
+        help = "Skip warmup phase (useful for exports)"
+    )]
+    pub skip_warmup: bool,
+
+    // ===== Food persistence =====
+    #[arg(
+        long = "food-persist",
+        help = "Keep agents near original food/logo location using attractors"
+    )]
+    pub food_persist: bool,
+
+    #[arg(
+        long = "food-persist-strength",
+        value_name = "FLOAT",
+        default_value = "0.3",
+        help = "Strength of food persistence attractors (0.0-5.0)"
+    )]
+    pub food_persist_strength: f32,
+
+    #[arg(
+        long = "food-persist-radius",
+        value_name = "FLOAT",
+        default_value = "50.0",
+        help = "Radius of influence for food persistence attractors"
+    )]
+    pub food_persist_radius: f32,
+
+    #[arg(
+        long = "food-persist-duration",
+        value_name = "INT",
+        default_value = "300",
+        help = "Number of frames before food attractors fade out (0 = permanent)"
+    )]
+    pub food_persist_duration: usize,
+
+    // ===== Entropy-based auto-reset =====
+    #[arg(
+        long = "auto-reset",
+        help = "Automatically restart simulation when it collapses",
+        default_value = "true"
+    )]
+    pub auto_reset: bool,
+
+    #[arg(
+        long = "collapse-threshold",
+        value_name = "FLOAT",
+        default_value = "0.95",
+        help = "Entropy threshold to detect collapse (0.0-1.0, higher = more sensitive)"
+    )]
+    pub collapse_entropy_threshold: f32,
+
+    #[arg(
+        long = "collapse-duration",
+        value_name = "INT",
+        default_value = "90",
+        help = "Number of frames simulation must stay collapsed before auto-reset"
+    )]
+    pub collapse_duration_frames: usize,
+
+    // ===== Background grid =====
+    #[arg(
+        long = "grid",
+        help = "Enable background grid rendering"
+    )]
+    pub grid: bool,
+
+    #[arg(
+        long = "grid-size",
+        value_name = "INT",
+        default_value = "10",
+        help = "Grid cell size (number of cells per dimension)"
+    )]
+    pub grid_size: usize,
+
+    #[arg(
+        long = "grid-style",
+        value_name = "TYPE",
+        default_value = "cross",
+        help = "Grid rendering style (cross, dots, gradient)"
+    )]
+    pub grid_style: String,
+
+    #[arg(
+        long = "grid-color",
+        value_name = "HEX",
+        default_value = "1a1a1a",
+        help = "Grid color as hex (without #)"
+    )]
+    pub grid_color: String,
+
+    #[arg(
+        long = "grid-opacity",
+        value_name = "FLOAT",
+        default_value = "0.15",
+        help = "Grid opacity (0.0-1.0)"
+    )]
+    pub grid_opacity: f32,
+
+    #[arg(
+        long = "grid-adaptive",
+        help = "Increase grid opacity when trails are sparse"
+    )]
+    pub grid_adaptive: bool,
+
+    // ===== Custom ASCII charset =====
+    #[arg(
+        long = "ascii-chars",
+        value_name = "STRING",
+        help = "Custom ASCII character set for rendering (e.g., \" .:-=+*#@\")"
+    )]
+    pub ascii_chars: Option<String>,
 }
 
 impl Args {
@@ -1204,6 +1343,24 @@ impl Default for Args {
             mouse_repel: false,
             mouse_timeout: 3.0,
             stats: false,
+            warmup_frames: 60,
+            warmup_brightness_multiplier: 2.5,
+            warmup_decay: 0.99,
+            skip_warmup: false,
+            food_persist: false,
+            food_persist_strength: 0.3,
+            food_persist_radius: 50.0,
+            food_persist_duration: 300,
+            auto_reset: true,
+            collapse_entropy_threshold: 0.95,
+            collapse_duration_frames: 90,
+            grid: false,
+            grid_size: 10,
+            grid_style: "cross".to_string(),
+            grid_color: "1a1a1a".to_string(),
+            grid_opacity: 0.15,
+            grid_adaptive: false,
+            ascii_chars: None,
         }
     }
 }

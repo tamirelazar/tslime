@@ -27,6 +27,32 @@ impl HelpOverlay {
     }
 }
 
+pub struct WarmupOverlay;
+
+impl WarmupOverlay {
+    pub fn build_overlay(frame_counter: usize, max_frames: usize) -> Vec<String> {
+        // Create a pulsing effect using sine wave
+        let progress = (frame_counter as f32 / 30.0 * std::f32::consts::PI).sin().abs();
+        let opacity = (progress * 10.0) as usize;
+
+        let dots = ".".repeat(opacity.min(3));
+        let message = format!("Press any key to begin{}", dots);
+        let frame_info = format!("Warmup: {}/{}", frame_counter, max_frames);
+
+        vec![
+            message,
+            frame_info,
+        ]
+    }
+
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        // Center horizontally, bottom third vertically
+        let y = (term_height * 2) / 3;
+        let x = term_width / 2;
+        (x, y)
+    }
+}
+
 pub struct OverlayRenderer;
 
 impl OverlayRenderer {
