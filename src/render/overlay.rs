@@ -22,13 +22,16 @@ impl HelpOverlay {
         ]
     }
 
+    #[allow(dead_code)]
     pub fn width() -> usize {
         42
     }
 }
 
+#[allow(dead_code)]
 pub struct WarmupOverlay;
 
+#[allow(dead_code)]
 impl WarmupOverlay {
     pub fn build_overlay(frame_counter: usize, max_frames: usize) -> Vec<String> {
         // Create a pulsing effect using sine wave
@@ -132,6 +135,7 @@ impl ConfigSaveOverlay {
 pub struct OverlayRenderer;
 
 impl OverlayRenderer {
+    #[allow(dead_code)]
     pub fn build_status_line(
         _is_paused: bool,
         preset: Preset,
@@ -157,6 +161,7 @@ impl OverlayRenderer {
         )
     }
 
+    #[allow(dead_code)]
     pub fn status_line_x(status_line: &str, width: usize) -> usize {
         if status_line.len() < width {
             2
@@ -165,11 +170,13 @@ impl OverlayRenderer {
         }
     }
 
+    #[allow(dead_code)]
     pub fn paused_overlay_x(_width: usize) -> usize {
         let paused_text = "[ PAUSED ]";
         _width.saturating_sub(paused_text.len() + 2)
     }
 
+    #[allow(dead_code)]
     pub fn build_help_with_attractors(base_help: &[&str], attractors: &[Attractor]) -> Vec<String> {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
@@ -200,6 +207,7 @@ impl OverlayRenderer {
         lines
     }
 
+    #[allow(dead_code)]
     pub fn build_help_with_obstacles(base_help: &[&str], obstacles: &[Obstacle]) -> Vec<String> {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
@@ -263,6 +271,7 @@ impl OverlayRenderer {
         lines
     }
 
+    #[allow(dead_code)]
     pub fn build_help_with_mouse_attractors(
         base_help: &[&str],
         mouse_attractors: &[MouseAttractor],

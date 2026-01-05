@@ -7,9 +7,11 @@ use crate::terminal::control::WindDirection;
 pub struct ControlsOverlay;
 
 // Type alias for backwards compatibility
+#[allow(dead_code)]
 pub type OptionsOverlay = ControlsOverlay;
 
 impl ControlsOverlay {
+    #[allow(dead_code)]
     pub const WIDTH: usize = 42;
     pub const TOTAL_CATEGORIES: usize = 5;
 

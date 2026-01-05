@@ -87,13 +87,13 @@ impl FrameBuffer {
         let is_empty = match self.color_mode {
             ColorMode::TrueColor => {
                 cell.fg_color_rgb.is_none()
-                    || cell.fg_color_rgb.map_or(true, |c| {
+                    || cell.fg_color_rgb.is_none_or(|c| {
                         // Check if color is very dark (close to black)
                         (c.r as u32 + c.g as u32 + c.b as u32) < 30
                     })
             }
             _ => {
-                cell.fg_color_256.is_none() || cell.fg_color_256.map_or(true, |c| c < 236)
+                cell.fg_color_256.is_none() || cell.fg_color_256.is_none_or(|c| c < 236)
                 // ANSI colors < 236 are color, >= 236 are grayscale
             }
         };
@@ -321,7 +321,7 @@ impl FrameBuffer {
                     Charset::Braille => {
                         charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
                     }
-                    Charset::CustomAscii(_) | _ => {
+                    Charset::Ascii | Charset::CustomAscii(_) => {
                         charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset.clone())
                     }
                 }
@@ -759,6 +759,8 @@ impl TerminalRenderer {
         notification_line: Option<(String, usize)>,
         stats_lines: Option<(&[String], usize)>,
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
+        config_browser_lines: Option<(&[String], usize, usize)>,
+        config_save_lines: Option<(&[String], usize, usize)>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -858,6 +860,16 @@ impl TerminalRenderer {
             buffer.draw_text_overlay(lines, x, 2, 245, Some(236));
         }
 
+        // Config browser overlay (modal, on top)
+        if let Some((lines, x, y)) = config_browser_lines {
+            buffer.draw_text_overlay(lines, x, y, 15, Some(236));
+        }
+
+        // Config save overlay (modal, on top)
+        if let Some((lines, x, y)) = config_save_lines {
+            buffer.draw_text_overlay(lines, x, y, 15, Some(236));
+        }
+
         execute!(self.stdout, &buffer)
     }
 
@@ -874,6 +886,8 @@ impl TerminalRenderer {
         notification_line: Option<(String, usize)>,
         stats_lines: Option<(&[String], usize)>,
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
+        config_browser_lines: Option<(&[String], usize, usize)>,
+        config_save_lines: Option<(&[String], usize, usize)>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -1005,6 +1019,16 @@ impl TerminalRenderer {
         // Stats overlay at top-right
         if let Some((lines, x)) = stats_lines {
             buffer.draw_text_overlay(lines, x, 2, 245, Some(236));
+        }
+
+        // Config browser overlay (modal, on top)
+        if let Some((lines, x, y)) = config_browser_lines {
+            buffer.draw_text_overlay(lines, x, y, 15, Some(236));
+        }
+
+        // Config save overlay (modal, on top)
+        if let Some((lines, x, y)) = config_save_lines {
+            buffer.draw_text_overlay(lines, x, y, 15, Some(236));
         }
 
         execute!(self.stdout, &buffer)

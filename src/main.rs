@@ -1011,6 +1011,12 @@ fn run_simulation(
                     notification_data,
                     stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
                     grid_renderer.as_ref(),
+                    config_browser_lines
+                        .as_ref()
+                        .map(|v| (v.as_slice(), config_browser_x, config_browser_y)),
+                    config_save_lines
+                        .as_ref()
+                        .map(|v| (v.as_slice(), config_save_x, config_save_y)),
                 )?;
             } else {
                 renderer.render_with_overlay(
@@ -1024,35 +1030,14 @@ fn run_simulation(
                     notification_data,
                     stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
                     grid_renderer.as_ref(),
+                    config_browser_lines
+                        .as_ref()
+                        .map(|v| (v.as_slice(), config_browser_x, config_browser_y)),
+                    config_save_lines
+                        .as_ref()
+                        .map(|v| (v.as_slice(), config_save_x, config_save_y)),
                 )?;
             }
-        }
-
-        // Render config overlays manually (they're modal and need to be on top)
-        if let Some(ref lines) = config_browser_lines {
-            use crossterm::{cursor, style::Print, QueueableCommand};
-            let mut stdout = std::io::stdout();
-            for (i, line) in lines.iter().enumerate() {
-                stdout.queue(cursor::MoveTo(
-                    config_browser_x as u16,
-                    (config_browser_y + i) as u16,
-                ))?;
-                stdout.queue(Print(line))?;
-            }
-            stdout.flush()?;
-        }
-
-        if let Some(ref lines) = config_save_lines {
-            use crossterm::{cursor, style::Print, QueueableCommand};
-            let mut stdout = std::io::stdout();
-            for (i, line) in lines.iter().enumerate() {
-                stdout.queue(cursor::MoveTo(
-                    config_save_x as u16,
-                    (config_save_y + i) as u16,
-                ))?;
-                stdout.queue(Print(line))?;
-            }
-            stdout.flush()?;
         }
 
         timer.end_render();
@@ -1158,11 +1143,20 @@ fn run_simulation(
                                     if let Some(config) =
                                         configs.get(runtime_state.config_browser_selected_index)
                                     {
-                                        // TODO: Apply loaded config to simulation
-                                        runtime_state.show_notification(format!(
-                                            "Config '{}' loaded (apply functionality pending)",
-                                            config.name
-                                        ));
+                                        match config.apply_to_runtime_state(&mut runtime_state) {
+                                            Ok(_) => {
+                                                runtime_state.show_notification(format!(
+                                                    "Config '{}' loaded successfully",
+                                                    config.name
+                                                ));
+                                            }
+                                            Err(e) => {
+                                                runtime_state.show_notification(format!(
+                                                    "Failed to load '{}': {}",
+                                                    config.name, e
+                                                ));
+                                            }
+                                        }
                                     }
                                 }
                                 runtime_state.show_config_browser = false;
