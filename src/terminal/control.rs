@@ -173,6 +173,7 @@ pub struct RuntimeState {
     pub dither_mode: DitherMode,
     pub last_dither_mode: Option<DitherMode>,
     pub mouse_mode: MouseInteractionMode,
+    #[allow(dead_code)]
     pub mouse_timeout: f32,
     pub sensor_angle: f32,
     pub turn_angle: f32,

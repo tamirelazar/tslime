@@ -1,6 +1,7 @@
 use crate::cli::Palette;
 use crate::render::charset::Charset;
-use crate::simulation::config::{DiffusionKernel, InitMode, SimConfig};
+use crate::simulation::config::{DiffusionKernel, InitMode, SimConfig, SpeciesConfig};
+use crate::terminal::control::RuntimeState;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -133,6 +134,131 @@ impl SavedConfig {
             init_mode: init_mode_str.to_string(),
             food_path,
         }
+    }
+
+    /// Apply this saved config to runtime state
+    pub fn apply_to_runtime_state(&self, runtime_state: &mut RuntimeState) -> Result<(), String> {
+        // Parse and apply palette
+        runtime_state.palette_index = parse_palette_index(&self.palette)?;
+        runtime_state.reverse_palette = self.reverse_palette;
+        runtime_state.invert_palette = self.invert_palette;
+
+        // Parse and apply diffusion kernel
+        runtime_state.diffusion_kernel = parse_diffusion_kernel(&self.diffusion_kernel)?;
+
+        // Apply simulation parameters
+        runtime_state.sensor_angle = self.sensor_angle;
+        runtime_state.turn_angle = self.rotation_angle;
+        runtime_state.step_size = self.step_size;
+        runtime_state.decay_factor = self.decay_factor;
+        runtime_state.deposit_amount = self.deposit_amount;
+        runtime_state.max_brightness = self.max_brightness;
+
+        // Reset warmup so the changes can be seen
+        runtime_state.warmup_counter = 0;
+
+        Ok(())
+    }
+
+    /// Convert this saved config to a SimConfig for restarting simulation
+    #[allow(dead_code)]
+    pub fn to_sim_config(&self) -> Result<SimConfig, String> {
+        let diffusion_kernel = parse_diffusion_kernel(&self.diffusion_kernel)?;
+        let _init_mode = parse_init_mode(&self.init_mode)?;
+
+        let species_config = SpeciesConfig {
+            name: "default".to_string(),
+            count: self.population,
+            sensor_angle: self.sensor_angle,
+            rotation_angle: self.rotation_angle,
+            step_size: self.step_size,
+            deposit_amount: self.deposit_amount,
+            color: "228b22".to_string(),
+        };
+
+        Ok(SimConfig {
+            sensor_angle: self.sensor_angle,
+            sensor_distance: self.sensor_distance,
+            rotation_angle: self.rotation_angle,
+            step_size: self.step_size,
+            decay_factor: self.decay_factor,
+            deposit_amount: self.deposit_amount,
+            diffusion_kernel,
+            diffusion_sigma: self.diffusion_sigma,
+            max_brightness: self.max_brightness,
+            attractors: Vec::new(),
+            attractor_strength: 1.0,
+            mouse_attractors: Vec::new(),
+            mouse_timeout: 3.0,
+            species_configs: vec![species_config],
+            separate_species_trails: false,
+            use_simd: true,
+            food_image_path: self.food_path.clone(),
+            food_image_invert: false,
+            food_image_scale: 1.0,
+            obstacles: Vec::new(),
+            obstacle_masks: Vec::new(),
+            wind: None,
+            terrain: crate::simulation::config::TerrainType::None,
+            terrain_strength: 1.0,
+        })
+    }
+}
+
+// Helper functions for parsing saved config strings
+
+fn parse_palette_index(palette_str: &str) -> Result<usize, String> {
+    match palette_str.to_lowercase().as_str() {
+        "organic" => Ok(0),
+        "heat" => Ok(1),
+        "ocean" => Ok(2),
+        "mono" => Ok(3),
+        "forest" => Ok(4),
+        "neon" => Ok(5),
+        "warm" => Ok(6),
+        "vibrant" => Ok(7),
+        "legiblemono" => Ok(8),
+        "slime" => Ok(9),
+        "mold" => Ok(10),
+        "fungus" => Ok(11),
+        "swamp" => Ok(12),
+        "moss" => Ok(13),
+        "cosmic" => Ok(14),
+        "ethereal" => Ok(15),
+        _ => Err(format!("Unknown palette: {}", palette_str)),
+    }
+}
+
+fn parse_diffusion_kernel(s: &str) -> Result<DiffusionKernel, String> {
+    match s.to_lowercase().as_str() {
+        "mean3x3" => Ok(DiffusionKernel::Mean3x3),
+        "gaussian" => Ok(DiffusionKernel::Gaussian),
+        _ => Err(format!("Unknown diffusion kernel: {}", s)),
+    }
+}
+
+#[allow(dead_code)]
+fn parse_init_mode(s: &str) -> Result<InitMode, String> {
+    match s.to_lowercase().as_str() {
+        "random" => Ok(InitMode::Random),
+        "central" => Ok(InitMode::CentralBurst),
+        "circle" => Ok(InitMode::Circle),
+        "gradient" => Ok(InitMode::Gradient),
+        "wave" => Ok(InitMode::WaveFront),
+        "spiral" => Ok(InitMode::Spiral),
+        "clusters" => Ok(InitMode::RandomClusters),
+        "food" => Ok(InitMode::Food),
+        _ => Err(format!("Unknown init mode: {}", s)),
+    }
+}
+
+#[allow(dead_code)]
+fn parse_charset(s: &str) -> Result<Charset, String> {
+    match s.to_lowercase().as_str() {
+        "halfblock" => Ok(Charset::HalfBlock),
+        "ascii" => Ok(Charset::Ascii),
+        "braille" => Ok(Charset::Braille),
+        _ => Err(format!("Unknown charset: {}", s)),
     }
 }
 
