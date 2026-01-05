@@ -963,7 +963,7 @@ pub struct Args {
     #[arg(
         long = "auto-reset",
         help = "Automatically restart simulation when it collapses",
-        default_value = "true"
+        default_value = "false"
     )]
     pub auto_reset: bool,
 
@@ -1351,7 +1351,7 @@ impl Default for Args {
             food_persist_strength: 0.3,
             food_persist_radius: 50.0,
             food_persist_duration: 300,
-            auto_reset: true,
+            auto_reset: false,
             collapse_entropy_threshold: 0.95,
             collapse_duration_frames: 90,
             grid: false,
