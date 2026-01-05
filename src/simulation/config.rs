@@ -685,7 +685,7 @@ impl From<Preset> for SimConfig {
                 sensor_distance: 9.0,
                 rotation_angle: 45.0,
                 step_size: 1.0,
-                decay_factor: 0.5,
+                decay_factor: 0.85,
                 deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,

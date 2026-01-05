@@ -184,6 +184,11 @@ pub struct RuntimeState {
     pub reverse_palette: bool,
     pub show_stats: bool,
     pub notification: Option<(String, std::time::Instant)>,
+    pub collapse_frame_counter: usize,
+    pub warmup_counter: usize,
+    pub food_persist_counter: usize,
+    pub food_persist_enabled: bool,
+    pub initial_food_attractors: Vec<crate::simulation::config::Attractor>,
 }
 
 impl RuntimeState {
@@ -230,6 +235,11 @@ impl RuntimeState {
             reverse_palette: false,
             show_stats: false,
             notification: None,
+            collapse_frame_counter: 0,
+            warmup_counter: 0,
+            food_persist_counter: 0,
+            food_persist_enabled: false,
+            initial_food_attractors: Vec::new(),
         }
     }
 
@@ -515,6 +525,32 @@ impl RuntimeState {
 
     pub fn current_notification(&self) -> Option<&String> {
         self.notification.as_ref().map(|(msg, _)| msg)
+    }
+
+    pub fn is_in_warmup(&self, warmup_frames: usize) -> bool {
+        warmup_frames > 0 && self.warmup_counter < warmup_frames
+    }
+
+    pub fn increment_warmup(&mut self) {
+        self.warmup_counter += 1;
+    }
+
+    pub fn reset_warmup(&mut self) {
+        self.warmup_counter = 0;
+    }
+
+    pub fn track_entropy(&mut self, entropy: f32, threshold: f32, duration_frames: usize) -> bool {
+        if entropy > threshold {
+            self.collapse_frame_counter += 1;
+            self.collapse_frame_counter >= duration_frames
+        } else {
+            self.collapse_frame_counter = 0;
+            false
+        }
+    }
+
+    pub fn reset_collapse_counter(&mut self) {
+        self.collapse_frame_counter = 0;
     }
 }
 
