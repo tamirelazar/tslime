@@ -1,6 +1,6 @@
 use crate::cli::Palette;
 use crate::render::charset::Charset;
-use crate::simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig};
+use crate::simulation::config::{DiffusionKernel, InitMode, SimConfig};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -44,6 +44,7 @@ pub struct SavedConfig {
 }
 
 impl SavedConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_runtime(
         name: String,
         sim_config: &SimConfig,
@@ -192,6 +193,7 @@ pub fn save_config(config: SavedConfig) -> Result<(), String> {
     save_config_file(&config_file)
 }
 
+#[allow(dead_code)]
 pub fn load_config(name: &str) -> Result<SavedConfig, String> {
     let config_file = load_config_file()?;
 

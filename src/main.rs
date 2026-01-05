@@ -16,8 +16,9 @@ use render::adaptive_brightness::AdaptiveBrightness;
 use render::charset::Charset;
 use render::dither::DitherMode;
 use render::downsample::downsample;
+use render::grid::{GridRenderer, GridStyle};
 use render::options_overlay::ControlsOverlay;
-use render::overlay::{ConfigBrowserOverlay, ConfigSaveOverlay, HelpOverlay, StatsOverlay, WarmupOverlay};
+use render::overlay::{ConfigBrowserOverlay, ConfigSaveOverlay, HelpOverlay, StatsOverlay};
 use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType};
 use simulation::Simulation;
@@ -579,6 +580,21 @@ fn run_simulation(
     let mut _current_max_brightness = args.max_brightness;
     let start_time = std::time::Instant::now();
 
+    // Initialize grid renderer if enabled
+    let grid_renderer = if args.grid {
+        let grid_style = GridStyle::from_str(&args.grid_style).unwrap_or(GridStyle::Cross);
+        let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor { r: 26, g: 26, b: 26 });
+        Some(GridRenderer::new(
+            grid_style,
+            args.grid_size,
+            grid_color,
+            args.grid_opacity,
+            args.grid_adaptive,
+        ))
+    } else {
+        None
+    };
+
     loop {
         if is_shutdown_requested() {
             break;
@@ -862,6 +878,7 @@ fn run_simulation(
                     status_data,
                     notification_data,
                     stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
+                    grid_renderer.as_ref(),
                 )?;
             } else {
                 renderer.render_with_overlay(
@@ -874,6 +891,7 @@ fn run_simulation(
                     status_data,
                     notification_data,
                     stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
+                    grid_renderer.as_ref(),
                 )?;
             }
         }
