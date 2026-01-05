@@ -34,7 +34,9 @@ const ALL_PALETTES: [Palette; 14] = [
     Palette::Moss,
 ];
 
+// HelpMode is kept for backwards compatibility but deprecated
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum HelpMode {
     None,
     Quick,
@@ -114,6 +116,8 @@ pub enum ControlAction {
     CyclePalette,
     CyclePaletteReverse,
     ToggleHelp,
+    ToggleControls,
+    CloseOverlays,
     ToggleDither,
     CycleDitherMode,
     AdjustDitherIntensity(f32),
@@ -146,7 +150,12 @@ pub enum ControlAction {
 pub struct RuntimeState {
     pub is_paused: bool,
     pub show_help: bool,
+    pub show_controls: bool,
+    pub controls_category_idx: usize,
+    // Deprecated - kept for compatibility during transition
+    #[allow(dead_code)]
     pub help_mode: HelpMode,
+    #[allow(dead_code)]
     pub options_category_idx: usize,
     pub time_scale: f32,
     pub current_preset: Preset,
@@ -190,11 +199,9 @@ impl RuntimeState {
         Self {
             is_paused: false,
             show_help,
-            help_mode: if show_help {
-                HelpMode::Quick
-            } else {
-                HelpMode::None
-            },
+            show_controls: false,
+            controls_category_idx: 0,
+            help_mode: HelpMode::None,
             options_category_idx: 0,
             time_scale: 1.0,
             current_preset: initial_preset,
@@ -231,24 +238,39 @@ impl RuntimeState {
     }
 
     pub fn toggle_help(&mut self) {
-        self.help_mode = match self.help_mode {
-            HelpMode::None => HelpMode::Quick,
-            HelpMode::Quick => HelpMode::Options,
-            HelpMode::Options => HelpMode::None,
-        };
-        self.show_help = self.help_mode != HelpMode::None;
+        self.show_help = !self.show_help;
     }
 
-    pub fn cycle_options_category(&mut self, forward: bool) {
+    pub fn toggle_controls(&mut self) {
+        self.show_controls = !self.show_controls;
+    }
+
+    pub fn any_overlay_open(&self) -> bool {
+        self.show_help || self.show_controls || self.show_stats
+    }
+
+    pub fn close_all_overlays(&mut self) {
+        self.show_help = false;
+        self.show_controls = false;
+        self.show_stats = false;
+    }
+
+    pub fn cycle_controls_category(&mut self, forward: bool) {
         if forward {
-            self.options_category_idx = (self.options_category_idx + 1) % 5;
+            self.controls_category_idx = (self.controls_category_idx + 1) % 5;
         } else {
-            self.options_category_idx = if self.options_category_idx == 0 {
+            self.controls_category_idx = if self.controls_category_idx == 0 {
                 4
             } else {
-                self.options_category_idx - 1
+                self.controls_category_idx - 1
             };
         }
+    }
+
+    // Deprecated - kept for compatibility
+    #[allow(dead_code)]
+    pub fn cycle_options_category(&mut self, forward: bool) {
+        self.cycle_controls_category(forward);
     }
 
     pub fn set_preset(&mut self, preset: Preset) {
@@ -519,12 +541,14 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
             ControlAction::CyclePaletteReverse
         }
         KeyCode::Char('c') => ControlAction::CyclePalette,
-        KeyCode::Char('h') | KeyCode::Char('H') => ControlAction::ToggleHelp,
+        KeyCode::Char('?') => ControlAction::ToggleHelp,
+        KeyCode::Char('h') | KeyCode::Char('H') => ControlAction::ToggleControls,
+        KeyCode::Esc => ControlAction::CloseOverlays,
         KeyCode::Char('d') | KeyCode::Char('D') => ControlAction::ToggleDither,
         KeyCode::Char('m') | KeyCode::Char('M') => ControlAction::CycleDitherMode,
         KeyCode::Char('[') | KeyCode::Char('{') => ControlAction::AdjustDitherIntensity(-0.1),
         KeyCode::Char(']') | KeyCode::Char('}') => ControlAction::AdjustDitherIntensity(0.1),
-        KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => ControlAction::Quit,
+        KeyCode::Char('q') | KeyCode::Char('Q') => ControlAction::Quit,
         KeyCode::Tab => ControlAction::CycleOptionsCategory,
         KeyCode::Char('A') | KeyCode::Char('a') => {
             if key_event.modifiers.contains(KeyModifiers::SHIFT) {
@@ -728,7 +752,7 @@ mod tests {
     }
 
     #[test]
-    fn test_help_mode_cycling() {
+    fn test_help_toggle() {
         let mut state = RuntimeState::new(
             42,
             crate::simulation::config::InitMode::Random,
@@ -739,20 +763,17 @@ mod tests {
             0.0,
         );
 
-        assert_eq!(state.help_mode, HelpMode::None);
+        assert!(!state.show_help);
 
         state.toggle_help();
-        assert_eq!(state.help_mode, HelpMode::Quick);
+        assert!(state.show_help);
 
         state.toggle_help();
-        assert_eq!(state.help_mode, HelpMode::Options);
-
-        state.toggle_help();
-        assert_eq!(state.help_mode, HelpMode::None);
+        assert!(!state.show_help);
     }
 
     #[test]
-    fn test_options_category_cycling() {
+    fn test_controls_toggle() {
         let mut state = RuntimeState::new(
             42,
             crate::simulation::config::InitMode::Random,
@@ -763,25 +784,95 @@ mod tests {
             0.0,
         );
 
-        assert_eq!(state.options_category_idx, 0);
+        assert!(!state.show_controls);
 
-        state.cycle_options_category(true);
-        assert_eq!(state.options_category_idx, 1);
+        state.toggle_controls();
+        assert!(state.show_controls);
 
-        state.cycle_options_category(true);
-        assert_eq!(state.options_category_idx, 2);
+        state.toggle_controls();
+        assert!(!state.show_controls);
+    }
 
-        state.cycle_options_category(true);
-        assert_eq!(state.options_category_idx, 3);
+    #[test]
+    fn test_any_overlay_open() {
+        let mut state = RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            crate::simulation::config::Preset::Network,
+            0,
+            false,
+            MouseInteractionMode::Disabled,
+            0.0,
+        );
 
-        state.cycle_options_category(true);
-        assert_eq!(state.options_category_idx, 4);
+        assert!(!state.any_overlay_open());
 
-        state.cycle_options_category(true);
-        assert_eq!(state.options_category_idx, 0);
+        state.show_help = true;
+        assert!(state.any_overlay_open());
 
-        state.cycle_options_category(false);
-        assert_eq!(state.options_category_idx, 4);
+        state.show_help = false;
+        state.show_controls = true;
+        assert!(state.any_overlay_open());
+
+        state.show_controls = false;
+        state.show_stats = true;
+        assert!(state.any_overlay_open());
+    }
+
+    #[test]
+    fn test_close_all_overlays() {
+        let mut state = RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            crate::simulation::config::Preset::Network,
+            0,
+            false,
+            MouseInteractionMode::Disabled,
+            0.0,
+        );
+
+        state.show_help = true;
+        state.show_controls = true;
+        state.show_stats = true;
+
+        state.close_all_overlays();
+
+        assert!(!state.show_help);
+        assert!(!state.show_controls);
+        assert!(!state.show_stats);
+    }
+
+    #[test]
+    fn test_controls_category_cycling() {
+        let mut state = RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            crate::simulation::config::Preset::Network,
+            0,
+            false,
+            MouseInteractionMode::Disabled,
+            0.0,
+        );
+
+        assert_eq!(state.controls_category_idx, 0);
+
+        state.cycle_controls_category(true);
+        assert_eq!(state.controls_category_idx, 1);
+
+        state.cycle_controls_category(true);
+        assert_eq!(state.controls_category_idx, 2);
+
+        state.cycle_controls_category(true);
+        assert_eq!(state.controls_category_idx, 3);
+
+        state.cycle_controls_category(true);
+        assert_eq!(state.controls_category_idx, 4);
+
+        state.cycle_controls_category(true);
+        assert_eq!(state.controls_category_idx, 0);
+
+        state.cycle_controls_category(false);
+        assert_eq!(state.controls_category_idx, 4);
     }
 
     #[test]

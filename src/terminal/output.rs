@@ -669,15 +669,15 @@ impl TerminalRenderer {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn render_with_overlay<T: AsRef<str>>(
+    pub fn render_with_overlay<T: AsRef<str>, U: AsRef<str>>(
         &mut self,
         downsampled: &[DownsampleCell],
         max_trail_value: f32,
         help_lines: Option<(&[T], usize, usize)>,
+        controls_lines: Option<(&[U], usize, usize)>,
         status_line: Option<(String, usize)>,
-        paused_line: Option<(String, usize)>,
         notification_line: Option<(String, usize)>,
-        stats_lines: Option<&[String]>,
+        stats_lines: Option<(&[String], usize)>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -703,32 +703,29 @@ impl TerminalRenderer {
             },
         );
 
+        // Help overlay at top-left
         if let Some((lines, x, y)) = help_lines {
             buffer.draw_text_overlay(lines, x, y, 15, Some(236));
         }
 
+        // Controls overlay at top-left (below help if help is visible)
+        if let Some((lines, x, y)) = controls_lines {
+            buffer.draw_text_overlay(lines, x, y, 14, Some(236));
+        }
+
+        // Status line at bottom
         if let Some((line, x)) = status_line {
             let line_chars: Vec<char> = line.chars().collect();
             buffer.draw_text_overlay(
                 &[&line_chars.iter().collect::<String>()],
                 x,
                 self.height.saturating_sub(2),
-                14,
+                250,
                 Some(234),
             );
         }
 
-        if let Some((text, x)) = paused_line {
-            let text_chars: Vec<char> = text.chars().collect();
-            buffer.draw_text_overlay(
-                &[&text_chars.iter().collect::<String>()],
-                x,
-                2,
-                15,
-                Some(196),
-            );
-        }
-
+        // Notification at bottom-center
         if let Some((text, x)) = notification_line {
             let text_chars: Vec<char> = text.chars().collect();
             buffer.draw_text_overlay(
@@ -740,25 +737,26 @@ impl TerminalRenderer {
             );
         }
 
-        if let Some(lines) = stats_lines {
-            buffer.draw_text_overlay(lines, 1, 2, 14, Some(236));
+        // Stats overlay at top-right
+        if let Some((lines, x)) = stats_lines {
+            buffer.draw_text_overlay(lines, x, 2, 245, Some(236));
         }
 
         execute!(self.stdout, &buffer)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn render_multi_species_with_overlay<T: AsRef<str>>(
+    pub fn render_multi_species_with_overlay<T: AsRef<str>, U: AsRef<str>>(
         &mut self,
         trail_maps: &[(&[f32], RgbColor)],
         sim_width: usize,
         sim_height: usize,
         max_trail_value: f32,
         help_lines: Option<(&[T], usize, usize)>,
+        controls_lines: Option<(&[U], usize, usize)>,
         status_line: Option<(String, usize)>,
-        paused_line: Option<(String, usize)>,
         notification_line: Option<(String, usize)>,
-        stats_lines: Option<&[String]>,
+        stats_lines: Option<(&[String], usize)>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -802,32 +800,29 @@ impl TerminalRenderer {
             }
         }
 
+        // Help overlay at top-left
         if let Some((lines, x, y)) = help_lines {
             buffer.draw_text_overlay(lines, x, y, 15, Some(236));
         }
 
+        // Controls overlay at top-left (below help if help is visible)
+        if let Some((lines, x, y)) = controls_lines {
+            buffer.draw_text_overlay(lines, x, y, 14, Some(236));
+        }
+
+        // Status line at bottom
         if let Some((line, x)) = status_line {
             let line_chars: Vec<char> = line.chars().collect();
             buffer.draw_text_overlay(
                 &[&line_chars.iter().collect::<String>()],
                 x,
                 self.height.saturating_sub(2),
-                14,
+                250,
                 Some(234),
             );
         }
 
-        if let Some((text, x)) = paused_line {
-            let text_chars: Vec<char> = text.chars().collect();
-            buffer.draw_text_overlay(
-                &[&text_chars.iter().collect::<String>()],
-                x,
-                2,
-                15,
-                Some(196),
-            );
-        }
-
+        // Notification at bottom-center
         if let Some((text, x)) = notification_line {
             let text_chars: Vec<char> = text.chars().collect();
             buffer.draw_text_overlay(
@@ -839,8 +834,9 @@ impl TerminalRenderer {
             );
         }
 
-        if let Some(lines) = stats_lines {
-            buffer.draw_text_overlay(lines, 1, 2, 14, Some(236));
+        // Stats overlay at top-right
+        if let Some((lines, x)) = stats_lines {
+            buffer.draw_text_overlay(lines, x, 2, 245, Some(236));
         }
 
         execute!(self.stdout, &buffer)

@@ -6,6 +6,27 @@ use crate::simulation::config::Obstacle;
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
+pub struct HelpOverlay;
+
+impl HelpOverlay {
+    pub fn build_overlay() -> Vec<String> {
+        vec![
+            "┌─ HELP ─────────────────────────────────┐".to_string(),
+            "│ p: Pause    r: Restart      q: Quit    │".to_string(),
+            "│ h: Controls  ?: This help     \\: Stats │".to_string(),
+            "│ +/-: Speed  c/C: Palette   1-7: Preset │".to_string(),
+            "│ d: Dither   m: Mode        [/]: Adjust │".to_string(),
+            "│                                        │".to_string(),
+            "│ Press h for detailed controls          │".to_string(),
+            "└────────────────────────────────────────┘".to_string(),
+        ]
+    }
+
+    pub fn width() -> usize {
+        42
+    }
+}
+
 pub struct OverlayRenderer;
 
 impl OverlayRenderer {
@@ -300,6 +321,8 @@ mod tests {
 pub struct StatsOverlay;
 
 impl StatsOverlay {
+    pub const WIDTH: usize = 20;
+
     #[allow(clippy::too_many_arguments)]
     pub fn build_overlay(
         agent_count: usize,
@@ -310,10 +333,8 @@ impl StatsOverlay {
         avg_fps: f32,
         frame_count: u64,
         elapsed_seconds: f32,
-        term_width: usize,
+        _term_width: usize,
     ) -> Vec<String> {
-        let mut lines = Vec::new();
-
         let trail_percent = if trail_capacity > 0.0 {
             (trail_sum / trail_capacity * 100.0).min(99.9)
         } else {
@@ -322,57 +343,24 @@ impl StatsOverlay {
 
         let elapsed_str = format_elapsed_time(elapsed_seconds);
 
-        lines.push(format!("┌─ STATS {:─<38}┐", ""));
+        vec![
+            "┌─ STATS ──────────┐".to_string(),
+            format!("│ Agents: {:>8} │", agent_count),
+            format!("│ Trail:  {:>7.1}% │", trail_percent),
+            format!("│ Entropy: {:>7.2} │", entropy),
+            format!("│ FPS: {:>4.0} ({:>4.0}) │", fps, avg_fps),
+            format!("│ Frames: {:>8} │", frame_count),
+            format!("│ Time: {:>10} │", elapsed_str),
+            "└──────────────────┘".to_string(),
+        ]
+    }
 
-        lines.push(format!(
-            "│{:18} {:>15}      │",
-            "Agents:",
-            agent_count
-        ));
-
-        lines.push(format!(
-            "│{:18} {:>12.1}%    │",
-            "Trail:",
-            trail_percent
-        ));
-
-        lines.push(format!(
-            "│{:18} {:>14.2}    │",
-            "Entropy:",
-            entropy
-        ));
-
-        lines.push(format!(
-            "│{:18} {:>6.1} ({:4.1})   │",
-            "FPS:",
-            fps,
-            avg_fps
-        ));
-
-        lines.push(format!(
-            "│{:18} {:>15}      │",
-            "Frames:",
-            frame_count
-        ));
-
-        lines.push(format!(
-            "│{:18} {:>15}      │",
-            "Time:",
-            elapsed_str
-        ));
-
-        lines.push(format!("└{:─<44}┘", ""));
-
-        let max_line_len = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
-        let start_x = if term_width > max_line_len {
-            term_width.saturating_sub(max_line_len + 1)
+    pub fn calculate_x_position(term_width: usize) -> usize {
+        if term_width > Self::WIDTH + 2 {
+            term_width.saturating_sub(Self::WIDTH + 2)
         } else {
             1
-        };
-
-        let _ = start_x;
-
-        lines
+        }
     }
 
     pub fn calculate_entropy(trail_map: &[f32], sample_rate: usize) -> f32 {
@@ -450,8 +438,16 @@ mod stats_tests {
         assert!(lines.last().unwrap().starts_with('└'));
         assert!(lines.iter().all(|l| l.starts_with('│') || l.starts_with('┌') || l.starts_with('└')));
 
+        // New compact format is 20 chars wide
         let max_len = lines.iter().map(|l| l.chars().count()).max().unwrap();
-        assert!(max_len <= 50);
+        assert_eq!(max_len, StatsOverlay::WIDTH);
+    }
+
+    #[test]
+    fn test_stats_overlay_position() {
+        assert_eq!(StatsOverlay::calculate_x_position(80), 58);
+        assert_eq!(StatsOverlay::calculate_x_position(120), 98);
+        assert_eq!(StatsOverlay::calculate_x_position(20), 1);
     }
 
     #[test]
