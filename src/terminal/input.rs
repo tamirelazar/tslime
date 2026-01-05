@@ -78,10 +78,8 @@ impl InputPoller {
     }
 
     pub fn is_exit_key(key_event: &KeyEvent) -> bool {
-        matches!(
-            key_event.code,
-            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc
-        )
+        // Note: Esc is handled separately to close overlays first
+        matches!(key_event.code, KeyCode::Char('q') | KeyCode::Char('Q'))
     }
 }
 

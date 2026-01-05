@@ -15,14 +15,14 @@ use render::adaptive_brightness::AdaptiveBrightness;
 use render::charset::Charset;
 use render::dither::DitherMode;
 use render::downsample::downsample;
-use render::options_overlay::OptionsOverlay;
-use render::overlay::StatsOverlay;
+use render::options_overlay::ControlsOverlay;
+use render::overlay::{HelpOverlay, StatsOverlay};
 use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{DiffusionKernel, Preset, SimConfig, TerrainType};
 use simulation::Simulation;
 use terminal::control::{
-    handle_key_event, num_palettes, ControlAction, HelpMode, MouseInteractionMode,
-    PaletteShiftSpeed, RuntimeState,
+    handle_key_event, num_palettes, ControlAction, MouseInteractionMode, PaletteShiftSpeed,
+    RuntimeState,
 };
 use terminal::input::{InputPoller, MouseEventType};
 use terminal::output::FrameBuffer;
@@ -596,115 +596,47 @@ fn run_simulation(
         hue_offset %= 360.0;
         renderer.set_hue_shift(hue_offset);
 
-        let mouse_help = if runtime_state.mouse_mode != MouseInteractionMode::Disabled {
-            let mode_str = match runtime_state.mouse_mode {
-                MouseInteractionMode::Attract => "attract",
-                MouseInteractionMode::Repel => "repel",
-                MouseInteractionMode::Disabled => "",
-            };
-            format!(
-                "│ Click: {} agents ({:.1}s timeout)         │",
-                mode_str, runtime_state.mouse_timeout
-            )
+        // Build help overlay (? key)
+        let help_lines: Option<Vec<String>> = if runtime_state.show_help {
+            Some(HelpOverlay::build_overlay())
         } else {
-            String::new()
+            None
         };
 
-        static HELP_LINES: [&str; 12] = [
-            "┌─ tslime controls ───────────────────────┐",
-            "│ p: Pause/Resume                         │",
-            "│ r: Restart                              │",
-            "│ 1-5: Presets  (Network,Exploratory,etc) │",
-            "│ +/-: Time scale (0.5x - 4.0x)           │",
-            "│ c: Cycle palette (Shift+C reverse)      │",
-            "│ d: Toggle dithering                    │",
-            "│ m: Cycle dither mode                   │",
-            "│ []: Adjust dither intensity (0.0-1.0)   │",
-            "│ h: Toggle this help                     │",
-            "│ q: Quit                                 │",
-            "└─────────────────────────────────────────┘",
-        ];
-
-        static _QUICK_HELP_LINES: [&str; 12] = [
-            "┌─ tslime controls ───────────────────────┐",
-            "│ p: Pause/Resume                         │",
-            "│ r: Restart                              │",
-            "│ +/-: Time scale                         │",
-            "│ c: Cycle palette                        │",
-            "│ h: Toggle help (Tab for options)        │",
-            "│ q: Quit                                 │",
-            "│                                        │",
-            "│ SIMULATION (A,T,S,E,I)                  │",
-            "│ ENVIRONMENT (K,W,Y,U)                   │",
-            "│ VISUAL (B,V,N)                          │",
-            "└─────────────────────────────────────────┘",
-        ];
-
-        let help_lines = match runtime_state.help_mode {
-            HelpMode::None => None,
-            HelpMode::Quick => {
-                let attractor_lines = render::overlay::OverlayRenderer::build_help_with_attractors(
-                    &HELP_LINES,
-                    &sim.config().attractors,
-                );
-                let obstacle_lines = render::overlay::OverlayRenderer::build_help_with_obstacles(
-                    &[],
-                    &sim.config().obstacles,
-                );
-                let mouse_attractor_lines =
-                    render::overlay::OverlayRenderer::build_help_with_mouse_attractors(
-                        &[],
-                        &sim.config().mouse_attractors,
-                        sim.width(),
-                        sim.height(),
-                    );
-
-                let mut result = if obstacle_lines.is_empty() {
-                    attractor_lines
-                } else {
-                    let mut combined = attractor_lines;
-                    combined.extend(obstacle_lines);
-                    combined
-                };
-
-                if !mouse_attractor_lines.is_empty() {
-                    result.extend(mouse_attractor_lines);
-                }
-
-                if !mouse_help.is_empty() {
-                    result.push(String::new());
-                    result.push("┌─ Mouse Interaction ─────────────────────┐".to_string());
-                    result.push(mouse_help);
-                    result.push("└─────────────────────────────────────────┘".to_string());
-                }
-
-                Some(result)
-            }
-            HelpMode::Options => {
-                let options_overlay = OptionsOverlay::build_overlay(
-                    runtime_state.options_category_idx,
-                    runtime_state.sensor_angle,
-                    runtime_state.turn_angle,
-                    runtime_state.step_size,
-                    runtime_state.decay_factor,
-                    runtime_state.deposit_amount,
-                    runtime_state.diffusion_kernel,
-                    runtime_state.wind_direction,
-                    runtime_state.terrain_type,
-                    runtime_state.terrain_strength,
-                    runtime_state.auto_normalize,
-                    runtime_state.motion_blur_frames,
-                    runtime_state.max_brightness,
-                    runtime_state.fast_mode_enabled,
-                    runtime_state.palette_shift_speed,
-                    runtime_state.invert_palette,
-                    runtime_state.reverse_palette,
-                    term_width as usize,
-                );
-                Some(options_overlay)
-            }
+        // Calculate controls Y position (below help if help is visible)
+        let controls_y = if runtime_state.show_help {
+            2 + HelpOverlay::build_overlay().len() + 1
+        } else {
+            2
         };
 
+        // Build controls overlay (h key)
+        let controls_lines: Option<Vec<String>> = if runtime_state.show_controls {
+            Some(ControlsOverlay::build_overlay(
+                runtime_state.controls_category_idx,
+                runtime_state.sensor_angle,
+                runtime_state.turn_angle,
+                runtime_state.step_size,
+                runtime_state.decay_factor,
+                runtime_state.deposit_amount,
+                runtime_state.diffusion_kernel,
+                runtime_state.wind_direction,
+                runtime_state.terrain_type,
+                runtime_state.terrain_strength,
+                runtime_state.auto_normalize,
+                runtime_state.motion_blur_frames,
+                runtime_state.max_brightness,
+                runtime_state.fast_mode_enabled,
+                runtime_state.palette_shift_speed,
+                runtime_state.invert_palette,
+                runtime_state.reverse_palette,
+                term_width as usize,
+            ))
+        } else {
+            None
+        };
+
+        // Build status line (shown when any overlay visible or paused)
         let status_line = render::overlay::OverlayRenderer::build_status_line(
             runtime_state.is_paused,
             runtime_state.current_preset,
@@ -715,20 +647,13 @@ fn run_simulation(
         );
         let status_x =
             render::overlay::OverlayRenderer::status_line_x(&status_line, term_width as usize);
-        let status_data = if runtime_state.show_help || runtime_state.is_paused {
+        let status_data = if runtime_state.any_overlay_open() || runtime_state.is_paused {
             Some((status_line, status_x))
         } else {
             None
         };
 
-        let paused_text = "[ PAUSED ]";
-        let paused_x = render::overlay::OverlayRenderer::paused_overlay_x(term_width as usize);
-        let paused_data = if runtime_state.is_paused {
-            Some((paused_text.to_string(), paused_x))
-        } else {
-            None
-        };
-
+        // Notification at bottom center
         let notification_data = runtime_state.current_notification().map(|msg| {
             let notification_text = format!("[ {} ]", msg);
             let notification_x = if notification_text.len() < term_width as usize {
@@ -739,6 +664,7 @@ fn run_simulation(
             (notification_text, notification_x)
         });
 
+        // Stats overlay at top-right
         let stats_lines: Option<Vec<String>> = if runtime_state.show_stats {
             let blended_trail = sim.trail_map_blended();
             let trail_capacity = (sim.width() * sim.height()) as f32 * 10.0;
@@ -759,6 +685,7 @@ fn run_simulation(
         } else {
             None
         };
+        let stats_x = StatsOverlay::calculate_x_position(term_width as usize);
 
         if max_brightness > 0.0 {
             if args.species_colors && sim.config().separate_species_trails {
@@ -774,21 +701,25 @@ fn run_simulation(
                     sim.width(),
                     sim.height(),
                     max_brightness,
-                    help_lines.as_ref().map(|v| (v.as_slice(), 2, 2)),
+                    help_lines.as_ref().map(|v| (v.as_slice(), 2usize, 2usize)),
+                    controls_lines
+                        .as_ref()
+                        .map(|v| (v.as_slice(), 2usize, controls_y)),
                     status_data,
-                    paused_data,
                     notification_data,
-                    stats_lines.as_deref(),
+                    stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
                 )?;
             } else {
                 renderer.render_with_overlay(
                     downsampled.cells(),
                     max_brightness,
-                    help_lines.as_ref().map(|v| (v.as_slice(), 2, 2)),
+                    help_lines.as_ref().map(|v| (v.as_slice(), 2usize, 2usize)),
+                    controls_lines
+                        .as_ref()
+                        .map(|v| (v.as_slice(), 2usize, controls_y)),
                     status_data,
-                    paused_data,
                     notification_data,
-                    stats_lines.as_deref(),
+                    stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
                 )?;
             }
         }
@@ -856,8 +787,17 @@ fn run_simulation(
                         ControlAction::ToggleHelp => {
                             runtime_state.toggle_help();
                         }
+                        ControlAction::ToggleControls => {
+                            runtime_state.toggle_controls();
+                        }
+                        ControlAction::CloseOverlays => {
+                            if runtime_state.any_overlay_open() {
+                                runtime_state.close_all_overlays();
+                            }
+                            // If no overlays open, Esc does nothing (doesn't quit)
+                        }
                         ControlAction::CycleOptionsCategory => {
-                            runtime_state.cycle_options_category(true);
+                            runtime_state.cycle_controls_category(true);
                         }
                         ControlAction::AdjustSensorAngle(delta) => {
                             let at_bound = runtime_state.adjust_sensor_angle(delta);
@@ -1057,12 +997,8 @@ fn run_simulation(
                             runtime_state.show_notification("Reset to defaults".to_string());
                         }
                         ControlAction::ShowOptionsOverlay => {
-                            if runtime_state.help_mode == HelpMode::Options {
-                                runtime_state.toggle_help();
-                            } else {
-                                runtime_state.help_mode = HelpMode::Options;
-                                runtime_state.show_help = true;
-                            }
+                            // Toggle controls overlay (same as ToggleControls)
+                            runtime_state.toggle_controls();
                         }
                         ControlAction::ToggleStats => {
                             runtime_state.toggle_stats();
