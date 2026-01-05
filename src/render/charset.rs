@@ -1,21 +1,42 @@
 use crate::cli::Args;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Charset {
     HalfBlock,
     Ascii,
     Braille,
+    CustomAscii(Vec<char>),
 }
 
 impl Charset {
     pub fn from_args(args: &Args) -> Self {
         if args.braille {
             Charset::Braille
+        } else if let Some(ref custom_chars) = args.ascii_chars {
+            // Create custom ASCII charset from user-provided characters
+            Charset::from_custom_string(custom_chars)
         } else if args.ascii {
             Charset::Ascii
         } else {
             Charset::HalfBlock
         }
+    }
+
+    /// Creates a CustomAscii charset from a string of characters, sorted by visual density
+    pub fn from_custom_string(chars: &str) -> Self {
+        let mut unique_chars: Vec<char> = chars.chars().collect();
+
+        // Remove duplicates while preserving order
+        unique_chars.dedup();
+
+        // Sort by estimated visual density
+        unique_chars.sort_by(|a, b| {
+            estimate_char_density(*a)
+                .partial_cmp(&estimate_char_density(*b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        Charset::CustomAscii(unique_chars)
     }
 }
 
@@ -37,6 +58,68 @@ const BRAILLE_DOT_MASKS: [u8; 5] = [
     0x07, // 3 dots
     0x07, // 3 dots (max)
 ];
+
+/// Estimates the visual density/weight of a character for sorting
+/// Returns a value from 0.0 (lightest) to 1.0 (darkest)
+fn estimate_char_density(c: char) -> f32 {
+    match c {
+        // Whitespace and very light characters
+        ' ' => 0.0,
+        '\t' | '\n' => 0.0,
+
+        // Very light punctuation
+        '.' | ',' | '\'' | '`' | '´' | '°' | '·' | '˙' => 0.1,
+
+        // Light punctuation and symbols
+        ':' | ';' | '!' | '|' | 'i' | 'l' | 'I' | '1' => 0.2,
+        '/' | '\\' | '(' | ')' | '[' | ']' | '{' | '}' => 0.25,
+
+        // Medium-light characters
+        '-' | '_' | '~' | '^' | '"' | 'r' | 'c' | 'v' | 'f' | 'j' | 't' => 0.3,
+        '<' | '>' | 'L' | 'T' | 'Y' | 'J' | '7' => 0.35,
+
+        // Medium characters
+        '=' | '+' | '?' | 's' | 'z' | 'x' | 'k' | 'n' | 'u' | 'y' => 0.4,
+        'a' | 'e' | 'o' | 'h' | 'p' | 'q' | 'b' | 'd' | 'g' => 0.45,
+        'F' | 'P' | 'E' | 'Z' | '2' | '3' | '5' => 0.5,
+
+        // Medium-dark characters
+        '*' | '×' | 'w' | 'm' | 'V' | 'X' | 'K' => 0.55,
+        'A' | 'S' | 'C' | 'U' | 'R' | 'G' | '4' | '6' | '9' => 0.6,
+
+        // Dark characters
+        '#' | 'H' | 'N' | 'D' | 'B' | 'O' | 'Q' | '8' | '0' => 0.7,
+        'W' | 'M' => 0.75,
+
+        // Very dark characters
+        '@' | '%' | '&' | '$' => 0.8,
+        '▓' | '▒' => 0.9,
+        '■' | '▪' | '▬' => 0.95,
+
+        // Unicode block characters (darkest)
+        '█' => 1.0,  // Full block (U+2588)
+        '\u{2587}' => 0.875, '\u{2586}' => 0.75,
+        '\u{2585}' => 0.625, '\u{2584}' => 0.5,
+        '\u{2583}' => 0.375, '\u{2582}' => 0.25,
+        '\u{2581}' => 0.125,
+
+        // Default: estimate based on Unicode category
+        _ => {
+            if c.is_ascii_uppercase() {
+                0.55
+            } else if c.is_ascii_lowercase() {
+                0.4
+            } else if c.is_ascii_digit() {
+                0.5
+            } else if c.is_ascii_punctuation() {
+                0.3
+            } else {
+                // Unknown character - assume medium density
+                0.5
+            }
+        }
+    }
+}
 
 pub fn map_braille_subpixel(top: f32, bottom: f32, threshold: f32) -> char {
     let top = top.clamp(0.0, 1.0);
@@ -84,6 +167,14 @@ pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
                 char::from_u32(0x2800 + index as u32).unwrap_or(' ')
             }
         }
+        Charset::CustomAscii(ref chars) => {
+            if chars.is_empty() {
+                return ' ';
+            }
+            let brightness = top.clamp(0.0, 1.0);
+            let index = (brightness * (chars.len() - 1) as f32).round() as usize;
+            chars[index.min(chars.len() - 1)]
+        }
     }
 }
 
@@ -116,6 +207,7 @@ pub fn charset_level_count(charset: Charset) -> usize {
         Charset::HalfBlock => 9,
         Charset::Ascii => 10,
         Charset::Braille => 16,
+        Charset::CustomAscii(ref chars) => chars.len().max(2), // At least 2 levels
     }
 }
 

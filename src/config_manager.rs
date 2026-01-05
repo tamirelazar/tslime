@@ -88,6 +88,7 @@ impl SavedConfig {
             Charset::HalfBlock => "halfblock",
             Charset::Ascii => "ascii",
             Charset::Braille => "braille",
+            Charset::CustomAscii(_) => "ascii", // Save as "ascii" for now
         };
 
         let init_mode_str = match init_mode {

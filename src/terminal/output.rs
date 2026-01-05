@@ -205,7 +205,7 @@ impl FrameBuffer {
                 bottom_brightness,
                 downsampled,
                 &palette,
-                charset,
+                charset.clone(),
                 reverse_palette,
                 invert_palette,
                 color_mode,
@@ -244,7 +244,7 @@ impl FrameBuffer {
     ) -> Cell {
         const THRESHOLD: f32 = 0.05;
 
-        let levels = charset::charset_level_count(charset);
+        let levels = charset::charset_level_count(charset.clone());
 
         let (top_adj, bottom_adj) = match dither_mode {
             DitherMode::None => (top, bottom),
@@ -302,20 +302,22 @@ impl FrameBuffer {
             let char = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
                 match charset {
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
-                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
-                    _ => charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset),
+                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset.clone()),
+                    Charset::CustomAscii(_) | _ => charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset.clone()),
                 }
             } else if top_adj > bottom_adj {
                 match charset {
-                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
+                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset.clone()),
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::Ascii => charset::map_ascii_directional(top_adj, true),
+                    Charset::CustomAscii(_) => charset::map_brightness(top_adj, None, charset.clone()),
                 }
             } else {
                 match charset {
-                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
+                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset.clone()),
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::Ascii => charset::map_ascii_directional(bottom_adj, false),
+                    Charset::CustomAscii(_) => charset::map_brightness(bottom_adj, None, charset.clone()),
                 }
             };
 
@@ -700,7 +702,7 @@ impl TerminalRenderer {
             self.height,
             max_trail_value,
             self.palette.clone(),
-            self.charset,
+            self.charset.clone(),
             self.reverse_palette,
             self.invert_palette,
             self.color_mode,
@@ -739,7 +741,7 @@ impl TerminalRenderer {
             self.height,
             max_trail_value,
             self.palette.clone(),
-            self.charset,
+            self.charset.clone(),
             self.reverse_palette,
             self.invert_palette,
             self.color_mode,
@@ -875,7 +877,7 @@ impl TerminalRenderer {
                 self.height,
                 max_trail_value,
                 self.palette.clone(),
-                self.charset,
+                self.charset.clone(),
                 self.reverse_palette,
                 self.invert_palette,
                 self.color_mode,
