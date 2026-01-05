@@ -63,6 +63,56 @@ impl FrameBuffer {
         }
     }
 
+    /// Blends a grid color with the existing cell at (x, y)
+    pub fn blend_grid_cell(&mut self, x: usize, y: usize, grid_color: RgbColor, opacity: f32) {
+        if x >= self.width || y >= self.height {
+            return;
+        }
+
+        let idx = y * self.width + x;
+        let cell = &mut self.cells[idx];
+
+        match self.color_mode {
+            ColorMode::TrueColor => {
+                if let Some(existing_rgb) = cell.fg_color_rgb {
+                    // Blend: result = existing * (1 - opacity) + grid * opacity
+                    let blended = RgbColor {
+                        r: ((existing_rgb.r as f32 * (1.0 - opacity))
+                            + (grid_color.r as f32 * opacity)) as u8,
+                        g: ((existing_rgb.g as f32 * (1.0 - opacity))
+                            + (grid_color.g as f32 * opacity)) as u8,
+                        b: ((existing_rgb.b as f32 * (1.0 - opacity))
+                            + (grid_color.b as f32 * opacity)) as u8,
+                    };
+                    cell.fg_color_rgb = Some(blended);
+                } else {
+                    // No existing color, use grid color directly with opacity
+                    cell.fg_color_rgb = Some(grid_color);
+                    cell.char = if cell.char == ' ' { '·' } else { cell.char };
+                }
+            }
+            _ => {
+                // For 256-color mode, convert grid RGB to closest ANSI color and blend
+                if let Some(existing_256) = cell.fg_color_256 {
+                    let existing_rgb = palette::ANSI_256_TO_RGB[existing_256 as usize];
+                    let blended = RgbColor {
+                        r: ((existing_rgb.r as f32 * (1.0 - opacity))
+                            + (grid_color.r as f32 * opacity)) as u8,
+                        g: ((existing_rgb.g as f32 * (1.0 - opacity))
+                            + (grid_color.g as f32 * opacity)) as u8,
+                        b: ((existing_rgb.b as f32 * (1.0 - opacity))
+                            + (grid_color.b as f32 * opacity)) as u8,
+                    };
+                    cell.fg_color_256 = Some(palette::rgb_to_256(blended));
+                } else {
+                    // No existing color, use grid color directly
+                    cell.fg_color_256 = Some(palette::rgb_to_256(grid_color));
+                    cell.char = if cell.char == ' ' { '·' } else { cell.char };
+                }
+            }
+        }
+    }
+
     pub fn draw_text_overlay<T: AsRef<str>>(
         &mut self,
         text_lines: &[T],
@@ -155,7 +205,7 @@ impl FrameBuffer {
                 bottom_brightness,
                 downsampled,
                 &palette,
-                charset,
+                charset.clone(),
                 reverse_palette,
                 invert_palette,
                 color_mode,
@@ -194,7 +244,7 @@ impl FrameBuffer {
     ) -> Cell {
         const THRESHOLD: f32 = 0.05;
 
-        let levels = charset::charset_level_count(charset);
+        let levels = charset::charset_level_count(charset.clone());
 
         let (top_adj, bottom_adj) = match dither_mode {
             DitherMode::None => (top, bottom),
@@ -252,20 +302,22 @@ impl FrameBuffer {
             let char = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
                 match charset {
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
-                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
-                    _ => charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset),
+                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset.clone()),
+                    Charset::CustomAscii(_) | _ => charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset.clone()),
                 }
             } else if top_adj > bottom_adj {
                 match charset {
-                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
+                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset.clone()),
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::Ascii => charset::map_ascii_directional(top_adj, true),
+                    Charset::CustomAscii(_) => charset::map_brightness(top_adj, None, charset.clone()),
                 }
             } else {
                 match charset {
-                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset),
+                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset.clone()),
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::Ascii => charset::map_ascii_directional(bottom_adj, false),
+                    Charset::CustomAscii(_) => charset::map_brightness(bottom_adj, None, charset.clone()),
                 }
             };
 
@@ -650,7 +702,7 @@ impl TerminalRenderer {
             self.height,
             max_trail_value,
             self.palette.clone(),
-            self.charset,
+            self.charset.clone(),
             self.reverse_palette,
             self.invert_palette,
             self.color_mode,
@@ -678,6 +730,7 @@ impl TerminalRenderer {
         status_line: Option<(String, usize)>,
         notification_line: Option<(String, usize)>,
         stats_lines: Option<(&[String], usize)>,
+        grid_renderer: Option<&crate::render::grid::GridRenderer>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -688,7 +741,7 @@ impl TerminalRenderer {
             self.height,
             max_trail_value,
             self.palette.clone(),
-            self.charset,
+            self.charset.clone(),
             self.reverse_palette,
             self.invert_palette,
             self.color_mode,
@@ -702,6 +755,31 @@ impl TerminalRenderer {
                 None
             },
         );
+
+        // Apply grid rendering if enabled
+        if let Some(grid) = grid_renderer {
+            // Calculate average brightness for adaptive opacity
+            let total_brightness: f32 = downsampled.iter()
+                .map(|cell| cell.top.max(cell.bottom))
+                .sum();
+            let avg_brightness = if !downsampled.is_empty() && max_trail_value > 0.0 {
+                (total_brightness / (downsampled.len() as f32)) / max_trail_value
+            } else {
+                0.0
+            };
+
+            // Apply grid to each position
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    if grid.is_grid_position(x, y, self.width, self.height) {
+                        let opacity = grid.calculate_opacity(
+                            x, y, self.width, self.height, avg_brightness
+                        );
+                        buffer.blend_grid_cell(x, y, grid.color, opacity);
+                    }
+                }
+            }
+        }
 
         // Help overlay at top-left
         if let Some((lines, x, y)) = help_lines {
@@ -757,6 +835,7 @@ impl TerminalRenderer {
         status_line: Option<(String, usize)>,
         notification_line: Option<(String, usize)>,
         stats_lines: Option<(&[String], usize)>,
+        grid_renderer: Option<&crate::render::grid::GridRenderer>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -765,6 +844,9 @@ impl TerminalRenderer {
         let mut buffer = FrameBuffer::new(self.width, self.height, self.color_mode);
         buffer.species_colors_enabled = true;
         buffer.species_rgb_colors = self.species_rgb_colors.clone();
+
+        // Keep track of downsampled cells for grid brightness calculation
+        let mut all_downsampled_cells = Vec::new();
 
         for (trail_map, species_color) in trail_maps {
             let downsampled = downsample_multi_species(
@@ -775,6 +857,19 @@ impl TerminalRenderer {
                 self.height,
             );
 
+            // Store for brightness calculation
+            if all_downsampled_cells.is_empty() {
+                all_downsampled_cells = downsampled.cells().to_vec();
+            } else {
+                // Sum cells from different species
+                for (i, cell) in downsampled.cells().iter().enumerate() {
+                    if i < all_downsampled_cells.len() {
+                        all_downsampled_cells[i].top += cell.top;
+                        all_downsampled_cells[i].bottom += cell.bottom;
+                    }
+                }
+            }
+
             let species_color_vec = vec![*species_color];
             let species_buffer = FrameBuffer::from_downsampled(
                 downsampled.cells(),
@@ -782,7 +877,7 @@ impl TerminalRenderer {
                 self.height,
                 max_trail_value,
                 self.palette.clone(),
-                self.charset,
+                self.charset.clone(),
                 self.reverse_palette,
                 self.invert_palette,
                 self.color_mode,
@@ -796,6 +891,31 @@ impl TerminalRenderer {
             for (i, cell) in species_buffer.cells.iter().enumerate() {
                 if cell.char != ' ' {
                     buffer.cells[i] = *cell;
+                }
+            }
+        }
+
+        // Apply grid rendering if enabled
+        if let Some(grid) = grid_renderer {
+            // Calculate average brightness from all species combined
+            let total_brightness: f32 = all_downsampled_cells.iter()
+                .map(|cell| cell.top.max(cell.bottom))
+                .sum();
+            let avg_brightness = if !all_downsampled_cells.is_empty() && max_trail_value > 0.0 {
+                (total_brightness / (all_downsampled_cells.len() as f32)) / max_trail_value
+            } else {
+                0.0
+            };
+
+            // Apply grid to each position
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    if grid.is_grid_position(x, y, self.width, self.height) {
+                        let opacity = grid.calculate_opacity(
+                            x, y, self.width, self.height, avg_brightness
+                        );
+                        buffer.blend_grid_cell(x, y, grid.color, opacity);
+                    }
                 }
             }
         }
