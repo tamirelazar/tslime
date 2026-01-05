@@ -53,6 +53,82 @@ impl WarmupOverlay {
     }
 }
 
+pub struct ConfigBrowserOverlay;
+
+impl ConfigBrowserOverlay {
+    pub fn build_overlay(
+        configs: &[crate::config_manager::SavedConfig],
+        selected_index: usize,
+    ) -> Vec<String> {
+        let mut lines = vec![
+            "╭─────────────── Saved Configurations ───────────────╮".to_string(),
+        ];
+
+        if configs.is_empty() {
+            lines.push("│  No saved configurations                          │".to_string());
+            lines.push("│                                                    │".to_string());
+            lines.push("│  Press Ctrl+S to save current settings            │".to_string());
+        } else {
+            for (i, config) in configs.iter().enumerate().take(9) {
+                let num = i + 1;
+                let selected_marker = if i == selected_index { ">" } else { " " };
+                let name = &config.name;
+                let palette = &config.palette;
+                let pop = config.population / 1000;
+
+                let line = format!(
+                    "│ {}{} {} - {} - {}k agents{}│",
+                    selected_marker,
+                    num,
+                    name,
+                    palette,
+                    pop,
+                    " ".repeat(54usize.saturating_sub(6 + name.len() + palette.len() + 10))
+                );
+                lines.push(line);
+            }
+
+            if configs.len() > 9 {
+                lines.push(format!("│  ... and {} more                                     │", configs.len() - 9));
+            }
+
+            lines.push("│                                                    │".to_string());
+            lines.push("│  ↑/↓: Navigate  Enter: Load  Del: Delete          │".to_string());
+        }
+
+        lines.push("│  Esc: Cancel                                       │".to_string());
+        lines.push("╰────────────────────────────────────────────────────╯".to_string());
+
+        lines
+    }
+
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let x = (term_width.saturating_sub(56)) / 2;
+        let y = (term_height.saturating_sub(15)) / 2;
+        (x, y)
+    }
+}
+
+pub struct ConfigSaveOverlay;
+
+impl ConfigSaveOverlay {
+    pub fn build_overlay(name_input: &str) -> Vec<String> {
+        vec![
+            "╭─────── Save Configuration ───────╮".to_string(),
+            format!("│ Name: {:<26} │", name_input),
+            "│                                  │".to_string(),
+            "│ Enter: Save  Esc: Cancel         │".to_string(),
+            "╰──────────────────────────────────╯".to_string(),
+        ]
+    }
+
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let x = (term_width.saturating_sub(38)) / 2;
+        let y = (term_height.saturating_sub(5)) / 2;
+        (x, y)
+    }
+}
+
 pub struct OverlayRenderer;
 
 impl OverlayRenderer {

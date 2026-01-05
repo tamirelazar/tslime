@@ -3,6 +3,7 @@ use crossterm::event::Event;
 use std::io::{self, Write};
 
 mod cli;
+mod config_manager;
 mod export;
 mod render;
 mod simulation;
@@ -16,7 +17,7 @@ use render::charset::Charset;
 use render::dither::DitherMode;
 use render::downsample::downsample;
 use render::options_overlay::ControlsOverlay;
-use render::overlay::{HelpOverlay, StatsOverlay, WarmupOverlay};
+use render::overlay::{ConfigBrowserOverlay, ConfigSaveOverlay, HelpOverlay, StatsOverlay, WarmupOverlay};
 use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType};
 use simulation::Simulation;
@@ -749,6 +750,42 @@ fn run_simulation(
         };
         let stats_x = StatsOverlay::calculate_x_position(term_width as usize);
 
+        // Config browser overlay
+        let config_browser_lines: Option<Vec<String>> = if runtime_state.show_config_browser {
+            match config_manager::list_configs() {
+                Ok(configs) => {
+                    // Clamp selected index to valid range
+                    runtime_state.config_browser_selected_index =
+                        runtime_state.config_browser_selected_index.min(configs.len().saturating_sub(1));
+                    Some(ConfigBrowserOverlay::build_overlay(&configs, runtime_state.config_browser_selected_index))
+                }
+                Err(_) => {
+                    runtime_state.show_notification("Failed to load configurations".to_string());
+                    runtime_state.show_config_browser = false;
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let (config_browser_x, config_browser_y) = if config_browser_lines.is_some() {
+            ConfigBrowserOverlay::calculate_position(term_width as usize, term_height as usize)
+        } else {
+            (0, 0)
+        };
+
+        // Config save dialog overlay
+        let config_save_lines: Option<Vec<String>> = if runtime_state.show_config_save_dialog {
+            Some(ConfigSaveOverlay::build_overlay(&runtime_state.config_save_name_input))
+        } else {
+            None
+        };
+        let (config_save_x, config_save_y) = if config_save_lines.is_some() {
+            ConfigSaveOverlay::calculate_position(term_width as usize, term_height as usize)
+        } else {
+            (0, 0)
+        };
+
         // Food persistence fade-out
         if runtime_state.food_persist_enabled && !runtime_state.is_paused && args.food_persist_duration > 0 {
             runtime_state.food_persist_counter += 1;
@@ -841,6 +878,27 @@ fn run_simulation(
             }
         }
 
+        // Render config overlays manually (they're modal and need to be on top)
+        if let Some(ref lines) = config_browser_lines {
+            use crossterm::{cursor, style::Print, QueueableCommand};
+            let mut stdout = std::io::stdout();
+            for (i, line) in lines.iter().enumerate() {
+                stdout.queue(cursor::MoveTo(config_browser_x as u16, (config_browser_y + i) as u16))?;
+                stdout.queue(Print(line))?;
+            }
+            stdout.flush()?;
+        }
+
+        if let Some(ref lines) = config_save_lines {
+            use crossterm::{cursor, style::Print, QueueableCommand};
+            let mut stdout = std::io::stdout();
+            for (i, line) in lines.iter().enumerate() {
+                stdout.queue(cursor::MoveTo(config_save_x as u16, (config_save_y + i) as u16))?;
+                stdout.queue(Print(line))?;
+            }
+            stdout.flush()?;
+        }
+
         timer.end_render();
 
         let mut should_exit = false;
@@ -852,6 +910,116 @@ fn run_simulation(
                     if in_warmup {
                         runtime_state.warmup_counter = args.warmup_frames; // Skip to end
                         continue; // Don't process the key event during warmup
+                    }
+
+                    // Handle config save dialog input
+                    if runtime_state.show_config_save_dialog {
+                        use crossterm::event::{KeyCode, KeyModifiers};
+                        match key_event.code {
+                            KeyCode::Char(c) if !key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                                if runtime_state.config_save_name_input.len() < 26 {
+                                    runtime_state.config_save_name_input.push(c);
+                                }
+                                continue;
+                            }
+                            KeyCode::Backspace => {
+                                runtime_state.config_save_name_input.pop();
+                                continue;
+                            }
+                            KeyCode::Enter => {
+                                if !runtime_state.config_save_name_input.is_empty() {
+                                    // Save config
+                                    let saved_config = config_manager::SavedConfig::from_runtime(
+                                        runtime_state.config_save_name_input.clone(),
+                                        sim.config(),
+                                        runtime_state.current_palette(&palette_list),
+                                        charset,
+                                        args.reverse_palette,
+                                        args.invert_palette,
+                                        args.warmup_frames,
+                                        args.food_persist,
+                                        args.auto_reset,
+                                        args.grid,
+                                        if args.grid { Some(args.grid_style.clone()) } else { None },
+                                        args.init,
+                                        if args.init == InitMode::Food { Some(args.food.clone()) } else { None },
+                                    );
+
+                                    match config_manager::save_config(saved_config) {
+                                        Ok(_) => {
+                                            runtime_state.show_notification(format!(
+                                                "Config '{}' saved successfully",
+                                                runtime_state.config_save_name_input
+                                            ));
+                                        }
+                                        Err(e) => {
+                                            runtime_state.show_notification(format!("Failed to save config: {}", e));
+                                        }
+                                    }
+                                }
+                                runtime_state.show_config_save_dialog = false;
+                                continue;
+                            }
+                            KeyCode::Esc => {
+                                runtime_state.show_config_save_dialog = false;
+                                continue;
+                            }
+                            _ => continue,
+                        }
+                    }
+
+                    // Handle config browser input
+                    if runtime_state.show_config_browser {
+                        use crossterm::event::KeyCode;
+                        match key_event.code {
+                            KeyCode::Up => {
+                                if runtime_state.config_browser_selected_index > 0 {
+                                    runtime_state.config_browser_selected_index -= 1;
+                                }
+                                continue;
+                            }
+                            KeyCode::Down => {
+                                // Will increment if there are configs available
+                                runtime_state.config_browser_selected_index += 1;
+                                continue;
+                            }
+                            KeyCode::Enter => {
+                                // Load selected config
+                                if let Ok(configs) = config_manager::list_configs() {
+                                    if let Some(config) = configs.get(runtime_state.config_browser_selected_index) {
+                                        // TODO: Apply loaded config to simulation
+                                        runtime_state.show_notification(format!(
+                                            "Config '{}' loaded (apply functionality pending)",
+                                            config.name
+                                        ));
+                                    }
+                                }
+                                runtime_state.show_config_browser = false;
+                                continue;
+                            }
+                            KeyCode::Delete => {
+                                // Delete selected config
+                                if let Ok(configs) = config_manager::list_configs() {
+                                    if let Some(config) = configs.get(runtime_state.config_browser_selected_index) {
+                                        let name = config.name.clone();
+                                        match config_manager::delete_config(&name) {
+                                            Ok(_) => {
+                                                runtime_state.show_notification(format!("Deleted config '{}'", name));
+                                            }
+                                            Err(e) => {
+                                                runtime_state.show_notification(format!("Failed to delete: {}", e));
+                                            }
+                                        }
+                                    }
+                                }
+                                continue;
+                            }
+                            KeyCode::Esc => {
+                                runtime_state.show_config_browser = false;
+                                continue;
+                            }
+                            _ => continue,
+                        }
                     }
 
                     if InputPoller::is_exit_key(&key_event) {
@@ -1133,6 +1301,33 @@ fn run_simulation(
                         ControlAction::Quit => {
                             should_exit = true;
                             break;
+                        }
+                        ControlAction::ShowConfigBrowser => {
+                            runtime_state.show_config_browser = true;
+                            runtime_state.config_browser_selected_index = 0;
+                        }
+                        ControlAction::ShowConfigSaveDialog => {
+                            runtime_state.show_config_save_dialog = true;
+                            runtime_state.config_save_name_input.clear();
+                        }
+                        ControlAction::ConfigBrowserUp => {
+                            // Handled separately in config browser input handling
+                        }
+                        ControlAction::ConfigBrowserDown => {
+                            // Handled separately in config browser input handling
+                        }
+                        ControlAction::ConfigBrowserSelect => {
+                            // Handled separately in config browser input handling
+                        }
+                        ControlAction::ConfigBrowserDelete => {
+                            // Handled separately in config browser input handling
+                        }
+                        ControlAction::ConfigSaveConfirm => {
+                            // Handled separately in config save input handling
+                        }
+                        ControlAction::ConfigCancel => {
+                            runtime_state.show_config_browser = false;
+                            runtime_state.show_config_save_dialog = false;
                         }
                         ControlAction::None => {}
                     }

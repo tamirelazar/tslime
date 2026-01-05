@@ -143,6 +143,14 @@ pub enum ControlAction {
     ShowOptionsOverlay,
     CycleOptionsCategory,
     ToggleStats,
+    ShowConfigBrowser,
+    ShowConfigSaveDialog,
+    ConfigBrowserUp,
+    ConfigBrowserDown,
+    ConfigBrowserSelect,
+    ConfigBrowserDelete,
+    ConfigSaveConfirm,
+    ConfigCancel,
     None,
 }
 
@@ -189,6 +197,10 @@ pub struct RuntimeState {
     pub food_persist_counter: usize,
     pub food_persist_enabled: bool,
     pub initial_food_attractors: Vec<crate::simulation::config::Attractor>,
+    pub show_config_browser: bool,
+    pub show_config_save_dialog: bool,
+    pub config_browser_selected_index: usize,
+    pub config_save_name_input: String,
 }
 
 impl RuntimeState {
@@ -240,6 +252,10 @@ impl RuntimeState {
             food_persist_counter: 0,
             food_persist_enabled: false,
             initial_food_attractors: Vec::new(),
+            show_config_browser: false,
+            show_config_save_dialog: false,
+            config_browser_selected_index: 0,
+            config_save_name_input: String::new(),
         }
     }
 
@@ -560,6 +576,16 @@ pub fn num_palettes() -> usize {
 
 pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
     use crossterm::event::{KeyCode, KeyModifiers};
+
+    // Check for Ctrl modifiers first
+    if key_event.modifiers.contains(KeyModifiers::CONTROL) {
+        match key_event.code {
+            KeyCode::Char('s') | KeyCode::Char('S') => return ControlAction::ShowConfigSaveDialog,
+            KeyCode::Char('l') | KeyCode::Char('L') => return ControlAction::ShowConfigBrowser,
+            KeyCode::Char('b') | KeyCode::Char('B') => return ControlAction::ShowConfigBrowser,
+            _ => {}
+        }
+    }
 
     match key_event.code {
         KeyCode::Char('p') | KeyCode::Char('P') | KeyCode::Char(' ') => ControlAction::TogglePause,
