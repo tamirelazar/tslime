@@ -1145,6 +1145,14 @@ fn run_simulation(
                                     {
                                         match config.apply_to_runtime_state(&mut runtime_state) {
                                             Ok(_) => {
+                                                // Update renderer with new visual parameters
+                                                let new_palette =
+                                                    runtime_state.current_palette(&palette_list);
+                                                renderer.set_palette(new_palette);
+                                                renderer.set_invert_palette(runtime_state.invert_palette);
+                                                renderer
+                                                    .set_reverse_palette(runtime_state.reverse_palette);
+
                                                 runtime_state.show_notification(format!(
                                                     "Config '{}' loaded successfully",
                                                     config.name
