@@ -70,24 +70,6 @@ fn main() -> io::Result<()> {
         args.effective_trail_history(),
     );
 
-    // Setup food persistence if enabled
-    if args.food_persist && args.init == InitMode::Food {
-        let attractors = Simulation::create_food_attractors(
-            args.resolution.width,
-            args.resolution.height,
-            &args.food,
-            args.food_invert,
-            args.food_scale,
-            args.food_persist_strength,
-            0.3, // brightness threshold
-        );
-
-        // Add attractors to simulation config
-        let mut new_config = sim.config().clone();
-        new_config.attractors.extend(attractors.clone());
-        sim.update_config(new_config);
-    }
-
     let mode = args.mode();
 
     if mode == Mode::Print {
@@ -147,7 +129,7 @@ fn print_mode(
 
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
 
-    let buffer = FrameBuffer::from_downsampled(
+    let mut buffer = FrameBuffer::from_downsampled(
         downsampled.cells(),
         term_width,
         term_height,
@@ -163,6 +145,41 @@ fn print_mode(
         args.species_colors,
         species_rgb_colors,
     );
+
+    // Apply grid rendering if enabled
+    if args.grid {
+        let grid_style = GridStyle::from_str(&args.grid_style).unwrap_or(GridStyle::Cross);
+        let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor { r: 26, g: 26, b: 26 });
+        let grid_renderer = GridRenderer::new(
+            grid_style,
+            args.grid_size,
+            grid_color,
+            args.grid_opacity,
+            args.grid_adaptive,
+        );
+
+        // Calculate average brightness for adaptive opacity
+        let total_brightness: f32 = downsampled.cells().iter()
+            .map(|cell| cell.top.max(cell.bottom))
+            .sum();
+        let avg_brightness = if !downsampled.cells().is_empty() && max_brightness > 0.0 {
+            (total_brightness / (downsampled.cells().len() as f32)) / max_brightness
+        } else {
+            0.0
+        };
+
+        // Apply grid to each position
+        for y in 0..term_height {
+            for x in 0..term_width {
+                if grid_renderer.is_grid_position(x, y, term_width, term_height) {
+                    let opacity = grid_renderer.calculate_opacity(
+                        x, y, term_width, term_height, avg_brightness
+                    );
+                    buffer.blend_grid_cell(x, y, grid_color, opacity);
+                }
+            }
+        }
+    }
 
     print!(
         "{}",
@@ -221,7 +238,7 @@ fn capture_frames_mode(
             None
         };
 
-        let buffer = FrameBuffer::from_downsampled(
+        let mut buffer = FrameBuffer::from_downsampled(
             downsampled.cells(),
             term_width,
             term_height,
@@ -237,6 +254,41 @@ fn capture_frames_mode(
             args.species_colors,
             species_rgb_colors,
         );
+
+        // Apply grid rendering if enabled
+        if args.grid {
+            let grid_style = GridStyle::from_str(&args.grid_style).unwrap_or(GridStyle::Cross);
+            let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor { r: 26, g: 26, b: 26 });
+            let grid_renderer = GridRenderer::new(
+                grid_style,
+                args.grid_size,
+                grid_color,
+                args.grid_opacity,
+                args.grid_adaptive,
+            );
+
+            // Calculate average brightness for adaptive opacity
+            let total_brightness: f32 = downsampled.cells().iter()
+                .map(|cell| cell.top.max(cell.bottom))
+                .sum();
+            let avg_brightness = if !downsampled.cells().is_empty() && max_brightness > 0.0 {
+                (total_brightness / (downsampled.cells().len() as f32)) / max_brightness
+            } else {
+                0.0
+            };
+
+            // Apply grid to each position
+            for y in 0..term_height {
+                for x in 0..term_width {
+                    if grid_renderer.is_grid_position(x, y, term_width, term_height) {
+                        let opacity = grid_renderer.calculate_opacity(
+                            x, y, term_width, term_height, avg_brightness
+                        );
+                        buffer.blend_grid_cell(x, y, grid_color, opacity);
+                    }
+                }
+            }
+        }
 
         let frame_content = buffer.build_frame_string(args.plain_output, color_mode);
         let frame_filename = format!("{}/frame_{:03}.txt", args.frame_dir, frame_idx);
@@ -564,6 +616,11 @@ fn run_simulation(
             args.food_persist_strength,
             0.3,
         );
+
+        // Apply initial food attractors to simulation
+        let mut new_config = sim.config().clone();
+        new_config.attractors.extend(runtime_state.initial_food_attractors.clone());
+        sim.update_config(new_config);
     }
 
     let config = args.to_sim_config();
@@ -650,9 +707,19 @@ fn run_simulation(
             current_config.max_brightness
         };
 
-        // Apply warmup brightness multiplier
-        if in_warmup {
-            max_brightness *= args.warmup_brightness_multiplier;
+        // Apply warmup brightness multiplier with smooth transition
+        if in_warmup || runtime_state.warmup_counter < args.warmup_frames + 30 {
+            // Calculate fade factor: 1.0 during warmup, then fade to 0.0 over 30 frames
+            let fade_factor = if in_warmup {
+                1.0
+            } else {
+                let frames_since_warmup = runtime_state.warmup_counter - args.warmup_frames;
+                (1.0 - (frames_since_warmup as f32 / 30.0)).max(0.0)
+            };
+
+            // Interpolate between normal and warmup brightness
+            let multiplier = 1.0 + (args.warmup_brightness_multiplier - 1.0) * fade_factor;
+            max_brightness *= multiplier;
         }
 
         let current_palette = runtime_state.current_palette(&palette_list);
