@@ -32,17 +32,16 @@ pub struct WarmupOverlay;
 impl WarmupOverlay {
     pub fn build_overlay(frame_counter: usize, max_frames: usize) -> Vec<String> {
         // Create a pulsing effect using sine wave
-        let progress = (frame_counter as f32 / 30.0 * std::f32::consts::PI).sin().abs();
+        let progress = (frame_counter as f32 / 30.0 * std::f32::consts::PI)
+            .sin()
+            .abs();
         let opacity = (progress * 10.0) as usize;
 
         let dots = ".".repeat(opacity.min(3));
         let message = format!("Press any key to begin{}", dots);
         let frame_info = format!("Warmup: {}/{}", frame_counter, max_frames);
 
-        vec![
-            message,
-            frame_info,
-        ]
+        vec![message, frame_info]
     }
 
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
@@ -60,9 +59,7 @@ impl ConfigBrowserOverlay {
         configs: &[crate::config_manager::SavedConfig],
         selected_index: usize,
     ) -> Vec<String> {
-        let mut lines = vec![
-            "╭─────────────── Saved Configurations ───────────────╮".to_string(),
-        ];
+        let mut lines = vec!["╭─────────────── Saved Configurations ───────────────╮".to_string()];
 
         if configs.is_empty() {
             lines.push("│  No saved configurations                          │".to_string());
@@ -89,7 +86,10 @@ impl ConfigBrowserOverlay {
             }
 
             if configs.len() > 9 {
-                lines.push(format!("│  ... and {} more                                     │", configs.len() - 9));
+                lines.push(format!(
+                    "│  ... and {} more                                     │",
+                    configs.len() - 9
+                ));
             }
 
             lines.push("│                                                    │".to_string());
@@ -524,21 +524,15 @@ mod stats_tests {
     #[test]
     fn test_stats_overlay_format() {
         let lines = StatsOverlay::build_overlay(
-            50000,
-            1234567.0,
-            8000000.0,
-            5.5,
-            30.0,
-            28.5,
-            1234,
-            125.5,
-            80,
+            50000, 1234567.0, 8000000.0, 5.5, 30.0, 28.5, 1234, 125.5, 80,
         );
 
         assert!(!lines.is_empty());
         assert!(lines[0].starts_with('┌'));
         assert!(lines.last().unwrap().starts_with('└'));
-        assert!(lines.iter().all(|l| l.starts_with('│') || l.starts_with('┌') || l.starts_with('└')));
+        assert!(lines
+            .iter()
+            .all(|l| l.starts_with('│') || l.starts_with('┌') || l.starts_with('└')));
 
         // New compact format is 20 chars wide
         let max_len = lines.iter().map(|l| l.chars().count()).max().unwrap();
@@ -554,17 +548,7 @@ mod stats_tests {
 
     #[test]
     fn test_stats_overlay_with_zero_values() {
-        let lines = StatsOverlay::build_overlay(
-            0,
-            0.0,
-            1000000.0,
-            0.0,
-            0.0,
-            0.0,
-            0,
-            0.0,
-            80,
-        );
+        let lines = StatsOverlay::build_overlay(0, 0.0, 1000000.0, 0.0, 0.0, 0.0, 0, 0.0, 80);
 
         assert!(!lines.is_empty());
         assert!(lines.iter().any(|l| l.contains("0.0%")));
@@ -575,12 +559,21 @@ mod stats_tests {
         let uniform = vec![1.0; 40000];
         let entropy_uniform = StatsOverlay::calculate_entropy(&uniform, 100);
         eprintln!("uniform entropy: {}", entropy_uniform);
-        assert!(entropy_uniform < 2.0, "uniform should have low entropy, got {}", entropy_uniform);
+        assert!(
+            entropy_uniform < 2.0,
+            "uniform should have low entropy, got {}",
+            entropy_uniform
+        );
 
         let varied: Vec<f32> = (0..40000).map(|i| i as f32 / 400.0).collect();
         let entropy_varied = StatsOverlay::calculate_entropy(&varied, 100);
         eprintln!("varied entropy: {}", entropy_varied);
-        assert!(entropy_varied > entropy_uniform, "varied ({}) should have higher entropy than uniform ({})", entropy_varied, entropy_uniform);
+        assert!(
+            entropy_varied > entropy_uniform,
+            "varied ({}) should have higher entropy than uniform ({})",
+            entropy_varied,
+            entropy_uniform
+        );
     }
 
     #[test]

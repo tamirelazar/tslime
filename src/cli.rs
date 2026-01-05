@@ -922,10 +922,7 @@ pub struct Args {
     )]
     pub warmup_decay: f32,
 
-    #[arg(
-        long = "skip-warmup",
-        help = "Skip warmup phase (useful for exports)"
-    )]
+    #[arg(long = "skip-warmup", help = "Skip warmup phase (useful for exports)")]
     pub skip_warmup: bool,
 
     // ===== Food persistence =====
@@ -984,10 +981,7 @@ pub struct Args {
     pub collapse_duration_frames: usize,
 
     // ===== Background grid =====
-    #[arg(
-        long = "grid",
-        help = "Enable background grid rendering"
-    )]
+    #[arg(long = "grid", help = "Enable background grid rendering")]
     pub grid: bool,
 
     #[arg(
@@ -1009,7 +1003,7 @@ pub struct Args {
     #[arg(
         long = "grid-color",
         value_name = "HEX",
-        default_value = "1a1a1a",
+        default_value = "ffffff",
         help = "Grid color as hex (without #)"
     )]
     pub grid_color: String,
@@ -1262,6 +1256,15 @@ impl Args {
                 self.mouse_timeout
             ));
         }
+        if self.grid && self.grid_size == 0 {
+            return Err("grid_size must be greater than 0".to_string());
+        }
+        if self.grid_opacity < 0.0 || self.grid_opacity > 1.0 {
+            return Err(format!(
+                "grid_opacity must be between 0.0 and 1.0, got {}",
+                self.grid_opacity
+            ));
+        }
         Ok(())
     }
 
@@ -1357,7 +1360,7 @@ impl Default for Args {
             grid: false,
             grid_size: 10,
             grid_style: "cross".to_string(),
-            grid_color: "1a1a1a".to_string(),
+            grid_color: "ffffff".to_string(),
             grid_opacity: 0.15,
             grid_adaptive: false,
             ascii_chars: None,
@@ -1372,72 +1375,7 @@ mod tests {
     #[test]
     fn test_mode_default() {
         let args = Args {
-            live: false,
-            screensaver: false,
-            print: false,
-            seed: None,
-            population: 50000,
-            sensor_angle: 22.5,
-            sensor_distance: 9.0,
-            rotation_angle: 45.0,
-            step_size: 1.0,
-            decay_factor: 0.5,
-            deposit_amount: 5.0,
-            max_brightness: 100.0,
-            diffusion_kernel: None,
-            diffusion_sigma: None,
-            preset: Option::<Preset>::None,
-            init: InitMode::Food,
-            food: "assets/tslime_logo.png".to_string(),
-            food_invert: true,
-            food_scale: 1.5,
-            frame_delay: 0.033,
-            fps: 30,
-            time_scale: 1.0,
-            resolution: Resolution {
-                width: 400,
-                height: 200,
-            },
-            palette: "forest".to_string(),
-            colors: "true".to_string(),
-            ascii: false,
-            braille: false,
-            plain_output: false,
-            verbose: false,
-            reverse_palette: false,
-            invert_palette: false,
-            palette_shift: 0.0,
-            trail_history: 0,
-            motion_blur: false,
-            auto_normalize: false,
-            normalize_window: 30,
-            attract: Vec::new(),
-            attractor_strength: 1.0,
-            capture_frames: false,
-            frame_count: 50,
-            frame_skip: 50,
-            frame_dir: "frames".to_string(),
-            dither_mode: "none".to_string(),
-            dither_intensity: 0.5,
-            dither_matrix: "4x4".to_string(),
-            dither_swap: false,
-            error_diffusion_swap: false,
-            species: Vec::new(),
-            separate_species_trails: false,
-            species_colors: false,
-            simd_off: false,
-            wind: None,
-            terrain: "none".to_string(),
-            terrain_strength: 1.0,
-            export_gif: None,
-            export_webm: None,
-            export_frames: 50,
-            export_fps: 30,
-            obstacle: Vec::new(),
-            mouse_attract: false,
-            mouse_repel: false,
-            mouse_timeout: 3.0,
-            stats: false,
+            ..Default::default()
         };
         assert_eq!(args.mode(), Mode::Default);
     }

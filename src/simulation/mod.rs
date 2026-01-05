@@ -731,16 +731,11 @@ impl Simulation {
         strength: f32,
         brightness_threshold: f32,
     ) -> Vec<crate::simulation::config::Attractor> {
-        let brightness_map = match load_image_grayscale(
-            food_path,
-            width,
-            height,
-            food_invert,
-            food_scale,
-        ) {
-            Ok(map) => map,
-            Err(_) => return Vec::new(),
-        };
+        let brightness_map =
+            match load_image_grayscale(food_path, width, height, food_invert, food_scale) {
+                Ok(map) => map,
+                Err(_) => return Vec::new(),
+            };
 
         let mut attractors = Vec::new();
 

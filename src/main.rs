@@ -149,17 +149,24 @@ fn print_mode(
     // Apply grid rendering if enabled
     if args.grid {
         let grid_style = GridStyle::from_str(&args.grid_style).unwrap_or(GridStyle::Cross);
-        let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor { r: 26, g: 26, b: 26 });
-        let grid_renderer = GridRenderer::new(
+        let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        });
+        let mut grid_renderer = GridRenderer::new(
             grid_style,
             args.grid_size,
             grid_color,
             args.grid_opacity,
             args.grid_adaptive,
         );
+        grid_renderer.initialize(term_width, term_height);
 
         // Calculate average brightness for adaptive opacity
-        let total_brightness: f32 = downsampled.cells().iter()
+        let total_brightness: f32 = downsampled
+            .cells()
+            .iter()
             .map(|cell| cell.top.max(cell.bottom))
             .sum();
         let avg_brightness = if !downsampled.cells().is_empty() && max_brightness > 0.0 {
@@ -172,10 +179,22 @@ fn print_mode(
         for y in 0..term_height {
             for x in 0..term_width {
                 if grid_renderer.is_grid_position(x, y, term_width, term_height) {
+                    let (on_vertical, on_horizontal) = grid_renderer.get_grid_lines(x, y);
                     let opacity = grid_renderer.calculate_opacity(
-                        x, y, term_width, term_height, avg_brightness
+                        x,
+                        y,
+                        term_width,
+                        term_height,
+                        avg_brightness,
                     );
-                    buffer.blend_grid_cell(x, y, grid_color, opacity);
+                    buffer.render_grid_background(
+                        x,
+                        y,
+                        grid_color,
+                        opacity,
+                        on_vertical,
+                        on_horizontal,
+                    );
                 }
             }
         }
@@ -258,17 +277,24 @@ fn capture_frames_mode(
         // Apply grid rendering if enabled
         if args.grid {
             let grid_style = GridStyle::from_str(&args.grid_style).unwrap_or(GridStyle::Cross);
-            let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor { r: 26, g: 26, b: 26 });
-            let grid_renderer = GridRenderer::new(
+            let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor {
+                r: 255,
+                g: 255,
+                b: 255,
+            });
+            let mut grid_renderer = GridRenderer::new(
                 grid_style,
                 args.grid_size,
                 grid_color,
                 args.grid_opacity,
                 args.grid_adaptive,
             );
+            grid_renderer.initialize(term_width, term_height);
 
             // Calculate average brightness for adaptive opacity
-            let total_brightness: f32 = downsampled.cells().iter()
+            let total_brightness: f32 = downsampled
+                .cells()
+                .iter()
                 .map(|cell| cell.top.max(cell.bottom))
                 .sum();
             let avg_brightness = if !downsampled.cells().is_empty() && max_brightness > 0.0 {
@@ -281,10 +307,22 @@ fn capture_frames_mode(
             for y in 0..term_height {
                 for x in 0..term_width {
                     if grid_renderer.is_grid_position(x, y, term_width, term_height) {
+                        let (on_vertical, on_horizontal) = grid_renderer.get_grid_lines(x, y);
                         let opacity = grid_renderer.calculate_opacity(
-                            x, y, term_width, term_height, avg_brightness
+                            x,
+                            y,
+                            term_width,
+                            term_height,
+                            avg_brightness,
                         );
-                        buffer.blend_grid_cell(x, y, grid_color, opacity);
+                        buffer.render_grid_background(
+                            x,
+                            y,
+                            grid_color,
+                            opacity,
+                            on_vertical,
+                            on_horizontal,
+                        );
                     }
                 }
             }
@@ -619,7 +657,9 @@ fn run_simulation(
 
         // Apply initial food attractors to simulation
         let mut new_config = sim.config().clone();
-        new_config.attractors.extend(runtime_state.initial_food_attractors.clone());
+        new_config
+            .attractors
+            .extend(runtime_state.initial_food_attractors.clone());
         sim.update_config(new_config);
     }
 
@@ -638,16 +678,22 @@ fn run_simulation(
     let start_time = std::time::Instant::now();
 
     // Initialize grid renderer if enabled
-    let grid_renderer = if args.grid {
+    let mut grid_renderer = if args.grid {
         let grid_style = GridStyle::from_str(&args.grid_style).unwrap_or(GridStyle::Cross);
-        let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor { r: 26, g: 26, b: 26 });
-        Some(GridRenderer::new(
+        let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        });
+        let mut renderer = GridRenderer::new(
             grid_style,
             args.grid_size,
             grid_color,
             args.grid_opacity,
             args.grid_adaptive,
-        ))
+        );
+        renderer.initialize(term_width as usize, term_height as usize);
+        Some(renderer)
     } else {
         None
     };
@@ -663,6 +709,10 @@ fn run_simulation(
                 term_width = new_width;
                 term_height = new_height;
                 renderer.set_dimensions(term_width as usize, term_height as usize);
+                // Reinitialize grid with new dimensions
+                if let Some(ref mut grid) = grid_renderer {
+                    grid.initialize(term_width as usize, term_height as usize);
+                }
             }
         }
 
@@ -789,7 +839,9 @@ fn run_simulation(
         // Notification at bottom center (or warmup message during warmup)
         let notification_data = if in_warmup {
             // Show warmup message during warmup phase
-            let progress = (runtime_state.warmup_counter as f32 / 30.0 * std::f32::consts::PI).sin().abs();
+            let progress = (runtime_state.warmup_counter as f32 / 30.0 * std::f32::consts::PI)
+                .sin()
+                .abs();
             let opacity = (progress * 3.0) as usize;
             let dots = ".".repeat(opacity.min(3));
             let warmup_text = format!("[ Press any key to begin{} ]", dots);
@@ -838,9 +890,13 @@ fn run_simulation(
             match config_manager::list_configs() {
                 Ok(configs) => {
                     // Clamp selected index to valid range
-                    runtime_state.config_browser_selected_index =
-                        runtime_state.config_browser_selected_index.min(configs.len().saturating_sub(1));
-                    Some(ConfigBrowserOverlay::build_overlay(&configs, runtime_state.config_browser_selected_index))
+                    runtime_state.config_browser_selected_index = runtime_state
+                        .config_browser_selected_index
+                        .min(configs.len().saturating_sub(1));
+                    Some(ConfigBrowserOverlay::build_overlay(
+                        &configs,
+                        runtime_state.config_browser_selected_index,
+                    ))
                 }
                 Err(_) => {
                     runtime_state.show_notification("Failed to load configurations".to_string());
@@ -859,7 +915,9 @@ fn run_simulation(
 
         // Config save dialog overlay
         let config_save_lines: Option<Vec<String>> = if runtime_state.show_config_save_dialog {
-            Some(ConfigSaveOverlay::build_overlay(&runtime_state.config_save_name_input))
+            Some(ConfigSaveOverlay::build_overlay(
+                &runtime_state.config_save_name_input,
+            ))
         } else {
             None
         };
@@ -870,12 +928,16 @@ fn run_simulation(
         };
 
         // Food persistence fade-out
-        if runtime_state.food_persist_enabled && !runtime_state.is_paused && args.food_persist_duration > 0 {
+        if runtime_state.food_persist_enabled
+            && !runtime_state.is_paused
+            && args.food_persist_duration > 0
+        {
             runtime_state.food_persist_counter += 1;
 
             if runtime_state.food_persist_counter <= args.food_persist_duration {
                 // Calculate fade factor using quadratic easing
-                let progress = runtime_state.food_persist_counter as f32 / args.food_persist_duration as f32;
+                let progress =
+                    runtime_state.food_persist_counter as f32 / args.food_persist_duration as f32;
                 let fade_factor = (1.0 - progress).powi(2); // Quadratic fade-out
 
                 // Update attractor strengths
@@ -883,11 +945,13 @@ fn run_simulation(
                 new_config.attractors.clear();
 
                 for attractor in &runtime_state.initial_food_attractors {
-                    new_config.attractors.push(crate::simulation::config::Attractor::new(
-                        attractor.x,
-                        attractor.y,
-                        attractor.strength * fade_factor,
-                    ));
+                    new_config
+                        .attractors
+                        .push(crate::simulation::config::Attractor::new(
+                            attractor.x,
+                            attractor.y,
+                            attractor.strength * fade_factor,
+                        ));
                 }
 
                 sim.update_config(new_config);
@@ -918,9 +982,10 @@ fn run_simulation(
                 runtime_state.reset_collapse_counter();
                 runtime_state.reset_warmup();
                 runtime_state.food_persist_counter = 0; // Reset food persistence counter
-                runtime_state.show_notification(
-                    format!("Simulation collapsed - restarting with seed {}", new_seed)
-                );
+                runtime_state.show_notification(format!(
+                    "Simulation collapsed - restarting with seed {}",
+                    new_seed
+                ));
             }
         }
 
@@ -968,7 +1033,10 @@ fn run_simulation(
             use crossterm::{cursor, style::Print, QueueableCommand};
             let mut stdout = std::io::stdout();
             for (i, line) in lines.iter().enumerate() {
-                stdout.queue(cursor::MoveTo(config_browser_x as u16, (config_browser_y + i) as u16))?;
+                stdout.queue(cursor::MoveTo(
+                    config_browser_x as u16,
+                    (config_browser_y + i) as u16,
+                ))?;
                 stdout.queue(Print(line))?;
             }
             stdout.flush()?;
@@ -978,7 +1046,10 @@ fn run_simulation(
             use crossterm::{cursor, style::Print, QueueableCommand};
             let mut stdout = std::io::stdout();
             for (i, line) in lines.iter().enumerate() {
-                stdout.queue(cursor::MoveTo(config_save_x as u16, (config_save_y + i) as u16))?;
+                stdout.queue(cursor::MoveTo(
+                    config_save_x as u16,
+                    (config_save_y + i) as u16,
+                ))?;
                 stdout.queue(Print(line))?;
             }
             stdout.flush()?;
@@ -1001,7 +1072,9 @@ fn run_simulation(
                     if runtime_state.show_config_save_dialog {
                         use crossterm::event::{KeyCode, KeyModifiers};
                         match key_event.code {
-                            KeyCode::Char(c) if !key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                            KeyCode::Char(c)
+                                if !key_event.modifiers.contains(KeyModifiers::CONTROL) =>
+                            {
                                 if runtime_state.config_save_name_input.len() < 26 {
                                     runtime_state.config_save_name_input.push(c);
                                 }
@@ -1025,9 +1098,17 @@ fn run_simulation(
                                         args.food_persist,
                                         args.auto_reset,
                                         args.grid,
-                                        if args.grid { Some(args.grid_style.clone()) } else { None },
+                                        if args.grid {
+                                            Some(args.grid_style.clone())
+                                        } else {
+                                            None
+                                        },
                                         args.init,
-                                        if args.init == InitMode::Food { Some(args.food.clone()) } else { None },
+                                        if args.init == InitMode::Food {
+                                            Some(args.food.clone())
+                                        } else {
+                                            None
+                                        },
                                     );
 
                                     match config_manager::save_config(saved_config) {
@@ -1038,7 +1119,10 @@ fn run_simulation(
                                             ));
                                         }
                                         Err(e) => {
-                                            runtime_state.show_notification(format!("Failed to save config: {}", e));
+                                            runtime_state.show_notification(format!(
+                                                "Failed to save config: {}",
+                                                e
+                                            ));
                                         }
                                     }
                                 }
@@ -1071,7 +1155,9 @@ fn run_simulation(
                             KeyCode::Enter => {
                                 // Load selected config
                                 if let Ok(configs) = config_manager::list_configs() {
-                                    if let Some(config) = configs.get(runtime_state.config_browser_selected_index) {
+                                    if let Some(config) =
+                                        configs.get(runtime_state.config_browser_selected_index)
+                                    {
                                         // TODO: Apply loaded config to simulation
                                         runtime_state.show_notification(format!(
                                             "Config '{}' loaded (apply functionality pending)",
@@ -1085,14 +1171,22 @@ fn run_simulation(
                             KeyCode::Delete => {
                                 // Delete selected config
                                 if let Ok(configs) = config_manager::list_configs() {
-                                    if let Some(config) = configs.get(runtime_state.config_browser_selected_index) {
+                                    if let Some(config) =
+                                        configs.get(runtime_state.config_browser_selected_index)
+                                    {
                                         let name = config.name.clone();
                                         match config_manager::delete_config(&name) {
                                             Ok(_) => {
-                                                runtime_state.show_notification(format!("Deleted config '{}'", name));
+                                                runtime_state.show_notification(format!(
+                                                    "Deleted config '{}'",
+                                                    name
+                                                ));
                                             }
                                             Err(e) => {
-                                                runtime_state.show_notification(format!("Failed to delete: {}", e));
+                                                runtime_state.show_notification(format!(
+                                                    "Failed to delete: {}",
+                                                    e
+                                                ));
                                             }
                                         }
                                     }
@@ -1380,7 +1474,11 @@ fn run_simulation(
                             runtime_state.toggle_stats();
                             runtime_state.show_notification(format!(
                                 "Stats: {}",
-                                if runtime_state.show_stats { "On" } else { "Off" }
+                                if runtime_state.show_stats {
+                                    "On"
+                                } else {
+                                    "Off"
+                                }
                             ));
                         }
                         ControlAction::Quit => {

@@ -58,18 +58,34 @@ impl ControlsOverlay {
         // Header with category indicator [1/5]
         lines.push(format!(
             "┌─ CONTROLS [{}/{}] ───────────────────────┐",
-            cat_num, Self::TOTAL_CATEGORIES
+            cat_num,
+            Self::TOTAL_CATEGORIES
         ));
 
         match category_idx {
             0 => {
                 lines.push(format!("│ {:^38} │", cat_name));
                 lines.push("│                                        │".to_string());
-                lines.push(format!("│  A/a  Sensor Angle         {:>6.1}°     │", sensor_angle));
-                lines.push(format!("│  T/t  Turn Angle           {:>6.1}°     │", turn_angle));
-                lines.push(format!("│  S/s  Step Size            {:>6.1}      │", step_size));
-                lines.push(format!("│  E/e  Decay Factor         {:>6.3}      │", decay_factor));
-                lines.push(format!("│  I/i  Deposit Amount       {:>6.1}      │", deposit_amount));
+                lines.push(format!(
+                    "│  A/a  Sensor Angle         {:>6.1}°     │",
+                    sensor_angle
+                ));
+                lines.push(format!(
+                    "│  T/t  Turn Angle           {:>6.1}°     │",
+                    turn_angle
+                ));
+                lines.push(format!(
+                    "│  S/s  Step Size            {:>6.1}      │",
+                    step_size
+                ));
+                lines.push(format!(
+                    "│  E/e  Decay Factor         {:>6.3}      │",
+                    decay_factor
+                ));
+                lines.push(format!(
+                    "│  I/i  Deposit Amount       {:>6.1}      │",
+                    deposit_amount
+                ));
             }
             1 => {
                 lines.push(format!("│ {:^38} │", cat_name));
@@ -85,7 +101,10 @@ impl ControlsOverlay {
                     "│  W    Wind              {:>14} │",
                     wind_direction.name()
                 ));
-                lines.push(format!("│  Y/y  Terrain Str       {:>14.1} │", terrain_strength));
+                lines.push(format!(
+                    "│  Y/y  Terrain Str       {:>14.1} │",
+                    terrain_strength
+                ));
                 lines.push(format!(
                     "│  U    Terrain Type      {:>14} │",
                     match terrain_type {
@@ -107,7 +126,10 @@ impl ControlsOverlay {
                     "│  V    Motion Blur     {:>10} frames│",
                     motion_blur_frames
                 ));
-                lines.push(format!("│  N/n  Max Brightness    {:>14.1} │", max_brightness));
+                lines.push(format!(
+                    "│  N/n  Max Brightness    {:>14.1} │",
+                    max_brightness
+                ));
             }
             3 => {
                 lines.push(format!("│ {:^38} │", cat_name));

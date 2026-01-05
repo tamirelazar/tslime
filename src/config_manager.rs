@@ -103,7 +103,9 @@ impl SavedConfig {
         };
 
         // Get first species config for population and parameters
-        let first_species = sim_config.species_configs.first()
+        let first_species = sim_config
+            .species_configs
+            .first()
             .expect("At least one species config should exist");
 
         Self {
@@ -160,14 +162,15 @@ fn load_config_file() -> Result<ConfigFile, String> {
     let path = get_config_path()?;
 
     if !path.exists() {
-        return Ok(ConfigFile { presets: Vec::new() });
+        return Ok(ConfigFile {
+            presets: Vec::new(),
+        });
     }
 
-    let contents = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read config file: {}", e))?;
+    let contents =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read config file: {}", e))?;
 
-    toml::from_str(&contents)
-        .map_err(|e| format!("Failed to parse config file: {}", e))
+    toml::from_str(&contents).map_err(|e| format!("Failed to parse config file: {}", e))
 }
 
 fn save_config_file(config_file: &ConfigFile) -> Result<(), String> {
@@ -176,8 +179,7 @@ fn save_config_file(config_file: &ConfigFile) -> Result<(), String> {
     let toml_string = toml::to_string_pretty(config_file)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-    fs::write(&path, toml_string)
-        .map_err(|e| format!("Failed to write config file: {}", e))?;
+    fs::write(&path, toml_string).map_err(|e| format!("Failed to write config file: {}", e))?;
 
     Ok(())
 }
@@ -198,7 +200,8 @@ pub fn save_config(config: SavedConfig) -> Result<(), String> {
 pub fn load_config(name: &str) -> Result<SavedConfig, String> {
     let config_file = load_config_file()?;
 
-    config_file.presets
+    config_file
+        .presets
         .iter()
         .find(|c| c.name == name)
         .cloned()

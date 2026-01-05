@@ -63,54 +63,70 @@ impl FrameBuffer {
         }
     }
 
-    /// Blends a grid color with the existing cell at (x, y)
-    pub fn blend_grid_cell(&mut self, x: usize, y: usize, grid_color: RgbColor, opacity: f32) {
+    /// Renders grid as a background layer at position (x, y).
+    /// Grid should appear behind the simulation, not blended with it.
+    /// on_vertical and on_horizontal indicate which grid lines this position is on.
+    pub fn render_grid_background(
+        &mut self,
+        x: usize,
+        y: usize,
+        grid_color: RgbColor,
+        opacity: f32,
+        on_vertical: bool,
+        on_horizontal: bool,
+    ) {
         if x >= self.width || y >= self.height {
             return;
         }
 
         let idx = y * self.width + x;
-        let cell = &mut self.cells[idx];
+        let cell = &self.cells[idx];
 
-        match self.color_mode {
+        // Only render grid where there's no (or very dim) simulation content
+        // Check if this cell is essentially empty (dark background)
+        let is_empty = match self.color_mode {
             ColorMode::TrueColor => {
-                if let Some(existing_rgb) = cell.fg_color_rgb {
-                    // Blend: result = existing * (1 - opacity) + grid * opacity
-                    let blended = RgbColor {
-                        r: ((existing_rgb.r as f32 * (1.0 - opacity))
-                            + (grid_color.r as f32 * opacity)) as u8,
-                        g: ((existing_rgb.g as f32 * (1.0 - opacity))
-                            + (grid_color.g as f32 * opacity)) as u8,
-                        b: ((existing_rgb.b as f32 * (1.0 - opacity))
-                            + (grid_color.b as f32 * opacity)) as u8,
-                    };
-                    cell.fg_color_rgb = Some(blended);
-                } else {
-                    // No existing color, use grid color directly with opacity
-                    cell.fg_color_rgb = Some(grid_color);
-                    cell.char = if cell.char == ' ' { '·' } else { cell.char };
-                }
+                cell.fg_color_rgb.is_none()
+                    || cell.fg_color_rgb.map_or(true, |c| {
+                        // Check if color is very dark (close to black)
+                        (c.r as u32 + c.g as u32 + c.b as u32) < 30
+                    })
             }
             _ => {
-                // For 256-color mode, convert grid RGB to closest ANSI color and blend
-                if let Some(existing_256) = cell.fg_color_256 {
-                    let existing_rgb = palette::ANSI_256_TO_RGB[existing_256 as usize];
-                    let blended = RgbColor {
-                        r: ((existing_rgb.r as f32 * (1.0 - opacity))
-                            + (grid_color.r as f32 * opacity)) as u8,
-                        g: ((existing_rgb.g as f32 * (1.0 - opacity))
-                            + (grid_color.g as f32 * opacity)) as u8,
-                        b: ((existing_rgb.b as f32 * (1.0 - opacity))
-                            + (grid_color.b as f32 * opacity)) as u8,
-                    };
-                    cell.fg_color_256 = Some(palette::rgb_to_256(blended));
-                } else {
-                    // No existing color, use grid color directly
-                    cell.fg_color_256 = Some(palette::rgb_to_256(grid_color));
-                    cell.char = if cell.char == ' ' { '·' } else { cell.char };
+                cell.fg_color_256.is_none() || cell.fg_color_256.map_or(true, |c| c < 236)
+                // ANSI colors < 236 are color, >= 236 are grayscale
+            }
+        };
+
+        if is_empty {
+            // Apply grid with opacity to empty cells
+            let dimmed_color = RgbColor {
+                r: (grid_color.r as f32 * opacity) as u8,
+                g: (grid_color.g as f32 * opacity) as u8,
+                b: (grid_color.b as f32 * opacity) as u8,
+            };
+
+            // Choose character based on which lines intersect at this position
+            let grid_char = match (on_vertical, on_horizontal) {
+                (true, true) => '┼',   // Intersection
+                (true, false) => '│',  // Vertical line
+                (false, true) => '─',  // Horizontal line
+                (false, false) => ' ', // Should not happen
+            };
+
+            let target_cell = &mut self.cells[idx];
+            match self.color_mode {
+                ColorMode::TrueColor => {
+                    target_cell.fg_color_rgb = Some(dimmed_color);
+                    target_cell.char = grid_char;
+                }
+                _ => {
+                    target_cell.fg_color_256 = Some(palette::rgb_to_256(dimmed_color));
+                    target_cell.char = grid_char;
                 }
             }
         }
+        // If cell is not empty, don't render grid (simulation takes precedence)
     }
 
     pub fn draw_text_overlay<T: AsRef<str>>(
@@ -302,22 +318,34 @@ impl FrameBuffer {
             let char = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
                 match charset {
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
-                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset.clone()),
-                    Charset::CustomAscii(_) | _ => charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset.clone()),
+                    Charset::Braille => {
+                        charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
+                    }
+                    Charset::CustomAscii(_) | _ => {
+                        charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset.clone())
+                    }
                 }
             } else if top_adj > bottom_adj {
                 match charset {
-                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset.clone()),
+                    Charset::Braille => {
+                        charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
+                    }
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::Ascii => charset::map_ascii_directional(top_adj, true),
-                    Charset::CustomAscii(_) => charset::map_brightness(top_adj, None, charset.clone()),
+                    Charset::CustomAscii(_) => {
+                        charset::map_brightness(top_adj, None, charset.clone())
+                    }
                 }
             } else {
                 match charset {
-                    Charset::Braille => charset::map_brightness(top_adj, Some(bottom_adj), charset.clone()),
+                    Charset::Braille => {
+                        charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
+                    }
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::Ascii => charset::map_ascii_directional(bottom_adj, false),
-                    Charset::CustomAscii(_) => charset::map_brightness(bottom_adj, None, charset.clone()),
+                    Charset::CustomAscii(_) => {
+                        charset::map_brightness(bottom_adj, None, charset.clone())
+                    }
                 }
             };
 
@@ -757,9 +785,12 @@ impl TerminalRenderer {
         );
 
         // Apply grid rendering if enabled
-        if let Some(grid) = grid_renderer {
+        if let Some(mut grid) = grid_renderer.cloned() {
+            grid.initialize(self.width, self.height);
+
             // Calculate average brightness for adaptive opacity
-            let total_brightness: f32 = downsampled.iter()
+            let total_brightness: f32 = downsampled
+                .iter()
                 .map(|cell| cell.top.max(cell.bottom))
                 .sum();
             let avg_brightness = if !downsampled.is_empty() && max_trail_value > 0.0 {
@@ -772,10 +803,17 @@ impl TerminalRenderer {
             for y in 0..self.height {
                 for x in 0..self.width {
                     if grid.is_grid_position(x, y, self.width, self.height) {
-                        let opacity = grid.calculate_opacity(
-                            x, y, self.width, self.height, avg_brightness
+                        let (on_vertical, on_horizontal) = grid.get_grid_lines(x, y);
+                        let opacity =
+                            grid.calculate_opacity(x, y, self.width, self.height, avg_brightness);
+                        buffer.render_grid_background(
+                            x,
+                            y,
+                            grid.color,
+                            opacity,
+                            on_vertical,
+                            on_horizontal,
                         );
-                        buffer.blend_grid_cell(x, y, grid.color, opacity);
                     }
                 }
             }
@@ -896,9 +934,12 @@ impl TerminalRenderer {
         }
 
         // Apply grid rendering if enabled
-        if let Some(grid) = grid_renderer {
+        if let Some(mut grid) = grid_renderer.cloned() {
+            grid.initialize(self.width, self.height);
+
             // Calculate average brightness from all species combined
-            let total_brightness: f32 = all_downsampled_cells.iter()
+            let total_brightness: f32 = all_downsampled_cells
+                .iter()
                 .map(|cell| cell.top.max(cell.bottom))
                 .sum();
             let avg_brightness = if !all_downsampled_cells.is_empty() && max_trail_value > 0.0 {
@@ -911,10 +952,17 @@ impl TerminalRenderer {
             for y in 0..self.height {
                 for x in 0..self.width {
                     if grid.is_grid_position(x, y, self.width, self.height) {
-                        let opacity = grid.calculate_opacity(
-                            x, y, self.width, self.height, avg_brightness
+                        let (on_vertical, on_horizontal) = grid.get_grid_lines(x, y);
+                        let opacity =
+                            grid.calculate_opacity(x, y, self.width, self.height, avg_brightness);
+                        buffer.render_grid_background(
+                            x,
+                            y,
+                            grid.color,
+                            opacity,
+                            on_vertical,
+                            on_horizontal,
                         );
-                        buffer.blend_grid_cell(x, y, grid.color, opacity);
                     }
                 }
             }
