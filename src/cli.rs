@@ -608,6 +608,8 @@ pub struct Args {
 
     #[arg(
         long = "food-invert",
+        value_name = "BOOL",
+        num_args = 1,
         default_value_t = true,
         help = "Invert the food image values (dark areas spawn more agents instead of bright areas)"
     )]
