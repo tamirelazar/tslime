@@ -3,6 +3,7 @@ use std::num::ParseIntError;
 use std::str::FromStr;
 
 use crate::render::dither::{DitherMatrix, DitherMode};
+use crate::render::palette::RgbColor;
 use crate::simulation::config::{
     Attractor, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig, SpeciesConfig, TerrainType,
     Wind,
@@ -45,6 +46,7 @@ pub enum Palette {
     Moss,
     Cosmic,
     Ethereal,
+    Custom(Vec<RgbColor>),
 }
 
 #[derive(Debug, Clone)]
@@ -660,7 +662,7 @@ pub struct Args {
         long = "palette",
         value_name = "NAME",
         default_value = "forest",
-        help = "Color palette (organic, heat, ocean, mono, forest, neon, warm, vibrant, legiblemono, slime, mold, fungus, swamp, moss, cosmic, ethereal)"
+        help = "Color palette (organic, heat, ocean, mono, forest, neon, warm, vibrant, legiblemono, slime, mold, fungus, swamp, moss, cosmic, ethereal) or custom: \"#rrggbb,#rrggbb,...\" (2-11 colors)"
     )]
     pub palette: String,
 
@@ -1069,6 +1071,9 @@ impl Args {
     }
 
     pub fn palette(&self) -> Result<Palette, String> {
+        if self.palette.starts_with('#') || self.palette.contains(',') {
+            return parse_custom_palette(&self.palette);
+        }
         match self.palette.as_str() {
             "organic" => Ok(Palette::Organic),
             "heat" => Ok(Palette::Heat),
@@ -1375,6 +1380,36 @@ impl Default for Args {
             ascii_chars: None,
         }
     }
+}
+
+fn parse_custom_palette(s: &str) -> Result<Palette, String> {
+    let hex_colors: Vec<&str> = s.split(',').collect();
+    let mut colors = Vec::new();
+
+    for hex in hex_colors {
+        let hex = hex.trim();
+        if hex.is_empty() {
+            continue;
+        }
+        let color = crate::render::palette::hex_to_rgb(hex)
+            .ok_or_else(|| format!("Invalid hex color: {}", hex))?;
+        colors.push(color);
+    }
+
+    if colors.len() < 2 {
+        return Err(format!(
+            "Custom palette requires at least 2 colors, got {}",
+            colors.len()
+        ));
+    }
+    if colors.len() > 11 {
+        return Err(format!(
+            "Custom palette supports maximum 11 colors, got {}",
+            colors.len()
+        ));
+    }
+
+    Ok(Palette::Custom(colors))
 }
 
 #[cfg(test)]
@@ -1797,5 +1832,75 @@ mod tests {
             ..Default::default()
         };
         assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_custom_palette_parsing() {
+        let args = Args {
+            palette: "#ff0000,#00ff00,#0000ff".to_string(),
+            ..Default::default()
+        };
+        let palette = args.palette().unwrap();
+        match palette {
+            Palette::Custom(colors) => {
+                assert_eq!(colors.len(), 3);
+                assert_eq!(colors[0].r, 255);
+                assert_eq!(colors[0].g, 0);
+                assert_eq!(colors[0].b, 0);
+                assert_eq!(colors[1].r, 0);
+                assert_eq!(colors[1].g, 255);
+                assert_eq!(colors[1].b, 0);
+                assert_eq!(colors[2].r, 0);
+                assert_eq!(colors[2].g, 0);
+                assert_eq!(colors[2].b, 255);
+            }
+            _ => panic!("Expected Custom palette"),
+        }
+    }
+
+    #[test]
+    fn test_custom_palette_with_hash() {
+        let args = Args {
+            palette: "#ff0000,#00ff00".to_string(),
+            ..Default::default()
+        };
+        let palette = args.palette().unwrap();
+        match palette {
+            Palette::Custom(colors) => {
+                assert_eq!(colors.len(), 2);
+                assert_eq!(colors[0].r, 255);
+                assert_eq!(colors[0].g, 0);
+                assert_eq!(colors[0].b, 0);
+            }
+            _ => panic!("Expected Custom palette"),
+        }
+    }
+
+    #[test]
+    fn test_custom_palette_too_few_colors() {
+        let args = Args {
+            palette: "#ff0000".to_string(),
+            ..Default::default()
+        };
+        assert!(args.palette().is_err());
+    }
+
+    #[test]
+    fn test_custom_palette_too_many_colors() {
+        let args = Args {
+            palette: "#ff0000,#00ff00,#0000ff,#ffff00,#00ffff,#ff00ff,#ffffff,#000000,#880000,#008800,#004400,#002200"
+                .to_string(),
+            ..Default::default()
+        };
+        assert!(args.palette().is_err());
+    }
+
+    #[test]
+    fn test_custom_palette_invalid_hex() {
+        let args = Args {
+            palette: "#gg0000,#00ff00".to_string(),
+            ..Default::default()
+        };
+        assert!(args.palette().is_err());
     }
 }

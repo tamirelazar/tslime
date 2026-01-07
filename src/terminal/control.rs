@@ -17,7 +17,7 @@ pub enum MouseInteractionMode {
     Repel,
 }
 
-const ALL_PALETTES: [Palette; 14] = [
+const ALL_PALETTES: [Palette; 16] = [
     Palette::Organic,
     Palette::Heat,
     Palette::Ocean,
@@ -32,6 +32,8 @@ const ALL_PALETTES: [Palette; 14] = [
     Palette::Fungus,
     Palette::Swamp,
     Palette::Moss,
+    Palette::Cosmic,
+    Palette::Ethereal,
 ];
 
 // HelpMode is kept for backwards compatibility but deprecated
@@ -713,6 +715,7 @@ pub fn palette_name(palette: Palette) -> &'static str {
         Palette::Moss => "Moss",
         Palette::Cosmic => "Cosmic",
         Palette::Ethereal => "Ethereal",
+        Palette::Custom(_) => "Custom",
     }
 }
 

@@ -162,7 +162,7 @@ pub fn map_quadrant(
     bottom_right: f32,
     threshold: f32,
 ) -> char {
-    let threshold = threshold.max(0.0).min(1.0);
+    let threshold = threshold.clamp(0.0, 1.0);
 
     let tl = top_left > threshold;
     let tr = top_right > threshold;

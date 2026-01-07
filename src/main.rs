@@ -621,10 +621,14 @@ fn run_simulation(
         cli::Palette::Swamp,
         cli::Palette::Moss,
     ];
-    let initial_palette_index = palette_list
-        .iter()
-        .position(|p| *p == initial_palette)
-        .unwrap_or(4);
+    let initial_palette_index = if let cli::Palette::Custom(_) = initial_palette {
+        4 // Default to Forest for custom palettes
+    } else {
+        palette_list
+            .iter()
+            .position(|p| *p == initial_palette)
+            .unwrap_or(4)
+    };
 
     let mode = args.mode();
     let show_help_by_default = !matches!(mode, cli::Mode::Screensaver);

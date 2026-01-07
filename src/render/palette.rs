@@ -1,6 +1,6 @@
 use crate::cli::Palette;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RgbColor {
     pub r: u8,
     pub g: u8,
@@ -2334,6 +2334,7 @@ fn get_256_gradient(palette: Palette) -> &'static [u8; 11] {
         Palette::Moss => &MOSS_GRADIENT,
         Palette::Cosmic => &COSMIC_GRADIENT,
         Palette::Ethereal => &ETHEREAL_GRADIENT,
+        Palette::Custom(_) => &FOREST_GRADIENT,
     }
 }
 
@@ -2355,7 +2356,48 @@ fn get_rgb_gradient(palette: Palette) -> &'static [RgbColor; 11] {
         Palette::Moss => &MOSS_RGB,
         Palette::Cosmic => &COSMIC_RGB,
         Palette::Ethereal => &ETHEREAL_RGB,
+        Palette::Custom(_) => panic!("Custom palette requires special handling"),
     }
+}
+
+fn interpolate_custom_palette(colors: &[RgbColor]) -> [RgbColor; 11] {
+    let num_colors = colors.len();
+    if num_colors == 2 {
+        let mut result = [colors[0]; 11];
+        for (i, slot) in result.iter_mut().enumerate() {
+            let t = i as f32 / 10.0;
+            *slot = RgbColor {
+                r: ((colors[0].r as f32 * (1.0 - t) + colors[1].r as f32 * t) as u8),
+                g: ((colors[0].g as f32 * (1.0 - t) + colors[1].g as f32 * t) as u8),
+                b: ((colors[0].b as f32 * (1.0 - t) + colors[1].b as f32 * t) as u8),
+            };
+        }
+        return result;
+    }
+
+    let mut result = [RgbColor { r: 0, g: 0, b: 0 }; 11];
+    for (i, slot) in result.iter_mut().enumerate() {
+        let t = if num_colors > 1 {
+            (i as f32 / 10.0) * (num_colors - 1) as f32
+        } else {
+            0.0
+        };
+        let segment = t.floor() as usize;
+        let segment_t = t.fract();
+
+        let start_idx = segment.min(num_colors - 1);
+        let end_idx = (segment + 1).min(num_colors - 1);
+
+        let start_color = colors[start_idx];
+        let end_color = colors[end_idx];
+
+        *slot = RgbColor {
+            r: ((start_color.r as f32 * (1.0 - segment_t) + end_color.r as f32 * segment_t) as u8),
+            g: ((start_color.g as f32 * (1.0 - segment_t) + end_color.g as f32 * segment_t) as u8),
+            b: ((start_color.b as f32 * (1.0 - segment_t) + end_color.b as f32 * segment_t) as u8),
+        };
+    }
+    result
 }
 
 fn invert_color(color_code: u8) -> u8 {
@@ -2364,7 +2406,16 @@ fn invert_color(color_code: u8) -> u8 {
 
 pub fn map_brightness(brightness: f32, palette: Palette, reverse: bool, invert: bool) -> u8 {
     let mut brightness = brightness.clamp(0.0, 1.0);
-    let gradient = get_256_gradient(palette);
+
+    let gradient: &[u8] = match &palette {
+        Palette::Custom(colors) => {
+            let interpolated = interpolate_custom_palette(colors);
+            let gradient_256: Vec<u8> = interpolated.iter().map(|c| rgb_to_256(*c)).collect();
+            let boxed = gradient_256.into_boxed_slice();
+            Box::leak(boxed)
+        }
+        _ => get_256_gradient(palette),
+    };
 
     if reverse {
         brightness = 1.0 - brightness;
@@ -2406,7 +2457,15 @@ pub fn map_brightness_rgb(
     hue_shift: f32,
 ) -> RgbColor {
     let mut brightness = brightness.clamp(0.0, 1.0);
-    let gradient = get_rgb_gradient(palette);
+
+    let gradient: &[RgbColor] = match &palette {
+        Palette::Custom(colors) => {
+            let interpolated = interpolate_custom_palette(colors);
+            let boxed = Box::new(interpolated);
+            Box::leak(boxed)
+        }
+        _ => get_rgb_gradient(palette),
+    };
 
     if reverse {
         brightness = 1.0 - brightness;

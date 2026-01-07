@@ -83,6 +83,13 @@ impl SavedConfig {
             Palette::Moss => "moss",
             Palette::Cosmic => "cosmic",
             Palette::Ethereal => "ethereal",
+            Palette::Custom(colors) => {
+                let hex_colors: Vec<String> = colors
+                    .iter()
+                    .map(|c| format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b))
+                    .collect();
+                &format!("custom:{}", hex_colors.join(","))
+            }
         };
 
         let charset_str = match charset {
