@@ -89,6 +89,7 @@ impl SavedConfig {
             Charset::HalfBlock => "halfblock",
             Charset::Ascii => "ascii",
             Charset::Braille => "braille",
+            Charset::Quadrant => "quadrant",
             Charset::CustomAscii(_) => "ascii", // Save as "ascii" for now
         };
 

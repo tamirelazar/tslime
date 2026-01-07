@@ -679,6 +679,12 @@ pub struct Args {
     pub braille: bool,
 
     #[arg(
+        long = "quadrant",
+        help = "Use Unicode quadrant characters for 4× vertical resolution"
+    )]
+    pub quadrant: bool,
+
+    #[arg(
         long = "plain-output",
         help = "Output plain text without ANSI color codes (for frame capture)"
     )]
@@ -1312,6 +1318,7 @@ impl Default for Args {
             colors: "true".to_string(),
             ascii: false,
             braille: false,
+            quadrant: false,
             plain_output: false,
             verbose: false,
             reverse_palette: false,

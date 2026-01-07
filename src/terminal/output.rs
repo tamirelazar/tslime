@@ -220,6 +220,7 @@ impl FrameBuffer {
                 top_brightness,
                 bottom_brightness,
                 downsampled,
+                max_trail_value,
                 &palette,
                 charset.clone(),
                 reverse_palette,
@@ -247,6 +248,7 @@ impl FrameBuffer {
         top: f32,
         bottom: f32,
         downsampled: &[DownsampleCell],
+        max_trail_value: f32,
         palette: &Palette,
         charset: Charset,
         reverse_palette: bool,
@@ -321,6 +323,36 @@ impl FrameBuffer {
                     Charset::Braille => {
                         charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
                     }
+                    Charset::Quadrant => {
+                        // Use quadrant values from downsampled cell
+                        let idx = y * self.width + x;
+                        if idx < downsampled.len() {
+                            let dcell = &downsampled[idx];
+                            let tl = if max_trail_value > 0.0 {
+                                dcell.top_left / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            let tr = if max_trail_value > 0.0 {
+                                dcell.top_right / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            let bl = if max_trail_value > 0.0 {
+                                dcell.bottom_left / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            let br = if max_trail_value > 0.0 {
+                                dcell.bottom_right / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            charset::map_quadrant(tl, tr, bl, br, THRESHOLD)
+                        } else {
+                            ' '
+                        }
+                    }
                     Charset::Ascii | Charset::CustomAscii(_) => {
                         charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset.clone())
                     }
@@ -331,6 +363,36 @@ impl FrameBuffer {
                         charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
                     }
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
+                    Charset::Quadrant => {
+                        // Use quadrant values from downsampled cell
+                        let idx = y * self.width + x;
+                        if idx < downsampled.len() {
+                            let dcell = &downsampled[idx];
+                            let tl = if max_trail_value > 0.0 {
+                                dcell.top_left / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            let tr = if max_trail_value > 0.0 {
+                                dcell.top_right / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            let bl = if max_trail_value > 0.0 {
+                                dcell.bottom_left / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            let br = if max_trail_value > 0.0 {
+                                dcell.bottom_right / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            charset::map_quadrant(tl, tr, bl, br, THRESHOLD)
+                        } else {
+                            ' '
+                        }
+                    }
                     Charset::Ascii => charset::map_ascii_directional(top_adj, true),
                     Charset::CustomAscii(_) => {
                         charset::map_brightness(top_adj, None, charset.clone())
@@ -342,6 +404,36 @@ impl FrameBuffer {
                         charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
                     }
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
+                    Charset::Quadrant => {
+                        // Use quadrant values from downsampled cell
+                        let idx = y * self.width + x;
+                        if idx < downsampled.len() {
+                            let dcell = &downsampled[idx];
+                            let tl = if max_trail_value > 0.0 {
+                                dcell.top_left / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            let tr = if max_trail_value > 0.0 {
+                                dcell.top_right / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            let bl = if max_trail_value > 0.0 {
+                                dcell.bottom_left / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            let br = if max_trail_value > 0.0 {
+                                dcell.bottom_right / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            charset::map_quadrant(tl, tr, bl, br, THRESHOLD)
+                        } else {
+                            ' '
+                        }
+                    }
                     Charset::Ascii => charset::map_ascii_directional(bottom_adj, false),
                     Charset::CustomAscii(_) => {
                         charset::map_brightness(bottom_adj, None, charset.clone())
@@ -1098,14 +1190,17 @@ mod tests {
             DownsampleCell {
                 top: 0.0,
                 bottom: 0.0,
+                ..Default::default()
             },
             DownsampleCell {
                 top: 5.0,
                 bottom: 2.0,
+                ..Default::default()
             },
             DownsampleCell {
                 top: 3.0,
                 bottom: 7.0,
+                ..Default::default()
             },
         ];
         let max = FrameBuffer::max_brightness(&cells);
@@ -1129,6 +1224,7 @@ mod tests {
             0.0,
             0.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::HalfBlock,
             false,
@@ -1157,6 +1253,7 @@ mod tests {
             1.0,
             1.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::HalfBlock,
             false,
@@ -1185,6 +1282,7 @@ mod tests {
             1.0,
             1.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::HalfBlock,
             false,
@@ -1213,6 +1311,7 @@ mod tests {
             1.0,
             0.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::HalfBlock,
             false,
@@ -1239,6 +1338,7 @@ mod tests {
             0.0,
             1.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::HalfBlock,
             false,
@@ -1265,6 +1365,7 @@ mod tests {
             0.5,
             0.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::HalfBlock,
             false,
@@ -1291,6 +1392,7 @@ mod tests {
             0.0,
             1.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::HalfBlock,
             false,
@@ -1317,6 +1419,7 @@ mod tests {
             1.0,
             0.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::Braille,
             false,
@@ -1343,6 +1446,7 @@ mod tests {
             0.0,
             1.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::Braille,
             false,
@@ -1369,6 +1473,7 @@ mod tests {
             0.5,
             0.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::Braille,
             false,
@@ -1395,6 +1500,7 @@ mod tests {
             0.0,
             0.5,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::Braille,
             false,
@@ -1421,6 +1527,7 @@ mod tests {
             1.0,
             0.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::Ascii,
             false,
@@ -1447,6 +1554,7 @@ mod tests {
             0.0,
             1.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::Ascii,
             false,
@@ -1473,6 +1581,7 @@ mod tests {
             0.5,
             0.0,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::Ascii,
             false,
@@ -1499,6 +1608,7 @@ mod tests {
             0.0,
             0.5,
             &[],
+            1.0,
             &Palette::Organic,
             Charset::Ascii,
             false,
@@ -1577,7 +1687,8 @@ mod tests {
         let downsampled = vec![
             DownsampleCell {
                 top: 0.0,
-                bottom: 0.0
+                bottom: 0.0,
+                ..Default::default()
             };
             10
         ];
@@ -1607,14 +1718,17 @@ mod tests {
             DownsampleCell {
                 top: 5.0,
                 bottom: 0.0,
+                ..Default::default()
             },
             DownsampleCell {
                 top: 0.0,
                 bottom: 5.0,
+                ..Default::default()
             },
             DownsampleCell {
                 top: 5.0,
                 bottom: 5.0,
+                ..Default::default()
             },
         ];
         let buffer = FrameBuffer::from_downsampled(

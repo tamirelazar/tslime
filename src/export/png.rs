@@ -87,10 +87,12 @@ mod tests {
             Cell {
                 top: 100.0,
                 bottom: 50.0,
+                ..Default::default()
             },
             Cell {
                 top: 75.0,
                 bottom: 25.0,
+                ..Default::default()
             },
         ];
 
@@ -120,10 +122,12 @@ mod tests {
             Cell {
                 top: 150.0,
                 bottom: -10.0,
+                ..Default::default()
             },
             Cell {
                 top: 50.0,
                 bottom: 75.0,
+                ..Default::default()
             },
         ];
 
@@ -141,10 +145,12 @@ mod tests {
             Cell {
                 top: 50.0,
                 bottom: 50.0,
+                ..Default::default()
             },
             Cell {
                 top: 100.0,
                 bottom: 100.0,
+                ..Default::default()
             },
         ];
 

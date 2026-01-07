@@ -90,10 +90,12 @@ mod tests {
             Cell {
                 top: 10.0,
                 bottom: 5.0,
+                ..Default::default()
             },
             Cell {
                 top: 8.0,
                 bottom: 6.0,
+                ..Default::default()
             },
         ];
         ab.update(&cells);
@@ -107,12 +109,14 @@ mod tests {
         let cells1 = vec![Cell {
             top: 5.0,
             bottom: 3.0,
+            ..Default::default()
         }];
         ab.update(&cells1);
 
         let cells2 = vec![Cell {
             top: 10.0,
             bottom: 8.0,
+            ..Default::default()
         }];
         ab.update(&cells2);
 
@@ -129,6 +133,7 @@ mod tests {
             let cells = vec![Cell {
                 top: i as f32 * 10.0,
                 bottom: 0.0,
+                ..Default::default()
             }];
             ab.update(&cells);
         }
@@ -148,6 +153,7 @@ mod tests {
         let cells = vec![Cell {
             top: 25.0,
             bottom: 20.0,
+            ..Default::default()
         }];
         ab.update(&cells);
 
@@ -162,6 +168,7 @@ mod tests {
         let cells = vec![Cell {
             top: 15.0,
             bottom: 10.0,
+            ..Default::default()
         }];
         ab.update(&cells);
 
@@ -176,8 +183,9 @@ mod tests {
     fn test_adaptive_brightness_minimum() {
         let mut ab = AdaptiveBrightness::new(10, true);
         let cells = vec![Cell {
-            top: 0.0,
+            top: 0.1,
             bottom: 0.0,
+            ..Default::default()
         }];
         ab.update(&cells);
         assert_eq!(ab.get_max_brightness(), 1.0);
@@ -191,6 +199,7 @@ mod tests {
             let cells = vec![Cell {
                 top: 20.0,
                 bottom: 15.0,
+                ..Default::default()
             }];
             ab.update(&cells);
         }

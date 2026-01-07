@@ -5,12 +5,15 @@ pub enum Charset {
     HalfBlock,
     Ascii,
     Braille,
+    Quadrant,
     CustomAscii(Vec<char>),
 }
 
 impl Charset {
     pub fn from_args(args: &Args) -> Self {
-        if args.braille {
+        if args.quadrant {
+            Charset::Quadrant
+        } else if args.braille {
             Charset::Braille
         } else if let Some(ref custom_chars) = args.ascii_chars {
             // Create custom ASCII charset from user-provided characters
@@ -149,6 +152,48 @@ pub fn map_braille_subpixel(top: f32, bottom: f32, threshold: f32) -> char {
     char::from_u32(0x2800 + combined_mask as u32).unwrap_or(' ')
 }
 
+/// Maps four quadrant brightness values to a Unicode quadrant character
+/// Each quadrant can be either on (bright) or off (dark) based on a threshold
+/// Returns characters from U+1FB00-U+1FB0F (Legacy Computing Symbols)
+pub fn map_quadrant(
+    top_left: f32,
+    top_right: f32,
+    bottom_left: f32,
+    bottom_right: f32,
+    threshold: f32,
+) -> char {
+    let threshold = threshold.max(0.0).min(1.0);
+
+    let tl = top_left > threshold;
+    let tr = top_right > threshold;
+    let bl = bottom_left > threshold;
+    let br = bottom_right > threshold;
+
+    // Map quadrants to bit pattern (TL=bit0, TR=bit1, BL=bit2, BR=bit3)
+    let index = (tl as u32) | ((tr as u32) << 1) | ((bl as u32) << 2) | ((br as u32) << 3);
+
+    // Standard Unicode quadrant characters (U+2580-U+259F)
+    match index {
+        0x0 => ' ',        // 0000: Empty
+        0x1 => '\u{2598}', // 0001: TL
+        0x2 => '\u{259D}', // 0010: TR
+        0x3 => '\u{2580}', // 0011: TL+TR (▀)
+        0x4 => '\u{2596}', // 0100: BL
+        0x5 => '\u{258C}', // 0101: TL+BL (▌)
+        0x6 => '\u{259E}', // 0110: TR+BL (▞)
+        0x7 => '\u{259B}', // 0111: TL+TR+BL (▛)
+        0x8 => '\u{2597}', // 1000: BR
+        0x9 => '\u{259A}', // 1001: TL+BR (▚)
+        0xA => '\u{2590}', // 1010: TR+BR (▐)
+        0xB => '\u{259C}', // 1011: TL+TR+BR (▜)
+        0xC => '\u{2584}', // 1100: BL+BR (▄)
+        0xD => '\u{2599}', // 1101: TL+BL+BR (▙)
+        0xE => '\u{259F}', // 1110: TR+BL+BR (▟)
+        0xF => '\u{2588}', // 1111: Full (█)
+        _ => ' ',
+    }
+}
+
 pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
     match charset {
         Charset::HalfBlock => {
@@ -168,6 +213,20 @@ pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
                 let brightness = top.clamp(0.0, 1.0);
                 let index = (brightness * 15.0).round() as usize;
                 char::from_u32(0x2800 + index as u32).unwrap_or(' ')
+            }
+        }
+        Charset::Quadrant => {
+            // For quadrant mode without explicit quadrant values, treat as simple brightness
+            // This will be overridden when using the downsampler with quadrant support
+            let brightness = top.clamp(0.0, 1.0);
+            if brightness < 0.25 {
+                ' '
+            } else if brightness < 0.5 {
+                '\u{1FB00}' // Single quadrant
+            } else if brightness < 0.75 {
+                '\u{1FB02}' // Half filled
+            } else {
+                '\u{1FB0E}' // Full block
             }
         }
         Charset::CustomAscii(ref chars) => {
@@ -210,6 +269,7 @@ pub fn charset_level_count(charset: Charset) -> usize {
         Charset::HalfBlock => 9,
         Charset::Ascii => 10,
         Charset::Braille => 16,
+        Charset::Quadrant => 16, // 2^4 combinations of 4 quadrants
         Charset::CustomAscii(ref chars) => chars.len().max(2), // At least 2 levels
     }
 }
@@ -489,6 +549,21 @@ mod tests {
         assert_eq!(map_brightness(1.0, Some(0.0), Charset::Braille), '\u{2807}');
         assert_eq!(map_brightness(0.0, Some(1.0), Charset::Braille), '\u{2838}');
         assert_eq!(map_brightness(0.0, Some(0.0), Charset::Braille), '\u{2800}');
+    }
+
+    #[test]
+    fn test_map_quadrant_basic() {
+        assert_eq!(map_quadrant(0.0, 0.0, 0.0, 0.0, 0.05), ' ');
+        assert_eq!(map_quadrant(1.0, 0.0, 0.0, 0.0, 0.05), '\u{2598}');
+        assert_eq!(map_quadrant(0.0, 1.0, 0.0, 0.0, 0.05), '\u{259D}');
+        assert_eq!(map_quadrant(1.0, 1.0, 0.0, 0.0, 0.05), '\u{2580}');
+        assert_eq!(map_quadrant(1.0, 1.0, 1.0, 1.0, 0.05), '\u{2588}');
+    }
+
+    #[test]
+    fn test_map_quadrant_threshold() {
+        assert_eq!(map_quadrant(0.04, 0.04, 0.04, 0.04, 0.05), ' ');
+        assert_eq!(map_quadrant(0.06, 0.0, 0.0, 0.0, 0.05), '\u{2598}');
     }
 
     #[test]

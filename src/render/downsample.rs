@@ -5,10 +5,15 @@ pub struct DownsampledFrame {
     cells: Vec<Cell>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct Cell {
     pub top: f32,
     pub bottom: f32,
+    // Quadrant support: when using quadrant charset, these provide 4× vertical resolution
+    pub top_left: f32,
+    pub top_right: f32,
+    pub bottom_left: f32,
+    pub bottom_right: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -26,7 +31,11 @@ impl DownsampledFrame {
             cells: vec![
                 Cell {
                     top: 0.0,
-                    bottom: 0.0
+                    bottom: 0.0,
+                    top_left: 0.0,
+                    top_right: 0.0,
+                    bottom_left: 0.0,
+                    bottom_right: 0.0,
                 };
                 width * height
             ],
@@ -55,6 +64,10 @@ impl DownsampledFrame {
             Cell {
                 top: 0.0,
                 bottom: 0.0,
+                top_left: 0.0,
+                top_right: 0.0,
+                bottom_left: 0.0,
+                bottom_right: 0.0,
             }
         }
     }
@@ -99,9 +112,49 @@ pub fn downsample(
                 sim_x_end,
             );
 
+            // Compute quadrant values for higher resolution
+            let sim_x_mid = (((cx as f32 + 0.5) * x_scale).ceil() as usize)
+                .max(sim_x_start + 1)
+                .min(sim_x_end);
+
+            let top_left_brightness = compute_average(
+                trail_map,
+                sim_width,
+                sim_y_start,
+                sim_y_mid,
+                sim_x_start,
+                sim_x_mid,
+            );
+
+            let top_right_brightness = compute_average(
+                trail_map,
+                sim_width,
+                sim_y_start,
+                sim_y_mid,
+                sim_x_mid,
+                sim_x_end,
+            );
+
+            let bottom_left_brightness = compute_average(
+                trail_map,
+                sim_width,
+                sim_y_mid,
+                sim_y_end,
+                sim_x_start,
+                sim_x_mid,
+            );
+
+            let bottom_right_brightness = compute_average(
+                trail_map, sim_width, sim_y_mid, sim_y_end, sim_x_mid, sim_x_end,
+            );
+
             frame.cells[cy * term_width + cx] = Cell {
                 top: top_brightness,
                 bottom: bottom_brightness,
+                top_left: top_left_brightness,
+                top_right: top_right_brightness,
+                bottom_left: bottom_left_brightness,
+                bottom_right: bottom_right_brightness,
             };
         }
     }
@@ -132,6 +185,14 @@ pub fn downsample_multi_species(
 
             let mut top_brightness = 0.0f32;
             let mut bottom_brightness = 0.0f32;
+            let mut top_left_brightness = 0.0f32;
+            let mut top_right_brightness = 0.0f32;
+            let mut bottom_left_brightness = 0.0f32;
+            let mut bottom_right_brightness = 0.0f32;
+
+            let sim_x_mid = (((cx as f32 + 0.5) * x_scale).ceil() as usize)
+                .max(sim_x_start + 1)
+                .min(sim_x_end);
 
             for (trail_map, _species_idx) in trail_maps {
                 let t = compute_average(
@@ -150,13 +211,53 @@ pub fn downsample_multi_species(
                     sim_x_start,
                     sim_x_end,
                 );
+
+                let tl = compute_average(
+                    trail_map,
+                    sim_width,
+                    sim_y_start,
+                    sim_y_mid,
+                    sim_x_start,
+                    sim_x_mid,
+                );
+
+                let tr = compute_average(
+                    trail_map,
+                    sim_width,
+                    sim_y_start,
+                    sim_y_mid,
+                    sim_x_mid,
+                    sim_x_end,
+                );
+
+                let bl = compute_average(
+                    trail_map,
+                    sim_width,
+                    sim_y_mid,
+                    sim_y_end,
+                    sim_x_start,
+                    sim_x_mid,
+                );
+
+                let br = compute_average(
+                    trail_map, sim_width, sim_y_mid, sim_y_end, sim_x_mid, sim_x_end,
+                );
+
                 top_brightness += t;
                 bottom_brightness += b;
+                top_left_brightness += tl;
+                top_right_brightness += tr;
+                bottom_left_brightness += bl;
+                bottom_right_brightness += br;
             }
 
             frame.cells[cy * term_width + cx] = Cell {
                 top: top_brightness,
                 bottom: bottom_brightness,
+                top_left: top_left_brightness,
+                top_right: top_right_brightness,
+                bottom_left: bottom_left_brightness,
+                bottom_right: bottom_right_brightness,
             };
         }
     }
@@ -213,6 +314,10 @@ mod tests {
         frame.cells[5 * 10 + 3] = Cell {
             top: 1.0,
             bottom: 2.0,
+            top_left: 1.0,
+            top_right: 1.0,
+            bottom_left: 2.0,
+            bottom_right: 2.0,
         };
         let cell = frame.get(3, 5);
         assert_eq!(cell.top, 1.0);
