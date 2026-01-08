@@ -37,6 +37,14 @@ harness = false
 name = "trail_history_benchmark"
 harness = false
 
+[[example]]
+name = "memory_benchmark"
+path = "benches/memory_benchmark.rs"
+
+[[example]]
+name = "memory_verification"
+path = "benches/memory_verification.rs"
+
 [target.'cfg(windows)'.dependencies]
 enable-ansi-support = "0.2.1"
 

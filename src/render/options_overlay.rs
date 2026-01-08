@@ -1,5 +1,4 @@
 use crate::simulation::config::DiffusionKernel;
-use crate::simulation::config::Preset;
 use crate::simulation::config::TerrainType;
 use crate::terminal::control::DefaultValues;
 use crate::terminal::control::PaletteShiftSpeed;
