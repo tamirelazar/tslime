@@ -967,6 +967,10 @@ fn run_simulation(
         };
 
         // Build status line (shown when any overlay visible or paused)
+        let diffusion_kernel_name = match runtime_state.diffusion_kernel {
+            simulation::config::DiffusionKernel::Mean3x3 => "Mean3x3",
+            simulation::config::DiffusionKernel::Gaussian => "Gaussian",
+        };
         let status_line = render::overlay::OverlayRenderer::build_status_line(
             runtime_state.is_paused,
             runtime_state.current_preset,
@@ -974,6 +978,8 @@ fn run_simulation(
             current_palette.clone(),
             runtime_state.dither_mode,
             term_width as usize,
+            Some(sim.agent_count()),
+            Some(diffusion_kernel_name),
         );
         let status_x =
             render::overlay::OverlayRenderer::status_line_x(&status_line, term_width as usize);

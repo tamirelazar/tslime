@@ -13,10 +13,10 @@ impl HelpOverlay {
         vec![
             "╭─ HELP ─────────────────────────────────╮".to_string(),
             "│ p: Pause    r: Restart      q: Quit    │".to_string(),
-            "│ h: Controls  ?: This help     \\: Stats │".to_string(),
-            "│ +/-: Speed  c/C: Palette   1-7: Preset │".to_string(),
-            "│ d: Dither   m: Mode        [/]: Adjust │".to_string(),
-            "│ 8: Randomize parameters                │".to_string(),
+            "│ h: Controls  ?: This help  \\: Stats    │".to_string(),
+            "│ |: Info     +/-: Speed   c/C: Palette  │".to_string(),
+            "│ d: Dither   m: Mode      1-7: Preset   │".to_string(),
+            "│ 8: Randomize parameters  [/]: Adjust   │".to_string(),
             "│                                        │".to_string(),
             "│ Press h for detailed controls          │".to_string(),
             "╰────────────────────────────────────────╯".to_string(),
@@ -141,18 +141,21 @@ pub struct OverlayRenderer;
 
 impl OverlayRenderer {
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub fn build_status_line(
         _is_paused: bool,
         preset: Preset,
         time_scale: f32,
         palette: Palette,
         dither_mode: DitherMode,
-        _width: usize,
+        width: usize,
+        population: Option<usize>,
+        diffusion_kernel: Option<&str>,
     ) -> String {
-        let paused_text = if _is_paused { " [PAUSED]" } else { "" };
         let preset_text = preset_name(preset);
         let palette_text = palette_name(palette);
         let time_text = format!("{:.1}x", time_scale);
+
         let dither_text = match dither_mode {
             DitherMode::None => "".to_string(),
             DitherMode::Ordered { intensity, .. } => format!(" D:{:.1}", intensity),
@@ -160,10 +163,42 @@ impl OverlayRenderer {
             DitherMode::Hybrid { intensity, .. } => format!(" H:{:.1}", intensity),
         };
 
-        format!(
-            "{} | {} | {} | {}{}",
-            preset_text, time_text, palette_text, dither_text, paused_text
-        )
+        let paused_text = if _is_paused { " [PAUSED]" } else { "" };
+        let help_text = if width >= 100 { " ? for help" } else { "" };
+
+        // Build components with priority for truncation
+        let mut status = format!("{} │ {}", preset_text, time_text);
+
+        // Add palette if space permits
+        if width >= 50 {
+            status.push_str(&format!(" │ {}", palette_text));
+        }
+
+        // Add population if provided and space permits
+        if let Some(pop) = population {
+            if width >= 70 {
+                let pop_k = pop / 1000;
+                status.push_str(&format!(" │ {}k", pop_k));
+            }
+        }
+
+        // Add diffusion kernel if provided and space permits
+        if let Some(kernel) = diffusion_kernel {
+            if width >= 90 {
+                status.push_str(&format!(" │ {}", kernel));
+            }
+        }
+
+        // Add dither if present
+        if !dither_text.is_empty() && width >= 60 {
+            status.push_str(&dither_text);
+        }
+
+        // Always add paused and help at the end
+        status.push_str(paused_text);
+        status.push_str(help_text);
+
+        status
     }
 
     #[allow(dead_code)]
@@ -538,7 +573,7 @@ impl StatsOverlay {
 pub struct InfoOverlay;
 
 impl InfoOverlay {
-    pub const WIDTH: usize = 24;
+    pub const WIDTH: usize = 28;
 
     #[allow(clippy::too_many_arguments)]
     pub fn build_overlay(
@@ -563,13 +598,13 @@ impl InfoOverlay {
         let simd_str = if simd_enabled { "On" } else { "Off" };
 
         let mut lines = vec![
-            "╭─ INFO ──────────────────╮".to_string(),
-            format!("│ Res:  {:>14} │", resolution_str),
-            format!("│ Term: {:>14} │", term_str),
-            format!("│ Init: {:>14} │", init_mode),
-            format!("│ Color:{:>13} │", color_mode),
-            format!("│ Char: {:>14} │", charset),
-            format!("│ SIMD: {:>14} │", simd_str),
+            "╭─ INFO ───────────────────╮".to_string(),
+            format!("│ Res:       {:>13} │", resolution_str),
+            format!("│ Term:      {:>13} │", term_str),
+            format!("│ Init:      {:>13} │", init_mode),
+            format!("│ Color:     {:>13} │", color_mode),
+            format!("│ Char:      {:>13} │", charset),
+            format!("│ SIMD:      {:>13} │", simd_str),
         ];
 
         if let Some(food) = food_source {
@@ -582,15 +617,15 @@ impl InfoOverlay {
             } else {
                 food_name
             };
-            lines.push(format!("│ Food: {:>14} │", truncated));
+            lines.push(format!("│ Food:      {:>13} │", truncated));
         }
 
         if warmup_frames > 0 {
-            lines.push(format!("│ Warm: {:>14} │", warmup_frames));
+            lines.push(format!("│ Warm:      {:>13} │", warmup_frames));
         }
 
         if auto_reset {
-            lines.push(format!("│ Auto: {:>14} │", "On"));
+            lines.push(format!("│ Auto:      {:>13} │", "On"));
         }
 
         lines.push("╰──────────────────────────╯".to_string());
@@ -698,5 +733,217 @@ mod stats_tests {
         assert_eq!(format_elapsed_time(90.0), "1:30");
         assert_eq!(format_elapsed_time(3661.0), "1:01:01");
         assert_eq!(format_elapsed_time(0.0), "0:00");
+    }
+}
+
+#[cfg(test)]
+mod info_tests {
+    use super::*;
+
+    #[test]
+    fn test_info_overlay_format() {
+        let lines = InfoOverlay::build_overlay(
+            400,
+            400,
+            80,
+            24,
+            "Random",
+            "TrueColor",
+            "HalfBlock",
+            false,
+            &None,
+            0,
+            1.0,
+            0.85,
+            false,
+            0.5,
+            0,
+        );
+
+        assert!(!lines.is_empty());
+        assert!(lines[0].starts_with('╭'));
+        assert!(lines.last().unwrap().starts_with('╰'));
+
+        // All lines should be exactly WIDTH chars
+        for (i, line) in lines.iter().enumerate() {
+            assert_eq!(
+                line.chars().count(),
+                InfoOverlay::WIDTH,
+                "Line {} has wrong width: '{}' (expected {} chars, got {})",
+                i,
+                line,
+                InfoOverlay::WIDTH,
+                line.chars().count()
+            );
+        }
+    }
+
+    #[test]
+    fn test_info_overlay_with_optional_fields() {
+        let lines = InfoOverlay::build_overlay(
+            800,
+            600,
+            120,
+            40,
+            "Central",
+            "EightBit",
+            "ASCII",
+            true,
+            &Some("food.png".to_string()),
+            100,
+            1.5,
+            0.9,
+            true,
+            0.3,
+            300,
+        );
+
+        assert!(!lines.is_empty());
+
+        // All lines should be exactly WIDTH chars
+        for (i, line) in lines.iter().enumerate() {
+            assert_eq!(
+                line.chars().count(),
+                InfoOverlay::WIDTH,
+                "Line {} has wrong width: '{}' (expected {} chars, got {})",
+                i,
+                line,
+                InfoOverlay::WIDTH,
+                line.chars().count()
+            );
+        }
+
+        // Should contain optional fields
+        assert!(lines.iter().any(|l| l.contains("Food")));
+        assert!(lines.iter().any(|l| l.contains("Warm")));
+        assert!(lines.iter().any(|l| l.contains("Auto")));
+    }
+
+    #[test]
+    fn test_info_overlay_position() {
+        assert_eq!(InfoOverlay::calculate_x_position(80), 50);
+        assert_eq!(InfoOverlay::calculate_x_position(120), 90);
+        assert_eq!(InfoOverlay::calculate_x_position(28), 1);
+    }
+}
+
+#[cfg(test)]
+mod status_line_tests {
+    use super::*;
+    use crate::cli::Palette;
+    use crate::render::dither::DitherMode;
+    use crate::simulation::config::Preset;
+
+    #[test]
+    fn test_status_line_narrow_terminal_40_cols() {
+        let status = OverlayRenderer::build_status_line(
+            false,
+            Preset::Organic,
+            1.0,
+            Palette::Organic,
+            DitherMode::None,
+            40,
+            Some(50000),
+            Some("Mean3x3"),
+        );
+        // At 40 cols: should only have preset and time
+        assert!(status.contains("Organic"));
+        assert!(status.contains("1.0x"));
+        // Should not have palette or population (too narrow)
+        assert!(!status.contains("50k"));
+    }
+
+    #[test]
+    fn test_status_line_medium_terminal_80_cols() {
+        let status = OverlayRenderer::build_status_line(
+            false,
+            Preset::Network,
+            2.5,
+            Palette::Heat,
+            DitherMode::None,
+            80,
+            Some(50000),
+            Some("Mean3x3"),
+        );
+        // At 80 cols: should have preset, time, palette, and population
+        assert!(status.contains("Network"));
+        assert!(status.contains("2.5x"));
+        assert!(status.contains("Heat"));
+        assert!(status.contains("50k"));
+        // Should not have diffusion kernel (needs 90+)
+        assert!(!status.contains("Mean3x3"));
+        // Should not have help text (needs 100+)
+        assert!(!status.contains("?"));
+    }
+
+    #[test]
+    fn test_status_line_wide_terminal_120_cols() {
+        let status = OverlayRenderer::build_status_line(
+            false,
+            Preset::Exploratory,
+            1.5,
+            Palette::Ocean,
+            DitherMode::None,
+            120,
+            Some(30000),
+            Some("Gaussian"),
+        );
+        // At 120 cols: should have everything including help
+        assert!(status.contains("Exploratory"));
+        assert!(status.contains("1.5x"));
+        assert!(status.contains("Ocean"));
+        assert!(status.contains("30k"));
+        assert!(status.contains("Gaussian"));
+        assert!(status.contains("? for help"));
+    }
+
+    #[test]
+    fn test_status_line_paused() {
+        let status = OverlayRenderer::build_status_line(
+            true,
+            Preset::Organic,
+            1.0,
+            Palette::Organic,
+            DitherMode::None,
+            120,
+            Some(50000),
+            Some("Mean3x3"),
+        );
+        assert!(status.contains("[PAUSED]"));
+    }
+
+    #[test]
+    fn test_status_line_with_dither() {
+        let status = OverlayRenderer::build_status_line(
+            false,
+            Preset::Organic,
+            1.0,
+            Palette::Organic,
+            DitherMode::Ordered {
+                intensity: 0.5,
+                matrix: crate::render::dither::DitherMatrix::Bayer4x4,
+            },
+            80,
+            Some(50000),
+            Some("Mean3x3"),
+        );
+        assert!(status.contains("D:0.5"));
+    }
+
+    #[test]
+    fn test_status_line_without_optional_params() {
+        let status = OverlayRenderer::build_status_line(
+            false,
+            Preset::Organic,
+            1.0,
+            Palette::Organic,
+            DitherMode::None,
+            120,
+            None,
+            None,
+        );
+        // Should still work without population or diffusion kernel
+        assert!(status.contains("Organic"));
+        assert!(status.contains("1.0x"));
     }
 }
