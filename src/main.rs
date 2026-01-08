@@ -20,8 +20,8 @@ use render::downsample::downsample;
 use render::grid::{GridRenderer, GridStyle};
 use render::options_overlay::ControlsOverlay;
 use render::overlay::{
-    ConfigBrowserOverlay, ConfigSaveOverlay, HelpOverlay, InfoOverlay, OverlayRenderer,
-    StatsOverlay,
+    ConfigBrowserOverlay, ConfigSaveOverlay, HelpOverlay, InfoOverlay, KeyboardHintsOverlay,
+    OverlayRenderer, PresetComparisonOverlay, StatsOverlay,
 };
 use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType};
@@ -921,6 +921,33 @@ fn run_simulation(
             None
         };
 
+        // Build keyboard hints overlay (? key)
+        let keyboard_hints_lines: Option<Vec<String>> = if runtime_state.show_keyboard_hints {
+            Some(KeyboardHintsOverlay::build_overlay())
+        } else {
+            None
+        };
+        let (keyboard_hints_x, keyboard_hints_y) = if keyboard_hints_lines.is_some() {
+            KeyboardHintsOverlay::calculate_position(term_width as usize, term_height as usize)
+        } else {
+            (0, 0)
+        };
+
+        // Build preset comparison overlay (Shift+1-7 keys)
+        let preset_comparison_lines: Option<Vec<String>> = if runtime_state.show_preset_comparison {
+            Some(PresetComparisonOverlay::build_overlay(
+                &runtime_state,
+                runtime_state.comparison_preset,
+            ))
+        } else {
+            None
+        };
+        let (preset_comparison_x, preset_comparison_y) = if preset_comparison_lines.is_some() {
+            PresetComparisonOverlay::calculate_position(term_width as usize, term_height as usize)
+        } else {
+            (0, 0)
+        };
+
         // Calculate controls Y position (below help if help is visible)
         let controls_y = if let Some(ref help) = help_lines {
             2 + help.len() + 1
@@ -961,6 +988,8 @@ fn run_simulation(
                 runtime_state.reverse_palette,
                 runtime_state.dither_mode.name(),
                 term_width as usize,
+                runtime_state.default_values,
+                sim.agent_count(),
             ))
         } else {
             None
@@ -980,6 +1009,8 @@ fn run_simulation(
             term_width as usize,
             Some(sim.agent_count()),
             Some(diffusion_kernel_name),
+            !runtime_state.undo_stack.is_empty(),
+            !runtime_state.redo_stack.is_empty(),
         );
         let status_x =
             render::overlay::OverlayRenderer::status_line_x(&status_line, term_width as usize);
@@ -1018,8 +1049,17 @@ fn run_simulation(
 
         // Stats overlay at top-right
         let entropy = StatsOverlay::calculate_entropy(&blended_trail, 100);
+        let trail_sum: f32 = blended_trail.iter().sum();
+        let trail_capacity = (sim.width() * sim.height()) as f32 * 10.0;
+        let trail_density = if trail_capacity > 0.0 {
+            (trail_sum / trail_capacity).min(1.0)
+        } else {
+            0.0
+        };
+
+        runtime_state.update_history(timer.current_fps() as f32, entropy, trail_density);
+
         let stats_lines: Option<Vec<String>> = if runtime_state.show_stats {
-            let trail_capacity = (sim.width() * sim.height()) as f32 * 10.0;
             let elapsed = start_time.elapsed().as_secs_f32();
             let trail_max = blended_trail.iter().fold(0.0f32, |m, &v| v.max(m));
             let memory_mb = memory_stats()
@@ -1030,7 +1070,7 @@ fn run_simulation(
 
             Some(StatsOverlay::build_overlay(
                 sim.agent_count(),
-                blended_trail.iter().sum(),
+                trail_sum,
                 trail_capacity,
                 trail_max,
                 entropy,
@@ -1046,6 +1086,9 @@ fn run_simulation(
                 memory_mb,
                 cpu_percent,
                 term_width as usize,
+                &runtime_state.fps_history,
+                &runtime_state.entropy_history,
+                &runtime_state.density_history,
             ))
         } else {
             None
@@ -1247,6 +1290,12 @@ fn run_simulation(
                     config_save_lines
                         .as_ref()
                         .map(|v| (v.as_slice(), config_save_x, config_save_y)),
+                    keyboard_hints_lines
+                        .as_ref()
+                        .map(|v| (v.as_slice(), keyboard_hints_x, keyboard_hints_y)),
+                    preset_comparison_lines
+                        .as_ref()
+                        .map(|v| (v.as_slice(), preset_comparison_x, preset_comparison_y)),
                 )?;
             } else {
                 renderer.render_with_overlay(
@@ -1267,6 +1316,12 @@ fn run_simulation(
                     config_save_lines
                         .as_ref()
                         .map(|v| (v.as_slice(), config_save_x, config_save_y)),
+                    keyboard_hints_lines
+                        .as_ref()
+                        .map(|v| (v.as_slice(), keyboard_hints_x, keyboard_hints_y)),
+                    preset_comparison_lines
+                        .as_ref()
+                        .map(|v| (v.as_slice(), preset_comparison_x, preset_comparison_y)),
                 )?;
             }
         }
@@ -1282,6 +1337,12 @@ fn run_simulation(
                     if in_warmup {
                         runtime_state.warmup_counter = args.warmup_frames; // Skip to end
                         continue; // Don't process the key event during warmup
+                    }
+
+                    // Close keyboard hints on any key press
+                    if runtime_state.show_keyboard_hints {
+                        runtime_state.show_keyboard_hints = false;
+                        continue;
                     }
 
                     // Handle config save dialog input
@@ -1350,6 +1411,39 @@ fn run_simulation(
                                 continue;
                             }
                             _ => continue,
+                        }
+                    }
+
+                    // Handle preset comparison input
+                    if runtime_state.show_preset_comparison {
+                        use crossterm::event::KeyCode;
+                        match key_event.code {
+                            KeyCode::Enter => {
+                                // Apply the comparison preset
+                                let preset = runtime_state.comparison_preset;
+                                runtime_state.set_preset(preset);
+                                let mut new_config = SimConfig::from(preset);
+                                // Maintain existing environment/setup
+                                new_config.attractors = sim.config().attractors.clone();
+                                new_config.attractor_strength = sim.config().attractor_strength;
+                                new_config.food_image_path = sim.config().food_image_path.clone();
+                                new_config.food_image_invert = sim.config().food_image_invert;
+                                new_config.obstacles = sim.config().obstacles.clone();
+                                new_config.obstacle_masks = sim.config().obstacle_masks.clone();
+                                sim.update_config(new_config);
+
+                                runtime_state.show_notification(format!(
+                                    "Applied preset: {}",
+                                    crate::terminal::control::preset_name(preset)
+                                ));
+                                runtime_state.show_preset_comparison = false;
+                                continue;
+                            }
+                            KeyCode::Esc => {
+                                runtime_state.show_preset_comparison = false;
+                                continue;
+                            }
+                            _ => {} // Allow other keys (like Shift+1-7 to switch preset being compared)
                         }
                     }
 
@@ -1464,6 +1558,9 @@ fn run_simulation(
                             new_config.obstacle_masks = sim.config().obstacle_masks.clone();
                             sim.update_config(new_config);
                         }
+                        ControlAction::ComparePreset(preset) => {
+                            runtime_state.toggle_preset_comparison(preset);
+                        }
                         ControlAction::AdjustTimeScale(delta) => {
                             runtime_state.adjust_time_scale(delta);
                             timer.set_time_scale(runtime_state.time_scale);
@@ -1492,6 +1589,9 @@ fn run_simulation(
                         }
                         ControlAction::ToggleHelp => {
                             runtime_state.toggle_help();
+                        }
+                        ControlAction::ToggleKeyboardHints => {
+                            runtime_state.toggle_keyboard_hints();
                         }
                         ControlAction::ToggleControls => {
                             runtime_state.toggle_controls();
@@ -1813,6 +1913,58 @@ fn run_simulation(
                             );
 
                             runtime_state.show_notification("Parameters Randomized!".to_string());
+                        }
+                        ControlAction::Undo => {
+                            if runtime_state.undo().is_some() {
+                                // Apply the undone state to simulation
+                                let mut new_config = sim.config().clone();
+                                new_config.sensor_angle = runtime_state.sensor_angle;
+                                new_config.rotation_angle = runtime_state.turn_angle;
+                                new_config.step_size = runtime_state.step_size;
+                                new_config.decay_factor = runtime_state.decay_factor;
+                                new_config.deposit_amount = runtime_state.deposit_amount;
+                                new_config.diffusion_kernel = runtime_state.diffusion_kernel;
+                                new_config.diffusion_sigma = runtime_state.diffusion_sigma;
+                                new_config.max_brightness = runtime_state.max_brightness;
+                                new_config.terrain = runtime_state.terrain_type;
+                                new_config.terrain_strength = runtime_state.terrain_strength;
+                                sim.update_config(new_config);
+
+                                renderer.set_palette(runtime_state.current_palette(&palette_list));
+                                renderer.set_invert_palette(runtime_state.invert_palette);
+                                renderer.set_reverse_palette(runtime_state.reverse_palette);
+                                renderer.set_dither_mode(runtime_state.dither_mode);
+
+                                runtime_state.show_notification("Undo successful".to_string());
+                            } else {
+                                runtime_state.show_notification("Nothing to undo".to_string());
+                            }
+                        }
+                        ControlAction::Redo => {
+                            if runtime_state.redo().is_some() {
+                                // Apply the redone state to simulation
+                                let mut new_config = sim.config().clone();
+                                new_config.sensor_angle = runtime_state.sensor_angle;
+                                new_config.rotation_angle = runtime_state.turn_angle;
+                                new_config.step_size = runtime_state.step_size;
+                                new_config.decay_factor = runtime_state.decay_factor;
+                                new_config.deposit_amount = runtime_state.deposit_amount;
+                                new_config.diffusion_kernel = runtime_state.diffusion_kernel;
+                                new_config.diffusion_sigma = runtime_state.diffusion_sigma;
+                                new_config.max_brightness = runtime_state.max_brightness;
+                                new_config.terrain = runtime_state.terrain_type;
+                                new_config.terrain_strength = runtime_state.terrain_strength;
+                                sim.update_config(new_config);
+
+                                renderer.set_palette(runtime_state.current_palette(&palette_list));
+                                renderer.set_invert_palette(runtime_state.invert_palette);
+                                renderer.set_reverse_palette(runtime_state.reverse_palette);
+                                renderer.set_dither_mode(runtime_state.dither_mode);
+
+                                runtime_state.show_notification("Redo successful".to_string());
+                            } else {
+                                runtime_state.show_notification("Nothing to redo".to_string());
+                            }
                         }
                         ControlAction::None => {}
                     }

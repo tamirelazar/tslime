@@ -1,5 +1,7 @@
 use crate::simulation::config::DiffusionKernel;
+use crate::simulation::config::Preset;
 use crate::simulation::config::TerrainType;
+use crate::terminal::control::DefaultValues;
 use crate::terminal::control::PaletteShiftSpeed;
 use crate::terminal::control::WindDirection;
 
@@ -60,6 +62,8 @@ impl ControlsOverlay {
         reverse_palette: bool,
         dither_mode_name: &str,
         _term_width: usize,
+        defaults: DefaultValues,
+        population: usize,
     ) -> Vec<String> {
         let mut lines = Vec::new();
         let cat_name = Self::category_name(category_idx);
@@ -73,33 +77,56 @@ impl ControlsOverlay {
             Self::TOTAL_CATEGORIES
         ));
 
+        let mod_marker = |current: f32, default: f32, eps: f32| {
+            if (current - default).abs() > eps {
+                "*"
+            } else {
+                " "
+            }
+        };
+        let mod_marker_int =
+            |current: usize, default: usize| if current != default { "*" } else { " " };
+        let mod_marker_enum = |current: &dyn std::fmt::Debug, default: &dyn std::fmt::Debug| {
+            if format!("{:?}", current) != format!("{:?}", default) {
+                "*"
+            } else {
+                " "
+            }
+        };
+
         match category_idx {
             // Category 0: SIMULATION CORE
             0 => {
                 lines.push(format!("│ {:^38} │", cat_name));
                 lines.push("│                                        │".to_string());
                 lines.push(format!(
-                    "│  A/a  Sensor Angle  {:>5.1}° [5-90°]     │",
+                    "│{} A/a  Sensor Angle  {:>5.1}° [5-90°]     │",
+                    mod_marker(sensor_angle, defaults.sensor_angle, 0.01),
                     sensor_angle
                 ));
                 lines.push(format!(
-                    "│  J/j  Sensor Dist   {:>5.1} [1-50]       │",
+                    "│{} J/j  Sensor Dist   {:>5.1}px [1-50]     │",
+                    mod_marker(sensor_distance, defaults.sensor_distance, 0.01),
                     sensor_distance
                 ));
                 lines.push(format!(
-                    "│  T/t  Turn Angle    {:>5.1}° [5-90°]     │",
+                    "│{} T/t  Turn Angle    {:>5.1}° [5-90°]     │",
+                    mod_marker(turn_angle, defaults.turn_angle, 0.01),
                     turn_angle
                 ));
                 lines.push(format!(
-                    "│  S/s  Step Size     {:>5.1} [0.5-5.0]    │",
+                    "│{} S/s  Step Size     {:>5.1}px [0.5-5.0]  │",
+                    mod_marker(step_size, defaults.step_size, 0.01),
                     step_size
                 ));
                 lines.push(format!(
-                    "│  E/e  Decay Factor  {:>5.3} [0.5-0.99]   │",
+                    "│{} E/e  Decay Factor  {:>5.3}x [0.5-0.99]  │",
+                    mod_marker(decay_factor, defaults.decay_factor, 0.001),
                     decay_factor
                 ));
                 lines.push(format!(
-                    "│  I/i  Deposit Amt   {:>5.1} [1-20]       │",
+                    "│{} I/i  Deposit Amt   {:>5.1}x [1-20]      │",
+                    mod_marker(deposit_amount, defaults.deposit_amount, 0.01),
                     deposit_amount
                 ));
                 lines.push(format!(
@@ -112,7 +139,8 @@ impl ControlsOverlay {
                 lines.push(format!("│ {:^38} │", cat_name));
                 lines.push("│                                        │".to_string());
                 lines.push(format!(
-                    "│  K    Diffusion         {:>14} │",
+                    "│{} K    Diffusion         {:>14} │",
+                    mod_marker_enum(&diffusion_kernel, &defaults.diffusion_kernel),
                     match diffusion_kernel {
                         DiffusionKernel::Mean3x3 => "Mean3x3",
                         DiffusionKernel::Gaussian => "Gaussian",
@@ -121,16 +149,19 @@ impl ControlsOverlay {
                 // Only show diffusion_sigma when Gaussian kernel is selected
                 if matches!(diffusion_kernel, DiffusionKernel::Gaussian) {
                     lines.push(format!(
-                        "│  ;/:  Diff Sigma  {:>5.2} [0.5-2.0]    │",
+                        "│{} ;/:  Diff Sigma  {:>5.2}x [0.5-2.0]   │",
+                        mod_marker(diffusion_sigma, defaults.diffusion_sigma, 0.01),
                         diffusion_sigma
                     ));
                 }
                 lines.push(format!(
-                    "│  W    Wind              {:>14} │",
+                    "│{} W    Wind              {:>14} │",
+                    mod_marker_enum(&wind_direction, &defaults.wind_direction),
                     wind_direction.name()
                 ));
                 lines.push(format!(
-                    "│  U    Terrain Type      {:>14} │",
+                    "│{} U    Terrain Type      {:>14} │",
+                    mod_marker_enum(&terrain_type, &defaults.terrain_type),
                     match terrain_type {
                         TerrainType::None => "None",
                         TerrainType::Smooth => "Smooth",
@@ -139,17 +170,19 @@ impl ControlsOverlay {
                     }
                 ));
                 lines.push(format!(
-                    "│  Y/y  Terrain Str   {:>5.1} [0.1-5.0]    │",
+                    "│{} Y/y  Terrain Str   {:>5.1}x [0.1-5.0]   │",
+                    mod_marker(terrain_strength, defaults.terrain_strength, 0.01),
                     terrain_strength
                 ));
                 lines.push(format!(
-                    "│  L/l  Attractor Str {:>5.1} [0.1-10]     │",
+                    "│{} L/l  Attractor Str {:>5.1}x [0.1-10]    │",
+                    mod_marker(attractor_strength, defaults.attractor_strength, 0.01),
                     attractor_strength
                 ));
                 lines.push(format!("│  ,    Mouse Mode        {:>14} │", mouse_mode));
                 if mouse_mode != "Disabled" {
                     lines.push(format!(
-                        "│       Mouse Timeout {:>4.1}s [0.1-30s]   │",
+                        "│ ─     Mouse Timeout {:>4.1}s (CLI-only)  │",
                         mouse_timeout
                     ));
                 }
@@ -186,15 +219,22 @@ impl ControlsOverlay {
                     dither_mode_name
                 ));
                 lines.push(format!(
-                    "│  B    Auto Normalize    {:>14} │",
+                    "│{} B    Auto Normalize    {:>14} │",
+                    if auto_normalize != defaults.auto_normalize {
+                        "*"
+                    } else {
+                        " "
+                    },
                     if auto_normalize { "On" } else { "Off" }
                 ));
                 lines.push(format!(
-                    "│  V    Motion Blur    {:>2} [0,3,5,7]f     │",
+                    "│{} V    Motion Blur    {:>1} frames [0,3,5,7]│",
+                    mod_marker_int(motion_blur_frames, defaults.motion_blur_frames),
                     motion_blur_frames
                 ));
                 lines.push(format!(
-                    "│  N/n  Max Bright    {:>5.1} [1-100]      │",
+                    "│{} N/n  Max Bright    {:>5.1}x [1-100]     │",
+                    mod_marker(max_brightness, defaults.max_brightness, 0.01),
                     max_brightness
                 ));
             }
@@ -205,6 +245,10 @@ impl ControlsOverlay {
                 lines.push(format!(
                     "│  F    Fast Mode         {:>14} │",
                     if fast_mode_enabled { "On" } else { "Off" }
+                ));
+                lines.push(format!(
+                    "│ ─     Population      {:>3}k (fixed)     │",
+                    population / 1000
                 ));
             }
             // Category 5: SYSTEM
@@ -219,6 +263,8 @@ impl ControlsOverlay {
         }
 
         lines.push("│                                        │".to_string());
+        lines.push("│  * Modified from default value         │".to_string());
+        lines.push("│  ─ Startup-only parameter (CLI)        │".to_string());
         lines.push("│  Tab: Next         Esc: Close          │".to_string());
         lines.push("╰────────────────────────────────────────╯".to_string());
 
@@ -230,6 +276,7 @@ impl ControlsOverlay {
 mod tests {
     use super::*;
     use crate::simulation::config::DiffusionKernel;
+    use crate::simulation::config::Preset;
     use crate::simulation::config::TerrainType;
     use crate::terminal::control::PaletteShiftSpeed;
     use crate::terminal::control::WindDirection;
@@ -278,6 +325,8 @@ mod tests {
             false,
             "None",
             80,
+            DefaultValues::from_preset(Preset::Organic),
+            50000,
         );
 
         assert!(lines[0].starts_with('╭'), "First line should start with ╭");
@@ -322,6 +371,8 @@ mod tests {
                 false,
                 "None",
                 80,
+                DefaultValues::from_preset(Preset::Organic),
+                50000,
             );
 
             // All lines should be exactly 42 chars wide
@@ -380,6 +431,8 @@ mod tests {
             false,
             "None",
             80,
+            DefaultValues::from_preset(Preset::Organic),
+            50000,
         );
 
         // First line should contain [3/6] indicator
@@ -480,6 +533,8 @@ fn test_options_overlay_renders_all_categories() {
             state.reverse_palette,
             "None",
             80,
+            state.default_values,
+            50000,
         );
 
         assert!(!overlay.is_empty(), "Category {} should not be empty", idx);
@@ -522,6 +577,8 @@ fn test_options_overlay_renders_all_categories() {
         state.reverse_palette,
         "None",
         80,
+        state.default_values,
+        50000,
     );
     assert!(sim_overlay.iter().any(|line| line.contains("Sensor Angle")));
     assert!(sim_overlay.iter().any(|line| line.contains("Sensor Dist")));
@@ -555,6 +612,8 @@ fn test_options_overlay_renders_all_categories() {
         state.reverse_palette,
         "None",
         80,
+        state.default_values,
+        50000,
     );
     assert!(env_overlay.iter().any(|line| line.contains("Diffusion")));
     assert!(env_overlay.iter().any(|line| line.contains("Wind")));
@@ -606,6 +665,8 @@ fn test_options_overlay_shows_live_parameter_values() {
         state.reverse_palette,
         "None",
         80,
+        state.default_values,
+        50000,
     );
 
     assert!(
@@ -668,6 +729,8 @@ fn test_options_overlay_format() {
             state.reverse_palette,
             "None",
             80,
+            state.default_values,
+            50000,
         );
 
         assert!(

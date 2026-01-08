@@ -1,6 +1,6 @@
 use crate::cli::Palette;
 use crate::render::dither::{DitherMatrix, DitherMode};
-use crate::simulation::config::{DiffusionKernel, InitMode, Preset, TerrainType, Wind};
+use crate::simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType, Wind};
 use crossterm::event::KeyEvent;
 use rand::Rng;
 
@@ -115,11 +115,13 @@ pub enum ControlAction {
     TogglePause,
     Restart,
     SetPreset(Preset),
+    ComparePreset(Preset),
     AdjustTimeScale(f32),
     CyclePalette,
     CyclePaletteReverse,
     ToggleHelp,
     ToggleControls,
+    ToggleKeyboardHints,
     CloseOverlays,
     ToggleDither,
     CycleDitherMode,
@@ -160,7 +162,89 @@ pub enum ControlAction {
     ConfigSaveConfirm,
     ConfigCancel,
     RandomizeParams,
+    Undo,
+    Redo,
     None,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParameterState {
+    pub sensor_angle: f32,
+    pub sensor_distance: f32,
+    pub turn_angle: f32,
+    pub step_size: f32,
+    pub decay_factor: f32,
+    pub deposit_amount: f32,
+    pub diffusion_kernel: DiffusionKernel,
+    pub diffusion_sigma: f32,
+    pub attractor_strength: f32,
+    pub wind_direction: WindDirection,
+    pub terrain_type: TerrainType,
+    pub terrain_strength: f32,
+    pub max_brightness: f32,
+    pub palette_index: usize,
+    pub invert_palette: bool,
+    pub reverse_palette: bool,
+    pub dither_mode: DitherMode,
+    pub motion_blur_frames: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DefaultValues {
+    pub sensor_angle: f32,
+    pub sensor_distance: f32,
+    pub turn_angle: f32,
+    pub step_size: f32,
+    pub decay_factor: f32,
+    pub deposit_amount: f32,
+    pub diffusion_kernel: DiffusionKernel,
+    pub diffusion_sigma: f32,
+    pub attractor_strength: f32,
+    pub wind_direction: WindDirection,
+    pub terrain_type: TerrainType,
+    pub terrain_strength: f32,
+    pub auto_normalize: bool,
+    pub motion_blur_frames: usize,
+    pub max_brightness: f32,
+}
+
+impl DefaultValues {
+    pub fn from_preset(preset: Preset) -> Self {
+        let config = SimConfig::from(preset);
+        Self {
+            sensor_angle: config.sensor_angle,
+            sensor_distance: config.sensor_distance,
+            turn_angle: config.rotation_angle,
+            step_size: config.step_size,
+            decay_factor: config.decay_factor,
+            deposit_amount: config.deposit_amount,
+            diffusion_kernel: config.diffusion_kernel,
+            diffusion_sigma: config.diffusion_sigma,
+            attractor_strength: config.attractor_strength,
+            wind_direction: match config.wind {
+                None => WindDirection::None,
+                Some(w) => {
+                    // Try to match common wind directions
+                    if w.dx > 0.0 && w.dy == 0.0 {
+                        WindDirection::East
+                    } else if w.dx < 0.0 && w.dy == 0.0 {
+                        WindDirection::West
+                    } else if w.dx == 0.0 && w.dy < 0.0 {
+                        WindDirection::North
+                    } else if w.dx == 0.0 && w.dy > 0.0 {
+                        WindDirection::South
+                    } else {
+                        WindDirection::None // Approximate
+                    }
+                }
+            },
+            terrain_type: config.terrain,
+            terrain_strength: config.terrain_strength,
+            auto_normalize: false, // Default is usually false
+            motion_blur_frames: 0,
+            max_brightness: config.max_brightness,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -168,6 +252,9 @@ pub struct RuntimeState {
     pub is_paused: bool,
     pub show_help: bool,
     pub show_controls: bool,
+    pub show_keyboard_hints: bool,
+    pub show_preset_comparison: bool,
+    pub comparison_preset: Preset,
     pub controls_category_idx: usize,
     // Deprecated - kept for compatibility during transition
     #[allow(dead_code)]
@@ -215,6 +302,13 @@ pub struct RuntimeState {
     pub show_config_save_dialog: bool,
     pub config_browser_selected_index: usize,
     pub config_save_name_input: String,
+    pub default_values: DefaultValues,
+    pub undo_stack: Vec<ParameterState>,
+    pub redo_stack: Vec<ParameterState>,
+    pub last_checkpoint_time: std::time::Instant,
+    pub fps_history: std::collections::VecDeque<f32>,
+    pub entropy_history: std::collections::VecDeque<f32>,
+    pub density_history: std::collections::VecDeque<f32>,
 }
 
 impl RuntimeState {
@@ -227,10 +321,14 @@ impl RuntimeState {
         mouse_mode: MouseInteractionMode,
         mouse_timeout: f32,
     ) -> Self {
+        let default_values = DefaultValues::from_preset(initial_preset);
         Self {
             is_paused: false,
             show_help,
             show_controls: false,
+            show_keyboard_hints: false,
+            show_preset_comparison: false,
+            comparison_preset: initial_preset,
             controls_category_idx: 0,
             help_mode: HelpMode::None,
             options_category_idx: 0,
@@ -243,21 +341,21 @@ impl RuntimeState {
             last_dither_mode: None,
             mouse_mode,
             mouse_timeout,
-            sensor_angle: 22.5,
-            sensor_distance: 9.0,
-            turn_angle: 45.0,
-            step_size: 1.0,
-            decay_factor: 0.5,
-            deposit_amount: 5.0,
-            diffusion_kernel: DiffusionKernel::Mean3x3,
-            diffusion_sigma: 1.0,
-            attractor_strength: 1.0,
-            wind_direction: WindDirection::None,
-            terrain_type: TerrainType::None,
-            terrain_strength: 1.0,
-            auto_normalize: false,
-            motion_blur_frames: 0,
-            max_brightness: 20.0,
+            sensor_angle: default_values.sensor_angle,
+            sensor_distance: default_values.sensor_distance,
+            turn_angle: default_values.turn_angle,
+            step_size: default_values.step_size,
+            decay_factor: default_values.decay_factor,
+            deposit_amount: default_values.deposit_amount,
+            diffusion_kernel: default_values.diffusion_kernel,
+            diffusion_sigma: default_values.diffusion_sigma,
+            attractor_strength: default_values.attractor_strength,
+            wind_direction: default_values.wind_direction,
+            terrain_type: default_values.terrain_type,
+            terrain_strength: default_values.terrain_strength,
+            auto_normalize: default_values.auto_normalize,
+            motion_blur_frames: default_values.motion_blur_frames,
+            max_brightness: default_values.max_brightness,
             fast_mode_enabled: false,
             palette_shift_speed: PaletteShiftSpeed::Off,
             invert_palette: false,
@@ -274,7 +372,115 @@ impl RuntimeState {
             show_config_save_dialog: false,
             config_browser_selected_index: 0,
             config_save_name_input: String::new(),
+            default_values,
+            undo_stack: Vec::with_capacity(50),
+            redo_stack: Vec::with_capacity(50),
+            last_checkpoint_time: std::time::Instant::now(),
+            fps_history: std::collections::VecDeque::with_capacity(20),
+            entropy_history: std::collections::VecDeque::with_capacity(20),
+            density_history: std::collections::VecDeque::with_capacity(20),
         }
+    }
+
+    pub fn capture_parameter_state(&self) -> ParameterState {
+        ParameterState {
+            sensor_angle: self.sensor_angle,
+            sensor_distance: self.sensor_distance,
+            turn_angle: self.turn_angle,
+            step_size: self.step_size,
+            decay_factor: self.decay_factor,
+            deposit_amount: self.deposit_amount,
+            diffusion_kernel: self.diffusion_kernel,
+            diffusion_sigma: self.diffusion_sigma,
+            attractor_strength: self.attractor_strength,
+            wind_direction: self.wind_direction,
+            terrain_type: self.terrain_type,
+            terrain_strength: self.terrain_strength,
+            max_brightness: self.max_brightness,
+            palette_index: self.palette_index,
+            invert_palette: self.invert_palette,
+            reverse_palette: self.reverse_palette,
+            dither_mode: self.dither_mode,
+            motion_blur_frames: self.motion_blur_frames,
+        }
+    }
+
+    pub fn apply_parameter_state(&mut self, state: ParameterState) {
+        self.sensor_angle = state.sensor_angle;
+        self.sensor_distance = state.sensor_distance;
+        self.turn_angle = state.turn_angle;
+        self.step_size = state.step_size;
+        self.decay_factor = state.decay_factor;
+        self.deposit_amount = state.deposit_amount;
+        self.diffusion_kernel = state.diffusion_kernel;
+        self.diffusion_sigma = state.diffusion_sigma;
+        self.attractor_strength = state.attractor_strength;
+        self.wind_direction = state.wind_direction;
+        self.terrain_type = state.terrain_type;
+        self.terrain_strength = state.terrain_strength;
+        self.max_brightness = state.max_brightness;
+        self.palette_index = state.palette_index;
+        self.invert_palette = state.invert_palette;
+        self.reverse_palette = state.reverse_palette;
+        self.dither_mode = state.dither_mode;
+        self.motion_blur_frames = state.motion_blur_frames;
+    }
+
+    pub fn checkpoint(&mut self) {
+        // Debounce checkpoints (0.5s) to avoid spamming undo stack during continuous adjustments
+        if self.last_checkpoint_time.elapsed().as_millis() < 500 {
+            return;
+        }
+
+        let current = self.capture_parameter_state();
+        if let Some(last) = self.undo_stack.last() {
+            if last == &current {
+                return;
+            }
+        }
+
+        self.undo_stack.push(current);
+        if self.undo_stack.len() > 50 {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+        self.last_checkpoint_time = std::time::Instant::now();
+    }
+
+    pub fn force_checkpoint(&mut self) {
+        let current = self.capture_parameter_state();
+        self.undo_stack.push(current);
+        if self.undo_stack.len() > 50 {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+        self.last_checkpoint_time = std::time::Instant::now();
+    }
+
+    pub fn undo(&mut self) -> Option<ParameterState> {
+        if self.undo_stack.is_empty() {
+            return None;
+        }
+
+        let current = self.capture_parameter_state();
+        self.redo_stack.push(current);
+
+        let previous = self.undo_stack.pop().unwrap();
+        self.apply_parameter_state(previous.clone());
+        Some(previous)
+    }
+
+    pub fn redo(&mut self) -> Option<ParameterState> {
+        if self.redo_stack.is_empty() {
+            return None;
+        }
+
+        let current = self.capture_parameter_state();
+        self.undo_stack.push(current);
+
+        let next = self.redo_stack.pop().unwrap();
+        self.apply_parameter_state(next.clone());
+        Some(next)
     }
 
     pub fn toggle_pause(&mut self) {
@@ -289,13 +495,33 @@ impl RuntimeState {
         self.show_controls = !self.show_controls;
     }
 
+    pub fn toggle_keyboard_hints(&mut self) {
+        self.show_keyboard_hints = !self.show_keyboard_hints;
+    }
+
+    pub fn toggle_preset_comparison(&mut self, preset: Preset) {
+        if self.show_preset_comparison && self.comparison_preset == preset {
+            self.show_preset_comparison = false;
+        } else {
+            self.show_preset_comparison = true;
+            self.comparison_preset = preset;
+        }
+    }
+
     pub fn any_overlay_open(&self) -> bool {
-        self.show_help || self.show_controls || self.show_stats || self.show_info
+        self.show_help
+            || self.show_controls
+            || self.show_keyboard_hints
+            || self.show_preset_comparison
+            || self.show_stats
+            || self.show_info
     }
 
     pub fn close_all_overlays(&mut self) {
         self.show_help = false;
         self.show_controls = false;
+        self.show_keyboard_hints = false;
+        self.show_preset_comparison = false;
         self.show_stats = false;
         self.show_info = false;
     }
@@ -319,19 +545,24 @@ impl RuntimeState {
     }
 
     pub fn set_preset(&mut self, preset: Preset) {
+        self.force_checkpoint();
         self.current_preset = preset;
+        self.default_values = DefaultValues::from_preset(preset);
     }
 
     pub fn adjust_time_scale(&mut self, delta: f32) {
+        self.checkpoint();
         let new_scale = (self.time_scale + delta).clamp(0.5, 4.0);
         self.time_scale = new_scale;
     }
 
     pub fn cycle_palette(&mut self, num_palettes: usize) {
+        self.force_checkpoint();
         self.palette_index = (self.palette_index + 1) % num_palettes;
     }
 
     pub fn cycle_palette_reverse(&mut self, num_palettes: usize) {
+        self.force_checkpoint();
         if self.palette_index == 0 {
             self.palette_index = num_palettes - 1;
         } else {
@@ -344,6 +575,7 @@ impl RuntimeState {
     }
 
     pub fn toggle_dither(&mut self) {
+        self.force_checkpoint();
         self.dither_mode = match self.dither_mode {
             DitherMode::None => {
                 if let Some(last) = self.last_dither_mode {
@@ -363,6 +595,7 @@ impl RuntimeState {
     }
 
     pub fn cycle_dither_mode(&mut self) {
+        self.force_checkpoint();
         self.dither_mode = match self.dither_mode {
             DitherMode::None => DitherMode::Ordered {
                 intensity: 0.5,
@@ -385,6 +618,7 @@ impl RuntimeState {
     }
 
     pub fn adjust_dither_intensity(&mut self, delta: f32) {
+        self.checkpoint();
         self.dither_mode = match self.dither_mode {
             DitherMode::Ordered { intensity, matrix } => {
                 let new_intensity = (intensity + delta).clamp(0.0, 1.0);
@@ -410,6 +644,7 @@ impl RuntimeState {
     }
 
     pub fn adjust_sensor_angle(&mut self, delta: f32) -> bool {
+        self.checkpoint();
         let new_value = (self.sensor_angle + delta).clamp(5.0, 90.0);
         let at_bound = (new_value - self.sensor_angle).abs() < 0.01;
         self.sensor_angle = new_value;
@@ -417,6 +652,7 @@ impl RuntimeState {
     }
 
     pub fn adjust_sensor_distance(&mut self, delta: f32) -> bool {
+        self.checkpoint();
         let new_value = (self.sensor_distance + delta).clamp(1.0, 50.0);
         let at_bound = (new_value - self.sensor_distance).abs() < 0.01;
         self.sensor_distance = new_value;
@@ -424,6 +660,7 @@ impl RuntimeState {
     }
 
     pub fn adjust_turn_angle(&mut self, delta: f32) -> bool {
+        self.checkpoint();
         let new_value = (self.turn_angle + delta).clamp(5.0, 90.0);
         let at_bound = (new_value - self.turn_angle).abs() < 0.01;
         self.turn_angle = new_value;
@@ -431,6 +668,7 @@ impl RuntimeState {
     }
 
     pub fn adjust_step_size(&mut self, delta: f32) -> bool {
+        self.checkpoint();
         let new_value = (self.step_size + delta).clamp(0.5, 5.0);
         let at_bound = (new_value - self.step_size).abs() < 0.01;
         self.step_size = new_value;
@@ -438,6 +676,7 @@ impl RuntimeState {
     }
 
     pub fn adjust_decay(&mut self, delta: f32) -> bool {
+        self.checkpoint();
         let new_value = (self.decay_factor + delta).clamp(0.5, 0.99);
         let at_bound = (new_value - self.decay_factor).abs() < 0.001;
         self.decay_factor = new_value;
@@ -445,6 +684,7 @@ impl RuntimeState {
     }
 
     pub fn adjust_deposit(&mut self, delta: f32) -> bool {
+        self.checkpoint();
         let new_value = (self.deposit_amount + delta).clamp(1.0, 20.0);
         let at_bound = (new_value - self.deposit_amount).abs() < 0.01;
         self.deposit_amount = new_value;
@@ -452,6 +692,7 @@ impl RuntimeState {
     }
 
     pub fn cycle_diffusion_kernel(&mut self) {
+        self.force_checkpoint();
         self.diffusion_kernel = match self.diffusion_kernel {
             DiffusionKernel::Mean3x3 => DiffusionKernel::Gaussian,
             DiffusionKernel::Gaussian => DiffusionKernel::Mean3x3,
@@ -459,6 +700,7 @@ impl RuntimeState {
     }
 
     pub fn adjust_diffusion_sigma(&mut self, delta: f32) -> bool {
+        self.checkpoint();
         let new_value = (self.diffusion_sigma + delta).clamp(0.5, 2.0);
         let at_bound = (new_value - self.diffusion_sigma).abs() < 0.01;
         self.diffusion_sigma = new_value;
@@ -466,6 +708,7 @@ impl RuntimeState {
     }
 
     pub fn adjust_attractor_strength(&mut self, delta: f32) -> bool {
+        self.checkpoint();
         let new_value = (self.attractor_strength + delta).clamp(0.1, 10.0);
         let at_bound = (new_value - self.attractor_strength).abs() < 0.01;
         self.attractor_strength = new_value;
@@ -473,6 +716,7 @@ impl RuntimeState {
     }
 
     pub fn cycle_mouse_mode(&mut self) {
+        self.force_checkpoint();
         self.mouse_mode = match self.mouse_mode {
             MouseInteractionMode::Disabled => MouseInteractionMode::Attract,
             MouseInteractionMode::Attract => MouseInteractionMode::Repel,
@@ -481,6 +725,7 @@ impl RuntimeState {
     }
 
     pub fn cycle_wind_direction(&mut self) {
+        self.force_checkpoint();
         self.wind_direction = match self.wind_direction {
             WindDirection::None => WindDirection::North,
             WindDirection::North => WindDirection::Northeast,
@@ -495,6 +740,7 @@ impl RuntimeState {
     }
 
     pub fn adjust_terrain_strength(&mut self, delta: f32) -> bool {
+        self.checkpoint();
         let new_value = (self.terrain_strength + delta).clamp(0.1, 5.0);
         let at_bound = (new_value - self.terrain_strength).abs() < 0.01;
         self.terrain_strength = new_value;
@@ -502,6 +748,7 @@ impl RuntimeState {
     }
 
     pub fn cycle_terrain_type(&mut self) {
+        self.force_checkpoint();
         self.terrain_type = match self.terrain_type {
             TerrainType::None => TerrainType::Smooth,
             TerrainType::Smooth => TerrainType::Turbulent,
@@ -511,10 +758,12 @@ impl RuntimeState {
     }
 
     pub fn toggle_auto_normalize(&mut self) {
+        self.force_checkpoint();
         self.auto_normalize = !self.auto_normalize;
     }
 
     pub fn cycle_motion_blur(&mut self) {
+        self.force_checkpoint();
         self.motion_blur_frames = match self.motion_blur_frames {
             0 => 3,
             3 => 5,
@@ -525,6 +774,7 @@ impl RuntimeState {
     }
 
     pub fn adjust_max_brightness(&mut self, delta: f32) -> bool {
+        self.checkpoint();
         let new_value = (self.max_brightness + delta).clamp(1.0, 100.0);
         let at_bound = (new_value - self.max_brightness).abs() < 0.01;
         self.max_brightness = new_value;
@@ -532,10 +782,12 @@ impl RuntimeState {
     }
 
     pub fn toggle_fast_mode(&mut self) {
+        self.force_checkpoint();
         self.fast_mode_enabled = !self.fast_mode_enabled;
     }
 
     pub fn cycle_palette_shift_speed(&mut self) {
+        self.force_checkpoint();
         self.palette_shift_speed = match self.palette_shift_speed {
             PaletteShiftSpeed::Off => PaletteShiftSpeed::Slow,
             PaletteShiftSpeed::Slow => PaletteShiftSpeed::Medium,
@@ -545,10 +797,12 @@ impl RuntimeState {
     }
 
     pub fn toggle_invert_palette(&mut self) {
+        self.force_checkpoint();
         self.invert_palette = !self.invert_palette;
     }
 
     pub fn toggle_reverse_palette(&mut self) {
+        self.force_checkpoint();
         self.reverse_palette = !self.reverse_palette;
     }
 
@@ -561,25 +815,61 @@ impl RuntimeState {
     }
 
     pub fn reset_to_defaults(&mut self) {
-        self.sensor_angle = 22.5;
-        self.sensor_distance = 9.0;
-        self.turn_angle = 45.0;
-        self.step_size = 1.0;
-        self.decay_factor = 0.5;
-        self.deposit_amount = 5.0;
-        self.diffusion_kernel = DiffusionKernel::Mean3x3;
-        self.diffusion_sigma = 1.0;
-        self.attractor_strength = 1.0;
-        self.wind_direction = WindDirection::None;
-        self.terrain_type = TerrainType::None;
-        self.terrain_strength = 1.0;
-        self.auto_normalize = false;
-        self.motion_blur_frames = 0;
-        self.max_brightness = 20.0;
+        self.force_checkpoint();
+        let defaults = self.default_values;
+        self.sensor_angle = defaults.sensor_angle;
+        self.sensor_distance = defaults.sensor_distance;
+        self.turn_angle = defaults.turn_angle;
+        self.step_size = defaults.step_size;
+        self.decay_factor = defaults.decay_factor;
+        self.deposit_amount = defaults.deposit_amount;
+        self.diffusion_kernel = defaults.diffusion_kernel;
+        self.diffusion_sigma = defaults.diffusion_sigma;
+        self.attractor_strength = defaults.attractor_strength;
+        self.wind_direction = defaults.wind_direction;
+        self.terrain_type = defaults.terrain_type;
+        self.terrain_strength = defaults.terrain_strength;
+        self.auto_normalize = defaults.auto_normalize;
+        self.motion_blur_frames = defaults.motion_blur_frames;
+        self.max_brightness = defaults.max_brightness;
         self.fast_mode_enabled = false;
         self.palette_shift_speed = PaletteShiftSpeed::Off;
         self.invert_palette = false;
         self.reverse_palette = false;
+    }
+
+    pub fn randomize_params(&mut self) {
+        self.force_checkpoint();
+        let mut rng = rand::thread_rng();
+
+        // Randomize core simulation parameters within interesting ranges
+        self.sensor_angle = rng.gen_range(15.0..60.0);
+        self.turn_angle = rng.gen_range(15.0..60.0);
+        self.step_size = rng.gen_range(0.5..2.5);
+        self.decay_factor = rng.gen_range(0.80..0.98);
+        self.deposit_amount = rng.gen_range(2.0..10.0);
+
+        // Randomize diffusion kernel (mostly mean, sometimes gaussian)
+        self.diffusion_kernel = if rng.gen_bool(0.3) {
+            DiffusionKernel::Gaussian
+        } else {
+            DiffusionKernel::Mean3x3
+        };
+
+        // Randomize terrain
+        self.terrain_type = match rng.gen_range(0..4) {
+            0 => TerrainType::None,
+            1 => TerrainType::Smooth,
+            2 => TerrainType::Turbulent,
+            _ => TerrainType::Mixed,
+        };
+        self.terrain_strength = rng.gen_range(0.5..3.0);
+
+        // Randomize palette
+        self.palette_index = rng.gen_range(0..ALL_PALETTES.len());
+
+        // Reset display settings to reasonable defaults
+        self.max_brightness = rng.gen_range(10.0..40.0);
     }
 
     pub fn show_notification(&mut self, message: String) {
@@ -624,37 +914,21 @@ impl RuntimeState {
         self.collapse_frame_counter = 0;
     }
 
-    pub fn randomize_params(&mut self) {
-        let mut rng = rand::thread_rng();
+    pub fn update_history(&mut self, fps: f32, entropy: f32, density: f32) {
+        self.fps_history.push_back(fps);
+        if self.fps_history.len() > 20 {
+            self.fps_history.pop_front();
+        }
 
-        // Randomize core simulation parameters within interesting ranges
-        self.sensor_angle = rng.gen_range(15.0..60.0);
-        self.turn_angle = rng.gen_range(15.0..60.0);
-        self.step_size = rng.gen_range(0.5..2.5);
-        self.decay_factor = rng.gen_range(0.80..0.98);
-        self.deposit_amount = rng.gen_range(2.0..10.0);
+        self.entropy_history.push_back(entropy);
+        if self.entropy_history.len() > 20 {
+            self.entropy_history.pop_front();
+        }
 
-        // Randomize diffusion kernel (mostly mean, sometimes gaussian)
-        self.diffusion_kernel = if rng.gen_bool(0.3) {
-            DiffusionKernel::Gaussian
-        } else {
-            DiffusionKernel::Mean3x3
-        };
-
-        // Randomize terrain
-        self.terrain_type = match rng.gen_range(0..4) {
-            0 => TerrainType::None,
-            1 => TerrainType::Smooth,
-            2 => TerrainType::Turbulent,
-            _ => TerrainType::Mixed,
-        };
-        self.terrain_strength = rng.gen_range(0.5..3.0);
-
-        // Randomize palette
-        self.palette_index = rng.gen_range(0..ALL_PALETTES.len());
-
-        // Reset display settings to reasonable defaults
-        self.max_brightness = rng.gen_range(10.0..40.0);
+        self.density_history.push_back(density);
+        if self.density_history.len() > 20 {
+            self.density_history.pop_front();
+        }
     }
 }
 
@@ -671,6 +945,14 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
             KeyCode::Char('s') | KeyCode::Char('S') => return ControlAction::ShowConfigSaveDialog,
             KeyCode::Char('l') | KeyCode::Char('L') => return ControlAction::ShowConfigBrowser,
             KeyCode::Char('b') | KeyCode::Char('B') => return ControlAction::ShowConfigBrowser,
+            KeyCode::Char('z') | KeyCode::Char('Z') => {
+                if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                    return ControlAction::Redo;
+                } else {
+                    return ControlAction::Undo;
+                }
+            }
+            KeyCode::Char('y') | KeyCode::Char('Y') => return ControlAction::Redo,
             _ => {}
         }
     }
@@ -685,6 +967,13 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('5') => ControlAction::SetPreset(Preset::Minimal),
         KeyCode::Char('6') => ControlAction::SetPreset(Preset::Moss),
         KeyCode::Char('7') => ControlAction::SetPreset(Preset::Zen),
+        KeyCode::Char('!') => ControlAction::ComparePreset(Preset::Network),
+        KeyCode::Char('@') => ControlAction::ComparePreset(Preset::Exploratory),
+        KeyCode::Char('#') => ControlAction::ComparePreset(Preset::Tendrils),
+        KeyCode::Char('$') => ControlAction::ComparePreset(Preset::Organic),
+        KeyCode::Char('%') => ControlAction::ComparePreset(Preset::Minimal),
+        KeyCode::Char('^') => ControlAction::ComparePreset(Preset::Moss),
+        KeyCode::Char('&') => ControlAction::ComparePreset(Preset::Zen),
         KeyCode::Char('8') => ControlAction::RandomizeParams,
         KeyCode::Char('+') | KeyCode::Char('=') => ControlAction::AdjustTimeScale(0.5),
         KeyCode::Char('-') | KeyCode::Char('_') => ControlAction::AdjustTimeScale(-0.5),
@@ -692,7 +981,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
             ControlAction::CyclePaletteReverse
         }
         KeyCode::Char('c') => ControlAction::CyclePalette,
-        KeyCode::Char('?') => ControlAction::ToggleHelp,
+        KeyCode::Char('?') => ControlAction::ToggleKeyboardHints,
         KeyCode::Char('h') | KeyCode::Char('H') => ControlAction::ToggleControls,
         KeyCode::Esc => ControlAction::CloseOverlays,
         KeyCode::Char('d') | KeyCode::Char('D') => ControlAction::ToggleDither,
@@ -920,7 +1209,7 @@ mod tests {
 
         state.reset_to_defaults();
 
-        assert_eq!(state.sensor_angle, 22.5);
+        assert_eq!(state.sensor_angle, 15.0); // Network preset default is 15.0
         assert!(!state.invert_palette);
         assert!(!state.reverse_palette);
         assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Off);

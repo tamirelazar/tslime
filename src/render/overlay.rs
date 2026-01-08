@@ -13,12 +13,12 @@ impl HelpOverlay {
         vec![
             "╭─ HELP ─────────────────────────────────╮".to_string(),
             "│ p: Pause    r: Restart      q: Quit    │".to_string(),
-            "│ h: Controls  ?: This help  \\: Stats    │".to_string(),
+            "│ h: Controls  ?: Key Shortcuts \\: Stats │".to_string(),
             "│ |: Info     +/-: Speed   c/C: Palette  │".to_string(),
             "│ d: Dither   m: Mode      1-7: Preset   │".to_string(),
             "│ 8: Randomize parameters  [/]: Adjust   │".to_string(),
             "│                                        │".to_string(),
-            "│ Press h for detailed controls          │".to_string(),
+            "│ Press ? for all keyboard shortcuts     │".to_string(),
             "╰────────────────────────────────────────╯".to_string(),
         ]
     }
@@ -26,6 +26,141 @@ impl HelpOverlay {
     #[allow(dead_code)]
     pub fn width() -> usize {
         42
+    }
+}
+
+pub struct KeyboardHintsOverlay;
+
+impl KeyboardHintsOverlay {
+    pub const WIDTH: usize = 58;
+
+    pub fn build_overlay() -> Vec<String> {
+        vec![
+            "╭─ KEYBOARD SHORTCUTS ───────────────────────────────────╮".to_string(),
+            "│                                                        │".to_string(),
+            "│  SIMULATION                VISUALS                     │".to_string(),
+            "│  p, Space : Pause          c, Shift+C : Palette        │".to_string(),
+            "│  r        : Restart        o          : Palette Shift  │".to_string(),
+            "│  q, Esc   : Quit           x          : Invert Palette │".to_string(),
+            "│  +, -     : Time Scale     z          : Reverse Palette│".to_string(),
+            "│                                                        │".to_string(),
+            "│  PRESETS                   POST-PROCESSING             │".to_string(),
+            "│  1-7      : Presets        d, m       : Dither Mode    │".to_string(),
+            "│  8        : Randomize      [, ]       : Dither Inten.  │".to_string(),
+            "│  0        : Defaults       b          : Auto Normalize │".to_string(),
+            "│                            v          : Motion Blur    │".to_string(),
+            "│  SYSTEM                    n, Shift+N : Max Brightness │".to_string(),
+            "│  h        : Controls       f          : Fast Mode      │".to_string(),
+            "│  ?, |     : Help/Info      g          : Save PNG       │".to_string(),
+            "│  \\        : Stats          Ctrl+S     : Save Config    │".to_string(),
+            "│  Tab      : Category       Ctrl+L     : Load Config    │".to_string(),
+            "│                                                        │".to_string(),
+            "│  DETAILED CONTROLS (Use Shift to decrease values)      │".to_string(),
+            "│  A: Sensor Angle   J: Sensor Dist    T: Turn Angle     │".to_string(),
+            "│  S: Step Size      E: Decay Factor   I: Deposit Amt    │".to_string(),
+            "│  K: Diff Kernel    ;: Diff Sigma     L: Attractor Str  │".to_string(),
+            "│  W: Wind Dir       U: Terrain Type   Y: Terrain Str    │".to_string(),
+            "│  ,: Mouse Mode                                         │".to_string(),
+            "│                                                        │".to_string(),
+            "│           Press any key to close this help             │".to_string(),
+            "╰────────────────────────────────────────────────────────╯".to_string(),
+        ]
+    }
+
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
+        let y = (term_height.saturating_sub(28)) / 2;
+        (x, y)
+    }
+}
+
+pub struct PresetComparisonOverlay;
+
+impl PresetComparisonOverlay {
+    pub const WIDTH: usize = 60;
+
+    pub fn build_overlay(
+        current: &crate::terminal::control::RuntimeState,
+        preset: Preset,
+    ) -> Vec<String> {
+        let defaults = crate::terminal::control::DefaultValues::from_preset(preset);
+        let preset_name = preset_name(preset);
+
+        let mut lines = vec![
+            format!("╭─ PRESET COMPARISON: {:<20} ──────────╮", preset_name),
+            "│                                                          │".to_string(),
+            "│  Parameter        │ Current      │ Preset Default        │".to_string(),
+            "│ ──────────────────┼──────────────┼────────────────────── │".to_string(),
+        ];
+
+        let mut add_row = |name: &str, cur: String, def: String, modif: bool| {
+            let marker = if modif { "*" } else { " " };
+            lines.push(format!(
+                "│{} {:<17} │ {:<12} │ {:<21} │",
+                marker, name, cur, def
+            ));
+        };
+
+        add_row(
+            "Sensor Angle",
+            format!("{:.1}°", current.sensor_angle),
+            format!("{:.1}°", defaults.sensor_angle),
+            (current.sensor_angle - defaults.sensor_angle).abs() > 0.01,
+        );
+        add_row(
+            "Sensor Dist",
+            format!("{:.1}px", current.sensor_distance),
+            format!("{:.1}px", defaults.sensor_distance),
+            (current.sensor_distance - defaults.sensor_distance).abs() > 0.01,
+        );
+        add_row(
+            "Turn Angle",
+            format!("{:.1}°", current.turn_angle),
+            format!("{:.1}°", defaults.turn_angle),
+            (current.turn_angle - defaults.turn_angle).abs() > 0.01,
+        );
+        add_row(
+            "Step Size",
+            format!("{:.1}px", current.step_size),
+            format!("{:.1}px", defaults.step_size),
+            (current.step_size - defaults.step_size).abs() > 0.01,
+        );
+        add_row(
+            "Decay Factor",
+            format!("{:.3}x", current.decay_factor),
+            format!("{:.3}x", defaults.decay_factor),
+            (current.decay_factor - defaults.decay_factor).abs() > 0.001,
+        );
+        add_row(
+            "Deposit Amt",
+            format!("{:.1}x", current.deposit_amount),
+            format!("{:.1}x", defaults.deposit_amount),
+            (current.deposit_amount - defaults.deposit_amount).abs() > 0.01,
+        );
+        add_row(
+            "Diff Sigma",
+            format!("{:.2}x", current.diffusion_sigma),
+            format!("{:.2}x", defaults.diffusion_sigma),
+            (current.diffusion_sigma - defaults.diffusion_sigma).abs() > 0.01,
+        );
+        add_row(
+            "Max Bright",
+            format!("{:.1}x", current.max_brightness),
+            format!("{:.1}x", defaults.max_brightness),
+            (current.max_brightness - defaults.max_brightness).abs() > 0.01,
+        );
+
+        lines.push("│                                                          │".to_string());
+        lines.push("│  Press Enter to Apply Preset     Esc to Close            │".to_string());
+        lines.push("╰──────────────────────────────────────────────────────────╯".to_string());
+
+        lines
+    }
+
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
+        let y = (term_height.saturating_sub(14)) / 2;
+        (x, y)
     }
 }
 
@@ -151,16 +286,28 @@ impl OverlayRenderer {
         width: usize,
         population: Option<usize>,
         diffusion_kernel: Option<&str>,
+        can_undo: bool,
+        can_redo: bool,
     ) -> String {
         let preset_text = preset_name(preset);
         let palette_text = palette_name(palette);
         let time_text = format!("{:.1}x", time_scale);
 
+        let undo_redo_text = if can_undo || can_redo {
+            format!(
+                " [{}{}]",
+                if can_undo { "Z" } else { " " },
+                if can_redo { "Y" } else { " " }
+            )
+        } else {
+            "".to_string()
+        };
+
         let dither_text = match dither_mode {
             DitherMode::None => "".to_string(),
-            DitherMode::Ordered { intensity, .. } => format!(" D:{:.1}", intensity),
+            DitherMode::Ordered { intensity, .. } => format!(" D:{:.1}x", intensity),
             DitherMode::ErrorDiffusion { .. } => " ED".to_string(),
-            DitherMode::Hybrid { intensity, .. } => format!(" H:{:.1}", intensity),
+            DitherMode::Hybrid { intensity, .. } => format!(" H:{:.1}x", intensity),
         };
 
         let paused_text = if _is_paused { " [PAUSED]" } else { "" };
@@ -195,6 +342,7 @@ impl OverlayRenderer {
         }
 
         // Always add paused and help at the end
+        status.push_str(&undo_redo_text);
         status.push_str(paused_text);
         status.push_str(help_text);
 
@@ -222,7 +370,7 @@ impl OverlayRenderer {
 
         if !attractors.is_empty() {
             lines.push(String::new());
-            lines.push("╭─ Attractors─────────────────────────────╮".to_string());
+            lines.push("╭─ Attractors────────────────────────────╮".to_string());
 
             for (i, attractor) in attractors.iter().enumerate() {
                 let kind = if attractor.strength > 0.0 {
@@ -232,7 +380,7 @@ impl OverlayRenderer {
                 };
                 let strength = attractor.strength.abs();
                 lines.push(format!(
-                    "│{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}          │",
+                    "│{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x        │",
                     i + 1,
                     attractor.x as i32,
                     attractor.y as i32,
@@ -241,7 +389,7 @@ impl OverlayRenderer {
                 ));
             }
 
-            lines.push("╰─────────────────────────────────────────╯".to_string());
+            lines.push("╰────────────────────────────────────────╯".to_string());
         }
 
         lines
@@ -253,13 +401,13 @@ impl OverlayRenderer {
 
         if !obstacles.is_empty() {
             lines.push(String::new());
-            lines.push("╭─ Obstacles──────────────────────────────╮".to_string());
+            lines.push("╭─ Obstacles─────────────────────────────╮".to_string());
 
             for (i, obstacle) in obstacles.iter().enumerate() {
                 match obstacle {
                     Obstacle::Circle { x, y, radius } => {
                         lines.push(format!(
-                            "│{:2}: circle ({:>4},{:>4}) r: {:>4.1}        │",
+                            "│{:2}: circle ({:>4},{:>4}) r: {:>4.1}px        │",
                             i + 1,
                             *x as i32,
                             *y as i32,
@@ -273,7 +421,7 @@ impl OverlayRenderer {
                         height,
                     } => {
                         lines.push(format!(
-                            "│{:2}: rect  ({:>4},{:>4}) {:>4.1}x{:>4.1}   │",
+                            "│{:2}: rect  ({:>4},{:>4}) {:>4.1}x{:>4.1}px  │",
                             i + 1,
                             *x as i32,
                             *y as i32,
@@ -292,12 +440,12 @@ impl OverlayRenderer {
                     } => {
                         let filename = std::path::Path::new(path)
                             .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| path.clone());
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(path);
                         lines.push(format!(
-                            "│{:2}: image {:>20} {:>3}x{:>3}    │",
+                            "│{:2}: image {:>15} {:>3}x{:>3}px   │",
                             i + 1,
-                            &filename[..filename.len().min(20)],
+                            &filename[..filename.len().min(15)],
                             width,
                             height,
                         ));
@@ -305,7 +453,7 @@ impl OverlayRenderer {
                 }
             }
 
-            lines.push("╰─────────────────────────────────────────╯".to_string());
+            lines.push("╰────────────────────────────────────────╯".to_string());
         }
 
         lines
@@ -322,7 +470,7 @@ impl OverlayRenderer {
 
         if !mouse_attractors.is_empty() {
             lines.push(String::new());
-            lines.push("╭─ Mouse Attractors ──────────────────────╮".to_string());
+            lines.push("╭─ Mouse Attractors ─────────────────────╮".to_string());
 
             for (i, ma) in mouse_attractors.iter().enumerate() {
                 let kind = if ma.strength > 0.0 {
@@ -337,7 +485,7 @@ impl OverlayRenderer {
                     "expired".to_string()
                 };
                 lines.push(format!(
-                    "│{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1} {:>6} │",
+                    "│{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x {:>7}│",
                     i + 1,
                     ma.x as i32,
                     ma.y as i32,
@@ -347,7 +495,7 @@ impl OverlayRenderer {
                 ));
             }
 
-            lines.push("╰─────────────────────────────────────────╯".to_string());
+            lines.push("╰────────────────────────────────────────╯".to_string());
         }
 
         lines
@@ -380,9 +528,9 @@ mod tests {
     fn test_attractor_overlay_no_attractors() {
         let attractors: Vec<Attractor> = vec![];
         let base_help = [
-            "╭─ tslime controls ───────────────────────╮",
-            "│ h: Toggle help                          │",
-            "╰─────────────────────────────────────────╯",
+            "╭─ tslime controls ──────────────────────╮",
+            "│ h: Toggle help                         │",
+            "╰────────────────────────────────────────╯",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
         assert_eq!(lines, base_help);
@@ -392,9 +540,9 @@ mod tests {
     fn test_attractor_overlay_single_attractor() {
         let attractors = vec![Attractor::new(200.0, 200.0, 1.0)];
         let base_help = [
-            "╭─ tslime controls ───────────────────────╮",
-            "│ h: Toggle help                          │",
-            "╰─────────────────────────────────────────╯",
+            "╭─ tslime controls ──────────────────────╮",
+            "│ h: Toggle help                         │",
+            "╰────────────────────────────────────────╯",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
         assert!(
@@ -411,9 +559,9 @@ mod tests {
     fn test_attractor_overlay_max_strength() {
         let attractors = vec![Attractor::new(100.0, 100.0, 10.0)];
         let base_help = [
-            "╭─ tslime controls ───────────────────────╮",
-            "│ h: Toggle help                          │",
-            "╰─────────────────────────────────────────╯",
+            "╭─ tslime controls ──────────────────────╮",
+            "│ h: Toggle help                         │",
+            "╰────────────────────────────────────────╯",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
         assert!(
@@ -430,9 +578,9 @@ mod tests {
     fn test_attractor_overlay_negative_coordinates() {
         let attractors = vec![Attractor::new(-50.0, -100.0, 1.0)];
         let base_help = [
-            "╭─ tslime controls ───────────────────────╮",
-            "│ h: Toggle help                          │",
-            "╰─────────────────────────────────────────╯",
+            "╭─ tslime controls ──────────────────────╮",
+            "│ h: Toggle help                         │",
+            "╰────────────────────────────────────────╯",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
         assert!(
@@ -453,9 +601,9 @@ mod tests {
             Attractor::new(300.0, 150.0, 2.0),
         ];
         let base_help = [
-            "╭─ tslime controls ───────────────────────╮",
-            "│ h: Toggle help                          │",
-            "╰─────────────────────────────────────────╯",
+            "╭─ tslime controls ──────────────────────╮",
+            "│ h: Toggle help                         │",
+            "╰────────────────────────────────────────╯",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
         assert!(
@@ -467,6 +615,28 @@ mod tests {
             "Multiple attractors should have consistent line lengths"
         );
     }
+}
+
+fn build_sparkline(history: &std::collections::VecDeque<f32>, min: f32, max: f32) -> String {
+    let chars = [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let mut sparkline = String::with_capacity(20);
+
+    // Fill with empty if history is small
+    for _ in 0..(20usize.saturating_sub(history.len())) {
+        sparkline.push(' ');
+    }
+
+    for &val in history {
+        let normalized = if max > min {
+            ((val - min) / (max - min)).clamp(0.0, 0.999)
+        } else {
+            0.0
+        };
+        let idx = (normalized * chars.len() as f32) as usize;
+        sparkline.push(chars[idx]);
+    }
+
+    format!("{:<20}", sparkline)
 }
 
 pub struct StatsOverlay;
@@ -493,6 +663,9 @@ impl StatsOverlay {
         memory_mb: f32,
         cpu_percent: f32,
         _term_width: usize,
+        fps_history: &std::collections::VecDeque<f32>,
+        entropy_history: &std::collections::VecDeque<f32>,
+        density_history: &std::collections::VecDeque<f32>,
     ) -> Vec<String> {
         let trail_percent = if trail_capacity > 0.0 {
             (trail_sum / trail_capacity * 100.0).min(99.9)
@@ -503,13 +676,20 @@ impl StatsOverlay {
         let elapsed_str = format_elapsed_time(elapsed_seconds);
         let grid_str = format!("{}x{}", grid_width, grid_height);
 
+        let fps_spark = build_sparkline(fps_history, 0.0, 60.0);
+        let entropy_spark = build_sparkline(entropy_history, 0.0, 8.0);
+        let density_spark = build_sparkline(density_history, 0.0, 1.0);
+
         vec![
             "╭─ STATS ──────────────╮".to_string(),
             format!("│ Agents:   {:>9} │", agent_count),
             format!("│ Trail:    {:>8.1}% │", trail_percent),
-            format!("│ Trail Max: {:>7.2} │", trail_max),
+            format!("│ {} │", density_spark),
+            format!("│ Trail Max: {:>6.2}x │", trail_max),
             format!("│ Entropy:   {:>8.2} │", entropy),
+            format!("│ {} │", entropy_spark),
             format!("│ FPS: {:>4.0} ({:>4.0}) │", fps, avg_fps),
+            format!("│ {} │", fps_spark),
             format!("│ Frames:    {:>9} │", frame_count),
             format!("│ Time:     {:>12} │", elapsed_str),
             "├──────────────────────┤".to_string(),
@@ -621,7 +801,7 @@ impl InfoOverlay {
         }
 
         if warmup_frames > 0 {
-            lines.push(format!("│ Warm:      {:>13} │", warmup_frames));
+            lines.push(format!("│ Warm:      {:>6} frames │", warmup_frames));
         }
 
         if auto_reset {
@@ -661,9 +841,10 @@ mod stats_tests {
 
     #[test]
     fn test_stats_overlay_format() {
+        let history = std::collections::VecDeque::from(vec![0.5f32; 20]);
         let lines = StatsOverlay::build_overlay(
             50000, 1234567.0, 8000000.0, 8.5, 5.5, 30.0, 28.5, 1234, 125.5, 400, 400, 3, 1, 2,
-            12.5, 85.0, 80,
+            12.5, 85.0, 80, &history, &history, &history,
         );
 
         assert!(!lines.is_empty());
@@ -677,7 +858,7 @@ mod stats_tests {
         // Border lines (title, divider, bottom) should be exactly WIDTH chars
         // Content lines may be wider due to wide box-drawing characters
         assert_eq!(lines[0].chars().count(), StatsOverlay::WIDTH);
-        assert_eq!(lines[8].chars().count(), StatsOverlay::WIDTH);
+        assert_eq!(lines[11].chars().count(), StatsOverlay::WIDTH);
         assert_eq!(lines.last().unwrap().chars().count(), StatsOverlay::WIDTH);
     }
 
@@ -690,8 +871,10 @@ mod stats_tests {
 
     #[test]
     fn test_stats_overlay_with_zero_values() {
+        let history = std::collections::VecDeque::new();
         let lines = StatsOverlay::build_overlay(
             0, 0.0, 1000000.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 400, 400, 0, 0, 0, 0.0, 0.0, 80,
+            &history, &history, &history,
         );
 
         assert!(!lines.is_empty());
@@ -845,6 +1028,8 @@ mod status_line_tests {
             40,
             Some(50000),
             Some("Mean3x3"),
+            false,
+            false,
         );
         // At 40 cols: should only have preset and time
         assert!(status.contains("Organic"));
@@ -864,6 +1049,8 @@ mod status_line_tests {
             80,
             Some(50000),
             Some("Mean3x3"),
+            false,
+            false,
         );
         // At 80 cols: should have preset, time, palette, and population
         assert!(status.contains("Network"));
@@ -887,6 +1074,8 @@ mod status_line_tests {
             120,
             Some(30000),
             Some("Gaussian"),
+            false,
+            false,
         );
         // At 120 cols: should have everything including help
         assert!(status.contains("Exploratory"));
@@ -908,6 +1097,8 @@ mod status_line_tests {
             120,
             Some(50000),
             Some("Mean3x3"),
+            false,
+            false,
         );
         assert!(status.contains("[PAUSED]"));
     }
@@ -926,6 +1117,8 @@ mod status_line_tests {
             80,
             Some(50000),
             Some("Mean3x3"),
+            false,
+            false,
         );
         assert!(status.contains("D:0.5"));
     }
@@ -941,9 +1134,32 @@ mod status_line_tests {
             120,
             None,
             None,
+            false,
+            false,
         );
         // Should still work without population or diffusion kernel
         assert!(status.contains("Organic"));
         assert!(status.contains("1.0x"));
+    }
+
+    #[test]
+    fn test_keyboard_hints_overlay_format() {
+        let hints_lines = KeyboardHintsOverlay::build_overlay();
+
+        for line in &hints_lines {
+            assert!(line.starts_with('│') || line.starts_with('╭') || line.starts_with('╰'));
+            assert!(line.ends_with('│') || line.ends_with('╮') || line.ends_with('╯'));
+        }
+
+        // All lines should be KeyboardHintsOverlay::WIDTH chars wide
+        for line in &hints_lines {
+            assert_eq!(
+                line.chars().count(),
+                KeyboardHintsOverlay::WIDTH,
+                "Keyboard hints line has unexpected width ({}): {}",
+                line.chars().count(),
+                line
+            );
+        }
     }
 }

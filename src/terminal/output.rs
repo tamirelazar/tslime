@@ -867,6 +867,8 @@ impl TerminalRenderer {
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
         config_browser_lines: Option<(&[String], usize, usize)>,
         config_save_lines: Option<(&[String], usize, usize)>,
+        keyboard_hints_lines: Option<(&[String], usize, usize)>,
+        preset_comparison_lines: Option<(&[String], usize, usize)>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -976,8 +978,18 @@ impl TerminalRenderer {
             buffer.draw_text_overlay(lines, x, y, 15, Some(236));
         }
 
-        // Config save overlay (modal, on top)
+        // Config save overlay (modal, on top) in render_with_overlay
         if let Some((lines, x, y)) = config_save_lines {
+            buffer.draw_text_overlay(lines, x, y, 15, Some(236));
+        }
+
+        // Keyboard hints overlay (modal, on top)
+        if let Some((lines, x, y)) = keyboard_hints_lines {
+            buffer.draw_text_overlay(lines, x, y, 15, Some(236));
+        }
+
+        // Preset comparison overlay (modal, on top)
+        if let Some((lines, x, y)) = preset_comparison_lines {
             buffer.draw_text_overlay(lines, x, y, 15, Some(236));
         }
 
@@ -1000,6 +1012,8 @@ impl TerminalRenderer {
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
         config_browser_lines: Option<(&[String], usize, usize)>,
         config_save_lines: Option<(&[String], usize, usize)>,
+        keyboard_hints_lines: Option<(&[String], usize, usize)>,
+        preset_comparison_lines: Option<(&[String], usize, usize)>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -1143,8 +1157,18 @@ impl TerminalRenderer {
             buffer.draw_text_overlay(lines, x, y, 15, Some(236));
         }
 
-        // Config save overlay (modal, on top)
+        // Config save overlay (modal, on top) in render_multi_species_with_overlay
         if let Some((lines, x, y)) = config_save_lines {
+            buffer.draw_text_overlay(lines, x, y, 15, Some(236));
+        }
+
+        // Keyboard hints overlay (modal, on top)
+        if let Some((lines, x, y)) = keyboard_hints_lines {
+            buffer.draw_text_overlay(lines, x, y, 15, Some(236));
+        }
+
+        // Preset comparison overlay (modal, on top)
+        if let Some((lines, x, y)) = preset_comparison_lines {
             buffer.draw_text_overlay(lines, x, y, 15, Some(236));
         }
 
