@@ -25,8 +25,8 @@ use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType};
 use simulation::Simulation;
 use terminal::control::{
-    handle_key_event, num_palettes, ControlAction, MouseInteractionMode, PaletteShiftSpeed,
-    RuntimeState,
+    handle_key_event, num_palettes, ALL_PALETTES, ControlAction, MouseInteractionMode,
+    PaletteShiftSpeed, RuntimeState,
 };
 use terminal::detection::{log_capabilities, TerminalCapabilities};
 use terminal::input::{InputPoller, MouseEventType};
@@ -936,6 +936,7 @@ fn run_simulation(
                 runtime_state.step_size,
                 runtime_state.decay_factor,
                 runtime_state.deposit_amount,
+                runtime_state.time_scale,
                 runtime_state.diffusion_kernel,
                 runtime_state.diffusion_sigma,
                 runtime_state.attractor_strength,
@@ -952,9 +953,11 @@ fn run_simulation(
                 runtime_state.motion_blur_frames,
                 runtime_state.max_brightness,
                 runtime_state.fast_mode_enabled,
+                runtime_state.current_palette(&ALL_PALETTES).name(),
                 runtime_state.palette_shift_speed,
                 runtime_state.invert_palette,
                 runtime_state.reverse_palette,
+                runtime_state.dither_mode.name(),
                 term_width as usize,
             ))
         } else {

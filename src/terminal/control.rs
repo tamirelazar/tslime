@@ -18,7 +18,7 @@ pub enum MouseInteractionMode {
     Repel,
 }
 
-const ALL_PALETTES: [Palette; 16] = [
+pub const ALL_PALETTES: [Palette; 16] = [
     Palette::Organic,
     Palette::Heat,
     Palette::Ocean,

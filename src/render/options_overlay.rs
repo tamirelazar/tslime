@@ -13,15 +13,16 @@ pub type OptionsOverlay = ControlsOverlay;
 impl ControlsOverlay {
     #[allow(dead_code)]
     pub const WIDTH: usize = 42;
-    pub const TOTAL_CATEGORIES: usize = 5;
+    pub const TOTAL_CATEGORIES: usize = 6;
 
     pub fn category_name(idx: usize) -> &'static str {
         match idx {
-            0 => "SIMULATION",
-            1 => "ENVIRONMENT",
-            2 => "VISUAL",
-            3 => "RENDERING",
-            4 => "DISPLAY",
+            0 => "SIMULATION CORE",
+            1 => "FORCES & ENVIRONMENT",
+            2 => "APPEARANCE",
+            3 => "POST-PROCESSING",
+            4 => "PERFORMANCE",
+            5 => "SYSTEM",
             _ => "UNKNOWN",
         }
     }
@@ -40,6 +41,7 @@ impl ControlsOverlay {
         step_size: f32,
         decay_factor: f32,
         deposit_amount: f32,
+        time_scale: f32,
         diffusion_kernel: DiffusionKernel,
         diffusion_sigma: f32,
         attractor_strength: f32,
@@ -52,9 +54,11 @@ impl ControlsOverlay {
         motion_blur_frames: usize,
         max_brightness: f32,
         fast_mode_enabled: bool,
+        palette_name: &str,
         palette_shift_speed: PaletteShiftSpeed,
         invert_palette: bool,
         reverse_palette: bool,
+        dither_mode_name: &str,
         _term_width: usize,
     ) -> Vec<String> {
         let mut lines = Vec::new();
@@ -70,6 +74,7 @@ impl ControlsOverlay {
         ));
 
         match category_idx {
+            // Category 0: SIMULATION CORE
             0 => {
                 lines.push(format!("│ {:^38} │", cat_name));
                 lines.push("│                                        │".to_string());
@@ -97,7 +102,12 @@ impl ControlsOverlay {
                     "│  I/i  Deposit Amount       {:>6.1}      │",
                     deposit_amount
                 ));
+                lines.push(format!(
+                    "│  +/-  Time Scale           {:>6.1}x     │",
+                    time_scale
+                ));
             }
+            // Category 1: FORCES & ENVIRONMENT
             1 => {
                 lines.push(format!("│ {:^38} │", cat_name));
                 lines.push("│                                        │".to_string());
@@ -116,6 +126,23 @@ impl ControlsOverlay {
                     ));
                 }
                 lines.push(format!(
+                    "│  W    Wind              {:>14} │",
+                    wind_direction.name()
+                ));
+                lines.push(format!(
+                    "│  U    Terrain Type      {:>14} │",
+                    match terrain_type {
+                        TerrainType::None => "None",
+                        TerrainType::Smooth => "Smooth",
+                        TerrainType::Turbulent => "Turbulent",
+                        TerrainType::Mixed => "Mixed",
+                    }
+                ));
+                lines.push(format!(
+                    "│  Y/y  Terrain Str       {:>14.1} │",
+                    terrain_strength
+                ));
+                lines.push(format!(
                     "│  L/l  Attractor Str     {:>14.1} │",
                     attractor_strength
                 ));
@@ -129,27 +156,41 @@ impl ControlsOverlay {
                         mouse_timeout
                     ));
                 }
-                lines.push(format!(
-                    "│  W    Wind              {:>14} │",
-                    wind_direction.name()
-                ));
-                lines.push(format!(
-                    "│  Y/y  Terrain Str       {:>14.1} │",
-                    terrain_strength
-                ));
-                lines.push(format!(
-                    "│  U    Terrain Type      {:>14} │",
-                    match terrain_type {
-                        TerrainType::None => "None",
-                        TerrainType::Smooth => "Smooth",
-                        TerrainType::Turbulent => "Turbulent",
-                        TerrainType::Mixed => "Mixed",
-                    }
-                ));
             }
+            // Category 2: APPEARANCE
             2 => {
                 lines.push(format!("│ {:^38} │", cat_name));
                 lines.push("│                                        │".to_string());
+                lines.push(format!(
+                    "│  c/C  Palette           {:>14} │",
+                    palette_name
+                ));
+                lines.push(format!(
+                    "│  O    Palette Shift     {:>14} │",
+                    match palette_shift_speed {
+                        PaletteShiftSpeed::Off => "Off",
+                        PaletteShiftSpeed::Slow => "Slow",
+                        PaletteShiftSpeed::Medium => "Medium",
+                        PaletteShiftSpeed::Fast => "Fast",
+                    }
+                ));
+                lines.push(format!(
+                    "│  X    Invert Palette    {:>14} │",
+                    if invert_palette { "On" } else { "Off" }
+                ));
+                lines.push(format!(
+                    "│  Z    Reverse Palette   {:>14} │",
+                    if reverse_palette { "On" } else { "Off" }
+                ));
+            }
+            // Category 3: POST-PROCESSING
+            3 => {
+                lines.push(format!("│ {:^38} │", cat_name));
+                lines.push("│                                        │".to_string());
+                lines.push(format!(
+                    "│  d/D  Dither Mode       {:>14} │",
+                    dither_mode_name
+                ));
                 lines.push(format!(
                     "│  B    Auto Normalize    {:>14} │",
                     if auto_normalize { "On" } else { "Off" }
@@ -163,35 +204,20 @@ impl ControlsOverlay {
                     max_brightness
                 ));
             }
-            3 => {
-                lines.push(format!("│ {:^38} │", cat_name));
-                lines.push("│                                        │".to_string());
-                lines.push("│  G    Save Frame             (PNG)     │".to_string());
-                lines.push(format!(
-                    "│  F    Fast Mode         {:>14} │",
-                    if fast_mode_enabled { "On" } else { "Off" }
-                ));
-                lines.push(format!(
-                    "│  O    Palette Shift     {:>14} │",
-                    match palette_shift_speed {
-                        PaletteShiftSpeed::Off => "Off",
-                        PaletteShiftSpeed::Slow => "Slow",
-                        PaletteShiftSpeed::Medium => "Medium",
-                        PaletteShiftSpeed::Fast => "Fast",
-                    }
-                ));
-            }
+            // Category 4: PERFORMANCE
             4 => {
                 lines.push(format!("│ {:^38} │", cat_name));
                 lines.push("│                                        │".to_string());
                 lines.push(format!(
-                    "│  X    Invert Palette    {:>14} │",
-                    if invert_palette { "On" } else { "Off" }
+                    "│  F    Fast Mode         {:>14} │",
+                    if fast_mode_enabled { "On" } else { "Off" }
                 ));
-                lines.push(format!(
-                    "│  Z    Reverse Palette   {:>14} │",
-                    if reverse_palette { "On" } else { "Off" }
-                ));
+            }
+            // Category 5: SYSTEM
+            5 => {
+                lines.push(format!("│ {:^38} │", cat_name));
+                lines.push("│                                        │".to_string());
+                lines.push("│  G    Save Frame             (PNG)     │".to_string());
                 lines.push("│  0    Reset to Defaults                │".to_string());
                 lines.push("│  8    Randomize Parameters             │".to_string());
             }
@@ -216,16 +242,17 @@ mod tests {
 
     #[test]
     fn test_category_names() {
-        assert_eq!(ControlsOverlay::category_name(0), "SIMULATION");
-        assert_eq!(ControlsOverlay::category_name(1), "ENVIRONMENT");
-        assert_eq!(ControlsOverlay::category_name(2), "VISUAL");
-        assert_eq!(ControlsOverlay::category_name(3), "RENDERING");
-        assert_eq!(ControlsOverlay::category_name(4), "DISPLAY");
+        assert_eq!(ControlsOverlay::category_name(0), "SIMULATION CORE");
+        assert_eq!(ControlsOverlay::category_name(1), "FORCES & ENVIRONMENT");
+        assert_eq!(ControlsOverlay::category_name(2), "APPEARANCE");
+        assert_eq!(ControlsOverlay::category_name(3), "POST-PROCESSING");
+        assert_eq!(ControlsOverlay::category_name(4), "PERFORMANCE");
+        assert_eq!(ControlsOverlay::category_name(5), "SYSTEM");
     }
 
     #[test]
     fn test_total_categories() {
-        assert_eq!(ControlsOverlay::total_categories(), 5);
+        assert_eq!(ControlsOverlay::total_categories(), 6);
     }
 
     #[test]
@@ -238,6 +265,7 @@ mod tests {
             1.0,
             0.5,
             5.0,
+            1.0,
             DiffusionKernel::Mean3x3,
             1.0,
             1.0,
@@ -250,9 +278,11 @@ mod tests {
             0,
             20.0,
             false,
+            "Forest",
             PaletteShiftSpeed::Off,
             false,
             false,
+            "None",
             80,
         );
 
@@ -270,7 +300,7 @@ mod tests {
 
     #[test]
     fn test_overlay_all_lines_consistent_width() {
-        for category_idx in 0..5 {
+        for category_idx in 0..6 {
             let lines = ControlsOverlay::build_overlay(
                 category_idx,
                 22.5,
@@ -279,6 +309,7 @@ mod tests {
                 1.0,
                 0.5,
                 5.0,
+                1.0,
                 DiffusionKernel::Mean3x3,
                 1.0,
                 1.0,
@@ -291,9 +322,11 @@ mod tests {
                 0,
                 20.0,
                 false,
+                "Forest",
                 PaletteShiftSpeed::Medium,
                 false,
                 false,
+                "None",
                 80,
             );
 
@@ -334,6 +367,7 @@ mod tests {
             1.0,
             0.5,
             5.0,
+            1.0,
             DiffusionKernel::Mean3x3,
             1.0,
             1.0,
@@ -346,16 +380,18 @@ mod tests {
             0,
             20.0,
             false,
+            "Forest",
             PaletteShiftSpeed::Off,
             false,
             false,
+            "None",
             80,
         );
 
-        // First line should contain [3/5] indicator
+        // First line should contain [3/6] indicator
         assert!(
-            lines[0].contains("[3/5]"),
-            "Header should contain category indicator [3/5], got: {}",
+            lines[0].contains("[3/6]"),
+            "Header should contain category indicator [3/6], got: {}",
             lines[0]
         );
     }
@@ -420,7 +456,7 @@ fn test_options_overlay_renders_all_categories() {
     );
 
     let total = OptionsOverlay::total_categories();
-    assert_eq!(total, 5);
+    assert_eq!(total, 6);
 
     for idx in 0..total {
         let overlay = OptionsOverlay::build_overlay(
@@ -431,6 +467,7 @@ fn test_options_overlay_renders_all_categories() {
             state.step_size,
             state.decay_factor,
             state.deposit_amount,
+            state.time_scale,
             state.diffusion_kernel,
             state.diffusion_sigma,
             state.attractor_strength,
@@ -443,9 +480,11 @@ fn test_options_overlay_renders_all_categories() {
             state.motion_blur_frames,
             state.max_brightness,
             state.fast_mode_enabled,
+            "Forest",
             state.palette_shift_speed,
             state.invert_palette,
             state.reverse_palette,
+            "None",
             80,
         );
 
@@ -470,6 +509,7 @@ fn test_options_overlay_renders_all_categories() {
         state.step_size,
         state.decay_factor,
         state.deposit_amount,
+        state.time_scale,
         state.diffusion_kernel,
         state.diffusion_sigma,
         state.attractor_strength,
@@ -482,9 +522,11 @@ fn test_options_overlay_renders_all_categories() {
         state.motion_blur_frames,
         state.max_brightness,
         state.fast_mode_enabled,
+        "Forest",
         state.palette_shift_speed,
         state.invert_palette,
         state.reverse_palette,
+        "None",
         80,
     );
     assert!(sim_overlay.iter().any(|line| line.contains("Sensor Angle")));
@@ -500,6 +542,7 @@ fn test_options_overlay_renders_all_categories() {
         state.step_size,
         state.decay_factor,
         state.deposit_amount,
+        state.time_scale,
         state.diffusion_kernel,
         state.diffusion_sigma,
         state.attractor_strength,
@@ -512,9 +555,11 @@ fn test_options_overlay_renders_all_categories() {
         state.motion_blur_frames,
         state.max_brightness,
         state.fast_mode_enabled,
+        "Forest",
         state.palette_shift_speed,
         state.invert_palette,
         state.reverse_palette,
+        "None",
         80,
     );
     assert!(env_overlay.iter().any(|line| line.contains("Diffusion")));
@@ -540,14 +585,15 @@ fn test_options_overlay_shows_live_parameter_values() {
     state.max_brightness = 100.0;
     state.motion_blur_frames = 3;
 
-    let visual_overlay = OptionsOverlay::build_overlay(
-        2,
+    let postprocessing_overlay = OptionsOverlay::build_overlay(
+        3,
         state.sensor_angle,
         state.sensor_distance,
         state.turn_angle,
         state.step_size,
         state.decay_factor,
         state.deposit_amount,
+        state.time_scale,
         state.diffusion_kernel,
         state.diffusion_sigma,
         state.attractor_strength,
@@ -560,26 +606,28 @@ fn test_options_overlay_shows_live_parameter_values() {
         state.motion_blur_frames,
         state.max_brightness,
         state.fast_mode_enabled,
+        "Forest",
         state.palette_shift_speed,
         state.invert_palette,
         state.reverse_palette,
+        "None",
         80,
     );
 
     assert!(
-        visual_overlay
+        postprocessing_overlay
             .iter()
             .any(|line| line.contains("100.0") || line.contains("100")),
         "Should contain max brightness value. Got: {:?}",
-        visual_overlay
+        postprocessing_overlay
     );
 
     assert!(
-        visual_overlay
+        postprocessing_overlay
             .iter()
             .any(|line| line.contains("3") && line.contains("frames")),
         "Should contain motion blur frames value. Got: {:?}",
-        visual_overlay
+        postprocessing_overlay
     );
 }
 
@@ -607,6 +655,7 @@ fn test_options_overlay_format() {
             state.step_size,
             state.decay_factor,
             state.deposit_amount,
+            state.time_scale,
             state.diffusion_kernel,
             state.diffusion_sigma,
             state.attractor_strength,
@@ -619,9 +668,11 @@ fn test_options_overlay_format() {
             state.motion_blur_frames,
             state.max_brightness,
             state.fast_mode_enabled,
+            "Forest",
             state.palette_shift_speed,
             state.invert_palette,
             state.reverse_palette,
+            "None",
             80,
         );
 
