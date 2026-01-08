@@ -14,6 +14,69 @@ pub struct HsvColor {
     pub v: f32,
 }
 
+/// A gradient control point with position (0.0-1.0) and RGB color
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GradientStop {
+    pub position: f32,
+    pub color: RgbColor,
+}
+
+/// Interpolates smoothly between gradient stops
+/// Supports any number of control points for continuous color mapping
+pub fn interpolate_gradient(stops: &[GradientStop], t: f32) -> RgbColor {
+    let t = t.clamp(0.0, 1.0);
+
+    if stops.is_empty() {
+        return RgbColor { r: 0, g: 0, b: 0 };
+    }
+
+    if stops.len() == 1 {
+        return stops[0].color;
+    }
+
+    // Find the two stops to interpolate between
+    let mut lower_idx = 0;
+    let mut upper_idx = stops.len() - 1;
+
+    for (i, stop) in stops.iter().enumerate() {
+        if stop.position <= t {
+            lower_idx = i;
+        }
+        if stop.position >= t && i < upper_idx {
+            upper_idx = i;
+            break;
+        }
+    }
+
+    // If we're exactly at a stop, return that color
+    if (stops[lower_idx].position - t).abs() < f32::EPSILON {
+        return stops[lower_idx].color;
+    }
+    if (stops[upper_idx].position - t).abs() < f32::EPSILON {
+        return stops[upper_idx].color;
+    }
+
+    // Interpolate between lower and upper
+    let lower_stop = stops[lower_idx];
+    let upper_stop = stops[upper_idx];
+
+    let range = upper_stop.position - lower_stop.position;
+    if range < f32::EPSILON {
+        return lower_stop.color;
+    }
+
+    let local_t = (t - lower_stop.position) / range;
+
+    RgbColor {
+        r: (lower_stop.color.r as f32
+            + (upper_stop.color.r as f32 - lower_stop.color.r as f32) * local_t) as u8,
+        g: (lower_stop.color.g as f32
+            + (upper_stop.color.g as f32 - lower_stop.color.g as f32) * local_t) as u8,
+        b: (lower_stop.color.b as f32
+            + (upper_stop.color.b as f32 - lower_stop.color.b as f32) * local_t) as u8,
+    }
+}
+
 pub const ANSI_256_TO_RGB: [RgbColor; 256] = {
     // Colors 0-15: Standard ANSI system colors
     // Colors 16-231: 6×6×6 RGB cube with values [0, 95, 135, 175, 215, 255]
@@ -2360,6 +2423,40 @@ fn get_rgb_gradient(palette: Palette) -> &'static [RgbColor; 11] {
     }
 }
 
+/// Convert an array of RGB colors to evenly-spaced gradient stops
+fn rgb_array_to_gradient_stops<const N: usize>(colors: &[RgbColor; N]) -> Vec<GradientStop> {
+    colors
+        .iter()
+        .enumerate()
+        .map(|(i, &color)| GradientStop {
+            position: i as f32 / (N - 1).max(1) as f32,
+            color,
+        })
+        .collect()
+}
+
+/// Get gradient stops for a palette (supports continuous interpolation)
+fn get_gradient_stops(palette: &Palette) -> Vec<GradientStop> {
+    match palette {
+        Palette::Custom(colors) => {
+            // For custom palettes, create evenly spaced stops
+            colors
+                .iter()
+                .enumerate()
+                .map(|(i, &color)| GradientStop {
+                    position: i as f32 / (colors.len() - 1).max(1) as f32,
+                    color,
+                })
+                .collect()
+        }
+        _ => {
+            // For built-in palettes, convert the 11-step arrays to gradient stops
+            let rgb_gradient = get_rgb_gradient(palette.clone());
+            rgb_array_to_gradient_stops(rgb_gradient)
+        }
+    }
+}
+
 fn interpolate_custom_palette(colors: &[RgbColor]) -> [RgbColor; 11] {
     let num_colors = colors.len();
     if num_colors == 2 {
@@ -2458,50 +2555,17 @@ pub fn map_brightness_rgb(
 ) -> RgbColor {
     let mut brightness = brightness.clamp(0.0, 1.0);
 
-    let gradient: &[RgbColor] = match &palette {
-        Palette::Custom(colors) => {
-            let interpolated = interpolate_custom_palette(colors);
-            let boxed = Box::new(interpolated);
-            Box::leak(boxed)
-        }
-        _ => get_rgb_gradient(palette),
-    };
-
     if reverse {
         brightness = 1.0 - brightness;
     }
 
-    let position = brightness * (gradient.len() - 1) as f32;
-    let lower = position.floor() as usize;
-    let upper = position.ceil() as usize;
-    let fraction = position - lower as f32;
+    // Use the new gradient interpolation system
+    let stops = get_gradient_stops(&palette);
+    let mut final_color = interpolate_gradient(&stops, brightness);
 
-    let lower_color = gradient[lower];
-    let upper_color = gradient[upper];
-
-    let r = if upper == lower {
-        lower_color.r
-    } else {
-        (lower_color.r as f32 + (upper_color.r as f32 - lower_color.r as f32) * fraction) as u8
-    };
-    let g = if upper == lower {
-        lower_color.g
-    } else {
-        (lower_color.g as f32 + (upper_color.g as f32 - lower_color.g as f32) * fraction) as u8
-    };
-    let b = if upper == lower {
-        lower_color.b
-    } else {
-        (lower_color.b as f32 + (upper_color.b as f32 - lower_color.b as f32) * fraction) as u8
-    };
-
-    let final_color = RgbColor { r, g, b };
-
-    let final_color = if invert {
-        invert_rgb(final_color)
-    } else {
-        final_color
-    };
+    if invert {
+        final_color = invert_rgb(final_color);
+    }
 
     if hue_shift != 0.0 {
         let hsv = rgb_to_hsv(final_color);
@@ -3085,5 +3149,121 @@ mod tests {
         let dark = map_species_brightness_rgb(0.0, base_color, false);
         let light = map_species_brightness_rgb(1.0, base_color, false);
         assert_ne!(dark.r, light.r, "Red channel should differ");
+    }
+
+    #[test]
+    fn test_gradient_stop_interpolation() {
+        // Test with 2 stops - simple linear interpolation
+        let stops = vec![
+            GradientStop {
+                position: 0.0,
+                color: RgbColor { r: 0, g: 0, b: 0 },
+            },
+            GradientStop {
+                position: 1.0,
+                color: RgbColor {
+                    r: 100,
+                    g: 100,
+                    b: 100,
+                },
+            },
+        ];
+
+        let color = interpolate_gradient(&stops, 0.5);
+        assert_eq!(color.r, 50);
+        assert_eq!(color.g, 50);
+        assert_eq!(color.b, 50);
+    }
+
+    #[test]
+    fn test_gradient_stop_interpolation_multiple_stops() {
+        // Test with 3 stops
+        let stops = vec![
+            GradientStop {
+                position: 0.0,
+                color: RgbColor { r: 0, g: 0, b: 0 },
+            },
+            GradientStop {
+                position: 0.5,
+                color: RgbColor { r: 100, g: 0, b: 0 },
+            },
+            GradientStop {
+                position: 1.0,
+                color: RgbColor {
+                    r: 100,
+                    g: 100,
+                    b: 100,
+                },
+            },
+        ];
+
+        // At 0.25, should be halfway between first and second stop
+        let color = interpolate_gradient(&stops, 0.25);
+        assert_eq!(color.r, 50);
+        assert_eq!(color.g, 0);
+        assert_eq!(color.b, 0);
+
+        // At 0.75, should be halfway between second and third stop
+        let color = interpolate_gradient(&stops, 0.75);
+        assert_eq!(color.r, 100);
+        assert_eq!(color.g, 50);
+        assert_eq!(color.b, 50);
+    }
+
+    #[test]
+    fn test_gradient_stop_edge_cases() {
+        let stops = vec![
+            GradientStop {
+                position: 0.0,
+                color: RgbColor {
+                    r: 50,
+                    g: 50,
+                    b: 50,
+                },
+            },
+            GradientStop {
+                position: 1.0,
+                color: RgbColor {
+                    r: 200,
+                    g: 200,
+                    b: 200,
+                },
+            },
+        ];
+
+        // Exactly at start
+        let color = interpolate_gradient(&stops, 0.0);
+        assert_eq!(color.r, 50);
+
+        // Exactly at end
+        let color = interpolate_gradient(&stops, 1.0);
+        assert_eq!(color.r, 200);
+
+        // Clamping below 0
+        let color = interpolate_gradient(&stops, -0.5);
+        assert_eq!(color.r, 50);
+
+        // Clamping above 1
+        let color = interpolate_gradient(&stops, 1.5);
+        assert_eq!(color.r, 200);
+    }
+
+    #[test]
+    fn test_continuous_interpolation_vs_old_system() {
+        // Verify that the new system produces smooth gradients
+        // by checking that intermediate values between control points are different
+        let color1 = map_brightness_rgb(0.45, Palette::Heat, false, false, 0.0);
+        let color2 = map_brightness_rgb(0.50, Palette::Heat, false, false, 0.0);
+        let color3 = map_brightness_rgb(0.55, Palette::Heat, false, false, 0.0);
+
+        // These should all be different (continuous gradient)
+        assert!(
+            color1.r != color2.r || color1.g != color2.g || color1.b != color2.b,
+            "Colors at 0.45 and 0.50 should differ"
+        );
+        assert!(
+            color2.r != color3.r || color2.g != color3.g || color2.b != color3.b,
+            "Colors at 0.50 and 0.55 should differ"
+        );
     }
 }
