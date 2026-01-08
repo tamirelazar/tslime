@@ -79,31 +79,31 @@ impl ControlsOverlay {
                 lines.push(format!("│ {:^38} │", cat_name));
                 lines.push("│                                        │".to_string());
                 lines.push(format!(
-                    "│  A/a  Sensor Angle         {:>6.1}°     │",
+                    "│  A/a  Sensor Angle  {:>5.1}° [5-90°]     │",
                     sensor_angle
                 ));
                 lines.push(format!(
-                    "│  J/j  Sensor Distance      {:>6.1}      │",
+                    "│  J/j  Sensor Dist   {:>5.1} [1-50]       │",
                     sensor_distance
                 ));
                 lines.push(format!(
-                    "│  T/t  Turn Angle           {:>6.1}°     │",
+                    "│  T/t  Turn Angle    {:>5.1}° [5-90°]     │",
                     turn_angle
                 ));
                 lines.push(format!(
-                    "│  S/s  Step Size            {:>6.1}      │",
+                    "│  S/s  Step Size     {:>5.1} [0.5-5.0]    │",
                     step_size
                 ));
                 lines.push(format!(
-                    "│  E/e  Decay Factor         {:>6.3}      │",
+                    "│  E/e  Decay Factor  {:>5.3} [0.5-0.99]   │",
                     decay_factor
                 ));
                 lines.push(format!(
-                    "│  I/i  Deposit Amount       {:>6.1}      │",
+                    "│  I/i  Deposit Amt   {:>5.1} [1-20]       │",
                     deposit_amount
                 ));
                 lines.push(format!(
-                    "│  +/-  Time Scale           {:>6.1}x     │",
+                    "│  +/-  Time Scale    {:>5.1}x [0.5-4x]    │",
                     time_scale
                 ));
             }
@@ -121,7 +121,7 @@ impl ControlsOverlay {
                 // Only show diffusion_sigma when Gaussian kernel is selected
                 if matches!(diffusion_kernel, DiffusionKernel::Gaussian) {
                     lines.push(format!(
-                        "│  ;/:  Diffusion Sigma   {:>14.2} │",
+                        "│  ;/:  Diff Sigma  {:>5.2} [0.5-2.0]    │",
                         diffusion_sigma
                     ));
                 }
@@ -139,11 +139,11 @@ impl ControlsOverlay {
                     }
                 ));
                 lines.push(format!(
-                    "│  Y/y  Terrain Str       {:>14.1} │",
+                    "│  Y/y  Terrain Str   {:>5.1} [0.1-5.0]    │",
                     terrain_strength
                 ));
                 lines.push(format!(
-                    "│  L/l  Attractor Str     {:>14.1} │",
+                    "│  L/l  Attractor Str {:>5.1} [0.1-10]     │",
                     attractor_strength
                 ));
                 lines.push(format!(
@@ -152,7 +152,7 @@ impl ControlsOverlay {
                 ));
                 if mouse_mode != "Disabled" {
                     lines.push(format!(
-                        "│       Mouse Timeout     {:>12.1}s │",
+                        "│       Mouse Timeout {:>4.1}s [0.1-30s]   │",
                         mouse_timeout
                     ));
                 }
@@ -196,11 +196,11 @@ impl ControlsOverlay {
                     if auto_normalize { "On" } else { "Off" }
                 ));
                 lines.push(format!(
-                    "│  V    Motion Blur     {:>10} frames│",
+                    "│  V    Motion Blur    {:>2} [0,3,5,7]f     │",
                     motion_blur_frames
                 ));
                 lines.push(format!(
-                    "│  N/n  Max Brightness    {:>14.1} │",
+                    "│  N/n  Max Bright    {:>5.1} [1-100]      │",
                     max_brightness
                 ));
             }
@@ -530,7 +530,7 @@ fn test_options_overlay_renders_all_categories() {
         80,
     );
     assert!(sim_overlay.iter().any(|line| line.contains("Sensor Angle")));
-    assert!(sim_overlay.iter().any(|line| line.contains("Sensor Distance")));
+    assert!(sim_overlay.iter().any(|line| line.contains("Sensor Dist")));
     assert!(sim_overlay.iter().any(|line| line.contains("Turn Angle")));
     assert!(sim_overlay.iter().any(|line| line.contains("Step Size")));
 
@@ -625,7 +625,7 @@ fn test_options_overlay_shows_live_parameter_values() {
     assert!(
         postprocessing_overlay
             .iter()
-            .any(|line| line.contains("3") && line.contains("frames")),
+            .any(|line| line.contains("3") && line.contains("[0,3,5,7]")),
         "Should contain motion blur frames value. Got: {:?}",
         postprocessing_overlay
     );
