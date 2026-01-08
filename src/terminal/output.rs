@@ -137,6 +137,10 @@ impl FrameBuffer {
         fg_color: u8,
         bg_color: Option<u8>,
     ) {
+        // Convert ANSI 256 colors to RGB for TrueColor mode
+        let fg_rgb = palette::ANSI_256_TO_RGB[fg_color as usize];
+        let bg_rgb = bg_color.map(|c| palette::ANSI_256_TO_RGB[c as usize]);
+
         for (dy, line) in text_lines.iter().enumerate() {
             let y = start_y + dy;
             if y >= self.height {
@@ -148,12 +152,21 @@ impl FrameBuffer {
                 if x >= self.width {
                     break;
                 }
-                self.cells[y * self.width + x] = Cell {
-                    char: ch,
-                    fg_color_256: Some(fg_color),
-                    bg_color_256: bg_color,
-                    fg_color_rgb: None,
-                    bg_color_rgb: None,
+                self.cells[y * self.width + x] = match self.color_mode {
+                    ColorMode::TrueColor => Cell {
+                        char: ch,
+                        fg_color_256: None,
+                        bg_color_256: None,
+                        fg_color_rgb: Some(fg_rgb),
+                        bg_color_rgb: bg_rgb,
+                    },
+                    _ => Cell {
+                        char: ch,
+                        fg_color_256: Some(fg_color),
+                        bg_color_256: bg_color,
+                        fg_color_rgb: None,
+                        bg_color_rgb: None,
+                    },
                 };
             }
         }
