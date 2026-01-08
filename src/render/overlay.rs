@@ -16,6 +16,7 @@ impl HelpOverlay {
             "│ h: Controls  ?: This help     \\: Stats │".to_string(),
             "│ +/-: Speed  c/C: Palette   1-7: Preset │".to_string(),
             "│ d: Dither   m: Mode        [/]: Adjust │".to_string(),
+            "│ 8: Randomize parameters                │".to_string(),
             "│                                        │".to_string(),
             "│ Press h for detailed controls          │".to_string(),
             "╰────────────────────────────────────────╯".to_string(),

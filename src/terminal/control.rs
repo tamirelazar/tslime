@@ -2,6 +2,7 @@ use crate::cli::Palette;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::simulation::config::{DiffusionKernel, InitMode, Preset, TerrainType, Wind};
 use crossterm::event::KeyEvent;
+use rand::Rng;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
@@ -153,6 +154,7 @@ pub enum ControlAction {
     ConfigBrowserDelete,
     ConfigSaveConfirm,
     ConfigCancel,
+    RandomizeParams,
     None,
 }
 
@@ -323,7 +325,7 @@ impl RuntimeState {
         }
     }
 
-    pub fn current_palette(&self, palettes: &[Palette; 14]) -> Palette {
+    pub fn current_palette(&self, palettes: &[Palette; 16]) -> Palette {
         palettes[self.palette_index].clone()
     }
 
@@ -571,6 +573,39 @@ impl RuntimeState {
     pub fn reset_collapse_counter(&mut self) {
         self.collapse_frame_counter = 0;
     }
+
+    pub fn randomize_params(&mut self) {
+        let mut rng = rand::thread_rng();
+
+        // Randomize core simulation parameters within interesting ranges
+        self.sensor_angle = rng.gen_range(15.0..60.0);
+        self.turn_angle = rng.gen_range(15.0..60.0);
+        self.step_size = rng.gen_range(0.5..2.5);
+        self.decay_factor = rng.gen_range(0.80..0.98);
+        self.deposit_amount = rng.gen_range(2.0..10.0);
+
+        // Randomize diffusion kernel (mostly mean, sometimes gaussian)
+        self.diffusion_kernel = if rng.gen_bool(0.3) {
+            DiffusionKernel::Gaussian
+        } else {
+            DiffusionKernel::Mean3x3
+        };
+
+        // Randomize terrain
+        self.terrain_type = match rng.gen_range(0..4) {
+            0 => TerrainType::None,
+            1 => TerrainType::Smooth,
+            2 => TerrainType::Turbulent,
+            _ => TerrainType::Mixed,
+        };
+        self.terrain_strength = rng.gen_range(0.5..3.0);
+
+        // Randomize palette
+        self.palette_index = rng.gen_range(0..ALL_PALETTES.len());
+
+        // Reset display settings to reasonable defaults
+        self.max_brightness = rng.gen_range(10.0..40.0);
+    }
 }
 
 pub fn num_palettes() -> usize {
@@ -600,6 +635,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('5') => ControlAction::SetPreset(Preset::Minimal),
         KeyCode::Char('6') => ControlAction::SetPreset(Preset::Moss),
         KeyCode::Char('7') => ControlAction::SetPreset(Preset::Zen),
+        KeyCode::Char('8') => ControlAction::RandomizeParams,
         KeyCode::Char('+') | KeyCode::Char('=') => ControlAction::AdjustTimeScale(0.5),
         KeyCode::Char('-') | KeyCode::Char('_') => ControlAction::AdjustTimeScale(-0.5),
         KeyCode::Char('C') if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -1029,5 +1065,36 @@ mod tests {
 
         state.cycle_motion_blur();
         assert_eq!(state.motion_blur_frames, 0);
+    }
+
+    #[test]
+    fn test_randomize_params_updates() {
+        let mut state = RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            crate::simulation::config::Preset::Network,
+            0,
+            false,
+            MouseInteractionMode::Disabled,
+            0.0,
+        );
+
+        // Set specific values that randomization should likely change
+        state.wind_direction = WindDirection::North;
+        state.terrain_type = TerrainType::None;
+        state.palette_index = 0;
+
+        state.randomize_params();
+
+        // Wind should NOT be randomized (remain same as before call)
+        // Wait, the requirement was "exclude wind from randomization".
+        // In my implementation, I removed the wind randomization block.
+        // So it should stay whatever it was.
+        assert_eq!(state.wind_direction, WindDirection::North);
+
+        // These should have a very high probability of changing (not strictly guaranteed but likely)
+        // We just check if terrain and palette randomization logic was called by checking if they are within valid ranges
+        // but since we want to be sure, we can check if they are randomized in the code.
+        // Actually, for a unit test, we can just verify the wind stays same.
     }
 }

@@ -163,6 +163,7 @@ impl ControlsOverlay {
                     if reverse_palette { "On" } else { "Off" }
                 ));
                 lines.push("│  0    Reset to Defaults                │".to_string());
+                lines.push("│  8    Randomize Parameters             │".to_string());
             }
             _ => {}
         }

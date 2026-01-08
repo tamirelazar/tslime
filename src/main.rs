@@ -18,7 +18,9 @@ use render::dither::DitherMode;
 use render::downsample::downsample;
 use render::grid::{GridRenderer, GridStyle};
 use render::options_overlay::ControlsOverlay;
-use render::overlay::{ConfigBrowserOverlay, ConfigSaveOverlay, HelpOverlay, StatsOverlay};
+use render::overlay::{
+    ConfigBrowserOverlay, ConfigSaveOverlay, HelpOverlay, OverlayRenderer, StatsOverlay,
+};
 use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType};
 use simulation::Simulation;
@@ -41,6 +43,82 @@ fn extract_species_rgb_colors(config: &SimConfig) -> Vec<RgbColor> {
         .iter()
         .filter_map(|s| hex_to_rgb(&s.color))
         .collect()
+}
+
+fn apply_random_config(
+    runtime_state: &RuntimeState,
+    sim: &mut Simulation,
+    renderer: &mut crate::terminal::output::TerminalRenderer,
+    palette_list: &[cli::Palette; 16],
+    current_max_brightness: &mut f32,
+) {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+
+    // Apply all new parameters to config
+    let mut new_config = sim.config().clone();
+    new_config.sensor_angle = runtime_state.sensor_angle;
+    new_config.rotation_angle = runtime_state.turn_angle;
+    new_config.step_size = runtime_state.step_size;
+    new_config.decay_factor = runtime_state.decay_factor;
+    new_config.deposit_amount = runtime_state.deposit_amount;
+    new_config.diffusion_kernel = runtime_state.diffusion_kernel;
+    new_config.wind = runtime_state.wind_direction.to_wind();
+    new_config.max_brightness = runtime_state.max_brightness;
+    new_config.terrain = runtime_state.terrain_type;
+    new_config.terrain_strength = runtime_state.terrain_strength;
+
+    // Randomize attractors
+    new_config.attractors.clear();
+    if rng.gen_bool(0.5) {
+        let num_attractors = rng.gen_range(1..5);
+        for _ in 0..num_attractors {
+            new_config
+                .attractors
+                .push(simulation::config::Attractor::new(
+                    rng.gen_range(0.0..sim.width() as f32),
+                    rng.gen_range(0.0..sim.height() as f32),
+                    rng.gen_range(-2.0..2.0),
+                ));
+        }
+    }
+
+    // Randomize obstacles
+    new_config.obstacles.clear();
+    if rng.gen_bool(0.4) {
+        let num_obstacles = rng.gen_range(1..4);
+        for _ in 0..num_obstacles {
+            if rng.gen_bool(0.5) {
+                // Circle
+                new_config
+                    .obstacles
+                    .push(simulation::config::Obstacle::Circle {
+                        x: rng.gen_range(0.0..sim.width() as f32),
+                        y: rng.gen_range(0.0..sim.height() as f32),
+                        radius: rng.gen_range(10.0..40.0),
+                    });
+            } else {
+                // Rect
+                new_config
+                    .obstacles
+                    .push(simulation::config::Obstacle::Rect {
+                        x: rng.gen_range(0.0..sim.width() as f32 * 0.8),
+                        y: rng.gen_range(0.0..sim.height() as f32 * 0.8),
+                        width: rng.gen_range(20.0..60.0),
+                        height: rng.gen_range(20.0..60.0),
+                    });
+            }
+        }
+    }
+    let _ = new_config.load_obstacle_masks();
+
+    sim.update_config(new_config);
+
+    // Update renderer with new palette
+    renderer.set_palette(runtime_state.current_palette(palette_list));
+
+    // Also update renderer brightness target
+    *current_max_brightness = runtime_state.max_brightness;
 }
 
 fn main() -> io::Result<()> {
@@ -625,6 +703,8 @@ fn run_simulation(
         cli::Palette::Fungus,
         cli::Palette::Swamp,
         cli::Palette::Moss,
+        cli::Palette::Cosmic,
+        cli::Palette::Ethereal,
     ];
     let initial_palette_index = if let cli::Palette::Custom(_) = initial_palette {
         4 // Default to Forest for custom palettes
@@ -684,6 +764,19 @@ fn run_simulation(
 
     let mut current_auto_normalize = args.auto_normalize;
     let mut _current_max_brightness = args.max_brightness;
+
+    // Apply initial randomization if requested
+    if args.random {
+        runtime_state.randomize_params();
+        apply_random_config(
+            &runtime_state,
+            sim,
+            &mut renderer,
+            &palette_list,
+            &mut _current_max_brightness,
+        );
+    }
+
     let start_time = std::time::Instant::now();
 
     // Initialize grid renderer if enabled
@@ -790,14 +883,45 @@ fn run_simulation(
 
         // Build help overlay (? key)
         let help_lines: Option<Vec<String>> = if runtime_state.show_help {
-            Some(HelpOverlay::build_overlay())
+            let base_help_strings = HelpOverlay::build_overlay();
+            let base_help_len = base_help_strings.len();
+            let base_help: Vec<&str> = base_help_strings.iter().map(|s| s.as_str()).collect();
+            let attractor_lines =
+                OverlayRenderer::build_help_with_attractors(&base_help, &sim.config().attractors);
+            let obstacle_lines =
+                OverlayRenderer::build_help_with_obstacles(&base_help, &sim.config().obstacles);
+            let mouse_attractor_lines = OverlayRenderer::build_help_with_mouse_attractors(
+                &base_help,
+                &sim.config().mouse_attractors,
+                sim.width(),
+                sim.height(),
+            );
+
+            let mut result = base_help_strings;
+
+            if !attractor_lines.is_empty() {
+                // Skip the base help duplicate and add just the attractor section
+                result.extend(attractor_lines.into_iter().skip(base_help_len));
+            }
+
+            if !obstacle_lines.is_empty() {
+                // Skip the base help duplicate and add just the obstacle section
+                result.extend(obstacle_lines.into_iter().skip(base_help_len));
+            }
+
+            if !mouse_attractor_lines.is_empty() {
+                // Skip the base help duplicate and add just the mouse attractor section
+                result.extend(mouse_attractor_lines.into_iter().skip(base_help_len));
+            }
+
+            Some(result)
         } else {
             None
         };
 
         // Calculate controls Y position (below help if help is visible)
-        let controls_y = if runtime_state.show_help {
-            2 + HelpOverlay::build_overlay().len() + 1
+        let controls_y = if let Some(ref help) = help_lines {
+            2 + help.len() + 1
         } else {
             2
         };
@@ -1525,6 +1649,18 @@ fn run_simulation(
                         ControlAction::ConfigCancel => {
                             runtime_state.show_config_browser = false;
                             runtime_state.show_config_save_dialog = false;
+                        }
+                        ControlAction::RandomizeParams => {
+                            runtime_state.randomize_params();
+                            apply_random_config(
+                                &runtime_state,
+                                sim,
+                                &mut renderer,
+                                &palette_list,
+                                &mut _current_max_brightness,
+                            );
+
+                            runtime_state.show_notification("Parameters Randomized!".to_string());
                         }
                         ControlAction::None => {}
                     }

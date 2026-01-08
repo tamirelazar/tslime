@@ -1045,6 +1045,9 @@ pub struct Args {
         help = "Custom ASCII character set for rendering (e.g., \" .:-=+*#@\")"
     )]
     pub ascii_chars: Option<String>,
+
+    #[arg(long = "random", help = "Start with randomized parameters")]
+    pub random: bool,
 }
 
 impl Args {
@@ -1385,6 +1388,7 @@ impl Default for Args {
             grid_opacity: 0.15,
             grid_adaptive: false,
             ascii_chars: None,
+            random: false,
         }
     }
 }
