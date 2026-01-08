@@ -11,14 +11,14 @@ pub struct HelpOverlay;
 impl HelpOverlay {
     pub fn build_overlay() -> Vec<String> {
         vec![
-            "┌─ HELP ─────────────────────────────────┐".to_string(),
+            "╭─ HELP ─────────────────────────────────╮".to_string(),
             "│ p: Pause    r: Restart      q: Quit    │".to_string(),
             "│ h: Controls  ?: This help     \\: Stats │".to_string(),
             "│ +/-: Speed  c/C: Palette   1-7: Preset │".to_string(),
             "│ d: Dither   m: Mode        [/]: Adjust │".to_string(),
             "│                                        │".to_string(),
             "│ Press h for detailed controls          │".to_string(),
-            "└────────────────────────────────────────┘".to_string(),
+            "╰────────────────────────────────────────╯".to_string(),
         ]
     }
 
@@ -65,32 +65,35 @@ impl ConfigBrowserOverlay {
         let mut lines = vec!["╭─────────────── Saved Configurations ───────────────╮".to_string()];
 
         if configs.is_empty() {
+            lines.push("│                                                    │".to_string());
             lines.push("│  No saved configurations                          │".to_string());
             lines.push("│                                                    │".to_string());
             lines.push("│  Press Ctrl+S to save current settings            │".to_string());
+            lines.push("│                                                    │".to_string());
         } else {
+            lines.push("│                                                    │".to_string());
             for (i, config) in configs.iter().enumerate().take(9) {
                 let num = i + 1;
-                let selected_marker = if i == selected_index { ">" } else { " " };
+                let selected_marker = if i == selected_index { "›" } else { " " };
                 let name = &config.name;
                 let palette = &config.palette;
                 let pop = config.population / 1000;
 
                 let line = format!(
-                    "│ {}{} {} - {} - {}k agents{}│",
+                    "│  {}{} {} - {} - {}k agents{}│",
                     selected_marker,
                     num,
                     name,
                     palette,
                     pop,
-                    " ".repeat(54usize.saturating_sub(6 + name.len() + palette.len() + 10))
+                    " ".repeat(53usize.saturating_sub(6 + name.len() + palette.len() + 10))
                 );
                 lines.push(line);
             }
 
             if configs.len() > 9 {
                 lines.push(format!(
-                    "│  ... and {} more                                     │",
+                    "│   ... and {} more                                    │",
                     configs.len() - 9
                 ));
             }
@@ -118,9 +121,10 @@ impl ConfigSaveOverlay {
     pub fn build_overlay(name_input: &str) -> Vec<String> {
         vec![
             "╭─────── Save Configuration ───────╮".to_string(),
-            format!("│ Name: {:<26} │", name_input),
             "│                                  │".to_string(),
-            "│ Enter: Save  Esc: Cancel         │".to_string(),
+            format!("│  Name: {:<25} │", name_input),
+            "│                                  │".to_string(),
+            "│  Enter: Save    Esc: Cancel      │".to_string(),
             "╰──────────────────────────────────╯".to_string(),
         ]
     }
@@ -182,7 +186,7 @@ impl OverlayRenderer {
 
         if !attractors.is_empty() {
             lines.push(String::new());
-            lines.push("┌─ Attractors─────────────────────────────┐".to_string());
+            lines.push("╭─ Attractors─────────────────────────────╮".to_string());
 
             for (i, attractor) in attractors.iter().enumerate() {
                 let kind = if attractor.strength > 0.0 {
@@ -201,7 +205,7 @@ impl OverlayRenderer {
                 ));
             }
 
-            lines.push("└─────────────────────────────────────────┘".to_string());
+            lines.push("╰─────────────────────────────────────────╯".to_string());
         }
 
         lines
@@ -213,7 +217,7 @@ impl OverlayRenderer {
 
         if !obstacles.is_empty() {
             lines.push(String::new());
-            lines.push("┌─ Obstacles──────────────────────────────┐".to_string());
+            lines.push("╭─ Obstacles──────────────────────────────╮".to_string());
 
             for (i, obstacle) in obstacles.iter().enumerate() {
                 match obstacle {
@@ -265,7 +269,7 @@ impl OverlayRenderer {
                 }
             }
 
-            lines.push("└─────────────────────────────────────────┘".to_string());
+            lines.push("╰─────────────────────────────────────────╯".to_string());
         }
 
         lines
@@ -282,7 +286,7 @@ impl OverlayRenderer {
 
         if !mouse_attractors.is_empty() {
             lines.push(String::new());
-            lines.push("┌─ Mouse Attractors ──────────────────────┐".to_string());
+            lines.push("╭─ Mouse Attractors ──────────────────────╮".to_string());
 
             for (i, ma) in mouse_attractors.iter().enumerate() {
                 let kind = if ma.strength > 0.0 {
@@ -307,7 +311,7 @@ impl OverlayRenderer {
                 ));
             }
 
-            lines.push("└─────────────────────────────────────────┘".to_string());
+            lines.push("╰─────────────────────────────────────────╯".to_string());
         }
 
         lines
@@ -340,9 +344,9 @@ mod tests {
     fn test_attractor_overlay_no_attractors() {
         let attractors: Vec<Attractor> = vec![];
         let base_help = [
-            "┌─ tslime controls ───────────────────────┐",
+            "╭─ tslime controls ───────────────────────╮",
             "│ h: Toggle help                          │",
-            "└─────────────────────────────────────────┘",
+            "╰─────────────────────────────────────────╯",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
         assert_eq!(lines, base_help);
@@ -352,9 +356,9 @@ mod tests {
     fn test_attractor_overlay_single_attractor() {
         let attractors = vec![Attractor::new(200.0, 200.0, 1.0)];
         let base_help = [
-            "┌─ tslime controls ───────────────────────┐",
+            "╭─ tslime controls ───────────────────────╮",
             "│ h: Toggle help                          │",
-            "└─────────────────────────────────────────┘",
+            "╰─────────────────────────────────────────╯",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
         assert!(
@@ -371,9 +375,9 @@ mod tests {
     fn test_attractor_overlay_max_strength() {
         let attractors = vec![Attractor::new(100.0, 100.0, 10.0)];
         let base_help = [
-            "┌─ tslime controls ───────────────────────┐",
+            "╭─ tslime controls ───────────────────────╮",
             "│ h: Toggle help                          │",
-            "└─────────────────────────────────────────┘",
+            "╰─────────────────────────────────────────╯",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
         assert!(
@@ -390,9 +394,9 @@ mod tests {
     fn test_attractor_overlay_negative_coordinates() {
         let attractors = vec![Attractor::new(-50.0, -100.0, 1.0)];
         let base_help = [
-            "┌─ tslime controls ───────────────────────┐",
+            "╭─ tslime controls ───────────────────────╮",
             "│ h: Toggle help                          │",
-            "└─────────────────────────────────────────┘",
+            "╰─────────────────────────────────────────╯",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
         assert!(
@@ -413,9 +417,9 @@ mod tests {
             Attractor::new(300.0, 150.0, 2.0),
         ];
         let base_help = [
-            "┌─ tslime controls ───────────────────────┐",
+            "╭─ tslime controls ───────────────────────╮",
             "│ h: Toggle help                          │",
-            "└─────────────────────────────────────────┘",
+            "╰─────────────────────────────────────────╯",
         ];
         let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
         assert!(
@@ -455,14 +459,14 @@ impl StatsOverlay {
         let elapsed_str = format_elapsed_time(elapsed_seconds);
 
         vec![
-            "┌─ STATS ──────────┐".to_string(),
+            "╭─ STATS ──────────╮".to_string(),
             format!("│ Agents: {:>8} │", agent_count),
             format!("│ Trail:  {:>7.1}% │", trail_percent),
             format!("│ Entropy: {:>7.2} │", entropy),
             format!("│ FPS: {:>4.0} ({:>4.0}) │", fps, avg_fps),
             format!("│ Frames: {:>8} │", frame_count),
             format!("│ Time: {:>10} │", elapsed_str),
-            "└──────────────────┘".to_string(),
+            "╰──────────────────╯".to_string(),
         ]
     }
 
@@ -537,11 +541,11 @@ mod stats_tests {
         );
 
         assert!(!lines.is_empty());
-        assert!(lines[0].starts_with('┌'));
-        assert!(lines.last().unwrap().starts_with('└'));
+        assert!(lines[0].starts_with('╭'));
+        assert!(lines.last().unwrap().starts_with('╰'));
         assert!(lines
             .iter()
-            .all(|l| l.starts_with('│') || l.starts_with('┌') || l.starts_with('└')));
+            .all(|l| l.starts_with('│') || l.starts_with('╭') || l.starts_with('╰')));
 
         // New compact format is 20 chars wide
         let max_len = lines.iter().map(|l| l.chars().count()).max().unwrap();

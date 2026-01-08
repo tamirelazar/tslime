@@ -59,7 +59,7 @@ impl ControlsOverlay {
         // All lines are exactly 42 characters wide
         // Header with category indicator [1/5]
         lines.push(format!(
-            "┌─ CONTROLS [{}/{}] ───────────────────────┐",
+            "╭─ CONTROLS [{}/{}] ───────────────────────╮",
             cat_num,
             Self::TOTAL_CATEGORIES
         ));
@@ -169,7 +169,7 @@ impl ControlsOverlay {
 
         lines.push("│                                        │".to_string());
         lines.push("│  Tab: Next         Esc: Close          │".to_string());
-        lines.push("└────────────────────────────────────────┘".to_string());
+        lines.push("╰────────────────────────────────────────╯".to_string());
 
         lines
     }
@@ -220,15 +220,15 @@ mod tests {
             80,
         );
 
-        assert!(lines[0].starts_with('┌'), "First line should start with ┌");
-        assert!(lines[0].ends_with('┐'), "First line should end with ┐");
+        assert!(lines[0].starts_with('╭'), "First line should start with ╭");
+        assert!(lines[0].ends_with('╮'), "First line should end with ╮");
         assert!(
-            lines.last().unwrap().starts_with('└'),
-            "Last line should start with └"
+            lines.last().unwrap().starts_with('╰'),
+            "Last line should start with ╰"
         );
         assert!(
-            lines.last().unwrap().ends_with('┘'),
-            "Last line should end with ┘"
+            lines.last().unwrap().ends_with('╯'),
+            "Last line should end with ╯"
         );
     }
 
@@ -256,16 +256,16 @@ mod tests {
                 80,
             );
 
-            // All lines should be exactly 40 chars wide
+            // All lines should be exactly 42 chars wide
             for (line_num, line) in lines.iter().enumerate() {
                 assert!(
-                    line.starts_with('┌') || line.starts_with('│') || line.starts_with('└'),
+                    line.starts_with('╭') || line.starts_with('│') || line.starts_with('╰'),
                     "Category {}, line {}: All lines should start with border character",
                     category_idx,
                     line_num
                 );
                 assert!(
-                    line.ends_with('┐') || line.ends_with('│') || line.ends_with('┘'),
+                    line.ends_with('╮') || line.ends_with('│') || line.ends_with('╯'),
                     "Category {}, line {}: All lines should end with border character",
                     category_idx,
                     line_num
@@ -343,11 +343,11 @@ fn test_help_overlay_format() {
     let help_lines = HelpOverlay::build_overlay();
 
     for line in &help_lines {
-        assert!(line.starts_with('│') || line.starts_with('┌') || line.starts_with('└'));
-        assert!(line.ends_with('│') || line.ends_with('┐') || line.ends_with('┘'));
+        assert!(line.starts_with('│') || line.starts_with('╭') || line.starts_with('╰'));
+        assert!(line.ends_with('│') || line.ends_with('╮') || line.ends_with('╯'));
     }
 
-    // All lines should be 40 chars wide
+    // All lines should be 42 chars wide
     for line in &help_lines {
         assert_eq!(
             line.chars().count(),
@@ -554,7 +554,7 @@ fn test_options_overlay_format() {
         );
 
         assert!(
-            overlay.iter().any(|line| line.starts_with("┌─")),
+            overlay.iter().any(|line| line.starts_with("╭─")),
             "Should have top border"
         );
         assert!(
@@ -568,7 +568,7 @@ fn test_options_overlay_format() {
         assert!(
             overlay
                 .iter()
-                .any(|line| line.ends_with("┘") || line.ends_with("│")),
+                .any(|line| line.ends_with("╯") || line.ends_with("│")),
             "Should have bottom corners"
         );
 
