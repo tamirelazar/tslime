@@ -1,4 +1,5 @@
 pub mod control;
+pub mod detection;
 pub mod input;
 pub mod output;
 pub mod screen;

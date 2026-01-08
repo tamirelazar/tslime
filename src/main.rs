@@ -26,6 +26,7 @@ use terminal::control::{
     handle_key_event, num_palettes, ControlAction, MouseInteractionMode, PaletteShiftSpeed,
     RuntimeState,
 };
+use terminal::detection::{log_capabilities, TerminalCapabilities};
 use terminal::input::{InputPoller, MouseEventType};
 use terminal::output::FrameBuffer;
 use terminal::screen::TerminalScreen;
@@ -560,6 +561,9 @@ fn run_simulation(
     let mut screen = TerminalScreen::new();
     screen.setup()?;
 
+    let capabilities = TerminalCapabilities::detect();
+    log_capabilities(&capabilities, args.verbose);
+
     let mouse_mode = if args.mouse_attract {
         MouseInteractionMode::Attract
     } else if args.mouse_repel {
@@ -568,7 +572,7 @@ fn run_simulation(
         MouseInteractionMode::Disabled
     };
 
-    if mouse_mode != MouseInteractionMode::Disabled {
+    if mouse_mode != MouseInteractionMode::Disabled && capabilities.supports_mouse_tracking {
         if let Err(e) = terminal::enable_mouse_tracking() {
             eprintln!(
                 "Warning: Failed to enable mouse tracking: {}. Mouse interaction disabled.",
@@ -577,7 +581,7 @@ fn run_simulation(
         }
     }
 
-    let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
+    let color_mode = capabilities.auto_select_color_mode(args.color_mode().ok());
 
     let mut renderer = crate::terminal::output::TerminalRenderer::new(
         0,
@@ -591,6 +595,7 @@ fn run_simulation(
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
     renderer.set_dither_mode(dither_mode);
     let mut timer = FrameTimer::with_time_scale(args.fps, args.frame_delay, args.time_scale);
+    timer.set_adaptive_fps(!args.no_auto_fps);
     let input_poller = InputPoller::new();
 
     let (mut term_width, mut term_height) = screen.get_size()?;
@@ -1617,6 +1622,18 @@ fn run_simulation(
 
         if should_exit {
             break;
+        }
+
+        if timer.should_adjust_fps() {
+            if let Some(new_fps) = timer.get_adjusted_fps() {
+                timer.apply_fps_adjustment(new_fps);
+                runtime_state
+                    .show_notification(format!("Adaptive FPS: {} -> {}", args.fps, new_fps));
+            }
+        }
+
+        if timer.fps_adjusted_notification {
+            timer.fps_adjusted_notification = false;
         }
 
         runtime_state.update_notifications();

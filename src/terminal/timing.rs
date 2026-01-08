@@ -1,6 +1,10 @@
 use std::time::{Duration, Instant};
 
 const FPS_SAMPLE_COUNT: usize = 30;
+const ADAPTIVE_CHECK_INTERVAL: usize = 60;
+const FPS_DROP_THRESHOLD: f64 = 0.85;
+const MIN_ADAPTIVE_FPS: usize = 15;
+const FPS_STEPS: [usize; 6] = [60, 45, 30, 25, 20, 15];
 
 /// FrameTimer provides timing control for the simulation loop.
 ///
@@ -50,6 +54,10 @@ pub struct FrameTimer {
     sim_duration: Duration,
     render_start: Instant,
     render_duration: Duration,
+    adaptive_fps_enabled: bool,
+    adaptive_check_counter: usize,
+    last_adjusted_fps: usize,
+    pub fps_adjusted_notification: bool,
 }
 
 impl FrameTimer {
@@ -75,6 +83,56 @@ impl FrameTimer {
             sim_duration: Duration::ZERO,
             render_start: Instant::now(),
             render_duration: Duration::ZERO,
+            adaptive_fps_enabled: true,
+            adaptive_check_counter: 0,
+            last_adjusted_fps: fps,
+            fps_adjusted_notification: false,
+        }
+    }
+
+    pub fn set_adaptive_fps(&mut self, enabled: bool) {
+        self.adaptive_fps_enabled = enabled;
+    }
+
+    pub fn should_adjust_fps(&mut self) -> bool {
+        if !self.adaptive_fps_enabled {
+            return false;
+        }
+
+        self.adaptive_check_counter += 1;
+        if self.adaptive_check_counter < ADAPTIVE_CHECK_INTERVAL {
+            return false;
+        }
+        self.adaptive_check_counter = 0;
+
+        let avg_fps = self.average_fps();
+        let target_fps_f64 = self.target_fps as f64;
+        let threshold = target_fps_f64 * FPS_DROP_THRESHOLD;
+
+        avg_fps < threshold && self.target_fps > MIN_ADAPTIVE_FPS
+    }
+
+    pub fn get_adjusted_fps(&self) -> Option<usize> {
+        if !self.adaptive_fps_enabled || self.target_fps <= MIN_ADAPTIVE_FPS {
+            return None;
+        }
+
+        let avg_fps = self.average_fps();
+
+        for &fps in &FPS_STEPS {
+            if fps < self.target_fps && avg_fps < (fps as f64 * 1.1) {
+                return Some(fps);
+            }
+        }
+
+        None
+    }
+
+    pub fn apply_fps_adjustment(&mut self, new_fps: usize) {
+        if new_fps < self.target_fps && new_fps >= MIN_ADAPTIVE_FPS {
+            self.target_fps = new_fps;
+            self.last_adjusted_fps = new_fps;
+            self.fps_adjusted_notification = true;
         }
     }
 
@@ -201,6 +259,10 @@ impl Default for FrameTimer {
             sim_duration: Duration::ZERO,
             render_start: Instant::now(),
             render_duration: Duration::ZERO,
+            adaptive_fps_enabled: true,
+            adaptive_check_counter: 0,
+            last_adjusted_fps: 30,
+            fps_adjusted_notification: false,
         }
     }
 }
