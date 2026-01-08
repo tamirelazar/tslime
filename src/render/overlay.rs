@@ -13,10 +13,10 @@ impl HelpOverlay {
         vec![
             "╭─ HELP ─────────────────────────────────╮".to_string(),
             "│ p: Pause    r: Restart      q: Quit    │".to_string(),
-            "│ h: Controls  ?: This help     \\: Stats │".to_string(),
-            "│ +/-: Speed  c/C: Palette   1-7: Preset │".to_string(),
-            "│ d: Dither   m: Mode        [/]: Adjust │".to_string(),
-            "│ 8: Randomize parameters                │".to_string(),
+            "│ h: Controls  ?: This help  \\: Stats    │".to_string(),
+            "│ |: Info     +/-: Speed   c/C: Palette  │".to_string(),
+            "│ d: Dither   m: Mode      1-7: Preset   │".to_string(),
+            "│ 8: Randomize parameters  [/]: Adjust   │".to_string(),
             "│                                        │".to_string(),
             "│ Press h for detailed controls          │".to_string(),
             "╰────────────────────────────────────────╯".to_string(),
@@ -538,7 +538,7 @@ impl StatsOverlay {
 pub struct InfoOverlay;
 
 impl InfoOverlay {
-    pub const WIDTH: usize = 24;
+    pub const WIDTH: usize = 28;
 
     #[allow(clippy::too_many_arguments)]
     pub fn build_overlay(
@@ -563,13 +563,13 @@ impl InfoOverlay {
         let simd_str = if simd_enabled { "On" } else { "Off" };
 
         let mut lines = vec![
-            "╭─ INFO ──────────────────╮".to_string(),
-            format!("│ Res:  {:>14} │", resolution_str),
-            format!("│ Term: {:>14} │", term_str),
-            format!("│ Init: {:>14} │", init_mode),
-            format!("│ Color:{:>13} │", color_mode),
-            format!("│ Char: {:>14} │", charset),
-            format!("│ SIMD: {:>14} │", simd_str),
+            "╭─ INFO ───────────────────╮".to_string(),
+            format!("│ Res:       {:>13} │", resolution_str),
+            format!("│ Term:      {:>13} │", term_str),
+            format!("│ Init:      {:>13} │", init_mode),
+            format!("│ Color:     {:>13} │", color_mode),
+            format!("│ Char:      {:>13} │", charset),
+            format!("│ SIMD:      {:>13} │", simd_str),
         ];
 
         if let Some(food) = food_source {
@@ -582,15 +582,15 @@ impl InfoOverlay {
             } else {
                 food_name
             };
-            lines.push(format!("│ Food: {:>14} │", truncated));
+            lines.push(format!("│ Food:      {:>13} │", truncated));
         }
 
         if warmup_frames > 0 {
-            lines.push(format!("│ Warm: {:>14} │", warmup_frames));
+            lines.push(format!("│ Warm:      {:>13} │", warmup_frames));
         }
 
         if auto_reset {
-            lines.push(format!("│ Auto: {:>14} │", "On"));
+            lines.push(format!("│ Auto:      {:>13} │", "On"));
         }
 
         lines.push("╰──────────────────────────╯".to_string());
@@ -698,5 +698,96 @@ mod stats_tests {
         assert_eq!(format_elapsed_time(90.0), "1:30");
         assert_eq!(format_elapsed_time(3661.0), "1:01:01");
         assert_eq!(format_elapsed_time(0.0), "0:00");
+    }
+}
+
+#[cfg(test)]
+mod info_tests {
+    use super::*;
+
+    #[test]
+    fn test_info_overlay_format() {
+        let lines = InfoOverlay::build_overlay(
+            400,
+            400,
+            80,
+            24,
+            "Random",
+            "TrueColor",
+            "HalfBlock",
+            false,
+            &None,
+            0,
+            1.0,
+            0.85,
+            false,
+            0.5,
+            0,
+        );
+
+        assert!(!lines.is_empty());
+        assert!(lines[0].starts_with('╭'));
+        assert!(lines.last().unwrap().starts_with('╰'));
+
+        // All lines should be exactly WIDTH chars
+        for (i, line) in lines.iter().enumerate() {
+            assert_eq!(
+                line.chars().count(),
+                InfoOverlay::WIDTH,
+                "Line {} has wrong width: '{}' (expected {} chars, got {})",
+                i,
+                line,
+                InfoOverlay::WIDTH,
+                line.chars().count()
+            );
+        }
+    }
+
+    #[test]
+    fn test_info_overlay_with_optional_fields() {
+        let lines = InfoOverlay::build_overlay(
+            800,
+            600,
+            120,
+            40,
+            "Central",
+            "EightBit",
+            "ASCII",
+            true,
+            &Some("food.png".to_string()),
+            100,
+            1.5,
+            0.9,
+            true,
+            0.3,
+            300,
+        );
+
+        assert!(!lines.is_empty());
+
+        // All lines should be exactly WIDTH chars
+        for (i, line) in lines.iter().enumerate() {
+            assert_eq!(
+                line.chars().count(),
+                InfoOverlay::WIDTH,
+                "Line {} has wrong width: '{}' (expected {} chars, got {})",
+                i,
+                line,
+                InfoOverlay::WIDTH,
+                line.chars().count()
+            );
+        }
+
+        // Should contain optional fields
+        assert!(lines.iter().any(|l| l.contains("Food")));
+        assert!(lines.iter().any(|l| l.contains("Warm")));
+        assert!(lines.iter().any(|l| l.contains("Auto")));
+    }
+
+    #[test]
+    fn test_info_overlay_position() {
+        assert_eq!(InfoOverlay::calculate_x_position(80), 50);
+        assert_eq!(InfoOverlay::calculate_x_position(120), 90);
+        assert_eq!(InfoOverlay::calculate_x_position(28), 1);
     }
 }
