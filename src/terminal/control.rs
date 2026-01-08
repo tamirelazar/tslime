@@ -150,6 +150,7 @@ pub enum ControlAction {
     ShowOptionsOverlay,
     CycleOptionsCategory,
     ToggleStats,
+    ToggleInfo,
     ShowConfigBrowser,
     ShowConfigSaveDialog,
     ConfigBrowserUp,
@@ -203,6 +204,7 @@ pub struct RuntimeState {
     pub invert_palette: bool,
     pub reverse_palette: bool,
     pub show_stats: bool,
+    pub show_info: bool,
     pub notification: Option<(String, std::time::Instant)>,
     pub collapse_frame_counter: usize,
     pub warmup_counter: usize,
@@ -261,6 +263,7 @@ impl RuntimeState {
             invert_palette: false,
             reverse_palette: false,
             show_stats: false,
+            show_info: false,
             notification: None,
             collapse_frame_counter: 0,
             warmup_counter: 0,
@@ -287,13 +290,14 @@ impl RuntimeState {
     }
 
     pub fn any_overlay_open(&self) -> bool {
-        self.show_help || self.show_controls || self.show_stats
+        self.show_help || self.show_controls || self.show_stats || self.show_info
     }
 
     pub fn close_all_overlays(&mut self) {
         self.show_help = false;
         self.show_controls = false;
         self.show_stats = false;
+        self.show_info = false;
     }
 
     pub fn cycle_controls_category(&mut self, forward: bool) {
@@ -552,6 +556,10 @@ impl RuntimeState {
         self.show_stats = !self.show_stats;
     }
 
+    pub fn toggle_info(&mut self) {
+        self.show_info = !self.show_info;
+    }
+
     pub fn reset_to_defaults(&mut self) {
         self.sensor_angle = 22.5;
         self.sensor_distance = 9.0;
@@ -776,6 +784,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('Z') | KeyCode::Char('z') => ControlAction::ToggleReversePalette,
         KeyCode::Char('0') => ControlAction::ResetToDefaults,
         KeyCode::Char('\\') => ControlAction::ToggleStats,
+        KeyCode::Char('|') => ControlAction::ToggleInfo,
         _ => ControlAction::None,
     }
 }

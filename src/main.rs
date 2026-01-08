@@ -19,14 +19,15 @@ use render::downsample::downsample;
 use render::grid::{GridRenderer, GridStyle};
 use render::options_overlay::ControlsOverlay;
 use render::overlay::{
-    ConfigBrowserOverlay, ConfigSaveOverlay, HelpOverlay, OverlayRenderer, StatsOverlay,
+    ConfigBrowserOverlay, ConfigSaveOverlay, HelpOverlay, InfoOverlay, OverlayRenderer,
+    StatsOverlay,
 };
 use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType};
 use simulation::Simulation;
 use terminal::control::{
-    handle_key_event, num_palettes, ALL_PALETTES, ControlAction, MouseInteractionMode,
-    PaletteShiftSpeed, RuntimeState,
+    handle_key_event, num_palettes, ControlAction, MouseInteractionMode, PaletteShiftSpeed,
+    RuntimeState, ALL_PALETTES,
 };
 use terminal::detection::{log_capabilities, TerminalCapabilities};
 use terminal::input::{InputPoller, MouseEventType};
@@ -1030,6 +1031,68 @@ fn run_simulation(
         };
         let stats_x = StatsOverlay::calculate_x_position(term_width as usize);
 
+        // Info overlay (below stats)
+        let info_lines: Option<Vec<String>> = if runtime_state.show_info {
+            let init_mode_name = match args.init {
+                InitMode::Random => "Random",
+                InitMode::CentralBurst => "Central",
+                InitMode::Circle => "Circle",
+                InitMode::Gradient => "Gradient",
+                InitMode::WaveFront => "Wave",
+                InitMode::Spiral => "Spiral",
+                InitMode::RandomClusters => "Clusters",
+                InitMode::Food => "Food",
+            };
+
+            let color_mode_name = match color_mode {
+                ColorMode::TrueColor => "TrueColor",
+                ColorMode::Bits8 => "8",
+                ColorMode::Bits16 => "16",
+                ColorMode::Bits256 => "256",
+            };
+
+            let charset_name = match charset {
+                Charset::HalfBlock => "HalfBlock",
+                Charset::Ascii => "ASCII",
+                Charset::Braille => "Braille",
+                Charset::Quadrant => "Quadrant",
+                Charset::CustomAscii(_) => "Custom",
+            };
+
+            let food_source = if args.init == InitMode::Food {
+                Some(args.food.clone())
+            } else {
+                None
+            };
+
+            Some(InfoOverlay::build_overlay(
+                sim.width(),
+                sim.height(),
+                term_width as usize,
+                term_height as usize,
+                init_mode_name,
+                color_mode_name,
+                charset_name,
+                !args.simd_off,
+                &food_source,
+                args.warmup_frames,
+                args.warmup_brightness_multiplier,
+                args.warmup_decay,
+                args.auto_reset,
+                args.collapse_entropy_threshold,
+                args.collapse_duration_frames,
+            ))
+        } else {
+            None
+        };
+
+        let info_y = if let Some(ref stats) = stats_lines {
+            2 + stats.len() + 1
+        } else {
+            2
+        };
+        let info_x = InfoOverlay::calculate_x_position(term_width as usize);
+
         // Config browser overlay
         let config_browser_lines: Option<Vec<String>> = if runtime_state.show_config_browser {
             match config_manager::list_configs() {
@@ -1155,6 +1218,7 @@ fn run_simulation(
                     status_data,
                     notification_data,
                     stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
+                    info_lines.as_ref().map(|v| (v.as_slice(), info_x, info_y)),
                     grid_renderer.as_ref(),
                     config_browser_lines
                         .as_ref()
@@ -1174,6 +1238,7 @@ fn run_simulation(
                     status_data,
                     notification_data,
                     stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
+                    info_lines.as_ref().map(|v| (v.as_slice(), info_x, info_y)),
                     grid_renderer.as_ref(),
                     config_browser_lines
                         .as_ref()
@@ -1676,6 +1741,13 @@ fn run_simulation(
                                 } else {
                                     "Off"
                                 }
+                            ));
+                        }
+                        ControlAction::ToggleInfo => {
+                            runtime_state.toggle_info();
+                            runtime_state.show_notification(format!(
+                                "Info: {}",
+                                if runtime_state.show_info { "On" } else { "Off" }
                             ));
                         }
                         ControlAction::Quit => {

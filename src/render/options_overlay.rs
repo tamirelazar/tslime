@@ -146,10 +146,7 @@ impl ControlsOverlay {
                     "│  L/l  Attractor Str {:>5.1} [0.1-10]     │",
                     attractor_strength
                 ));
-                lines.push(format!(
-                    "│  ,    Mouse Mode        {:>14} │",
-                    mouse_mode
-                ));
+                lines.push(format!("│  ,    Mouse Mode        {:>14} │", mouse_mode));
                 if mouse_mode != "Disabled" {
                     lines.push(format!(
                         "│       Mouse Timeout {:>4.1}s [0.1-30s]   │",
@@ -161,10 +158,7 @@ impl ControlsOverlay {
             2 => {
                 lines.push(format!("│ {:^38} │", cat_name));
                 lines.push("│                                        │".to_string());
-                lines.push(format!(
-                    "│  c/C  Palette           {:>14} │",
-                    palette_name
-                ));
+                lines.push(format!("│  c/C  Palette           {:>14} │", palette_name));
                 lines.push(format!(
                     "│  O    Palette Shift     {:>14} │",
                     match palette_shift_speed {

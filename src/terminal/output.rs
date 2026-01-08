@@ -863,6 +863,7 @@ impl TerminalRenderer {
         status_line: Option<(String, usize)>,
         notification_line: Option<(String, usize)>,
         stats_lines: Option<(&[String], usize)>,
+        info_lines: Option<(&[String], usize, usize)>,
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
         config_browser_lines: Option<(&[String], usize, usize)>,
         config_save_lines: Option<(&[String], usize, usize)>,
@@ -965,6 +966,11 @@ impl TerminalRenderer {
             buffer.draw_text_overlay(lines, x, 2, 245, Some(236));
         }
 
+        // Info overlay at top-right (below stats)
+        if let Some((lines, x, y)) = info_lines {
+            buffer.draw_text_overlay(lines, x, y, 245, Some(236));
+        }
+
         // Config browser overlay (modal, on top)
         if let Some((lines, x, y)) = config_browser_lines {
             buffer.draw_text_overlay(lines, x, y, 15, Some(236));
@@ -990,6 +996,7 @@ impl TerminalRenderer {
         status_line: Option<(String, usize)>,
         notification_line: Option<(String, usize)>,
         stats_lines: Option<(&[String], usize)>,
+        info_lines: Option<(&[String], usize, usize)>,
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
         config_browser_lines: Option<(&[String], usize, usize)>,
         config_save_lines: Option<(&[String], usize, usize)>,
@@ -1124,6 +1131,11 @@ impl TerminalRenderer {
         // Stats overlay at top-right
         if let Some((lines, x)) = stats_lines {
             buffer.draw_text_overlay(lines, x, 2, 245, Some(236));
+        }
+
+        // Info overlay at top-right (below stats)
+        if let Some((lines, x, y)) = info_lines {
+            buffer.draw_text_overlay(lines, x, y, 245, Some(236));
         }
 
         // Config browser overlay (modal, on top)

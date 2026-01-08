@@ -518,6 +518,78 @@ impl StatsOverlay {
     }
 }
 
+pub struct InfoOverlay;
+
+impl InfoOverlay {
+    pub const WIDTH: usize = 20;
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_overlay(
+        sim_width: usize,
+        sim_height: usize,
+        term_width: usize,
+        term_height: usize,
+        init_mode: &str,
+        color_mode: &str,
+        charset: &str,
+        simd_enabled: bool,
+        food_source: &Option<String>,
+        warmup_frames: usize,
+        _warmup_brightness: f32,
+        _warmup_decay: f32,
+        auto_reset: bool,
+        _auto_reset_threshold: f32,
+        _auto_reset_duration: usize,
+    ) -> Vec<String> {
+        let resolution_str = format!("{}x{}", sim_width, sim_height);
+        let term_str = format!("{}x{}", term_width, term_height);
+        let simd_str = if simd_enabled { "On" } else { "Off" };
+
+        let mut lines = vec![
+            "╭─ INFO ───────────╮".to_string(),
+            format!("│ Res:  {:>10} │", resolution_str),
+            format!("│ Term: {:>10} │", term_str),
+            format!("│ Init: {:>10} │", init_mode),
+            format!("│ Color:{:>9} │", color_mode),
+            format!("│ Char: {:>10} │", charset),
+            format!("│ SIMD: {:>10} │", simd_str),
+        ];
+
+        if let Some(food) = food_source {
+            let food_name = std::path::Path::new(food)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(food);
+            let truncated = if food_name.len() > 8 {
+                &food_name[..8]
+            } else {
+                food_name
+            };
+            lines.push(format!("│ Food: {:>10} │", truncated));
+        }
+
+        if warmup_frames > 0 {
+            lines.push(format!("│ Warm: {:>10} │", warmup_frames));
+        }
+
+        if auto_reset {
+            lines.push(format!("│ Auto: {:>10} │", "On"));
+        }
+
+        lines.push("╰──────────────────╯".to_string());
+
+        lines
+    }
+
+    pub fn calculate_x_position(term_width: usize) -> usize {
+        if term_width > Self::WIDTH + 2 {
+            term_width.saturating_sub(Self::WIDTH + 2)
+        } else {
+            1
+        }
+    }
+}
+
 fn format_elapsed_time(seconds: f32) -> String {
     let total_secs = seconds as u64;
     let hours = total_secs / 3600;
