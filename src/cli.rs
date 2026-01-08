@@ -924,11 +924,7 @@ pub struct Args {
     )]
     pub mouse_timeout: f32,
 
-    #[arg(
-        short = 'S',
-        long = "stats",
-        help = "Display real-time statistics overlay"
-    )]
+    #[arg(long = "stats", help = "Display real-time statistics overlay")]
     pub stats: bool,
 
     #[arg(
@@ -1072,6 +1068,12 @@ pub struct Args {
 
     #[arg(long = "random", help = "Start with randomized parameters")]
     pub random: bool,
+
+    #[arg(
+        long = "explain",
+        help = "Show detailed explanation of all simulation parameters and exit"
+    )]
+    pub explain: bool,
 }
 
 impl Args {
@@ -1413,6 +1415,7 @@ impl Default for Args {
             grid_adaptive: false,
             ascii_chars: None,
             random: false,
+            explain: false,
         }
     }
 }
