@@ -35,11 +35,16 @@ impl ControlsOverlay {
     pub fn build_overlay(
         category_idx: usize,
         sensor_angle: f32,
+        sensor_distance: f32,
         turn_angle: f32,
         step_size: f32,
         decay_factor: f32,
         deposit_amount: f32,
         diffusion_kernel: DiffusionKernel,
+        diffusion_sigma: f32,
+        attractor_strength: f32,
+        mouse_mode: &str,
+        mouse_timeout: f32,
         wind_direction: WindDirection,
         terrain_type: TerrainType,
         terrain_strength: f32,
@@ -73,6 +78,10 @@ impl ControlsOverlay {
                     sensor_angle
                 ));
                 lines.push(format!(
+                    "│  J/j  Sensor Distance      {:>6.1}      │",
+                    sensor_distance
+                ));
+                lines.push(format!(
                     "│  T/t  Turn Angle           {:>6.1}°     │",
                     turn_angle
                 ));
@@ -99,6 +108,27 @@ impl ControlsOverlay {
                         DiffusionKernel::Gaussian => "Gaussian",
                     }
                 ));
+                // Only show diffusion_sigma when Gaussian kernel is selected
+                if matches!(diffusion_kernel, DiffusionKernel::Gaussian) {
+                    lines.push(format!(
+                        "│  ;/:  Diffusion Sigma   {:>14.2} │",
+                        diffusion_sigma
+                    ));
+                }
+                lines.push(format!(
+                    "│  L/l  Attractor Str     {:>14.1} │",
+                    attractor_strength
+                ));
+                lines.push(format!(
+                    "│  ,    Mouse Mode        {:>14} │",
+                    mouse_mode
+                ));
+                if mouse_mode != "Disabled" {
+                    lines.push(format!(
+                        "│       Mouse Timeout     {:>12.1}s │",
+                        mouse_timeout
+                    ));
+                }
                 lines.push(format!(
                     "│  W    Wind              {:>14} │",
                     wind_direction.name()
@@ -203,11 +233,16 @@ mod tests {
         let lines = ControlsOverlay::build_overlay(
             0,
             22.5,
+            9.0,
             45.0,
             1.0,
             0.5,
             5.0,
             DiffusionKernel::Mean3x3,
+            1.0,
+            1.0,
+            "Disabled",
+            3.0,
             WindDirection::None,
             TerrainType::None,
             1.0,
@@ -239,11 +274,16 @@ mod tests {
             let lines = ControlsOverlay::build_overlay(
                 category_idx,
                 22.5,
+                9.0,
                 45.0,
                 1.0,
                 0.5,
                 5.0,
                 DiffusionKernel::Mean3x3,
+                1.0,
+                1.0,
+                "Disabled",
+                3.0,
                 WindDirection::None,
                 TerrainType::None,
                 1.0,
@@ -289,11 +329,16 @@ mod tests {
         let lines = ControlsOverlay::build_overlay(
             2,
             22.5,
+            9.0,
             45.0,
             1.0,
             0.5,
             5.0,
             DiffusionKernel::Mean3x3,
+            1.0,
+            1.0,
+            "Disabled",
+            3.0,
             WindDirection::None,
             TerrainType::None,
             1.0,
@@ -381,11 +426,16 @@ fn test_options_overlay_renders_all_categories() {
         let overlay = OptionsOverlay::build_overlay(
             idx,
             state.sensor_angle,
+            state.sensor_distance,
             state.turn_angle,
             state.step_size,
             state.decay_factor,
             state.deposit_amount,
             state.diffusion_kernel,
+            state.diffusion_sigma,
+            state.attractor_strength,
+            "Disabled",
+            state.mouse_timeout,
             state.wind_direction,
             state.terrain_type,
             state.terrain_strength,
@@ -415,11 +465,16 @@ fn test_options_overlay_renders_all_categories() {
     let sim_overlay = OptionsOverlay::build_overlay(
         0,
         state.sensor_angle,
+        state.sensor_distance,
         state.turn_angle,
         state.step_size,
         state.decay_factor,
         state.deposit_amount,
         state.diffusion_kernel,
+        state.diffusion_sigma,
+        state.attractor_strength,
+        "Disabled",
+        state.mouse_timeout,
         state.wind_direction,
         state.terrain_type,
         state.terrain_strength,
@@ -433,17 +488,23 @@ fn test_options_overlay_renders_all_categories() {
         80,
     );
     assert!(sim_overlay.iter().any(|line| line.contains("Sensor Angle")));
+    assert!(sim_overlay.iter().any(|line| line.contains("Sensor Distance")));
     assert!(sim_overlay.iter().any(|line| line.contains("Turn Angle")));
     assert!(sim_overlay.iter().any(|line| line.contains("Step Size")));
 
     let env_overlay = OptionsOverlay::build_overlay(
         1,
         state.sensor_angle,
+        state.sensor_distance,
         state.turn_angle,
         state.step_size,
         state.decay_factor,
         state.deposit_amount,
         state.diffusion_kernel,
+        state.diffusion_sigma,
+        state.attractor_strength,
+        "Disabled",
+        state.mouse_timeout,
         state.wind_direction,
         state.terrain_type,
         state.terrain_strength,
@@ -482,11 +543,16 @@ fn test_options_overlay_shows_live_parameter_values() {
     let visual_overlay = OptionsOverlay::build_overlay(
         2,
         state.sensor_angle,
+        state.sensor_distance,
         state.turn_angle,
         state.step_size,
         state.decay_factor,
         state.deposit_amount,
         state.diffusion_kernel,
+        state.diffusion_sigma,
+        state.attractor_strength,
+        "Disabled",
+        state.mouse_timeout,
         state.wind_direction,
         state.terrain_type,
         state.terrain_strength,
@@ -536,11 +602,16 @@ fn test_options_overlay_format() {
         let overlay = OptionsOverlay::build_overlay(
             idx,
             state.sensor_angle,
+            state.sensor_distance,
             state.turn_angle,
             state.step_size,
             state.decay_factor,
             state.deposit_amount,
             state.diffusion_kernel,
+            state.diffusion_sigma,
+            state.attractor_strength,
+            "Disabled",
+            state.mouse_timeout,
             state.wind_direction,
             state.terrain_type,
             state.terrain_strength,
