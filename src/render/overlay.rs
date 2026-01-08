@@ -141,18 +141,21 @@ pub struct OverlayRenderer;
 
 impl OverlayRenderer {
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub fn build_status_line(
         _is_paused: bool,
         preset: Preset,
         time_scale: f32,
         palette: Palette,
         dither_mode: DitherMode,
-        _width: usize,
+        width: usize,
+        population: Option<usize>,
+        diffusion_kernel: Option<&str>,
     ) -> String {
-        let paused_text = if _is_paused { " [PAUSED]" } else { "" };
         let preset_text = preset_name(preset);
         let palette_text = palette_name(palette);
         let time_text = format!("{:.1}x", time_scale);
+
         let dither_text = match dither_mode {
             DitherMode::None => "".to_string(),
             DitherMode::Ordered { intensity, .. } => format!(" D:{:.1}", intensity),
@@ -160,10 +163,42 @@ impl OverlayRenderer {
             DitherMode::Hybrid { intensity, .. } => format!(" H:{:.1}", intensity),
         };
 
-        format!(
-            "{} | {} | {} | {}{}",
-            preset_text, time_text, palette_text, dither_text, paused_text
-        )
+        let paused_text = if _is_paused { " [PAUSED]" } else { "" };
+        let help_text = if width >= 100 { " ? for help" } else { "" };
+
+        // Build components with priority for truncation
+        let mut status = format!("{} │ {}", preset_text, time_text);
+
+        // Add palette if space permits
+        if width >= 50 {
+            status.push_str(&format!(" │ {}", palette_text));
+        }
+
+        // Add population if provided and space permits
+        if let Some(pop) = population {
+            if width >= 70 {
+                let pop_k = pop / 1000;
+                status.push_str(&format!(" │ {}k", pop_k));
+            }
+        }
+
+        // Add diffusion kernel if provided and space permits
+        if let Some(kernel) = diffusion_kernel {
+            if width >= 90 {
+                status.push_str(&format!(" │ {}", kernel));
+            }
+        }
+
+        // Add dither if present
+        if !dither_text.is_empty() && width >= 60 {
+            status.push_str(&dither_text);
+        }
+
+        // Always add paused and help at the end
+        status.push_str(paused_text);
+        status.push_str(help_text);
+
+        status
     }
 
     #[allow(dead_code)]
@@ -789,5 +824,126 @@ mod info_tests {
         assert_eq!(InfoOverlay::calculate_x_position(80), 50);
         assert_eq!(InfoOverlay::calculate_x_position(120), 90);
         assert_eq!(InfoOverlay::calculate_x_position(28), 1);
+    }
+}
+
+#[cfg(test)]
+mod status_line_tests {
+    use super::*;
+    use crate::cli::Palette;
+    use crate::render::dither::DitherMode;
+    use crate::simulation::config::Preset;
+
+    #[test]
+    fn test_status_line_narrow_terminal_40_cols() {
+        let status = OverlayRenderer::build_status_line(
+            false,
+            Preset::Organic,
+            1.0,
+            Palette::Organic,
+            DitherMode::None,
+            40,
+            Some(50000),
+            Some("Mean3x3"),
+        );
+        // At 40 cols: should only have preset and time
+        assert!(status.contains("Organic"));
+        assert!(status.contains("1.0x"));
+        // Should not have palette or population (too narrow)
+        assert!(!status.contains("50k"));
+    }
+
+    #[test]
+    fn test_status_line_medium_terminal_80_cols() {
+        let status = OverlayRenderer::build_status_line(
+            false,
+            Preset::Network,
+            2.5,
+            Palette::Heat,
+            DitherMode::None,
+            80,
+            Some(50000),
+            Some("Mean3x3"),
+        );
+        // At 80 cols: should have preset, time, palette, and population
+        assert!(status.contains("Network"));
+        assert!(status.contains("2.5x"));
+        assert!(status.contains("Heat"));
+        assert!(status.contains("50k"));
+        // Should not have diffusion kernel (needs 90+)
+        assert!(!status.contains("Mean3x3"));
+        // Should not have help text (needs 100+)
+        assert!(!status.contains("?"));
+    }
+
+    #[test]
+    fn test_status_line_wide_terminal_120_cols() {
+        let status = OverlayRenderer::build_status_line(
+            false,
+            Preset::Exploratory,
+            1.5,
+            Palette::Ocean,
+            DitherMode::None,
+            120,
+            Some(30000),
+            Some("Gaussian"),
+        );
+        // At 120 cols: should have everything including help
+        assert!(status.contains("Exploratory"));
+        assert!(status.contains("1.5x"));
+        assert!(status.contains("Ocean"));
+        assert!(status.contains("30k"));
+        assert!(status.contains("Gaussian"));
+        assert!(status.contains("? for help"));
+    }
+
+    #[test]
+    fn test_status_line_paused() {
+        let status = OverlayRenderer::build_status_line(
+            true,
+            Preset::Organic,
+            1.0,
+            Palette::Organic,
+            DitherMode::None,
+            120,
+            Some(50000),
+            Some("Mean3x3"),
+        );
+        assert!(status.contains("[PAUSED]"));
+    }
+
+    #[test]
+    fn test_status_line_with_dither() {
+        let status = OverlayRenderer::build_status_line(
+            false,
+            Preset::Organic,
+            1.0,
+            Palette::Organic,
+            DitherMode::Ordered {
+                intensity: 0.5,
+                matrix: crate::render::dither::DitherMatrix::Bayer4x4,
+            },
+            80,
+            Some(50000),
+            Some("Mean3x3"),
+        );
+        assert!(status.contains("D:0.5"));
+    }
+
+    #[test]
+    fn test_status_line_without_optional_params() {
+        let status = OverlayRenderer::build_status_line(
+            false,
+            Preset::Organic,
+            1.0,
+            Palette::Organic,
+            DitherMode::None,
+            120,
+            None,
+            None,
+        );
+        // Should still work without population or diffusion kernel
+        assert!(status.contains("Organic"));
+        assert!(status.contains("1.0x"));
     }
 }
