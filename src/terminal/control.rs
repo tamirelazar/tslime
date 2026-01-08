@@ -18,7 +18,7 @@ pub enum MouseInteractionMode {
     Repel,
 }
 
-const ALL_PALETTES: [Palette; 16] = [
+pub const ALL_PALETTES: [Palette; 16] = [
     Palette::Organic,
     Palette::Heat,
     Palette::Ocean,
@@ -126,11 +126,15 @@ pub enum ControlAction {
     AdjustDitherIntensity(f32),
     Quit,
     AdjustSensorAngle(f32),
+    AdjustSensorDistance(f32),
     AdjustTurnAngle(f32),
     AdjustStepSize(f32),
     AdjustDecay(f32),
     AdjustDeposit(f32),
     CycleDiffusionKernel,
+    AdjustDiffusionSigma(f32),
+    AdjustAttractorStrength(f32),
+    CycleMouseMode,
     CycleWindDirection,
     AdjustTerrainStrength(f32),
     CycleTerrainType,
@@ -180,11 +184,14 @@ pub struct RuntimeState {
     #[allow(dead_code)]
     pub mouse_timeout: f32,
     pub sensor_angle: f32,
+    pub sensor_distance: f32,
     pub turn_angle: f32,
     pub step_size: f32,
     pub decay_factor: f32,
     pub deposit_amount: f32,
     pub diffusion_kernel: DiffusionKernel,
+    pub diffusion_sigma: f32,
+    pub attractor_strength: f32,
     pub wind_direction: WindDirection,
     pub terrain_type: TerrainType,
     pub terrain_strength: f32,
@@ -235,11 +242,14 @@ impl RuntimeState {
             mouse_mode,
             mouse_timeout,
             sensor_angle: 22.5,
+            sensor_distance: 9.0,
             turn_angle: 45.0,
             step_size: 1.0,
             decay_factor: 0.5,
             deposit_amount: 5.0,
             diffusion_kernel: DiffusionKernel::Mean3x3,
+            diffusion_sigma: 1.0,
+            attractor_strength: 1.0,
             wind_direction: WindDirection::None,
             terrain_type: TerrainType::None,
             terrain_strength: 1.0,
@@ -402,6 +412,13 @@ impl RuntimeState {
         at_bound
     }
 
+    pub fn adjust_sensor_distance(&mut self, delta: f32) -> bool {
+        let new_value = (self.sensor_distance + delta).clamp(1.0, 50.0);
+        let at_bound = (new_value - self.sensor_distance).abs() < 0.01;
+        self.sensor_distance = new_value;
+        at_bound
+    }
+
     pub fn adjust_turn_angle(&mut self, delta: f32) -> bool {
         let new_value = (self.turn_angle + delta).clamp(5.0, 90.0);
         let at_bound = (new_value - self.turn_angle).abs() < 0.01;
@@ -434,6 +451,28 @@ impl RuntimeState {
         self.diffusion_kernel = match self.diffusion_kernel {
             DiffusionKernel::Mean3x3 => DiffusionKernel::Gaussian,
             DiffusionKernel::Gaussian => DiffusionKernel::Mean3x3,
+        };
+    }
+
+    pub fn adjust_diffusion_sigma(&mut self, delta: f32) -> bool {
+        let new_value = (self.diffusion_sigma + delta).clamp(0.5, 2.0);
+        let at_bound = (new_value - self.diffusion_sigma).abs() < 0.01;
+        self.diffusion_sigma = new_value;
+        at_bound
+    }
+
+    pub fn adjust_attractor_strength(&mut self, delta: f32) -> bool {
+        let new_value = (self.attractor_strength + delta).clamp(0.1, 10.0);
+        let at_bound = (new_value - self.attractor_strength).abs() < 0.01;
+        self.attractor_strength = new_value;
+        at_bound
+    }
+
+    pub fn cycle_mouse_mode(&mut self) {
+        self.mouse_mode = match self.mouse_mode {
+            MouseInteractionMode::Disabled => MouseInteractionMode::Attract,
+            MouseInteractionMode::Attract => MouseInteractionMode::Repel,
+            MouseInteractionMode::Repel => MouseInteractionMode::Disabled,
         };
     }
 
@@ -515,11 +554,14 @@ impl RuntimeState {
 
     pub fn reset_to_defaults(&mut self) {
         self.sensor_angle = 22.5;
+        self.sensor_distance = 9.0;
         self.turn_angle = 45.0;
         self.step_size = 1.0;
         self.decay_factor = 0.5;
         self.deposit_amount = 5.0;
         self.diffusion_kernel = DiffusionKernel::Mean3x3;
+        self.diffusion_sigma = 1.0;
+        self.attractor_strength = 1.0;
         self.wind_direction = WindDirection::None;
         self.terrain_type = TerrainType::None;
         self.terrain_strength = 1.0;
@@ -658,6 +700,13 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
                 ControlAction::AdjustSensorAngle(1.0)
             }
         }
+        KeyCode::Char('J') | KeyCode::Char('j') => {
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                ControlAction::AdjustSensorDistance(-1.0)
+            } else {
+                ControlAction::AdjustSensorDistance(1.0)
+            }
+        }
         KeyCode::Char('T') | KeyCode::Char('t') => {
             if key_event.modifiers.contains(KeyModifiers::SHIFT) {
                 ControlAction::AdjustTurnAngle(-1.0)
@@ -687,6 +736,21 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
             }
         }
         KeyCode::Char('K') | KeyCode::Char('k') => ControlAction::CycleDiffusionKernel,
+        KeyCode::Char(';') | KeyCode::Char(':') => {
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                ControlAction::AdjustDiffusionSigma(-0.1)
+            } else {
+                ControlAction::AdjustDiffusionSigma(0.1)
+            }
+        }
+        KeyCode::Char('L') | KeyCode::Char('l') => {
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                ControlAction::AdjustAttractorStrength(-0.5)
+            } else {
+                ControlAction::AdjustAttractorStrength(0.5)
+            }
+        }
+        KeyCode::Char(',') | KeyCode::Char('<') => ControlAction::CycleMouseMode,
         KeyCode::Char('W') | KeyCode::Char('w') => ControlAction::CycleWindDirection,
         KeyCode::Char('Y') | KeyCode::Char('y') => {
             if key_event.modifiers.contains(KeyModifiers::SHIFT) {

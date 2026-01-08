@@ -49,6 +49,30 @@ pub enum Palette {
     Custom(Vec<RgbColor>),
 }
 
+impl Palette {
+    pub fn name(&self) -> &str {
+        match self {
+            Palette::Organic => "Organic",
+            Palette::Heat => "Heat",
+            Palette::Ocean => "Ocean",
+            Palette::Mono => "Mono",
+            Palette::Forest => "Forest",
+            Palette::Neon => "Neon",
+            Palette::Warm => "Warm",
+            Palette::Vibrant => "Vibrant",
+            Palette::LegibleMono => "LegibleMono",
+            Palette::Slime => "Slime",
+            Palette::Mold => "Mold",
+            Palette::Fungus => "Fungus",
+            Palette::Swamp => "Swamp",
+            Palette::Moss => "Moss",
+            Palette::Cosmic => "Cosmic",
+            Palette::Ethereal => "Ethereal",
+            Palette::Custom(_) => "Custom",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Resolution {
     pub width: usize,

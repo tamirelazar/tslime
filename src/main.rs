@@ -25,8 +25,8 @@ use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType};
 use simulation::Simulation;
 use terminal::control::{
-    handle_key_event, num_palettes, ControlAction, MouseInteractionMode, PaletteShiftSpeed,
-    RuntimeState,
+    handle_key_event, num_palettes, ALL_PALETTES, ControlAction, MouseInteractionMode,
+    PaletteShiftSpeed, RuntimeState,
 };
 use terminal::detection::{log_capabilities, TerminalCapabilities};
 use terminal::input::{InputPoller, MouseEventType};
@@ -931,11 +931,21 @@ fn run_simulation(
             Some(ControlsOverlay::build_overlay(
                 runtime_state.controls_category_idx,
                 runtime_state.sensor_angle,
+                runtime_state.sensor_distance,
                 runtime_state.turn_angle,
                 runtime_state.step_size,
                 runtime_state.decay_factor,
                 runtime_state.deposit_amount,
+                runtime_state.time_scale,
                 runtime_state.diffusion_kernel,
+                runtime_state.diffusion_sigma,
+                runtime_state.attractor_strength,
+                match runtime_state.mouse_mode {
+                    MouseInteractionMode::Disabled => "Disabled",
+                    MouseInteractionMode::Attract => "Attract",
+                    MouseInteractionMode::Repel => "Repel",
+                },
+                runtime_state.mouse_timeout,
                 runtime_state.wind_direction,
                 runtime_state.terrain_type,
                 runtime_state.terrain_strength,
@@ -943,9 +953,11 @@ fn run_simulation(
                 runtime_state.motion_blur_frames,
                 runtime_state.max_brightness,
                 runtime_state.fast_mode_enabled,
+                runtime_state.current_palette(&ALL_PALETTES).name(),
                 runtime_state.palette_shift_speed,
                 runtime_state.invert_palette,
                 runtime_state.reverse_palette,
+                runtime_state.dither_mode.name(),
                 term_width as usize,
             ))
         } else {
@@ -1419,6 +1431,18 @@ fn run_simulation(
                                 ));
                             }
                         }
+                        ControlAction::AdjustSensorDistance(delta) => {
+                            let at_bound = runtime_state.adjust_sensor_distance(delta);
+                            let mut new_config = sim.config().clone();
+                            new_config.sensor_distance = runtime_state.sensor_distance;
+                            sim.update_config(new_config);
+                            if at_bound {
+                                runtime_state.show_notification(format!(
+                                    "Sensor distance at {:.1}",
+                                    runtime_state.sensor_distance
+                                ));
+                            }
+                        }
                         ControlAction::AdjustTurnAngle(delta) => {
                             let at_bound = runtime_state.adjust_turn_angle(delta);
                             let mut new_config = sim.config().clone();
@@ -1477,6 +1501,41 @@ fn run_simulation(
                                 match runtime_state.diffusion_kernel {
                                     DiffusionKernel::Mean3x3 => "Mean3x3",
                                     DiffusionKernel::Gaussian => "Gaussian",
+                                }
+                            ));
+                        }
+                        ControlAction::AdjustDiffusionSigma(delta) => {
+                            let at_bound = runtime_state.adjust_diffusion_sigma(delta);
+                            let mut new_config = sim.config().clone();
+                            new_config.diffusion_sigma = runtime_state.diffusion_sigma;
+                            sim.update_config(new_config);
+                            if at_bound {
+                                runtime_state.show_notification(format!(
+                                    "Diffusion sigma at {:.2}",
+                                    runtime_state.diffusion_sigma
+                                ));
+                            }
+                        }
+                        ControlAction::AdjustAttractorStrength(delta) => {
+                            let at_bound = runtime_state.adjust_attractor_strength(delta);
+                            let mut new_config = sim.config().clone();
+                            new_config.attractor_strength = runtime_state.attractor_strength;
+                            sim.update_config(new_config);
+                            if at_bound {
+                                runtime_state.show_notification(format!(
+                                    "Attractor strength at {:.1}",
+                                    runtime_state.attractor_strength
+                                ));
+                            }
+                        }
+                        ControlAction::CycleMouseMode => {
+                            runtime_state.cycle_mouse_mode();
+                            runtime_state.show_notification(format!(
+                                "Mouse mode: {}",
+                                match runtime_state.mouse_mode {
+                                    MouseInteractionMode::Disabled => "Disabled",
+                                    MouseInteractionMode::Attract => "Attract",
+                                    MouseInteractionMode::Repel => "Repel",
                                 }
                             ));
                         }
