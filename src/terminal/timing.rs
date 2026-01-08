@@ -164,6 +164,10 @@ impl FrameTimer {
         self.last_frame_time.elapsed()
     }
 
+    pub fn last_frame_ms(&self) -> f32 {
+        self.last_frame_time.elapsed().as_secs_f32() * 1000.0
+    }
+
     pub fn current_fps(&self) -> f64 {
         let elapsed = self.elapsed().as_secs_f64();
         if elapsed > 0.0 {

@@ -1,5 +1,6 @@
 use clap::Parser;
 use crossterm::event::Event;
+use memory_stats::memory_stats;
 use std::io::{self, Write};
 
 mod cli;
@@ -1014,16 +1015,30 @@ fn run_simulation(
         let stats_lines: Option<Vec<String>> = if runtime_state.show_stats {
             let trail_capacity = (sim.width() * sim.height()) as f32 * 10.0;
             let elapsed = start_time.elapsed().as_secs_f32();
+            let trail_max = blended_trail.iter().fold(0.0f32, |m, &v| v.max(m));
+            let memory_mb = memory_stats()
+                .map(|m| m.physical_mem as f32 / 1024.0 / 1024.0)
+                .unwrap_or(0.0);
+            let frame_time_ms = timer.last_frame_ms();
+            let cpu_percent = (frame_time_ms / 33.333) * 100.0;
 
             Some(StatsOverlay::build_overlay(
                 sim.agent_count(),
                 blended_trail.iter().sum(),
                 trail_capacity,
+                trail_max,
                 entropy,
                 timer.current_fps() as f32,
                 timer.average_fps() as f32,
                 timer.frame_count(),
                 elapsed,
+                sim.width(),
+                sim.height(),
+                sim.attractor_count(),
+                sim.obstacle_count(),
+                sim.species_count(),
+                memory_mb,
+                cpu_percent,
                 term_width as usize,
             ))
         } else {

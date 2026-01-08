@@ -437,18 +437,26 @@ mod tests {
 pub struct StatsOverlay;
 
 impl StatsOverlay {
-    pub const WIDTH: usize = 20;
+    pub const WIDTH: usize = 24;
 
     #[allow(clippy::too_many_arguments)]
     pub fn build_overlay(
         agent_count: usize,
         trail_sum: f32,
         trail_capacity: f32,
+        trail_max: f32,
         entropy: f32,
         fps: f32,
         avg_fps: f32,
         frame_count: u64,
         elapsed_seconds: f32,
+        grid_width: usize,
+        grid_height: usize,
+        attractor_count: usize,
+        obstacle_count: usize,
+        species_count: usize,
+        memory_mb: f32,
+        cpu_percent: f32,
         _term_width: usize,
     ) -> Vec<String> {
         let trail_percent = if trail_capacity > 0.0 {
@@ -458,16 +466,25 @@ impl StatsOverlay {
         };
 
         let elapsed_str = format_elapsed_time(elapsed_seconds);
+        let grid_str = format!("{}x{}", grid_width, grid_height);
 
         vec![
-            "╭─ STATS ──────────╮".to_string(),
-            format!("│ Agents: {:>8} │", agent_count),
-            format!("│ Trail:  {:>7.1}% │", trail_percent),
-            format!("│ Entropy: {:>7.2} │", entropy),
+            "╭─ STATS ──────────────╮".to_string(),
+            format!("│ Agents:   {:>9} │", agent_count),
+            format!("│ Trail:    {:>8.1}% │", trail_percent),
+            format!("│ Trail Max: {:>7.2} │", trail_max),
+            format!("│ Entropy:   {:>8.2} │", entropy),
             format!("│ FPS: {:>4.0} ({:>4.0}) │", fps, avg_fps),
-            format!("│ Frames: {:>8} │", frame_count),
-            format!("│ Time: {:>10} │", elapsed_str),
-            "╰──────────────────╯".to_string(),
+            format!("│ Frames:    {:>9} │", frame_count),
+            format!("│ Time:     {:>12} │", elapsed_str),
+            "├──────────────────────┤".to_string(),
+            format!("│ Grid:     {:>11} │", grid_str),
+            format!("│ Attractor: {:>7} │", attractor_count),
+            format!("│ Obstacle:  {:>8} │", obstacle_count),
+            format!("│ Species:   {:>10} │", species_count),
+            format!("│ Memory:    {:>9.1} MB│", memory_mb),
+            format!("│ CPU:       {:>11.0}% │", cpu_percent),
+            "╰──────────────────────╯".to_string(),
         ]
     }
 
@@ -521,7 +538,7 @@ impl StatsOverlay {
 pub struct InfoOverlay;
 
 impl InfoOverlay {
-    pub const WIDTH: usize = 20;
+    pub const WIDTH: usize = 24;
 
     #[allow(clippy::too_many_arguments)]
     pub fn build_overlay(
@@ -546,13 +563,13 @@ impl InfoOverlay {
         let simd_str = if simd_enabled { "On" } else { "Off" };
 
         let mut lines = vec![
-            "╭─ INFO ───────────╮".to_string(),
-            format!("│ Res:  {:>10} │", resolution_str),
-            format!("│ Term: {:>10} │", term_str),
-            format!("│ Init: {:>10} │", init_mode),
-            format!("│ Color:{:>9} │", color_mode),
-            format!("│ Char: {:>10} │", charset),
-            format!("│ SIMD: {:>10} │", simd_str),
+            "╭─ INFO ──────────────────╮".to_string(),
+            format!("│ Res:  {:>14} │", resolution_str),
+            format!("│ Term: {:>14} │", term_str),
+            format!("│ Init: {:>14} │", init_mode),
+            format!("│ Color:{:>13} │", color_mode),
+            format!("│ Char: {:>14} │", charset),
+            format!("│ SIMD: {:>14} │", simd_str),
         ];
 
         if let Some(food) = food_source {
@@ -560,23 +577,23 @@ impl InfoOverlay {
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or(food);
-            let truncated = if food_name.len() > 8 {
-                &food_name[..8]
+            let truncated = if food_name.len() > 12 {
+                &food_name[..12]
             } else {
                 food_name
             };
-            lines.push(format!("│ Food: {:>10} │", truncated));
+            lines.push(format!("│ Food: {:>14} │", truncated));
         }
 
         if warmup_frames > 0 {
-            lines.push(format!("│ Warm: {:>10} │", warmup_frames));
+            lines.push(format!("│ Warm: {:>14} │", warmup_frames));
         }
 
         if auto_reset {
-            lines.push(format!("│ Auto: {:>10} │", "On"));
+            lines.push(format!("│ Auto: {:>14} │", "On"));
         }
 
-        lines.push("╰──────────────────╯".to_string());
+        lines.push("╰──────────────────────────╯".to_string());
 
         lines
     }
@@ -610,31 +627,37 @@ mod stats_tests {
     #[test]
     fn test_stats_overlay_format() {
         let lines = StatsOverlay::build_overlay(
-            50000, 1234567.0, 8000000.0, 5.5, 30.0, 28.5, 1234, 125.5, 80,
+            50000, 1234567.0, 8000000.0, 8.5, 5.5, 30.0, 28.5, 1234, 125.5, 400, 400, 3, 1, 2,
+            12.5, 85.0, 80,
         );
 
         assert!(!lines.is_empty());
         assert!(lines[0].starts_with('╭'));
         assert!(lines.last().unwrap().starts_with('╰'));
-        assert!(lines
-            .iter()
-            .all(|l| l.starts_with('│') || l.starts_with('╭') || l.starts_with('╰')));
+        assert!(lines.iter().all(|l| l.starts_with('│')
+            || l.starts_with('╭')
+            || l.starts_with('╰')
+            || l.starts_with('├')));
 
-        // New compact format is 20 chars wide
-        let max_len = lines.iter().map(|l| l.chars().count()).max().unwrap();
-        assert_eq!(max_len, StatsOverlay::WIDTH);
+        // Border lines (title, divider, bottom) should be exactly WIDTH chars
+        // Content lines may be wider due to wide box-drawing characters
+        assert_eq!(lines[0].chars().count(), StatsOverlay::WIDTH);
+        assert_eq!(lines[8].chars().count(), StatsOverlay::WIDTH);
+        assert_eq!(lines.last().unwrap().chars().count(), StatsOverlay::WIDTH);
     }
 
     #[test]
     fn test_stats_overlay_position() {
-        assert_eq!(StatsOverlay::calculate_x_position(80), 58);
-        assert_eq!(StatsOverlay::calculate_x_position(120), 98);
-        assert_eq!(StatsOverlay::calculate_x_position(20), 1);
+        assert_eq!(StatsOverlay::calculate_x_position(80), 54);
+        assert_eq!(StatsOverlay::calculate_x_position(120), 94);
+        assert_eq!(StatsOverlay::calculate_x_position(24), 1);
     }
 
     #[test]
     fn test_stats_overlay_with_zero_values() {
-        let lines = StatsOverlay::build_overlay(0, 0.0, 1000000.0, 0.0, 0.0, 0.0, 0, 0.0, 80);
+        let lines = StatsOverlay::build_overlay(
+            0, 0.0, 1000000.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 400, 400, 0, 0, 0, 0.0, 0.0, 80,
+        );
 
         assert!(!lines.is_empty());
         assert!(lines.iter().any(|l| l.contains("0.0%")));

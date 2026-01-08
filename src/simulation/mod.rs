@@ -457,6 +457,18 @@ impl Simulation {
         self.agents.len()
     }
 
+    pub fn attractor_count(&self) -> usize {
+        self.config.attractors.len() + self.config.mouse_attractors.len()
+    }
+
+    pub fn obstacle_count(&self) -> usize {
+        self.config.obstacles.len()
+    }
+
+    pub fn species_count(&self) -> usize {
+        self.config.species_configs.len()
+    }
+
     #[allow(dead_code)]
     pub fn trail_maps(&self) -> &[TrailMap] {
         &self.trail_maps
