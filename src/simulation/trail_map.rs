@@ -1,3 +1,16 @@
+//! Trail map for storing and diffusing pheromone values.
+//!
+//! The trail map is a 2D grid where agents deposit pheromones. The map
+//! undergoes diffusion (spreading) and decay each frame to create organic
+//! patterns.
+
+// These methods are part of the public library API even if unused by the CLI binary
+#![allow(dead_code)]
+
+/// A 2D grid storing pheromone trail values.
+///
+/// Uses double-buffering for efficient diffusion operations.
+/// The grid is stored as a 1D vector in row-major order for cache efficiency.
 pub struct TrailMap {
     width: usize,
     height: usize,
@@ -32,7 +45,7 @@ fn generate_gaussian_kernel(sigma: f32) -> [f32; 25] {
 }
 
 impl TrailMap {
-    #[allow(dead_code)]
+    /// Create a new trail map with default Gaussian sigma of 1.0.
     pub fn new(width: usize, height: usize) -> Self {
         let size = width * height;
         let gaussian_kernel = generate_gaussian_kernel(1.0);
@@ -59,7 +72,7 @@ impl TrailMap {
         }
     }
 
-    #[allow(dead_code)]
+    /// Update the Gaussian kernel sigma for diffusion.
     pub fn set_gaussian_sigma(&mut self, sigma: f32) {
         self.gaussian_kernel = generate_gaussian_kernel(sigma);
     }
@@ -80,12 +93,12 @@ impl TrailMap {
         &mut self.current
     }
 
-    #[allow(dead_code)]
+    /// Get the scratch buffer (used during diffusion).
     pub fn scratch(&self) -> &[f32] {
         &self.scratch
     }
 
-    #[allow(dead_code)]
+    /// Get mutable access to the scratch buffer.
     pub fn scratch_mut(&mut self) -> &mut [f32] {
         &mut self.scratch
     }
@@ -94,7 +107,7 @@ impl TrailMap {
         std::mem::swap(&mut self.current, &mut self.scratch);
     }
 
-    #[allow(dead_code)]
+    /// Get the pheromone value at (x, y). Returns 0.0 if out of bounds.
     pub fn get(&self, x: usize, y: usize) -> f32 {
         if x < self.width && y < self.height {
             self.current[y * self.width + x]
@@ -103,14 +116,14 @@ impl TrailMap {
         }
     }
 
-    #[allow(dead_code)]
+    /// Set the pheromone value at (x, y). No-op if out of bounds.
     pub fn set(&mut self, x: usize, y: usize, value: f32) {
         if x < self.width && y < self.height {
             self.current[y * self.width + x] = value;
         }
     }
 
-    #[allow(dead_code)]
+    /// Add to the pheromone value at (x, y). No-op if out of bounds.
     pub fn add(&mut self, x: usize, y: usize, value: f32) {
         if x < self.width && y < self.height {
             self.current[y * self.width + x] += value;
@@ -118,7 +131,7 @@ impl TrailMap {
         }
     }
 
-    #[allow(dead_code)]
+    /// Get the linear index for (x, y), or None if out of bounds.
     pub fn index(&self, x: usize, y: usize) -> Option<usize> {
         if x < self.width && y < self.height {
             Some(y * self.width + x)
@@ -127,19 +140,19 @@ impl TrailMap {
         }
     }
 
-    #[allow(dead_code)]
+    /// Clear all pheromone values to zero.
     pub fn clear(&mut self) {
         self.current.fill(0.0);
         self.scratch.fill(0.0);
         self.trail_sum = 0.0;
     }
 
-    #[allow(dead_code)]
+    /// Get the total number of cells (width * height).
     pub fn size(&self) -> usize {
         self.width * self.height
     }
 
-    #[allow(dead_code)]
+    /// Get the cumulative sum of all deposited pheromone.
     pub fn trail_sum(&self) -> f32 {
         self.trail_sum
     }

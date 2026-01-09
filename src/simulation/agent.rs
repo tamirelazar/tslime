@@ -1,3 +1,8 @@
+//! Individual agent behavior for Physarum simulation.
+//!
+//! Each agent represents a single cell of the slime mold. Agents follow
+//! the sense-rotate-move-deposit cycle to create emergent network patterns.
+
 use noise::{NoiseFn, Perlin};
 use rand::Rng as RandRng;
 use rand_xoshiro::Xoshiro256PlusPlus as Rng;
@@ -5,12 +10,14 @@ use std::f32::consts::PI;
 
 use super::config::{Attractor, Obstacle, TerrainType, Wind};
 
+/// Wrapper for Perlin noise generation used in terrain effects.
 pub struct NoiseWrapper {
     perlin: Perlin,
     seed_val: u32,
 }
 
 impl NoiseWrapper {
+    /// Create a new noise generator with the given seed.
     pub fn new(seed: u32) -> Self {
         Self {
             perlin: Perlin::new(seed),
@@ -18,15 +25,22 @@ impl NoiseWrapper {
         }
     }
 
+    /// Sample noise at the given 2D coordinates.
     pub fn get(&self, x: f64, y: f64) -> f64 {
         self.perlin.get([x, y])
     }
 
+    /// Get the seed value used for this noise generator.
     pub fn seed_value(&self) -> u32 {
         self.seed_val
     }
 }
 
+/// A single agent (particle) in the Physarum simulation.
+///
+/// Each agent has a position (x, y), heading angle, and species ID.
+/// The agent struct is kept minimal (16 bytes) for cache efficiency
+/// when processing 50,000+ agents per frame.
 #[derive(Clone, Copy)]
 pub struct Agent {
     pub x: f32,

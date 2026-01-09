@@ -1074,6 +1074,13 @@ pub struct Args {
         help = "Show detailed explanation of all simulation parameters and exit"
     )]
     pub explain: bool,
+
+    #[arg(
+        long = "completions",
+        value_name = "SHELL",
+        help = "Generate shell completions for the specified shell (bash, zsh, fish, powershell, elvish)"
+    )]
+    pub completions: Option<String>,
 }
 
 impl Args {
@@ -1483,6 +1490,7 @@ impl Default for Args {
             ascii_chars: None,
             random: false,
             explain: false,
+            completions: None,
         }
     }
 }

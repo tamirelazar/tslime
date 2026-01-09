@@ -2,10 +2,27 @@
 name = "tslime"
 version = "0.1.0"
 edition = "2021"
+authors = ["tslime contributors"]
+description = "A lightweight terminal screensaver simulating slime mold growth patterns"
+documentation = "https://docs.rs/tslime"
+readme = "README.md"
+homepage = "https://github.com/tamirelazar/tslime"
+repository = "https://github.com/tamirelazar/tslime"
+license = "MIT"
+keywords = ["terminal", "screensaver", "slime-mold", "generative-art", "physarum"]
+categories = ["command-line-utilities", "visualization", "simulation"]
+rust-version = "1.70"
+exclude = [
+    ".github/",
+    ".taskmaster/",
+    "assets/demos/*.gif",
+    "tests/golden/",
+]
 
 [dependencies]
 crossterm = "0.27"
 clap = { version = "4.4", features = ["derive"] }
+clap_complete = "4.4"
 rand = "0.8"
 rand_xoshiro = "0.6"
 signal-hook = "0.3"

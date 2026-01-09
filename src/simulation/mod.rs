@@ -1,3 +1,15 @@
+//! Simulation engine for Physarum polycephalum behavior.
+//!
+//! This module contains the core simulation logic including:
+//! - [`Simulation`]: The main simulation orchestrator
+//! - [`agent`]: Individual agent behavior (sense, rotate, move)
+//! - [`config`]: Configuration and presets
+//! - [`trail_map`]: Pheromone trail grid and diffusion
+//! - [`food`]: Food source loading from images
+
+// These methods are part of the public library API even if unused by the CLI binary
+#![allow(dead_code)]
+
 pub mod agent;
 pub mod config;
 pub mod food;
@@ -12,6 +24,10 @@ use rand::Rng as RandRng;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus as Rng;
 
+/// Circular buffer for storing trail map history, used for motion blur effects.
+///
+/// Maintains a fixed-size buffer of recent trail maps that can be blended
+/// together to create smooth motion blur effects.
 pub struct TrailHistory {
     history: Vec<Vec<f32>>,
     capacity: usize,
@@ -64,12 +80,12 @@ impl TrailHistory {
         Some(result)
     }
 
-    #[allow(dead_code)]
+    /// Get the current number of frames stored.
     pub fn count(&self) -> usize {
         self.count
     }
 
-    #[allow(dead_code)]
+    /// Get the maximum capacity of the history buffer.
     pub fn capacity(&self) -> usize {
         self.capacity
     }
@@ -81,6 +97,27 @@ impl TrailHistory {
     }
 }
 
+/// The main simulation engine for Physarum polycephalum behavior.
+///
+/// Manages a population of agents that sense, move, and deposit pheromones
+/// on a trail map. The trail map undergoes diffusion and decay each frame
+/// to create organic, network-forming patterns.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use tslime::Simulation;
+/// use tslime::simulation::config::{SimConfig, InitMode};
+///
+/// let config = SimConfig::default();
+/// let mut sim = Simulation::new(400, 400, config, 42, InitMode::Random, 0);
+///
+/// // Advance simulation by one frame
+/// sim.update(1.0);
+///
+/// // Get trail data for rendering
+/// let trail = sim.trail_map_blended();
+/// ```
 pub struct Simulation {
     config: SimConfig,
     agents: Vec<Agent>,

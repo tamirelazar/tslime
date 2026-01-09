@@ -140,22 +140,32 @@ tslime -S --preset tendrils
 
 ### Color Palettes
 
-Choose from 12+ built-in color palettes for different moods:
+Choose from 16 built-in color palettes for different moods:
 
 | Palette | Flag | Description |
 |---------|------|-------------|
-| Organic (default) | `--palette organic` | Green/yellow gradient |
+| Forest (default) | `--palette forest` | Natural greens |
+| Organic | `--palette organic` | Green/yellow gradient |
 | Heat | `--palette heat` | Black to red/orange |
 | Ocean | `--palette ocean` | Blue to cyan gradient |
 | Neon | `--palette neon` | Purple/pink electric |
 | Slime | `--palette slime` | Bright green glow |
 | Mono | `--palette mono` | Grayscale ramp |
-| Forest | `--palette forest` | Natural greens |
+| LegibleMono | `--palette legiblemono` | High-contrast grayscale |
 | Warm | `--palette warm` | Earth tones |
 | Vibrant | `--palette vibrant` | Saturated colors |
 | Mold | `--palette mold` | Yellow/olive tones |
 | Fungus | `--palette fungus` | Brown/green fungi |
 | Swamp | `--palette swamp` | Dark murky greens |
+| Moss | `--palette moss` | Soft green moss tones |
+| Cosmic | `--palette cosmic` | Space-inspired purples |
+| Ethereal | `--palette ethereal` | Soft, ghostly pastels |
+
+You can also define custom palettes using hex colors:
+
+```bash
+tslime -S --palette "#000000,#ff0000,#ffff00"  # Black to red to yellow
+```
 
 Example:
 
@@ -343,8 +353,8 @@ In live or screensaver mode, you can adjust simulation parameters in real-time u
 | Parameter | Flag | Description |
 |-----------|------|-------------|
 | Seed | `-s`, `--seed INT` | Random seed for reproducibility |
-| Preset | `--preset NAME` | Use named preset (network, exploratory, tendrils, organic) |
-| Palette | `--palette NAME` | Color palette (organic, heat, ocean, mono) |
+| Preset | `--preset NAME` | Use named preset (see [Presets](#-presets) section) |
+| Palette | `--palette NAME` | Color palette (see [Color Palettes](#color-palettes) section) |
 | Export GIF | `--export-gif PATH` | Export simulation to GIF file |
 | Export Frames | `--export-frames N` | Number of frames for GIF (default: 50) |
 | Export FPS | `--export-fps N` | GIF playback speed (default: 30) |
@@ -419,6 +429,19 @@ tslime -S --preset organic
 - Rotation: 45° (default)
 
 Best for: Casual viewing and balanced aesthetics.
+
+### Additional Presets
+
+| Preset | Description | Best For |
+|--------|-------------|----------|
+| `minimal` | Sparse patterns with fewer agents | Subtle backgrounds |
+| `moss` | Organic moss-like growth | Nature-inspired visuals |
+| `cosmic` | Space-inspired ethereal patterns | Sci-fi aesthetics |
+| `fire` | Aggressive, fast-moving flames | Dynamic displays |
+| `zen` | Calm, meditative slow patterns | Relaxation |
+| `storm` | Dynamic, turbulent patterns | Energetic visuals |
+| `river` | Flowing, water-like patterns | Fluid simulations |
+| `ethereal` | Soft, ghostly patterns | Dreamy aesthetics |
 
 ---
 

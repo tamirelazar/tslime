@@ -1,4 +1,5 @@
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::{generate, Shell};
 use crossterm::event::Event;
 use memory_stats::memory_stats;
 use std::io::{self, Write};
@@ -371,8 +372,38 @@ fn apply_random_config(
     *current_max_brightness = runtime_state.max_brightness;
 }
 
+/// Generate shell completions and print to stdout
+fn generate_completions(shell: &str) -> io::Result<()> {
+    let shell = match shell.to_lowercase().as_str() {
+        "bash" => Shell::Bash,
+        "zsh" => Shell::Zsh,
+        "fish" => Shell::Fish,
+        "powershell" | "pwsh" => Shell::PowerShell,
+        "elvish" => Shell::Elvish,
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Unknown shell: {}. Supported: bash, zsh, fish, powershell, elvish",
+                    shell
+                ),
+            ));
+        }
+    };
+
+    let mut cmd = Args::command();
+    generate(shell, &mut cmd, "tslime", &mut io::stdout());
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let args = Args::parse();
+
+    // Handle --completions flag early
+    if let Some(ref shell) = args.completions {
+        generate_completions(shell)?;
+        return Ok(());
+    }
 
     // Handle --explain flag early, before any other processing
     if args.explain {

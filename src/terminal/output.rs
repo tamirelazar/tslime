@@ -85,16 +85,13 @@ impl FrameBuffer {
         // Only render grid where there's no (or very dim) simulation content
         // Check if this cell is essentially empty (dark background)
         let is_empty = match self.color_mode {
-            ColorMode::TrueColor => {
-                cell.fg_color_rgb.is_none()
-                    || cell.fg_color_rgb.is_none_or(|c| {
-                        // Check if color is very dark (close to black)
-                        (c.r as u32 + c.g as u32 + c.b as u32) < 30
-                    })
-            }
+            ColorMode::TrueColor => cell.fg_color_rgb.map_or(true, |c| {
+                // Check if color is very dark (close to black)
+                (c.r as u32 + c.g as u32 + c.b as u32) < 30
+            }),
             _ => {
-                cell.fg_color_256.is_none() || cell.fg_color_256.is_none_or(|c| c < 236)
                 // ANSI colors < 236 are color, >= 236 are grayscale
+                cell.fg_color_256.map_or(true, |c| c < 236)
             }
         };
 

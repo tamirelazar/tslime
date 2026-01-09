@@ -1,37 +1,69 @@
+//! Simulation configuration types and presets.
+//!
+//! This module defines all the configuration parameters for the Physarum simulation,
+//! including presets, diffusion kernels, initialization modes, and environmental effects.
+
 use image::io::Reader as ImageReader;
 use std::path::Path;
 
+/// Algorithm used for pheromone diffusion (spreading).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffusionKernel {
+    /// Simple 3×3 box blur averaging. Fast with sharp patterns.
     Mean3x3,
+    /// 5×5 Gaussian blur. Slower but produces smoother, more organic patterns.
     Gaussian,
 }
 
+/// Named parameter presets for different visual styles.
+///
+/// Each preset combines multiple parameters optimized for a specific aesthetic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Preset {
+    /// Dense, interconnected networks with rapid branching.
     Network,
+    /// Wide, searching tentacles with exploratory behavior.
     Exploratory,
+    /// Long branching arms stretching across the terminal.
     Tendrils,
+    /// Balanced, natural-looking growth (default).
     Organic,
+    /// Minimal, sparse patterns with fewer agents.
     Minimal,
+    /// Organic moss-like growth patterns.
     Moss,
+    /// Space-inspired ethereal patterns.
     Cosmic,
+    /// Aggressive, fast-moving flame-like patterns.
     Fire,
+    /// Calm, meditative slow-moving patterns.
     Zen,
+    /// Dynamic, turbulent patterns.
     Storm,
+    /// Flowing, water-like patterns.
     River,
+    /// Ethereal, ghost-like patterns.
     Ethereal,
 }
 
+/// How agents are initially distributed in the simulation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InitMode {
+    /// Agents randomly distributed across the entire canvas.
     Random,
+    /// Agents start from the center and burst outward.
     CentralBurst,
+    /// Agents arranged in a circle.
     Circle,
+    /// Agents distributed in a gradient pattern.
     Gradient,
+    /// Agents start as a wave front.
     WaveFront,
+    /// Agents arranged in a spiral pattern.
     Spiral,
+    /// Agents in random clusters.
     RandomClusters,
+    /// Agents distributed based on a loaded image (food source).
     Food,
 }
 
