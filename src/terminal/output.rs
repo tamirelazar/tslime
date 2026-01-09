@@ -933,7 +933,7 @@ impl TerminalRenderer {
 
         // Controls overlay at top-left (below help if help is visible)
         if let Some((lines, x, y)) = controls_lines {
-            buffer.draw_text_overlay(lines, x, y, 14, Some(236));
+            buffer.draw_text_overlay(lines, x, y, 245, Some(236));
         }
 
         // Status line at bottom
@@ -1112,7 +1112,7 @@ impl TerminalRenderer {
 
         // Controls overlay at top-left (below help if help is visible)
         if let Some((lines, x, y)) = controls_lines {
-            buffer.draw_text_overlay(lines, x, y, 14, Some(236));
+            buffer.draw_text_overlay(lines, x, y, 245, Some(236));
         }
 
         // Status line at bottom

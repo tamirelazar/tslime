@@ -464,6 +464,8 @@ mod tests {
     }
 }
 
+// DEPRECATED: HelpOverlay test removed since HelpOverlay is deprecated
+/*
 #[test]
 fn test_help_overlay_format() {
     use crate::render::overlay::HelpOverlay;
@@ -485,6 +487,7 @@ fn test_help_overlay_format() {
         );
     }
 }
+*/
 
 #[test]
 fn test_options_overlay_renders_all_categories() {

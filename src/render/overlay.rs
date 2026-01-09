@@ -6,6 +6,140 @@ use crate::simulation::config::Obstacle;
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
+/// Builder for creating box-drawn overlay windows with validated dimensions.
+///
+/// This ensures all lines fit within borders and padding, preventing width overflow.
+pub struct WindowBuilder {
+    width: usize,        // Total width including borders
+    border_width: usize, // Always 1 for box-drawing chars
+    padding: usize,      // Padding on each side (left/right)
+    inner_width: usize,  // Calculated: width - 2*border - 2*padding
+}
+
+impl WindowBuilder {
+    /// Creates a new WindowBuilder with the specified total width and padding.
+    ///
+    /// # Arguments
+    /// * `width` - Total width including borders (e.g., 42 for a 42-char wide window)
+    /// * `padding` - Number of spaces padding on each side (typically 1)
+    ///
+    /// # Panics
+    /// Panics if width is too small for borders and padding (minimum: 2*border + 2*padding + 1)
+    pub fn new(width: usize, padding: usize) -> Self {
+        const BORDER_WIDTH: usize = 1;
+        let min_width = 2 * BORDER_WIDTH + 2 * padding + 1;
+
+        if width < min_width {
+            panic!(
+                "Window width {} is too small for borders and padding (minimum: {})",
+                width, min_width
+            );
+        }
+
+        let inner_width = width - 2 * BORDER_WIDTH - 2 * padding;
+
+        Self {
+            width,
+            border_width: BORDER_WIDTH,
+            padding,
+            inner_width,
+        }
+    }
+
+    /// Returns the inner content width (excluding borders and padding)
+    pub fn inner_width(&self) -> usize {
+        self.inner_width
+    }
+
+    /// Builds a window with content lines, validating all fit within inner width.
+    ///
+    /// # Arguments
+    /// * `title` - Optional title for top border (e.g., "HELP", "STATS")
+    /// * `content` - Content lines (must each be <= inner_width chars)
+    ///
+    /// # Returns
+    /// `Ok(Vec<String>)` with the complete window, or `Err(String)` if validation fails
+    pub fn build(&self, title: Option<&str>, content: &[String]) -> Result<Vec<String>, String> {
+        // Validate content lines
+        for (i, line) in content.iter().enumerate() {
+            let line_len = line.chars().count();
+            if line_len > self.inner_width {
+                return Err(format!(
+                    "Content line {} is too long ({} chars, max {}): '{}'",
+                    i, line_len, self.inner_width, line
+                ));
+            }
+        }
+
+        let mut lines = Vec::with_capacity(content.len() + 2);
+
+        // Top border
+        lines.push(self.build_top_border(title));
+
+        // Content lines
+        for line in content {
+            lines.push(self.build_content_line(line));
+        }
+
+        // Bottom border
+        lines.push(self.build_bottom_border());
+
+        Ok(lines)
+    }
+
+    /// Builds the top border, optionally with a title.
+    fn build_top_border(&self, title: Option<&str>) -> String {
+        if let Some(title) = title {
+            let title_with_spaces = format!(" {} ", title);
+            let title_len = title_with_spaces.chars().count();
+            let remaining = self.width.saturating_sub(2 + title_len); // -2 for corners
+            let left_dashes = 1; // At least one dash after ╭
+            let right_dashes = remaining.saturating_sub(left_dashes);
+
+            format!(
+                "╭{}{}{}╮",
+                "─".repeat(left_dashes),
+                title_with_spaces,
+                "─".repeat(right_dashes)
+            )
+        } else {
+            format!("╭{}╮", "─".repeat(self.width - 2))
+        }
+    }
+
+    /// Builds a content line with borders and padding.
+    fn build_content_line(&self, content: &str) -> String {
+        let content_len = content.chars().count();
+        let padding_right = self.inner_width.saturating_sub(content_len);
+
+        format!(
+            "│{}{}{}{}│",
+            " ".repeat(self.padding),
+            content,
+            " ".repeat(padding_right),
+            " ".repeat(self.padding)
+        )
+    }
+
+    /// Builds the bottom border.
+    fn build_bottom_border(&self) -> String {
+        format!("╰{}╯", "─".repeat(self.width - 2))
+    }
+
+    /// Builds a separator line (for dividing sections within a window).
+    pub fn build_separator(&self) -> String {
+        format!("├{}┤", "─".repeat(self.width - 2))
+    }
+
+    /// Builds an empty line (for spacing within the window).
+    pub fn build_empty_line(&self) -> String {
+        self.build_content_line("")
+    }
+}
+
+// DEPRECATED: HelpOverlay replaced by full keyboard shortcuts overlay (KeyboardHintsOverlay)
+// Keeping for reference but should not be used in main application
+/*
 pub struct HelpOverlay;
 
 impl HelpOverlay {
@@ -28,6 +162,7 @@ impl HelpOverlay {
         42
     }
 }
+*/
 
 pub struct KeyboardHintsOverlay;
 
