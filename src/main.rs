@@ -21,8 +21,8 @@ use render::downsample::downsample;
 use render::grid::{GridRenderer, GridStyle};
 use render::options_overlay::ControlsOverlay;
 use render::overlay::{
-    ConfigBrowserOverlay, ConfigSaveOverlay, HelpOverlay, InfoOverlay, KeyboardHintsOverlay,
-    OverlayRenderer, PresetComparisonOverlay, StatsOverlay,
+    ConfigBrowserOverlay, ConfigSaveOverlay, InfoOverlay, KeyboardHintsOverlay,
+    PresetComparisonOverlay, StatsOverlay,
 };
 use render::palette::{hex_to_rgb, RgbColor};
 use simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType};
@@ -1115,16 +1115,35 @@ fn run_simulation(
         // Check if we're in warmup phase
         let in_warmup = !args.skip_warmup && runtime_state.is_in_warmup(args.warmup_frames);
 
+        // Calculate transition fade factor for smooth warmup→normal transition
+        const WARMUP_SPEED_MULTIPLIER: f32 = 0.3; // 30% speed during warmup
+        const TRANSITION_DURATION_FRAMES: usize = 30; // 1 second at 30 FPS
+
+        let frames_since_warmup = runtime_state
+            .warmup_counter
+            .saturating_sub(args.warmup_frames);
+        let in_transition = frames_since_warmup < TRANSITION_DURATION_FRAMES;
+
+        // Fade factor: 0.0 during warmup, interpolates 0.0→1.0 over 30 frames, then 1.0
+        let fade_factor = if in_warmup {
+            0.0
+        } else if in_transition {
+            frames_since_warmup as f32 / TRANSITION_DURATION_FRAMES as f32
+        } else {
+            1.0
+        };
+
         if !runtime_state.is_paused {
             timer.start_sim();
 
-            if in_warmup {
-                // During warmup: slow agent movement, high decay, bright display
-                let warmup_dt = dt * 0.3; // 30% speed
-                sim.update(warmup_dt / REFERENCE_TIME_STEP);
+            // Apply smooth speed transition from 0.3x to 1.0x
+            let speed_multiplier =
+                WARMUP_SPEED_MULTIPLIER + (1.0 - WARMUP_SPEED_MULTIPLIER) * fade_factor;
+            let adjusted_dt = dt * speed_multiplier;
+            sim.update(adjusted_dt / REFERENCE_TIME_STEP);
+
+            if in_warmup || in_transition {
                 runtime_state.increment_warmup();
-            } else {
-                sim.update(dt / REFERENCE_TIME_STEP);
             }
 
             timer.end_sim_start_render();
@@ -1152,17 +1171,14 @@ fn run_simulation(
         };
 
         // Apply warmup brightness multiplier with smooth transition
-        if in_warmup || runtime_state.warmup_counter < args.warmup_frames + 30 {
-            // Calculate fade factor: 1.0 during warmup, then fade to 0.0 over 30 frames
-            let fade_factor = if in_warmup {
-                1.0
-            } else {
-                let frames_since_warmup = runtime_state.warmup_counter - args.warmup_frames;
-                (1.0 - (frames_since_warmup as f32 / 30.0)).max(0.0)
-            };
+        // Uses the same fade_factor as speed transition for consistency
+        if in_warmup || in_transition {
+            // Brightness fade_factor: 1.0 during warmup, then 1.0→0.0 over 30 frames
+            // Inverted from speed fade_factor since we want brightness to decrease
+            let brightness_fade = 1.0 - fade_factor;
 
             // Interpolate between normal and warmup brightness
-            let multiplier = 1.0 + (args.warmup_brightness_multiplier - 1.0) * fade_factor;
+            let multiplier = 1.0 + (args.warmup_brightness_multiplier - 1.0) * brightness_fade;
             max_brightness *= multiplier;
         }
 
@@ -1173,7 +1189,9 @@ fn run_simulation(
         hue_offset %= 360.0;
         renderer.set_hue_shift(hue_offset);
 
-        // Build help overlay (? key)
+        // DEPRECATED: HelpOverlay removed - use KeyboardHintsOverlay (?) for shortcuts
+        // Keeping this commented out as show_help state may still be toggled but won't display anything
+        /*
         let help_lines: Option<Vec<String>> = if runtime_state.show_help {
             let base_help_strings = HelpOverlay::build_overlay();
             let base_help_len = base_help_strings.len();
@@ -1210,6 +1228,8 @@ fn run_simulation(
         } else {
             None
         };
+        */
+        let help_lines: Option<Vec<String>> = None;
 
         // Build keyboard hints overlay (? key)
         let keyboard_hints_lines: Option<Vec<String>> = if runtime_state.show_keyboard_hints {
@@ -1893,7 +1913,34 @@ fn run_simulation(
                             // If no overlays open, Esc does nothing (doesn't quit)
                         }
                         ControlAction::CycleOptionsCategory => {
-                            runtime_state.cycle_controls_category(true);
+                            const TOTAL_CATEGORIES: usize = 6;
+
+                            if !runtime_state.show_controls {
+                                // Was hidden, show at current remembered tab
+                                runtime_state.show_controls = true;
+                            } else {
+                                // Cycle forward
+                                runtime_state.cycle_controls_category(true);
+
+                                // If we wrapped back to 0, hide instead
+                                if runtime_state.controls_category_idx == 0 {
+                                    runtime_state.show_controls = false;
+                                    runtime_state.controls_category_idx = TOTAL_CATEGORIES - 1;
+                                    // Keep at last tab
+                                }
+                            }
+                        }
+                        ControlAction::CycleOptionsCategoryReverse => {
+                            if !runtime_state.show_controls {
+                                // Was hidden, show at current remembered tab
+                                runtime_state.show_controls = true;
+                            } else if runtime_state.controls_category_idx == 0 {
+                                // At first tab going backward, hide
+                                runtime_state.show_controls = false;
+                            } else {
+                                // Cycle backward
+                                runtime_state.cycle_controls_category(false);
+                            }
                         }
                         ControlAction::AdjustSensorAngle(delta) => {
                             let at_bound = runtime_state.adjust_sensor_angle(delta);

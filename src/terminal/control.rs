@@ -151,6 +151,7 @@ pub enum ControlAction {
     ResetToDefaults,
     ShowOptionsOverlay,
     CycleOptionsCategory,
+    CycleOptionsCategoryReverse,
     ToggleStats,
     ToggleInfo,
     ShowConfigBrowser,
@@ -527,11 +528,13 @@ impl RuntimeState {
     }
 
     pub fn cycle_controls_category(&mut self, forward: bool) {
+        const TOTAL_CATEGORIES: usize = 6; // 0-5: SIMULATION CORE, FORCES, APPEARANCE, POST-PROCESSING, PERFORMANCE, SYSTEM
+
         if forward {
-            self.controls_category_idx = (self.controls_category_idx + 1) % 5;
+            self.controls_category_idx = (self.controls_category_idx + 1) % TOTAL_CATEGORIES;
         } else {
             self.controls_category_idx = if self.controls_category_idx == 0 {
-                4
+                TOTAL_CATEGORIES - 1
             } else {
                 self.controls_category_idx - 1
             };
@@ -990,6 +993,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char(']') | KeyCode::Char('}') => ControlAction::AdjustDitherIntensity(0.1),
         KeyCode::Char('q') | KeyCode::Char('Q') => ControlAction::Quit,
         KeyCode::Tab => ControlAction::CycleOptionsCategory,
+        KeyCode::BackTab => ControlAction::CycleOptionsCategoryReverse,
         KeyCode::Char('A') | KeyCode::Char('a') => {
             if key_event.modifiers.contains(KeyModifiers::SHIFT) {
                 ControlAction::AdjustSensorAngle(-1.0)
