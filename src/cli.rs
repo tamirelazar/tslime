@@ -928,10 +928,12 @@ pub struct Args {
     pub stats: bool,
 
     #[arg(
-        long = "no-auto-fps",
-        help = "Disable automatic FPS adjustment when performance drops"
+        long = "auto-fps",
+        value_name = "BOOL",
+        default_value_t = false,
+        help = "Enable automatic FPS adjustment when performance drops"
     )]
-    pub no_auto_fps: bool,
+    pub auto_fps: bool,
 
     // ===== Warmup frames =====
     #[arg(
@@ -1469,7 +1471,7 @@ impl Default for Args {
             mouse_repel: false,
             mouse_timeout: 3.0,
             stats: false,
-            no_auto_fps: false,
+            auto_fps: false,
             warmup_frames: 60,
             warmup_brightness_multiplier: 2.5,
             warmup_decay: 0.99,

@@ -965,7 +965,7 @@ fn run_simulation(
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
     renderer.set_dither_mode(dither_mode);
     let mut timer = FrameTimer::with_time_scale(args.fps, args.frame_delay, args.time_scale);
-    timer.set_adaptive_fps(!args.no_auto_fps);
+    timer.set_adaptive_fps(args.auto_fps);
     let input_poller = InputPoller::new();
 
     let (mut term_width, mut term_height) = screen.get_size()?;
