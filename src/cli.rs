@@ -1238,6 +1238,73 @@ impl Args {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        // Resolution bounds - prevent excessive memory allocation
+        if self.resolution.width < 10 || self.resolution.width > 2000 {
+            return Err(format!(
+                "resolution width must be between 10 and 2000, got {}",
+                self.resolution.width
+            ));
+        }
+        if self.resolution.height < 10 || self.resolution.height > 2000 {
+            return Err(format!(
+                "resolution height must be between 10 and 2000, got {}",
+                self.resolution.height
+            ));
+        }
+        // FPS bounds - prevent unreasonable values
+        if self.fps < 1 || self.fps > 144 {
+            return Err(format!("fps must be between 1 and 144, got {}", self.fps));
+        }
+        // Population bounds - prevent memory explosion
+        if self.population < 100 || self.population > 500_000 {
+            return Err(format!(
+                "population must be between 100 and 500,000, got {}",
+                self.population
+            ));
+        }
+        // Simulation parameter bounds
+        if self.sensor_angle < 1.0 || self.sensor_angle > 180.0 {
+            return Err(format!(
+                "sensor_angle must be between 1.0 and 180.0 degrees, got {}",
+                self.sensor_angle
+            ));
+        }
+        if self.sensor_distance < 0.5 || self.sensor_distance > 100.0 {
+            return Err(format!(
+                "sensor_distance must be between 0.5 and 100.0, got {}",
+                self.sensor_distance
+            ));
+        }
+        if self.rotation_angle < 1.0 || self.rotation_angle > 180.0 {
+            return Err(format!(
+                "rotation_angle must be between 1.0 and 180.0 degrees, got {}",
+                self.rotation_angle
+            ));
+        }
+        if self.step_size < 0.1 || self.step_size > 10.0 {
+            return Err(format!(
+                "step_size must be between 0.1 and 10.0, got {}",
+                self.step_size
+            ));
+        }
+        if self.decay_factor < 0.01 || self.decay_factor > 0.999 {
+            return Err(format!(
+                "decay must be between 0.01 and 0.999, got {}",
+                self.decay_factor
+            ));
+        }
+        if self.deposit_amount < 0.1 || self.deposit_amount > 100.0 {
+            return Err(format!(
+                "deposit must be between 0.1 and 100.0, got {}",
+                self.deposit_amount
+            ));
+        }
+        if self.max_brightness < 1.0 || self.max_brightness > 1000.0 {
+            return Err(format!(
+                "max_brightness must be between 1.0 and 1000.0, got {}",
+                self.max_brightness
+            ));
+        }
         if self.time_scale < 0.1 || self.time_scale > 10.0 {
             return Err(format!(
                 "time_scale must be between 0.1 and 10.0, got {}",

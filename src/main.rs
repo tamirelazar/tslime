@@ -687,10 +687,9 @@ fn capture_frames_mode(
         "resolution": {"width": args.resolution.width, "height": args.resolution.height},
     });
 
-    std::fs::write(
-        format!("{}/meta.json", args.frame_dir),
-        serde_json::to_string_pretty(&meta).unwrap(),
-    )?;
+    let meta_json = serde_json::to_string_pretty(&meta)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    std::fs::write(format!("{}/meta.json", args.frame_dir), meta_json)?;
 
     eprintln!(
         "Done! Captured {} frames to {}",
@@ -701,7 +700,10 @@ fn capture_frames_mode(
 }
 
 fn export_gif_mode(sim: &mut Simulation, args: &Args, palette: cli::Palette) -> io::Result<()> {
-    let output_path = args.export_gif.as_ref().unwrap();
+    let output_path = args
+        .export_gif
+        .as_ref()
+        .expect("export_gif_mode called without export_gif path");
     let width = sim.width();
     let height = sim.height();
 
@@ -791,7 +793,10 @@ fn export_gif_mode(sim: &mut Simulation, args: &Args, palette: cli::Palette) -> 
 }
 
 fn export_webm_mode(sim: &mut Simulation, args: &Args, palette: cli::Palette) -> io::Result<()> {
-    let output_path = args.export_webm.as_ref().unwrap();
+    let output_path = args
+        .export_webm
+        .as_ref()
+        .expect("export_webm_mode called without export_webm path");
     let width = sim.width();
     let height = sim.height();
 

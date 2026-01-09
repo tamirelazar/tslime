@@ -71,7 +71,7 @@ fn detect_truecolor() -> ColorCapability {
 fn estimate_refresh_rate() -> f32 {
     if let Ok(fps_str) = env::var("TSLIME_REFRESH_RATE") {
         if let Ok(fps) = fps_str.parse::<f32>() {
-            if fps >= 10.0 && fps <= 144.0 {
+            if (10.0..=144.0).contains(&fps) {
                 return fps;
             }
         }

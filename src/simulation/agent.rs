@@ -1,3 +1,4 @@
+use noise::{NoiseFn, Perlin};
 use rand::Rng as RandRng;
 use rand_xoshiro::Xoshiro256PlusPlus as Rng;
 use std::f32::consts::PI;
@@ -5,20 +6,20 @@ use std::f32::consts::PI;
 use super::config::{Attractor, Obstacle, TerrainType, Wind};
 
 pub struct NoiseWrapper {
-    seed: noise::Seed,
+    perlin: Perlin,
     seed_val: u32,
 }
 
 impl NoiseWrapper {
     pub fn new(seed: u32) -> Self {
         Self {
-            seed: noise::Seed::new(seed),
+            perlin: Perlin::new(seed),
             seed_val: seed,
         }
     }
 
     pub fn get(&self, x: f64, y: f64) -> f64 {
-        noise::perlin2(&self.seed, &[x, y])
+        self.perlin.get([x, y])
     }
 
     pub fn seed_value(&self) -> u32 {

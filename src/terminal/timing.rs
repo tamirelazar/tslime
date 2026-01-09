@@ -119,13 +119,10 @@ impl FrameTimer {
 
         let avg_fps = self.average_fps();
 
-        for &fps in &FPS_STEPS {
-            if fps < self.target_fps && avg_fps < (fps as f64 * 1.1) {
-                return Some(fps);
-            }
-        }
-
-        None
+        FPS_STEPS
+            .iter()
+            .find(|&&fps| fps < self.target_fps && avg_fps < (fps as f64 * 1.1))
+            .copied()
     }
 
     pub fn apply_fps_adjustment(&mut self, new_fps: usize) {

@@ -65,6 +65,10 @@ impl WebmExporter {
 
         eprintln!("Encoding WebM video with FFmpeg...");
 
+        let frame_pattern_str = frame_pattern
+            .to_str()
+            .ok_or_else(|| "Frame pattern path contains invalid UTF-8".to_string())?;
+
         #[allow(clippy::needless_borrows_for_generic_args)]
         let status = Command::new("ffmpeg")
             .args(&[
@@ -72,7 +76,7 @@ impl WebmExporter {
                 "-framerate",
                 &self.fps.to_string(),
                 "-i",
-                frame_pattern.to_str().unwrap(),
+                frame_pattern_str,
                 "-c:v",
                 "libvpx-vp9",
                 "-lossless",
