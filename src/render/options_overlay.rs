@@ -12,8 +12,7 @@ pub struct ControlsOverlay;
 pub type OptionsOverlay = ControlsOverlay;
 
 impl ControlsOverlay {
-    #[allow(dead_code)]
-    pub const WIDTH: usize = 42;
+    pub const WIDTH: usize = 48;
     pub const TOTAL_CATEGORIES: usize = 6;
 
     pub fn category_name(idx: usize) -> &'static str {
@@ -64,17 +63,17 @@ impl ControlsOverlay {
         defaults: DefaultValues,
         population: usize,
     ) -> Vec<String> {
-        let mut lines = Vec::new();
+        let builder = crate::render::overlay::WindowBuilder::new(Self::WIDTH, 2);
         let cat_name = Self::category_name(category_idx);
         let cat_num = category_idx + 1;
 
-        // All lines are exactly 42 characters wide
-        // Header with category indicator [1/5]
-        lines.push(format!(
-            "╭─ CONTROLS [{}/{}] ───────────────────────╮",
-            cat_num,
-            Self::TOTAL_CATEGORIES
+        let mut content = Vec::new();
+        content.push(format!(
+            "{:^width$}",
+            cat_name,
+            width = builder.inner_width()
         ));
+        content.push("".to_string());
 
         let mod_marker = |current: f32, default: f32, eps: f32| {
             if (current - default).abs() > eps {
@@ -94,72 +93,65 @@ impl ControlsOverlay {
         };
 
         match category_idx {
-            // Category 0: SIMULATION CORE
             0 => {
-                lines.push(format!("│ {:^38} │", cat_name));
-                lines.push("│                                        │".to_string());
-                lines.push(format!(
-                    "│{} A/a  Sensor Angle  {:>5.1}° [5-90°]     │",
+                content.push(format!(
+                    "{} A/a  Sensor Angle  {:>5.1}° [5-90°]",
                     mod_marker(sensor_angle, defaults.sensor_angle, 0.01),
                     sensor_angle
                 ));
-                lines.push(format!(
-                    "│{} J/j  Sensor Dist   {:>5.1}px [1-50]     │",
+                content.push(format!(
+                    "{} J/j  Sensor Dist   {:>5.1}px [1-50]",
                     mod_marker(sensor_distance, defaults.sensor_distance, 0.01),
                     sensor_distance
                 ));
-                lines.push(format!(
-                    "│{} T/t  Turn Angle    {:>5.1}° [5-90°]     │",
+                content.push(format!(
+                    "{} T/t  Turn Angle    {:>5.1}° [5-90°]",
                     mod_marker(turn_angle, defaults.turn_angle, 0.01),
                     turn_angle
                 ));
-                lines.push(format!(
-                    "│{} S/s  Step Size     {:>5.1}px [0.5-5.0]  │",
+                content.push(format!(
+                    "{} S/s  Step Size     {:>5.1}px [0.5-5.0]",
                     mod_marker(step_size, defaults.step_size, 0.01),
                     step_size
                 ));
-                lines.push(format!(
-                    "│{} E/e  Decay Factor  {:>5.3}x [0.5-0.99]  │",
+                content.push(format!(
+                    "{} E/e  Decay Factor  {:>5.3}x [0.5-0.99]",
                     mod_marker(decay_factor, defaults.decay_factor, 0.001),
                     decay_factor
                 ));
-                lines.push(format!(
-                    "│{} I/i  Deposit Amt   {:>5.1}x [1-20]      │",
+                content.push(format!(
+                    "{} I/i  Deposit Amt   {:>5.1}x [1-20]",
                     mod_marker(deposit_amount, defaults.deposit_amount, 0.01),
                     deposit_amount
                 ));
-                lines.push(format!(
-                    "│  +/-  Time Scale    {:>5.1}x [0.5-4x]    │",
+                content.push(format!(
+                    "   +/-  Time Scale    {:>5.1}x [0.5-4x]",
                     time_scale
                 ));
             }
-            // Category 1: FORCES & ENVIRONMENT
             1 => {
-                lines.push(format!("│ {:^38} │", cat_name));
-                lines.push("│                                        │".to_string());
-                lines.push(format!(
-                    "│{} K    Diffusion         {:>14} │",
+                content.push(format!(
+                    "{} K    Diffusion         {:>14}",
                     mod_marker_enum(&diffusion_kernel, &defaults.diffusion_kernel),
                     match diffusion_kernel {
                         DiffusionKernel::Mean3x3 => "Mean3x3",
                         DiffusionKernel::Gaussian => "Gaussian",
                     }
                 ));
-                // Only show diffusion_sigma when Gaussian kernel is selected
                 if matches!(diffusion_kernel, DiffusionKernel::Gaussian) {
-                    lines.push(format!(
-                        "│{} ;/:  Diff Sigma  {:>5.2}x [0.5-2.0]   │",
+                    content.push(format!(
+                        "{} ;/:  Diff Sigma  {:>5.2}x [0.5-2.0]",
                         mod_marker(diffusion_sigma, defaults.diffusion_sigma, 0.01),
                         diffusion_sigma
                     ));
                 }
-                lines.push(format!(
-                    "│{} W    Wind              {:>14} │",
+                content.push(format!(
+                    "{} W    Wind              {:>14}",
                     mod_marker_enum(&wind_direction, &defaults.wind_direction),
                     wind_direction.name()
                 ));
-                lines.push(format!(
-                    "│{} U    Terrain Type      {:>14} │",
+                content.push(format!(
+                    "{} U    Terrain Type      {:>14}",
                     mod_marker_enum(&terrain_type, &defaults.terrain_type),
                     match terrain_type {
                         TerrainType::None => "None",
@@ -168,31 +160,28 @@ impl ControlsOverlay {
                         TerrainType::Mixed => "Mixed",
                     }
                 ));
-                lines.push(format!(
-                    "│{} Y/y  Terrain Str   {:>5.1}x [0.1-5.0]   │",
+                content.push(format!(
+                    "{} Y/y  Terrain Str   {:>5.1}x [0.1-5.0]",
                     mod_marker(terrain_strength, defaults.terrain_strength, 0.01),
                     terrain_strength
                 ));
-                lines.push(format!(
-                    "│{} L/l  Attractor Str {:>5.1}x [0.1-10]    │",
+                content.push(format!(
+                    "{} L/l  Attractor Str {:>5.1}x [0.1-10]",
                     mod_marker(attractor_strength, defaults.attractor_strength, 0.01),
                     attractor_strength
                 ));
-                lines.push(format!("│  ,    Mouse Mode        {:>14} │", mouse_mode));
+                content.push(format!("   ,    Mouse Mode        {:>14}", mouse_mode));
                 if mouse_mode != "Disabled" {
-                    lines.push(format!(
-                        "│ ─     Mouse Timeout {:>4.1}s (CLI-only)  │",
+                    content.push(format!(
+                        "   ─    Mouse Timeout {:>4.1}s (CLI-only)",
                         mouse_timeout
                     ));
                 }
             }
-            // Category 2: APPEARANCE
             2 => {
-                lines.push(format!("│ {:^38} │", cat_name));
-                lines.push("│                                        │".to_string());
-                lines.push(format!("│  c/C  Palette           {:>14} │", palette_name));
-                lines.push(format!(
-                    "│  O    Palette Shift     {:>14} │",
+                content.push(format!("   c/C  Palette           {:>14}", palette_name));
+                content.push(format!(
+                    "   O    Palette Shift     {:>14}",
                     match palette_shift_speed {
                         PaletteShiftSpeed::Off => "Off",
                         PaletteShiftSpeed::Slow => "Slow",
@@ -200,25 +189,22 @@ impl ControlsOverlay {
                         PaletteShiftSpeed::Fast => "Fast",
                     }
                 ));
-                lines.push(format!(
-                    "│  X    Invert Palette    {:>14} │",
+                content.push(format!(
+                    "   X    Invert Palette    {:>14}",
                     if invert_palette { "On" } else { "Off" }
                 ));
-                lines.push(format!(
-                    "│  Z    Reverse Palette   {:>14} │",
+                content.push(format!(
+                    "   Z    Reverse Palette   {:>14}",
                     if reverse_palette { "On" } else { "Off" }
                 ));
             }
-            // Category 3: POST-PROCESSING
             3 => {
-                lines.push(format!("│ {:^38} │", cat_name));
-                lines.push("│                                        │".to_string());
-                lines.push(format!(
-                    "│  d/D  Dither Mode       {:>14} │",
+                content.push(format!(
+                    "   d/D  Dither Mode       {:>14}",
                     dither_mode_name
                 ));
-                lines.push(format!(
-                    "│{} B    Auto Normalize    {:>14} │",
+                content.push(format!(
+                    "{} B    Auto Normalize    {:>14}",
                     if auto_normalize != defaults.auto_normalize {
                         "*"
                     } else {
@@ -226,48 +212,42 @@ impl ControlsOverlay {
                     },
                     if auto_normalize { "On" } else { "Off" }
                 ));
-                lines.push(format!(
-                    "│{} V    Motion Blur    {:>1} frames [0,3,5,7]│",
+                content.push(format!(
+                    "{} V    Motion Blur    {:>1} frames [0,3,5,7]",
                     mod_marker_int(motion_blur_frames, defaults.motion_blur_frames),
                     motion_blur_frames
                 ));
-                lines.push(format!(
-                    "│{} N/n  Max Bright    {:>5.1}x [1-100]     │",
+                content.push(format!(
+                    "{} N/n  Max Bright    {:>5.1}x [1-100]",
                     mod_marker(max_brightness, defaults.max_brightness, 0.01),
                     max_brightness
                 ));
             }
-            // Category 4: PERFORMANCE
             4 => {
-                lines.push(format!("│ {:^38} │", cat_name));
-                lines.push("│                                        │".to_string());
-                lines.push(format!(
-                    "│  F    Fast Mode         {:>14} │",
+                content.push(format!(
+                    "   F    Fast Mode         {:>14}",
                     if fast_mode_enabled { "On" } else { "Off" }
                 ));
-                lines.push(format!(
-                    "│ ─     Population      {:>3}k (fixed)     │",
+                content.push(format!(
+                    "   ─    Population      {:>3}k (fixed)",
                     population / 1000
                 ));
             }
-            // Category 5: SYSTEM
             5 => {
-                lines.push(format!("│ {:^38} │", cat_name));
-                lines.push("│                                        │".to_string());
-                lines.push("│  G    Save Frame             (PNG)     │".to_string());
-                lines.push("│  0    Reset to Defaults                │".to_string());
-                lines.push("│  8    Randomize Parameters             │".to_string());
+                content.push("   G    Save Frame             (PNG)".to_string());
+                content.push("   0    Reset to Defaults".to_string());
+                content.push("   8    Randomize Parameters".to_string());
             }
             _ => {}
         }
 
-        lines.push("│                                        │".to_string());
-        lines.push("│  * Modified from default value         │".to_string());
-        lines.push("│  ─ Startup-only parameter (CLI)        │".to_string());
-        lines.push("│  Tab: Next         Esc: Close          │".to_string());
-        lines.push("╰────────────────────────────────────────╯".to_string());
+        content.push("".to_string());
+        content.push("   * Modified from default value".to_string());
+        content.push("   ─ Startup-only parameter (CLI)".to_string());
+        content.push("   Tab: Next         Esc: Close".to_string());
 
-        lines
+        let title = format!("CONTROLS [{}/{}]", cat_num, Self::TOTAL_CATEGORIES);
+        builder.build(Some(&title), &content).unwrap_or_default()
     }
 }
 
@@ -374,16 +354,22 @@ mod tests {
                 50000,
             );
 
-            // All lines should be exactly 42 chars wide
+            // All lines should be exactly WIDTH chars wide
             for (line_num, line) in lines.iter().enumerate() {
                 assert!(
-                    line.starts_with('╭') || line.starts_with('│') || line.starts_with('╰'),
+                    line.starts_with('╭')
+                        || line.starts_with('│')
+                        || line.starts_with('╰')
+                        || line.starts_with('├'),
                     "Category {}, line {}: All lines should start with border character",
                     category_idx,
                     line_num
                 );
                 assert!(
-                    line.ends_with('╮') || line.ends_with('│') || line.ends_with('╯'),
+                    line.ends_with('╮')
+                        || line.ends_with('│')
+                        || line.ends_with('╯')
+                        || line.ends_with('┤'),
                     "Category {}, line {}: All lines should end with border character",
                     category_idx,
                     line_num
@@ -463,31 +449,6 @@ mod tests {
         assert_eq!(PaletteShiftSpeed::Fast.degrees_per_second(), 45.0);
     }
 }
-
-// DEPRECATED: HelpOverlay test removed since HelpOverlay is deprecated
-/*
-#[test]
-fn test_help_overlay_format() {
-    use crate::render::overlay::HelpOverlay;
-
-    let help_lines = HelpOverlay::build_overlay();
-
-    for line in &help_lines {
-        assert!(line.starts_with('│') || line.starts_with('╭') || line.starts_with('╰'));
-        assert!(line.ends_with('│') || line.ends_with('╮') || line.ends_with('╯'));
-    }
-
-    // All lines should be 42 chars wide
-    for line in &help_lines {
-        assert_eq!(
-            line.chars().count(),
-            HelpOverlay::width(),
-            "Help line has unexpected width: {}",
-            line
-        );
-    }
-}
-*/
 
 #[test]
 fn test_options_overlay_renders_all_categories() {

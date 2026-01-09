@@ -1189,46 +1189,6 @@ fn run_simulation(
         hue_offset %= 360.0;
         renderer.set_hue_shift(hue_offset);
 
-        // DEPRECATED: HelpOverlay removed - use KeyboardHintsOverlay (?) for shortcuts
-        // Keeping this commented out as show_help state may still be toggled but won't display anything
-        /*
-        let help_lines: Option<Vec<String>> = if runtime_state.show_help {
-            let base_help_strings = HelpOverlay::build_overlay();
-            let base_help_len = base_help_strings.len();
-            let base_help: Vec<&str> = base_help_strings.iter().map(|s| s.as_str()).collect();
-            let attractor_lines =
-                OverlayRenderer::build_help_with_attractors(&base_help, &sim.config().attractors);
-            let obstacle_lines =
-                OverlayRenderer::build_help_with_obstacles(&base_help, &sim.config().obstacles);
-            let mouse_attractor_lines = OverlayRenderer::build_help_with_mouse_attractors(
-                &base_help,
-                &sim.config().mouse_attractors,
-                sim.width(),
-                sim.height(),
-            );
-
-            let mut result = base_help_strings;
-
-            if !attractor_lines.is_empty() {
-                // Skip the base help duplicate and add just the attractor section
-                result.extend(attractor_lines.into_iter().skip(base_help_len));
-            }
-
-            if !obstacle_lines.is_empty() {
-                // Skip the base help duplicate and add just the obstacle section
-                result.extend(obstacle_lines.into_iter().skip(base_help_len));
-            }
-
-            if !mouse_attractor_lines.is_empty() {
-                // Skip the base help duplicate and add just the mouse attractor section
-                result.extend(mouse_attractor_lines.into_iter().skip(base_help_len));
-            }
-
-            Some(result)
-        } else {
-            None
-        };
-        */
         let help_lines: Option<Vec<String>> = None;
 
         // Build keyboard hints overlay (? key)

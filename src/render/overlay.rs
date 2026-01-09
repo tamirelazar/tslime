@@ -10,10 +10,9 @@ use crate::terminal::control::{palette_name, preset_name};
 ///
 /// This ensures all lines fit within borders and padding, preventing width overflow.
 pub struct WindowBuilder {
-    width: usize,        // Total width including borders
-    border_width: usize, // Always 1 for box-drawing chars
-    padding: usize,      // Padding on each side (left/right)
-    inner_width: usize,  // Calculated: width - 2*border - 2*padding
+    width: usize,       // Total width including borders
+    padding: usize,     // Padding on each side (left/right)
+    inner_width: usize, // Calculated: width - 2*border - 2*padding
 }
 
 impl WindowBuilder {
@@ -40,7 +39,6 @@ impl WindowBuilder {
 
         Self {
             width,
-            border_width: BORDER_WIDTH,
             padding,
             inner_width,
         }
@@ -130,81 +128,54 @@ impl WindowBuilder {
     pub fn build_separator(&self) -> String {
         format!("├{}┤", "─".repeat(self.width - 2))
     }
-
-    /// Builds an empty line (for spacing within the window).
-    pub fn build_empty_line(&self) -> String {
-        self.build_content_line("")
-    }
 }
 
-// DEPRECATED: HelpOverlay replaced by full keyboard shortcuts overlay (KeyboardHintsOverlay)
-// Keeping for reference but should not be used in main application
-/*
-pub struct HelpOverlay;
-
-impl HelpOverlay {
-    pub fn build_overlay() -> Vec<String> {
-        vec![
-            "╭─ HELP ─────────────────────────────────╮".to_string(),
-            "│ p: Pause    r: Restart      q: Quit    │".to_string(),
-            "│ h: Controls  ?: Key Shortcuts \\: Stats │".to_string(),
-            "│ |: Info     +/-: Speed   c/C: Palette  │".to_string(),
-            "│ d: Dither   m: Mode      1-7: Preset   │".to_string(),
-            "│ 8: Randomize parameters  [/]: Adjust   │".to_string(),
-            "│                                        │".to_string(),
-            "│ Press ? for all keyboard shortcuts     │".to_string(),
-            "╰────────────────────────────────────────╯".to_string(),
-        ]
-    }
-
-    #[allow(dead_code)]
-    pub fn width() -> usize {
-        42
-    }
-}
-*/
+// --- END WindowBuilder ---
 
 pub struct KeyboardHintsOverlay;
 
 impl KeyboardHintsOverlay {
-    pub const WIDTH: usize = 58;
+    pub const WIDTH: usize = 60;
 
     pub fn build_overlay() -> Vec<String> {
-        vec![
-            "╭─ KEYBOARD SHORTCUTS ───────────────────────────────────╮".to_string(),
-            "│                                                        │".to_string(),
-            "│  SIMULATION                VISUALS                     │".to_string(),
-            "│  p, Space : Pause          c, Shift+C : Palette        │".to_string(),
-            "│  r        : Restart        o          : Palette Shift  │".to_string(),
-            "│  q, Esc   : Quit           x          : Invert Palette │".to_string(),
-            "│  +, -     : Time Scale     z          : Reverse Palette│".to_string(),
-            "│                                                        │".to_string(),
-            "│  PRESETS                   POST-PROCESSING             │".to_string(),
-            "│  1-7      : Presets        d, m       : Dither Mode    │".to_string(),
-            "│  8        : Randomize      [, ]       : Dither Inten.  │".to_string(),
-            "│  0        : Defaults       b          : Auto Normalize │".to_string(),
-            "│                            v          : Motion Blur    │".to_string(),
-            "│  SYSTEM                    n, Shift+N : Max Brightness │".to_string(),
-            "│  h        : Controls       f          : Fast Mode      │".to_string(),
-            "│  ?, |     : Help/Info      g          : Save PNG       │".to_string(),
-            "│  \\        : Stats          Ctrl+S     : Save Config    │".to_string(),
-            "│  Tab      : Category       Ctrl+L     : Load Config    │".to_string(),
-            "│                                                        │".to_string(),
-            "│  DETAILED CONTROLS (Use Shift to decrease values)      │".to_string(),
-            "│  A: Sensor Angle   J: Sensor Dist    T: Turn Angle     │".to_string(),
-            "│  S: Step Size      E: Decay Factor   I: Deposit Amt    │".to_string(),
-            "│  K: Diff Kernel    ;: Diff Sigma     L: Attractor Str  │".to_string(),
-            "│  W: Wind Dir       U: Terrain Type   Y: Terrain Str    │".to_string(),
-            "│  ,: Mouse Mode                                         │".to_string(),
-            "│                                                        │".to_string(),
-            "│           Press any key to close this help             │".to_string(),
-            "╰────────────────────────────────────────────────────────╯".to_string(),
-        ]
+        let builder = WindowBuilder::new(Self::WIDTH, 2);
+        let content = vec![
+            "".to_string(),
+            "SIMULATION                VISUALS".to_string(),
+            "p, Space : Pause          c, Shift+C : Palette".to_string(),
+            "r        : Restart        o          : Palette Shift".to_string(),
+            "q, Esc   : Quit           x          : Invert Palette".to_string(),
+            "+, -     : Time Scale     z          : Reverse Palette".to_string(),
+            "".to_string(),
+            "PRESETS                   POST-PROCESSING".to_string(),
+            "1-7      : Presets        d, m       : Dither Mode".to_string(),
+            "8        : Randomize      [, ]       : Dither Inten.".to_string(),
+            "0        : Defaults       b          : Auto Normalize".to_string(),
+            "                          v          : Motion Blur".to_string(),
+            "SYSTEM                    n, Shift+N : Max Brightness".to_string(),
+            "h        : Controls       f          : Fast Mode".to_string(),
+            "?, |     : Help/Info      g          : Save PNG".to_string(),
+            "\\        : Stats          Ctrl+S     : Save Config".to_string(),
+            "Tab      : Category       Ctrl+L     : Load Config".to_string(),
+            "".to_string(),
+            "DETAILED CONTROLS (Use Shift to decrease values)".to_string(),
+            "A: Sensor Angle   J: Sensor Dist    T: Turn Angle".to_string(),
+            "S: Step Size      E: Decay Factor   I: Deposit Amt".to_string(),
+            "K: Diff Kernel    ;: Diff Sigma     L: Attractor Str".to_string(),
+            "W: Wind Dir       U: Terrain Type   Y: Terrain Str".to_string(),
+            ",: Mouse Mode".to_string(),
+            "".to_string(),
+            "Press any key to close this help".to_string(),
+        ];
+
+        builder
+            .build(Some("KEYBOARD SHORTCUTS"), &content)
+            .unwrap_or_default()
     }
 
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
-        let y = (term_height.saturating_sub(28)) / 2;
+        let y = (term_height.saturating_sub(30)) / 2;
         (x, y)
     }
 }
@@ -212,7 +183,7 @@ impl KeyboardHintsOverlay {
 pub struct PresetComparisonOverlay;
 
 impl PresetComparisonOverlay {
-    pub const WIDTH: usize = 60;
+    pub const WIDTH: usize = 62;
 
     pub fn build_overlay(
         current: &crate::terminal::control::RuntimeState,
@@ -220,18 +191,18 @@ impl PresetComparisonOverlay {
     ) -> Vec<String> {
         let defaults = crate::terminal::control::DefaultValues::from_preset(preset);
         let preset_name = preset_name(preset);
+        let builder = WindowBuilder::new(Self::WIDTH, 2);
 
-        let mut lines = vec![
-            format!("╭─ PRESET COMPARISON: {:<20} ──────────╮", preset_name),
-            "│                                                          │".to_string(),
-            "│  Parameter        │ Current      │ Preset Default        │".to_string(),
-            "│ ──────────────────┼──────────────┼────────────────────── │".to_string(),
+        let mut content = vec![
+            "".to_string(),
+            "Parameter        │ Current      │ Preset Default".to_string(),
+            "──────────────────┼──────────────┼──────────────────────".to_string(),
         ];
 
         let mut add_row = |name: &str, cur: String, def: String, modif: bool| {
             let marker = if modif { "*" } else { " " };
-            lines.push(format!(
-                "│{} {:<17} │ {:<12} │ {:<21} │",
+            content.push(format!(
+                "{} {:<16} │ {:<12} │ {:<18}",
                 marker, name, cur, def
             ));
         };
@@ -285,16 +256,20 @@ impl PresetComparisonOverlay {
             (current.max_brightness - defaults.max_brightness).abs() > 0.01,
         );
 
-        lines.push("│                                                          │".to_string());
-        lines.push("│  Press Enter to Apply Preset     Esc to Close            │".to_string());
-        lines.push("╰──────────────────────────────────────────────────────────╯".to_string());
+        content.push("".to_string());
+        content.push("Press Enter to Apply Preset     Esc to Close".to_string());
 
-        lines
+        builder
+            .build(
+                Some(&format!("PRESET COMPARISON: {}", preset_name)),
+                &content,
+            )
+            .unwrap_or_default()
     }
 
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
-        let y = (term_height.saturating_sub(14)) / 2;
+        let y = (term_height.saturating_sub(15)) / 2;
         (x, y)
     }
 }
@@ -329,20 +304,23 @@ impl WarmupOverlay {
 pub struct ConfigBrowserOverlay;
 
 impl ConfigBrowserOverlay {
+    pub const WIDTH: usize = 56;
+
     pub fn build_overlay(
         configs: &[crate::config_manager::SavedConfig],
         selected_index: usize,
     ) -> Vec<String> {
-        let mut lines = vec!["╭─────────────── Saved Configurations ───────────────╮".to_string()];
+        let builder = WindowBuilder::new(Self::WIDTH, 2);
+        let mut content = Vec::new();
 
         if configs.is_empty() {
-            lines.push("│                                                    │".to_string());
-            lines.push("│  No saved configurations                          │".to_string());
-            lines.push("│                                                    │".to_string());
-            lines.push("│  Press Ctrl+S to save current settings            │".to_string());
-            lines.push("│                                                    │".to_string());
+            content.push("".to_string());
+            content.push("No saved configurations".to_string());
+            content.push("".to_string());
+            content.push("Press Ctrl+S to save current settings".to_string());
+            content.push("".to_string());
         } else {
-            lines.push("│                                                    │".to_string());
+            content.push("".to_string());
             for (i, config) in configs.iter().enumerate().take(9) {
                 let num = i + 1;
                 let selected_marker = if i == selected_index { "›" } else { " " };
@@ -351,36 +329,29 @@ impl ConfigBrowserOverlay {
                 let pop = config.population / 1000;
 
                 let line = format!(
-                    "│  {}{} {} - {} - {}k agents{}│",
-                    selected_marker,
-                    num,
-                    name,
-                    palette,
-                    pop,
-                    " ".repeat(53usize.saturating_sub(6 + name.len() + palette.len() + 10))
+                    "{}{} {} - {} - {}k agents",
+                    selected_marker, num, name, palette, pop,
                 );
-                lines.push(line);
+                content.push(line);
             }
 
             if configs.len() > 9 {
-                lines.push(format!(
-                    "│   ... and {} more                                    │",
-                    configs.len() - 9
-                ));
+                content.push(format!("... and {} more", configs.len() - 9));
             }
 
-            lines.push("│                                                    │".to_string());
-            lines.push("│  ↑/↓: Navigate  Enter: Load  Del: Delete          │".to_string());
+            content.push("".to_string());
+            content.push("↑/↓: Navigate  Enter: Load  Del: Delete".to_string());
         }
 
-        lines.push("│  Esc: Cancel                                       │".to_string());
-        lines.push("╰────────────────────────────────────────────────────╯".to_string());
+        content.push("Esc: Cancel".to_string());
 
-        lines
+        builder
+            .build(Some("SAVED CONFIGURATIONS"), &content)
+            .unwrap_or_default()
     }
 
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
-        let x = (term_width.saturating_sub(56)) / 2;
+        let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
         let y = (term_height.saturating_sub(15)) / 2;
         (x, y)
     }
@@ -390,14 +361,16 @@ pub struct ConfigSaveOverlay;
 
 impl ConfigSaveOverlay {
     pub fn build_overlay(name_input: &str) -> Vec<String> {
-        vec![
-            "╭─────── Save Configuration ───────╮".to_string(),
-            "│                                  │".to_string(),
-            format!("│  Name: {:<25} │", name_input),
-            "│                                  │".to_string(),
-            "│  Enter: Save    Esc: Cancel      │".to_string(),
-            "╰──────────────────────────────────╯".to_string(),
-        ]
+        let builder = WindowBuilder::new(38, 1);
+        let content = vec![
+            "".to_string(),
+            format!("Name: {:<25}", name_input),
+            "".to_string(),
+            "Enter: Save    Esc: Cancel".to_string(),
+        ];
+        builder
+            .build(Some("SAVE CONFIGURATION"), &content)
+            .unwrap_or_default()
     }
 
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
@@ -504,8 +477,8 @@ impl OverlayRenderer {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
         if !attractors.is_empty() {
-            lines.push(String::new());
-            lines.push("╭─ Attractors────────────────────────────╮".to_string());
+            let builder = WindowBuilder::new(42, 1);
+            let mut content = Vec::new();
 
             for (i, attractor) in attractors.iter().enumerate() {
                 let kind = if attractor.strength > 0.0 {
@@ -514,8 +487,8 @@ impl OverlayRenderer {
                     "repel"
                 };
                 let strength = attractor.strength.abs();
-                lines.push(format!(
-                    "│{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x        │",
+                content.push(format!(
+                    "{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x",
                     i + 1,
                     attractor.x as i32,
                     attractor.y as i32,
@@ -524,7 +497,12 @@ impl OverlayRenderer {
                 ));
             }
 
-            lines.push("╰────────────────────────────────────────╯".to_string());
+            lines.push(String::new());
+            lines.extend(
+                builder
+                    .build(Some("ATTRACTORS"), &content)
+                    .unwrap_or_default(),
+            );
         }
 
         lines
@@ -535,14 +513,14 @@ impl OverlayRenderer {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
         if !obstacles.is_empty() {
-            lines.push(String::new());
-            lines.push("╭─ Obstacles─────────────────────────────╮".to_string());
+            let builder = WindowBuilder::new(42, 1);
+            let mut content = Vec::new();
 
             for (i, obstacle) in obstacles.iter().enumerate() {
                 match obstacle {
                     Obstacle::Circle { x, y, radius } => {
-                        lines.push(format!(
-                            "│{:2}: circle ({:>4},{:>4}) r: {:>4.1}px        │",
+                        content.push(format!(
+                            "{:2}: circle ({:>4},{:>4}) r: {:>4.1}px",
                             i + 1,
                             *x as i32,
                             *y as i32,
@@ -555,8 +533,8 @@ impl OverlayRenderer {
                         width,
                         height,
                     } => {
-                        lines.push(format!(
-                            "│{:2}: rect  ({:>4},{:>4}) {:>4.1}x{:>4.1}px  │",
+                        content.push(format!(
+                            "{:2}: rect  ({:>4},{:>4}) {:>4.1}x{:>4.1}px",
                             i + 1,
                             *x as i32,
                             *y as i32,
@@ -577,8 +555,8 @@ impl OverlayRenderer {
                             .file_name()
                             .and_then(|n| n.to_str())
                             .unwrap_or(path);
-                        lines.push(format!(
-                            "│{:2}: image {:>15} {:>3}x{:>3}px   │",
+                        content.push(format!(
+                            "{:2}: image {:>15} {:>3}x{:>3}px",
                             i + 1,
                             &filename[..filename.len().min(15)],
                             width,
@@ -588,7 +566,12 @@ impl OverlayRenderer {
                 }
             }
 
-            lines.push("╰────────────────────────────────────────╯".to_string());
+            lines.push(String::new());
+            lines.extend(
+                builder
+                    .build(Some("OBSTACLES"), &content)
+                    .unwrap_or_default(),
+            );
         }
 
         lines
@@ -604,8 +587,8 @@ impl OverlayRenderer {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
         if !mouse_attractors.is_empty() {
-            lines.push(String::new());
-            lines.push("╭─ Mouse Attractors ─────────────────────╮".to_string());
+            let builder = WindowBuilder::new(46, 1);
+            let mut content = Vec::new();
 
             for (i, ma) in mouse_attractors.iter().enumerate() {
                 let kind = if ma.strength > 0.0 {
@@ -619,8 +602,8 @@ impl OverlayRenderer {
                 } else {
                     "expired".to_string()
                 };
-                lines.push(format!(
-                    "│{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x {:>7}│",
+                content.push(format!(
+                    "{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x {:>7}",
                     i + 1,
                     ma.x as i32,
                     ma.y as i32,
@@ -630,7 +613,12 @@ impl OverlayRenderer {
                 ));
             }
 
-            lines.push("╰────────────────────────────────────────╯".to_string());
+            lines.push(String::new());
+            lines.extend(
+                builder
+                    .build(Some("MOUSE ATTRACTORS"), &content)
+                    .unwrap_or_default(),
+            );
         }
 
         lines
@@ -648,6 +636,7 @@ impl OverlayRenderer {
             return true;
         }
         let target_len = attractor_lines[0].chars().count();
+        // Skip potential title/border differences if needed, but WindowBuilder should be consistent
         attractor_lines
             .iter()
             .all(|line| line.chars().count() == target_len)
@@ -777,7 +766,7 @@ fn build_sparkline(history: &std::collections::VecDeque<f32>, min: f32, max: f32
 pub struct StatsOverlay;
 
 impl StatsOverlay {
-    pub const WIDTH: usize = 24;
+    pub const WIDTH: usize = 32;
 
     #[allow(clippy::too_many_arguments)]
     pub fn build_overlay(
@@ -815,27 +804,44 @@ impl StatsOverlay {
         let entropy_spark = build_sparkline(entropy_history, 0.0, 8.0);
         let density_spark = build_sparkline(density_history, 0.0, 1.0);
 
-        vec![
-            "╭─ STATS ──────────────╮".to_string(),
-            format!("│ Agents:   {:>9} │", agent_count),
-            format!("│ Trail:    {:>8.1}% │", trail_percent),
-            format!("│ {} │", density_spark),
-            format!("│ Trail Max: {:>6.2}x │", trail_max),
-            format!("│ Entropy:   {:>8.2} │", entropy),
-            format!("│ {} │", entropy_spark),
-            format!("│ FPS: {:>4.0} ({:>4.0}) │", fps, avg_fps),
-            format!("│ {} │", fps_spark),
-            format!("│ Frames:    {:>9} │", frame_count),
-            format!("│ Time:     {:>12} │", elapsed_str),
-            "├──────────────────────┤".to_string(),
-            format!("│ Grid:     {:>11} │", grid_str),
-            format!("│ Attractor: {:>7} │", attractor_count),
-            format!("│ Obstacle:  {:>8} │", obstacle_count),
-            format!("│ Species:   {:>10} │", species_count),
-            format!("│ Memory:    {:>9.1} MB│", memory_mb),
-            format!("│ CPU:       {:>11.0}% │", cpu_percent),
-            "╰──────────────────────╯".to_string(),
-        ]
+        let builder = WindowBuilder::new(Self::WIDTH, 2);
+        let content = vec![
+            format!("Agents:   {:>15}", agent_count),
+            format!("Trail:    {:>14.1}%", trail_percent),
+            format!("{:<26}", density_spark),
+            format!("Trail Max: {:>13.2}x", trail_max),
+            format!("Entropy:   {:>15.2}", entropy),
+            format!("{:<26}", entropy_spark),
+            format!("FPS: {:>11.0} ({:>4.0})", fps, avg_fps),
+            format!("{:<26}", fps_spark),
+            format!("Frames:    {:>15}", frame_count),
+            format!("Time:      {:>15}", elapsed_str),
+        ];
+
+        let mut lines = builder
+            .build(Some("STATS"), &content)
+            .unwrap_or_else(|e| vec![format!("Error: {}", e)]);
+
+        if lines.len() > 1 {
+            lines.pop();
+            lines.push(builder.build_separator());
+
+            let system_content = vec![
+                format!("Grid:     {:>15}", grid_str),
+                format!("Attractor: {:>13}", attractor_count),
+                format!("Obstacle:  {:>13}", obstacle_count),
+                format!("Species:   {:>14}", species_count),
+                format!("Memory:    {:>11.1} MB", memory_mb),
+                format!("CPU:       {:>14.0}%", cpu_percent),
+            ];
+
+            for line in system_content {
+                lines.push(builder.build_content_line(&line));
+            }
+            lines.push(builder.build_bottom_border());
+        }
+
+        lines
     }
 
     pub fn calculate_x_position(term_width: usize) -> usize {
@@ -912,14 +918,14 @@ impl InfoOverlay {
         let term_str = format!("{}x{}", term_width, term_height);
         let simd_str = if simd_enabled { "On" } else { "Off" };
 
-        let mut lines = vec![
-            "╭─ INFO ───────────────────╮".to_string(),
-            format!("│ Res:       {:>13} │", resolution_str),
-            format!("│ Term:      {:>13} │", term_str),
-            format!("│ Init:      {:>13} │", init_mode),
-            format!("│ Color:     {:>13} │", color_mode),
-            format!("│ Char:      {:>13} │", charset),
-            format!("│ SIMD:      {:>13} │", simd_str),
+        let builder = WindowBuilder::new(Self::WIDTH, 1);
+        let mut content = vec![
+            format!("Res:       {:>13}", resolution_str),
+            format!("Term:      {:>13}", term_str),
+            format!("Init:      {:>13}", init_mode),
+            format!("Color:     {:>13}", color_mode),
+            format!("Char:      {:>13}", charset),
+            format!("SIMD:      {:>13}", simd_str),
         ];
 
         if let Some(food) = food_source {
@@ -932,20 +938,18 @@ impl InfoOverlay {
             } else {
                 food_name
             };
-            lines.push(format!("│ Food:      {:>13} │", truncated));
+            content.push(format!("Food:      {:>13}", truncated));
         }
 
         if warmup_frames > 0 {
-            lines.push(format!("│ Warm:      {:>6} frames │", warmup_frames));
+            content.push(format!("Warm:      {:>6} frames", warmup_frames));
         }
 
         if auto_reset {
-            lines.push(format!("│ Auto:      {:>13} │", "On"));
+            content.push(format!("Auto:      {:>13}", "On"));
         }
 
-        lines.push("╰──────────────────────────╯".to_string());
-
-        lines
+        builder.build(Some("INFO"), &content).unwrap_or_default()
     }
 
     pub fn calculate_x_position(term_width: usize) -> usize {
@@ -985,22 +989,25 @@ mod stats_tests {
         assert!(!lines.is_empty());
         assert!(lines[0].starts_with('╭'));
         assert!(lines.last().unwrap().starts_with('╰'));
-        assert!(lines.iter().all(|l| l.starts_with('│')
-            || l.starts_with('╭')
-            || l.starts_with('╰')
-            || l.starts_with('├')));
 
-        // Border lines (title, divider, bottom) should be exactly WIDTH chars
-        // Content lines may be wider due to wide box-drawing characters
-        assert_eq!(lines[0].chars().count(), StatsOverlay::WIDTH);
-        assert_eq!(lines[11].chars().count(), StatsOverlay::WIDTH);
-        assert_eq!(lines.last().unwrap().chars().count(), StatsOverlay::WIDTH);
+        // All lines should be exactly WIDTH chars
+        for (i, line) in lines.iter().enumerate() {
+            assert_eq!(
+                line.chars().count(),
+                StatsOverlay::WIDTH,
+                "Line {} has wrong width: '{}' (expected {}, got {})",
+                i,
+                line,
+                StatsOverlay::WIDTH,
+                line.chars().count()
+            );
+        }
     }
 
     #[test]
     fn test_stats_overlay_position() {
-        assert_eq!(StatsOverlay::calculate_x_position(80), 54);
-        assert_eq!(StatsOverlay::calculate_x_position(120), 94);
+        assert_eq!(StatsOverlay::calculate_x_position(80), 46);
+        assert_eq!(StatsOverlay::calculate_x_position(120), 86);
         assert_eq!(StatsOverlay::calculate_x_position(24), 1);
     }
 
