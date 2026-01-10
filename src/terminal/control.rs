@@ -119,7 +119,6 @@ pub enum ControlAction {
     AdjustTimeScale(f32),
     CyclePalette,
     CyclePaletteReverse,
-    ToggleHelp,
     ToggleControls,
     ToggleKeyboardHints,
     CloseOverlays,
@@ -251,7 +250,6 @@ impl DefaultValues {
 #[derive(Debug, Clone)]
 pub struct RuntimeState {
     pub is_paused: bool,
-    pub show_help: bool,
     pub show_controls: bool,
     pub show_keyboard_hints: bool,
     pub show_preset_comparison: bool,
@@ -318,14 +316,12 @@ impl RuntimeState {
         init_mode: InitMode,
         initial_preset: Preset,
         initial_palette_index: usize,
-        show_help: bool,
         mouse_mode: MouseInteractionMode,
         mouse_timeout: f32,
     ) -> Self {
         let default_values = DefaultValues::from_preset(initial_preset);
         Self {
             is_paused: false,
-            show_help,
             show_controls: false,
             show_keyboard_hints: false,
             show_preset_comparison: false,
@@ -488,10 +484,6 @@ impl RuntimeState {
         self.is_paused = !self.is_paused;
     }
 
-    pub fn toggle_help(&mut self) {
-        self.show_help = !self.show_help;
-    }
-
     pub fn toggle_controls(&mut self) {
         self.show_controls = !self.show_controls;
     }
@@ -510,8 +502,7 @@ impl RuntimeState {
     }
 
     pub fn any_overlay_open(&self) -> bool {
-        self.show_help
-            || self.show_controls
+        self.show_controls
             || self.show_keyboard_hints
             || self.show_preset_comparison
             || self.show_stats
@@ -519,7 +510,6 @@ impl RuntimeState {
     }
 
     pub fn close_all_overlays(&mut self) {
-        self.show_help = false;
         self.show_controls = false;
         self.show_keyboard_hints = false;
         self.show_preset_comparison = false;
@@ -1132,7 +1122,6 @@ mod tests {
             crate::simulation::config::InitMode::Random,
             crate::simulation::config::Preset::Network,
             0,
-            false,
             MouseInteractionMode::Disabled,
             0.0,
         );
@@ -1159,7 +1148,6 @@ mod tests {
             crate::simulation::config::InitMode::Random,
             crate::simulation::config::Preset::Network,
             0,
-            false,
             MouseInteractionMode::Disabled,
             0.0,
         );
@@ -1201,7 +1189,6 @@ mod tests {
             crate::simulation::config::InitMode::Random,
             crate::simulation::config::Preset::Network,
             0,
-            false,
             MouseInteractionMode::Disabled,
             0.0,
         );
@@ -1220,34 +1207,12 @@ mod tests {
     }
 
     #[test]
-    fn test_help_toggle() {
-        let mut state = RuntimeState::new(
-            42,
-            crate::simulation::config::InitMode::Random,
-            crate::simulation::config::Preset::Network,
-            0,
-            false,
-            MouseInteractionMode::Disabled,
-            0.0,
-        );
-
-        assert!(!state.show_help);
-
-        state.toggle_help();
-        assert!(state.show_help);
-
-        state.toggle_help();
-        assert!(!state.show_help);
-    }
-
-    #[test]
     fn test_controls_toggle() {
         let mut state = RuntimeState::new(
             42,
             crate::simulation::config::InitMode::Random,
             crate::simulation::config::Preset::Network,
             0,
-            false,
             MouseInteractionMode::Disabled,
             0.0,
         );
@@ -1268,17 +1233,12 @@ mod tests {
             crate::simulation::config::InitMode::Random,
             crate::simulation::config::Preset::Network,
             0,
-            false,
             MouseInteractionMode::Disabled,
             0.0,
         );
 
         assert!(!state.any_overlay_open());
 
-        state.show_help = true;
-        assert!(state.any_overlay_open());
-
-        state.show_help = false;
         state.show_controls = true;
         assert!(state.any_overlay_open());
 
@@ -1299,13 +1259,11 @@ mod tests {
             0.0,
         );
 
-        state.show_help = true;
         state.show_controls = true;
         state.show_stats = true;
 
         state.close_all_overlays();
 
-        assert!(!state.show_help);
         assert!(!state.show_controls);
         assert!(!state.show_stats);
     }
@@ -1317,7 +1275,6 @@ mod tests {
             crate::simulation::config::InitMode::Random,
             crate::simulation::config::Preset::Network,
             0,
-            false,
             MouseInteractionMode::Disabled,
             0.0,
         );
@@ -1413,7 +1370,6 @@ mod tests {
             crate::simulation::config::InitMode::Random,
             crate::simulation::config::Preset::Network,
             0,
-            false,
             MouseInteractionMode::Disabled,
             0.0,
         );
@@ -1440,7 +1396,6 @@ mod tests {
             crate::simulation::config::InitMode::Random,
             crate::simulation::config::Preset::Network,
             0,
-            false,
             MouseInteractionMode::Disabled,
             0.0,
         );

@@ -19,7 +19,7 @@ fn main() {
     // Test 2: TrailMap size
     let width = 400;
     let height = 400;
-    let trail_map = TrailMap::new(width, height);
+    let _trail_map = TrailMap::new(width, height);
     let trail_map_size = size_of::<TrailMap>()
         + (width * height * size_of::<f32>()) * 2 // current + scratch buffers
         + size_of::<f32>() * 25; // gaussian kernel

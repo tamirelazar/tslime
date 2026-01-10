@@ -1007,15 +1007,11 @@ fn run_simulation(
             .unwrap_or(4)
     };
 
-    let mode = args.mode();
-    let show_help_by_default = !matches!(mode, cli::Mode::Screensaver);
-
     let mut runtime_state = RuntimeState::new(
         seed,
         args.init,
         initial_preset,
         initial_palette_index,
-        show_help_by_default,
         mouse_mode,
         args.mouse_timeout,
     );
@@ -1856,9 +1852,6 @@ fn run_simulation(
                         ControlAction::AdjustDitherIntensity(delta) => {
                             runtime_state.adjust_dither_intensity(delta);
                             renderer.set_dither_mode(runtime_state.dither_mode);
-                        }
-                        ControlAction::ToggleHelp => {
-                            runtime_state.toggle_help();
                         }
                         ControlAction::ToggleKeyboardHints => {
                             runtime_state.toggle_keyboard_hints();
