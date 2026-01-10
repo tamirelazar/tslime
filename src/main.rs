@@ -1095,7 +1095,10 @@ fn run_simulation(
 
         if screen.check_resize() {
             let (new_width, new_height) = screen.get_size()?;
-            if new_width != term_width || new_height != term_height {
+            if (new_width != term_width || new_height != term_height)
+                && new_width > 0
+                && new_height > 0
+            {
                 term_width = new_width;
                 term_height = new_height;
                 renderer.set_dimensions(term_width as usize, term_height as usize);
@@ -1106,7 +1109,15 @@ fn run_simulation(
             }
         }
 
+        if term_width == 0 || term_height == 0 {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            continue;
+        }
+
         let dt = timer.delta_time();
+
+        // Clamp dt to avoid simulation instability during lag spikes (max 0.1s / 10 FPS)
+        let dt = dt.min(0.1);
 
         // Check if we're in warmup phase
         let in_warmup = !args.skip_warmup && runtime_state.is_in_warmup(args.warmup_frames);
@@ -1135,10 +1146,19 @@ fn run_simulation(
             // Apply smooth speed transition from 0.3x to 1.0x
             let speed_multiplier =
                 WARMUP_SPEED_MULTIPLIER + (1.0 - WARMUP_SPEED_MULTIPLIER) * fade_factor;
+
+            // Sanity check speed multiplier to ensure it stays within valid bounds [0.3, 1.0]
+            // This prevents any floating point drift that could cause simulation instability
+            let speed_multiplier = speed_multiplier.clamp(WARMUP_SPEED_MULTIPLIER, 1.0);
+
             let adjusted_dt = dt * speed_multiplier;
             sim.update(adjusted_dt / REFERENCE_TIME_STEP);
 
-            if in_warmup || in_transition {
+            // Harden warmup logic: Explicitly cap the counter to avoid runaway increment
+            // Previously relied on in_transition boolean which could be fragile
+            if !args.skip_warmup
+                && runtime_state.warmup_counter < args.warmup_frames + TRANSITION_DURATION_FRAMES
+            {
                 runtime_state.increment_warmup();
             }
 
@@ -1185,7 +1205,8 @@ fn run_simulation(
         hue_offset %= 360.0;
         renderer.set_hue_shift(hue_offset);
 
-        let help_lines: Option<Vec<String>> = None;
+        // Help lines are no longer used (deprecated), passing None to renderer
+        // The renderer handles None gracefully by skipping the overlay
 
         // Build keyboard hints overlay (? key)
         let keyboard_hints_lines: Option<Vec<String>> = if runtime_state.show_keyboard_hints {
@@ -1215,11 +1236,7 @@ fn run_simulation(
         };
 
         // Calculate controls Y position (below help if help is visible)
-        let controls_y = if let Some(ref help) = help_lines {
-            2 + help.len() + 1
-        } else {
-            2
-        };
+        let controls_y = 2; // Fixed position since help overlay is deprecated
 
         // Build controls overlay (h key)
         let controls_lines: Option<Vec<String>> = if runtime_state.show_controls {
@@ -1527,69 +1544,67 @@ fn run_simulation(
             }
         }
 
-        if max_brightness > 0.0 {
-            if args.species_colors && sim.config().separate_species_trails {
-                let species_trail_maps = sim.trail_maps_for_species_colors();
-                let species_rgb_colors = extract_species_rgb_colors(&current_config);
-                let combined: Vec<_> = species_trail_maps
-                    .iter()
-                    .zip(species_rgb_colors.iter())
-                    .map(|(tm, color)| (*tm, *color))
-                    .collect();
-                renderer.render_multi_species_with_overlay(
-                    &combined,
-                    sim.width(),
-                    sim.height(),
-                    max_brightness,
-                    help_lines.as_ref().map(|v| (v.as_slice(), 2usize, 2usize)),
-                    controls_lines
-                        .as_ref()
-                        .map(|v| (v.as_slice(), 2usize, controls_y)),
-                    status_data,
-                    notification_data,
-                    stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
-                    info_lines.as_ref().map(|v| (v.as_slice(), info_x, info_y)),
-                    grid_renderer.as_ref(),
-                    config_browser_lines
-                        .as_ref()
-                        .map(|v| (v.as_slice(), config_browser_x, config_browser_y)),
-                    config_save_lines
-                        .as_ref()
-                        .map(|v| (v.as_slice(), config_save_x, config_save_y)),
-                    keyboard_hints_lines
-                        .as_ref()
-                        .map(|v| (v.as_slice(), keyboard_hints_x, keyboard_hints_y)),
-                    preset_comparison_lines
-                        .as_ref()
-                        .map(|v| (v.as_slice(), preset_comparison_x, preset_comparison_y)),
-                )?;
-            } else {
-                renderer.render_with_overlay(
-                    downsampled.cells(),
-                    max_brightness,
-                    help_lines.as_ref().map(|v| (v.as_slice(), 2usize, 2usize)),
-                    controls_lines
-                        .as_ref()
-                        .map(|v| (v.as_slice(), 2usize, controls_y)),
-                    status_data,
-                    notification_data,
-                    stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
-                    info_lines.as_ref().map(|v| (v.as_slice(), info_x, info_y)),
-                    grid_renderer.as_ref(),
-                    config_browser_lines
-                        .as_ref()
-                        .map(|v| (v.as_slice(), config_browser_x, config_browser_y)),
-                    config_save_lines
-                        .as_ref()
-                        .map(|v| (v.as_slice(), config_save_x, config_save_y)),
-                    keyboard_hints_lines
-                        .as_ref()
-                        .map(|v| (v.as_slice(), keyboard_hints_x, keyboard_hints_y)),
-                    preset_comparison_lines
-                        .as_ref()
-                        .map(|v| (v.as_slice(), preset_comparison_x, preset_comparison_y)),
-                )?;
-            }
+        if args.species_colors && sim.config().separate_species_trails {
+            let species_trail_maps = sim.trail_maps_for_species_colors();
+            let species_rgb_colors = extract_species_rgb_colors(&current_config);
+            let combined: Vec<_> = species_trail_maps
+                .iter()
+                .zip(species_rgb_colors.iter())
+                .map(|(tm, color)| (*tm, *color))
+                .collect();
+            renderer.render_multi_species_with_overlay::<String, String>(
+                &combined,
+                sim.width(),
+                sim.height(),
+                max_brightness.max(1.0),
+                None, // Help overlay deprecated
+                controls_lines
+                    .as_ref()
+                    .map(|v| (v.as_slice(), 2usize, controls_y)),
+                status_data,
+                notification_data,
+                stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
+                info_lines.as_ref().map(|v| (v.as_slice(), info_x, info_y)),
+                grid_renderer.as_ref(),
+                config_browser_lines
+                    .as_ref()
+                    .map(|v| (v.as_slice(), config_browser_x, config_browser_y)),
+                config_save_lines
+                    .as_ref()
+                    .map(|v| (v.as_slice(), config_save_x, config_save_y)),
+                keyboard_hints_lines
+                    .as_ref()
+                    .map(|v| (v.as_slice(), keyboard_hints_x, keyboard_hints_y)),
+                preset_comparison_lines
+                    .as_ref()
+                    .map(|v| (v.as_slice(), preset_comparison_x, preset_comparison_y)),
+            )?;
+        } else {
+            renderer.render_with_overlay::<String, String>(
+                downsampled.cells(),
+                max_brightness.max(1.0),
+                None, // Help overlay deprecated
+                controls_lines
+                    .as_ref()
+                    .map(|v| (v.as_slice(), 2usize, controls_y)),
+                status_data,
+                notification_data,
+                stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
+                info_lines.as_ref().map(|v| (v.as_slice(), info_x, info_y)),
+                grid_renderer.as_ref(),
+                config_browser_lines
+                    .as_ref()
+                    .map(|v| (v.as_slice(), config_browser_x, config_browser_y)),
+                config_save_lines
+                    .as_ref()
+                    .map(|v| (v.as_slice(), config_save_x, config_save_y)),
+                keyboard_hints_lines
+                    .as_ref()
+                    .map(|v| (v.as_slice(), keyboard_hints_x, keyboard_hints_y)),
+                preset_comparison_lines
+                    .as_ref()
+                    .map(|v| (v.as_slice(), preset_comparison_x, preset_comparison_y)),
+            )?;
         }
 
         timer.end_render();

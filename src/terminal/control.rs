@@ -1168,7 +1168,6 @@ mod tests {
             crate::simulation::config::InitMode::Random,
             crate::simulation::config::Preset::Network,
             0,
-            false,
             MouseInteractionMode::Disabled,
             0.0,
         );
@@ -1254,7 +1253,6 @@ mod tests {
             crate::simulation::config::InitMode::Random,
             crate::simulation::config::Preset::Network,
             0,
-            false,
             MouseInteractionMode::Disabled,
             0.0,
         );
@@ -1307,7 +1305,6 @@ mod tests {
             crate::simulation::config::InitMode::Random,
             crate::simulation::config::Preset::Network,
             0,
-            false,
             MouseInteractionMode::Disabled,
             0.0,
         );

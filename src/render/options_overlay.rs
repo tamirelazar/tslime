@@ -460,7 +460,6 @@ fn test_options_overlay_renders_all_categories() {
         InitMode::Random,
         crate::simulation::config::Preset::Organic,
         0,
-        false,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
     );
@@ -593,7 +592,6 @@ fn test_options_overlay_shows_live_parameter_values() {
         InitMode::Random,
         crate::simulation::config::Preset::Organic,
         0,
-        false,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
     );
@@ -659,7 +657,6 @@ fn test_options_overlay_format() {
         InitMode::Random,
         crate::simulation::config::Preset::Organic,
         0,
-        false,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
     );

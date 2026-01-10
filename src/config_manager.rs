@@ -371,7 +371,6 @@ mod tests {
             InitMode::Random,
             Preset::Organic,
             0,
-            false,
             crate::terminal::control::MouseInteractionMode::Disabled,
             3.0,
         )
