@@ -11,7 +11,7 @@ pub fn is_shutdown_requested() -> bool {
     SHUTDOWN_REQUESTED.load(Ordering::SeqCst)
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn clear_shutdown_request() {
     SHUTDOWN_REQUESTED.store(false, Ordering::SeqCst);
 }

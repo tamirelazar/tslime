@@ -67,9 +67,4 @@ impl GifExporter {
 
         Ok(())
     }
-
-    #[allow(dead_code)]
-    pub fn frame_count(&self) -> usize {
-        self.frames.len()
-    }
 }

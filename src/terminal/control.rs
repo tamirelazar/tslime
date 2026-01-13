@@ -5,7 +5,6 @@ use crossterm::event::KeyEvent;
 use rand::Rng;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub struct MousePosition {
     pub x: usize,
     pub y: usize,
@@ -36,15 +35,6 @@ pub const ALL_PALETTES: [Palette; 16] = [
     Palette::Cosmic,
     Palette::Ethereal,
 ];
-
-// HelpMode is kept for backwards compatibility but deprecated
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum HelpMode {
-    None,
-    Quick,
-    Options,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteShiftSpeed {
@@ -110,7 +100,6 @@ impl WindDirection {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub enum ControlAction {
     TogglePause,
     Restart,
@@ -148,19 +137,12 @@ pub enum ControlAction {
     ToggleInvertPalette,
     ToggleReversePalette,
     ResetToDefaults,
-    ShowOptionsOverlay,
     CycleOptionsCategory,
     CycleOptionsCategoryReverse,
     ToggleStats,
     ToggleInfo,
     ShowConfigBrowser,
     ShowConfigSaveDialog,
-    ConfigBrowserUp,
-    ConfigBrowserDown,
-    ConfigBrowserSelect,
-    ConfigBrowserDelete,
-    ConfigSaveConfirm,
-    ConfigCancel,
     RandomizeParams,
     Undo,
     Redo,
@@ -224,7 +206,6 @@ impl DefaultValues {
             wind_direction: match config.wind {
                 None => WindDirection::None,
                 Some(w) => {
-                    // Try to match common wind directions
                     if w.dx > 0.0 && w.dy == 0.0 {
                         WindDirection::East
                     } else if w.dx < 0.0 && w.dy == 0.0 {
@@ -234,13 +215,13 @@ impl DefaultValues {
                     } else if w.dx == 0.0 && w.dy > 0.0 {
                         WindDirection::South
                     } else {
-                        WindDirection::None // Approximate
+                        WindDirection::None
                     }
                 }
             },
             terrain_type: config.terrain,
             terrain_strength: config.terrain_strength,
-            auto_normalize: false, // Default is usually false
+            auto_normalize: false,
             motion_blur_frames: 0,
             max_brightness: config.max_brightness,
         }
@@ -255,11 +236,6 @@ pub struct RuntimeState {
     pub show_preset_comparison: bool,
     pub comparison_preset: Preset,
     pub controls_category_idx: usize,
-    // Deprecated - kept for compatibility during transition
-    #[allow(dead_code)]
-    pub help_mode: HelpMode,
-    #[allow(dead_code)]
-    pub options_category_idx: usize,
     pub time_scale: f32,
     pub current_preset: Preset,
     pub palette_index: usize,
@@ -268,7 +244,6 @@ pub struct RuntimeState {
     pub dither_mode: DitherMode,
     pub last_dither_mode: Option<DitherMode>,
     pub mouse_mode: MouseInteractionMode,
-    #[allow(dead_code)]
     pub mouse_timeout: f32,
     pub sensor_angle: f32,
     pub sensor_distance: f32,
@@ -327,8 +302,6 @@ impl RuntimeState {
             show_preset_comparison: false,
             comparison_preset: initial_preset,
             controls_category_idx: 0,
-            help_mode: HelpMode::None,
-            options_category_idx: 0,
             time_scale: 1.0,
             current_preset: initial_preset,
             palette_index: initial_palette_index,
@@ -424,7 +397,6 @@ impl RuntimeState {
     }
 
     pub fn checkpoint(&mut self) {
-        // Debounce checkpoints (0.5s) to avoid spamming undo stack during continuous adjustments
         if self.last_checkpoint_time.elapsed().as_millis() < 500 {
             return;
         }
@@ -518,7 +490,7 @@ impl RuntimeState {
     }
 
     pub fn cycle_controls_category(&mut self, forward: bool) {
-        const TOTAL_CATEGORIES: usize = 6; // 0-5: SIMULATION CORE, FORCES, APPEARANCE, POST-PROCESSING, PERFORMANCE, SYSTEM
+        const TOTAL_CATEGORIES: usize = 6;
 
         if forward {
             self.controls_category_idx = (self.controls_category_idx + 1) % TOTAL_CATEGORIES;
@@ -529,12 +501,6 @@ impl RuntimeState {
                 self.controls_category_idx - 1
             };
         }
-    }
-
-    // Deprecated - kept for compatibility
-    #[allow(dead_code)]
-    pub fn cycle_options_category(&mut self, forward: bool) {
-        self.cycle_controls_category(forward);
     }
 
     pub fn set_preset(&mut self, preset: Preset) {
@@ -835,21 +801,18 @@ impl RuntimeState {
         self.force_checkpoint();
         let mut rng = rand::thread_rng();
 
-        // Randomize core simulation parameters within interesting ranges
         self.sensor_angle = rng.gen_range(15.0..60.0);
         self.turn_angle = rng.gen_range(15.0..60.0);
         self.step_size = rng.gen_range(0.5..2.5);
         self.decay_factor = rng.gen_range(0.80..0.98);
         self.deposit_amount = rng.gen_range(2.0..10.0);
 
-        // Randomize diffusion kernel (mostly mean, sometimes gaussian)
         self.diffusion_kernel = if rng.gen_bool(0.3) {
             DiffusionKernel::Gaussian
         } else {
             DiffusionKernel::Mean3x3
         };
 
-        // Randomize terrain
         self.terrain_type = match rng.gen_range(0..4) {
             0 => TerrainType::None,
             1 => TerrainType::Smooth,
@@ -858,10 +821,7 @@ impl RuntimeState {
         };
         self.terrain_strength = rng.gen_range(0.5..3.0);
 
-        // Randomize palette
         self.palette_index = rng.gen_range(0..ALL_PALETTES.len());
-
-        // Reset display settings to reasonable defaults
         self.max_brightness = rng.gen_range(10.0..40.0);
     }
 
@@ -932,7 +892,6 @@ pub fn num_palettes() -> usize {
 pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
     use crossterm::event::{KeyCode, KeyModifiers};
 
-    // Check for Ctrl modifiers first
     if key_event.modifiers.contains(KeyModifiers::CONTROL) {
         match key_event.code {
             KeyCode::Char('s') | KeyCode::Char('S') => return ControlAction::ShowConfigSaveDialog,
@@ -1199,7 +1158,7 @@ mod tests {
 
         state.reset_to_defaults();
 
-        assert_eq!(state.sensor_angle, 15.0); // Network preset default is 15.0
+        assert_eq!(state.sensor_angle, 15.0);
         assert!(!state.invert_palette);
         assert!(!state.reverse_palette);
         assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Off);
@@ -1292,10 +1251,13 @@ mod tests {
         assert_eq!(state.controls_category_idx, 4);
 
         state.cycle_controls_category(true);
+        assert_eq!(state.controls_category_idx, 5);
+
+        state.cycle_controls_category(true);
         assert_eq!(state.controls_category_idx, 0);
 
         state.cycle_controls_category(false);
-        assert_eq!(state.controls_category_idx, 4);
+        assert_eq!(state.controls_category_idx, 5);
     }
 
     #[test]
@@ -1397,22 +1359,12 @@ mod tests {
             0.0,
         );
 
-        // Set specific values that randomization should likely change
         state.wind_direction = WindDirection::North;
         state.terrain_type = TerrainType::None;
         state.palette_index = 0;
 
         state.randomize_params();
 
-        // Wind should NOT be randomized (remain same as before call)
-        // Wait, the requirement was "exclude wind from randomization".
-        // In my implementation, I removed the wind randomization block.
-        // So it should stay whatever it was.
         assert_eq!(state.wind_direction, WindDirection::North);
-
-        // These should have a very high probability of changing (not strictly guaranteed but likely)
-        // We just check if terrain and palette randomization logic was called by checking if they are within valid ranges
-        // but since we want to be sure, we can check if they are randomized in the code.
-        // Actually, for a unit test, we can just verify the wind stays same.
     }
 }

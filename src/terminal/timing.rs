@@ -61,7 +61,7 @@ pub struct FrameTimer {
 }
 
 impl FrameTimer {
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn new(fps: usize, frame_delay_seconds: f32) -> Self {
         Self::with_time_scale(fps, frame_delay_seconds, 1.0)
     }
@@ -133,22 +133,22 @@ impl FrameTimer {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn target_fps(&self) -> usize {
         self.target_fps
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn frame_delay(&self) -> Duration {
         self.frame_delay
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn set_target_fps(&mut self, fps: usize) {
         self.target_fps = fps;
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn set_frame_delay(&mut self, frame_delay_seconds: f32) {
         self.frame_delay = Duration::from_secs_f32(frame_delay_seconds);
     }
@@ -227,7 +227,6 @@ impl FrameTimer {
         elapsed.as_secs_f32() * self.time_scale
     }
 
-    #[allow(dead_code)]
     pub fn set_time_scale(&mut self, time_scale: f32) {
         self.time_scale = time_scale;
     }

@@ -2154,10 +2154,6 @@ fn run_simulation(
                             renderer.set_reverse_palette(runtime_state.reverse_palette);
                             runtime_state.show_notification("Reset to defaults".to_string());
                         }
-                        ControlAction::ShowOptionsOverlay => {
-                            // Toggle controls overlay (same as ToggleControls)
-                            runtime_state.toggle_controls();
-                        }
                         ControlAction::ToggleStats => {
                             runtime_state.toggle_stats();
                             runtime_state.show_notification(format!(
@@ -2187,25 +2183,6 @@ fn run_simulation(
                         ControlAction::ShowConfigSaveDialog => {
                             runtime_state.show_config_save_dialog = true;
                             runtime_state.config_save_name_input.clear();
-                        }
-                        ControlAction::ConfigBrowserUp => {
-                            // Handled separately in config browser input handling
-                        }
-                        ControlAction::ConfigBrowserDown => {
-                            // Handled separately in config browser input handling
-                        }
-                        ControlAction::ConfigBrowserSelect => {
-                            // Handled separately in config browser input handling
-                        }
-                        ControlAction::ConfigBrowserDelete => {
-                            // Handled separately in config browser input handling
-                        }
-                        ControlAction::ConfigSaveConfirm => {
-                            // Handled separately in config save input handling
-                        }
-                        ControlAction::ConfigCancel => {
-                            runtime_state.show_config_browser = false;
-                            runtime_state.show_config_save_dialog = false;
                         }
                         ControlAction::RandomizeParams => {
                             runtime_state.randomize_params();

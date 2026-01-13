@@ -384,16 +384,6 @@ dependencies = [
 
 [[package]]
 name = "gif"
-version = "0.11.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3edd93c6756b4dfaf2709eafcc345ba2636565295c198a9cfbf75fa5e3e00b06"
-dependencies = [
- "color_quant",
- "weezl",
-]
-
-[[package]]
-name = "gif"
 version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ae047235e33e2829703574b54fdec96bfbad892062d97fed2f76022287de61b"
@@ -441,7 +431,7 @@ dependencies = [
  "byteorder",
  "color_quant",
  "exr",
- "gif 0.13.3",
+ "gif",
  "jpeg-decoder",
  "num-traits",
  "png",
@@ -1022,11 +1012,10 @@ dependencies = [
  "criterion",
  "crossterm",
  "enable-ansi-support",
- "gif 0.11.4",
+ "gif",
  "image",
  "memory-stats",
  "noise",
- "png",
  "rand",
  "rand_xoshiro",
  "serde",

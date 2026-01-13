@@ -53,12 +53,18 @@ impl TerminalScreen {
         {
             use signal_hook::consts::SIGINT;
 
+            // SAFETY: request_shutdown() is signal-safe as it only sets an atomic flag.
             let id = unsafe {
                 register(SIGINT, || {
                     request_shutdown();
                 })
             }
-            .expect("Failed to register SIGINT handler");
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed to register SIGINT handler: {}", e),
+                )
+            })?;
             self.sigint_id = Some(id);
         }
 
@@ -66,12 +72,18 @@ impl TerminalScreen {
         {
             use signal_hook::consts::SIGTERM;
 
+            // SAFETY: request_shutdown() is signal-safe as it only sets an atomic flag.
             let id = unsafe {
                 register(SIGTERM, || {
                     request_shutdown();
                 })
             }
-            .expect("Failed to register SIGTERM handler");
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed to register SIGTERM handler: {}", e),
+                )
+            })?;
             self.sigterm_id = Some(id);
         }
 
@@ -80,12 +92,18 @@ impl TerminalScreen {
             use signal_hook::consts::SIGWINCH;
 
             let flag = Arc::clone(&self.resize_flag);
+            // SAFETY: Storing to an AtomicBool is signal-safe.
             let id = unsafe {
                 register(SIGWINCH, move || {
                     flag.store(true, Ordering::SeqCst);
                 })
             }
-            .expect("Failed to register SIGWINCH handler");
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed to register SIGWINCH handler: {}", e),
+                )
+            })?;
             self.sigwinch_id = Some(id);
         }
 

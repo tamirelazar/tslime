@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -41,16 +40,14 @@ impl WebmExporter {
         let frame_idx = self.frames.len();
         let filename = self.temp_dir.join(format!("frame_{:04}.png", frame_idx));
 
-        let file =
-            File::create(&filename).map_err(|e| format!("Failed to create frame file: {}", e))?;
-
-        let encoder = png::Encoder::new(file, self.width as u32, self.height as u32);
-        let mut writer = encoder
-            .write_header()
-            .map_err(|e| format!("Failed to write PNG header: {}", e))?;
-        writer
-            .write_image_data(pixels)
-            .map_err(|e| format!("Failed to write PNG data: {}", e))?;
+        image::save_buffer(
+            &filename,
+            pixels,
+            self.width as u32,
+            self.height as u32,
+            image::ColorType::Rgb8,
+        )
+        .map_err(|e| format!("Failed to save frame: {}", e))?;
 
         self.frames.push(filename);
         Ok(())
@@ -118,11 +115,6 @@ impl WebmExporter {
 
         self.frames.clear();
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn frame_count(&self) -> usize {
-        self.frames.len()
     }
 }
 

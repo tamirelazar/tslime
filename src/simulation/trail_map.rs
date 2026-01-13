@@ -218,6 +218,11 @@ impl TrailMap {
         }
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure that `current` and `scratch` slices have a length
+    /// of at least `width * height`. `width` must be at least 9 to accommodate
+    /// the SIMD vector width and boundary conditions.
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx")]
     unsafe fn diffuse_avx_impl(current: &[f32], scratch: &mut [f32], width: usize, height: usize) {
@@ -289,6 +294,11 @@ impl TrailMap {
         }
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure that `current` and `scratch` slices have a length
+    /// of at least `width * height`. `width` must be at least 5 to accommodate
+    /// the NEON vector width and boundary conditions.
     #[cfg(target_arch = "aarch64")]
     #[target_feature(enable = "neon")]
     #[allow(unused_variables, dead_code)]
@@ -386,10 +396,12 @@ impl TrailMap {
 
         if has_simd {
             #[cfg(target_arch = "aarch64")]
+            // SAFETY: Neon feature detected, buffers sized at width*height.
             unsafe {
                 Self::diffuse_neon_impl(current, scratch, width, height);
             }
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            // SAFETY: AVX feature detected, buffers sized at width*height.
             unsafe {
                 Self::diffuse_avx_impl(current, scratch, width, height);
             }
@@ -466,6 +478,11 @@ impl TrailMap {
         }
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure that `current` and `scratch` slices have a length
+    /// of at least `width * height`. `width` must be at least 6 to accommodate
+    /// the NEON vector width and 5x5 kernel boundary conditions.
     #[cfg(target_arch = "aarch64")]
     #[target_feature(enable = "neon")]
     #[allow(unused_variables, dead_code)]
@@ -661,6 +678,7 @@ impl TrailMap {
 
         if has_simd {
             #[cfg(target_arch = "aarch64")]
+            // SAFETY: Neon feature detected, buffers sized at width*height.
             unsafe {
                 Self::diffuse_gaussian_neon_impl(current, scratch, width, height, kernel);
             }
