@@ -517,20 +517,44 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_fps_samples_wrap_around() {
         let mut timer = FrameTimer::new(30, 0.033);
+        for _ in 0..FPS_SAMPLE_COUNT + 5 {
+            timer.fps_samples[timer.fps_sample_index] = 60.0;
+            timer.fps_sample_index = (timer.fps_sample_index + 1) % FPS_SAMPLE_COUNT;
+            timer.fps_count += 1;
+        }
+        assert_eq!(timer.average_fps(), 60.0);
+    }
 
-        for i in 0..35 {
-            std::thread::sleep(Duration::from_millis(10 + i % 5));
-            timer.delta_time();
+    #[test]
+    fn test_fps_adaptive_logic() {
+        let mut timer = FrameTimer::new(60, 0.033);
+        timer.set_adaptive_fps(true);
+        // Force some low FPS samples
+        for _ in 0..FPS_SAMPLE_COUNT {
+            timer.fps_samples[timer.fps_sample_index] = 10.0;
+            timer.fps_sample_index = (timer.fps_sample_index + 1) % FPS_SAMPLE_COUNT;
+            timer.fps_count += 1;
         }
 
-        let avg = timer.average_fps();
-        assert!(
-            avg > 30.0 && avg < 120.0,
-            "Average should be valid after wrap, got {}",
-            avg
-        );
+        // Advance counter to trigger check
+        timer.adaptive_check_counter = ADAPTIVE_CHECK_INTERVAL - 1;
+        assert!(timer.should_adjust_fps());
+
+        let adjusted = timer.get_adjusted_fps();
+        assert!(adjusted.is_some());
+        assert!(adjusted.unwrap() < 60);
+
+        timer.apply_fps_adjustment(30);
+        assert_eq!(timer.target_fps, 30);
+        assert!(timer.fps_adjusted_notification);
+    }
+
+    #[test]
+    fn test_last_frame_ms() {
+        let timer = FrameTimer::new(30, 0.033);
+        let ms = timer.last_frame_ms();
+        assert!(ms >= 0.0);
     }
 }

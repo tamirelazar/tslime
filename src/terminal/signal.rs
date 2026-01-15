@@ -19,15 +19,20 @@ pub fn clear_shutdown_request() {
 #[cfg(all(unix, test))]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_shutdown_flag_initial_state() {
+        let _lock = TEST_LOCK.lock().unwrap();
         clear_shutdown_request();
         assert!(!is_shutdown_requested());
     }
 
     #[test]
     fn test_request_shutdown() {
+        let _lock = TEST_LOCK.lock().unwrap();
         clear_shutdown_request();
         request_shutdown();
         assert!(is_shutdown_requested());
@@ -36,6 +41,7 @@ mod tests {
 
     #[test]
     fn test_clear_shutdown_request() {
+        let _lock = TEST_LOCK.lock().unwrap();
         request_shutdown();
         assert!(is_shutdown_requested());
         clear_shutdown_request();
@@ -44,6 +50,7 @@ mod tests {
 
     #[test]
     fn test_thread_safe_access() {
+        let _lock = TEST_LOCK.lock().unwrap();
         clear_shutdown_request();
 
         let handle = std::thread::spawn(|| {

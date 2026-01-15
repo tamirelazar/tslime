@@ -2567,6 +2567,10 @@ pub fn map_brightness_rgb(
         final_color = invert_rgb(final_color);
     }
 
+    if hue_shift == 0.0 {
+        return final_color;
+    }
+
     let hsv = rgb_to_hsv(final_color);
     let rotated = rotate_hue(hsv, hue_shift);
     hsv_to_rgb(rotated)

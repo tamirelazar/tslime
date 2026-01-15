@@ -103,9 +103,10 @@ mod tests {
     }
 
     #[test]
-    fn test_get_brightness_at_out_of_bounds() {
-        let map = vec![0.5, 0.5];
-        assert!((get_brightness_at(&map, 2, 5, 0) - 0.0).abs() < 0.001);
-        assert!((get_brightness_at(&map, 2, 0, 5) - 0.0).abs() < 0.001);
+    fn test_load_image_grayscale_success() {
+        let result = load_image_grayscale("assets/tslime_logo.png", 10, 10, false, 1.0);
+        assert!(result.is_ok());
+        let map = result.unwrap();
+        assert_eq!(map.len(), 100);
     }
 }

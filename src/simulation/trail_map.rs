@@ -883,5 +883,110 @@ mod tests {
         trail2.diffuse();
 
         assert_eq!(trail1.current(), trail2.current());
+
+        trail1.clear();
+        trail2.clear();
+        trail1.set(5, 5, 9.0);
+        trail2.set(5, 5, 9.0);
+        trail1.diffuse_with_kernel(false, true);
+        trail2.diffuse_gaussian();
+        assert_eq!(trail1.current(), trail2.current());
+    }
+
+    #[test]
+    fn test_set_gaussian_sigma() {
+        let mut trail = TrailMap::new(10, 10);
+        let k1 = trail.gaussian_kernel;
+        trail.set_gaussian_sigma(2.0);
+        let k2 = trail.gaussian_kernel;
+        assert_ne!(k1, k2);
+    }
+
+    #[test]
+    fn test_new_with_sigma() {
+        let trail = TrailMap::new_with_sigma(10, 10, 2.0);
+        assert_eq!(trail.width(), 10);
+        let default_kernel = generate_gaussian_kernel(1.0);
+        assert_ne!(trail.gaussian_kernel, default_kernel);
+    }
+
+    #[test]
+    fn test_current_mut() {
+        let mut trail = TrailMap::new(10, 10);
+        trail.current_mut()[0] = 1.0;
+        assert_eq!(trail.get(0, 0), 1.0);
+    }
+
+    #[test]
+    fn test_scratch_access() {
+        let mut trail = TrailMap::new(10, 10);
+        trail.scratch_mut()[0] = 2.0;
+        assert_eq!(trail.scratch()[0], 2.0);
+    }
+
+    #[test]
+    fn test_trail_sum() {
+        let mut trail = TrailMap::new(10, 10);
+        trail.add(0, 0, 1.0);
+        trail.add(1, 1, 2.0);
+        assert_eq!(trail.trail_sum(), 3.0);
+        trail.decay(0.5);
+        assert_eq!(trail.trail_sum(), 1.5);
+        trail.clear();
+        assert_eq!(trail.trail_sum(), 0.0);
+    }
+
+    #[test]
+    fn test_diffuse_simd_fallback() {
+        let mut trail = TrailMap::new(20, 20);
+        trail.set(10, 10, 9.0);
+        trail.diffuse_simd();
+        assert!(trail.get(10, 10) < 9.0);
+    }
+
+    #[test]
+    fn test_diffuse_gaussian_simd_fallback() {
+        let mut trail = TrailMap::new(20, 20);
+        trail.set(10, 10, 9.0);
+        trail.diffuse_gaussian_simd();
+        assert!(trail.get(10, 10) < 9.0);
+    }
+}
+
+#[cfg(test)]
+mod prop_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn test_diffuse_always_finite_and_non_negative(
+            values in proptest::collection::vec(0.0..100.0f32, 100)
+        ) {
+            let mut trail = TrailMap::new(10, 10);
+            for (i, &v) in values.iter().enumerate() {
+                trail.current_mut()[i] = v;
+            }
+            trail.diffuse();
+            for &v in trail.current() {
+                prop_assert!(v.is_finite());
+                prop_assert!(v >= 0.0);
+            }
+        }
+
+        #[test]
+        fn test_diffuse_gaussian_always_finite_and_non_negative(
+            values in proptest::collection::vec(0.0..100.0f32, 100)
+        ) {
+            let mut trail = TrailMap::new(10, 10);
+            for (i, &v) in values.iter().enumerate() {
+                trail.current_mut()[i] = v;
+            }
+            trail.diffuse_gaussian();
+            for &v in trail.current() {
+                prop_assert!(v.is_finite());
+                prop_assert!(v >= 0.0);
+            }
+        }
     }
 }

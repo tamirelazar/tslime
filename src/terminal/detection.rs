@@ -110,3 +110,56 @@ pub fn log_capabilities(caps: &TerminalCapabilities, verbose: bool) {
         caps.terminal_name
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_auto_select_color_mode() {
+        let caps = TerminalCapabilities {
+            color_capability: ColorCapability::TrueColor,
+            estimated_refresh_rate: 60.0,
+            supports_mouse_tracking: true,
+            terminal_name: None,
+        };
+        assert_eq!(
+            caps.auto_select_color_mode(None),
+            crate::cli::ColorMode::TrueColor
+        );
+        assert_eq!(
+            caps.auto_select_color_mode(Some(crate::cli::ColorMode::Bits256)),
+            crate::cli::ColorMode::Bits256
+        );
+
+        let caps_8bit = TerminalCapabilities {
+            color_capability: ColorCapability::Bits256,
+            ..caps
+        };
+        assert_eq!(
+            caps_8bit.auto_select_color_mode(None),
+            crate::cli::ColorMode::Bits256
+        );
+    }
+
+    #[test]
+    fn test_detect_truecolor_env() {
+        std::env::set_var("COLORTERM", "truecolor");
+        assert_eq!(detect_truecolor(), ColorCapability::TrueColor);
+        std::env::remove_var("COLORTERM");
+    }
+
+    #[test]
+    fn test_estimate_refresh_rate_env() {
+        std::env::set_var("TSLIME_REFRESH_RATE", "120");
+        assert_eq!(estimate_refresh_rate(), 120.0);
+        std::env::remove_var("TSLIME_REFRESH_RATE");
+    }
+
+    #[test]
+    fn test_log_capabilities() {
+        let caps = TerminalCapabilities::detect();
+        log_capabilities(&caps, false); // Should not print
+        log_capabilities(&caps, true); // Should print
+    }
+}

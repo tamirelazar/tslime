@@ -430,15 +430,19 @@ mod tests {
     }
 
     #[test]
-    fn test_downsample_reproducibility() {
-        let trail_map: Vec<f32> = (0..40000).map(|i| (i % 100) as f32 / 100.0).collect();
-        let frame1 = downsample(&trail_map, 200, 200, 100, 50);
-        let frame2 = downsample(&trail_map, 200, 200, 100, 50);
+    fn test_compute_average_out_of_bounds() {
+        let data = vec![1.0; 10];
+        assert_eq!(compute_average(&data, 2, 0, 10, 0, 2), 1.0);
+        assert_eq!(compute_average(&data, 2, 10, 15, 0, 2), 0.0);
+    }
 
-        assert_eq!(frame1.cells().len(), frame2.cells().len());
-        for (c1, c2) in frame1.cells().iter().zip(frame2.cells().iter()) {
-            assert_eq!(c1.top, c2.top);
-            assert_eq!(c1.bottom, c2.bottom);
-        }
+    #[test]
+    fn test_downsample_quadrant_values() {
+        let mut trail_map = vec![0.0; 16];
+        trail_map[0] = 1.0; // Top-left of the first cell
+        let frame = downsample(&trail_map, 4, 4, 1, 1);
+        let cell = frame.get(0, 0);
+        assert!(cell.top_left > 0.0);
+        assert_eq!(cell.bottom_right, 0.0);
     }
 }

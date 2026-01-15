@@ -1017,6 +1017,7 @@ impl From<Preset> for SimConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::f32::consts::PI;
 
     #[test]
     fn test_default_config() {
@@ -1410,5 +1411,105 @@ mod tests {
             ..Default::default()
         };
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_effective_attractors() {
+        let mut config = SimConfig {
+            attractors: vec![Attractor::new(10.0, 10.0, 1.0)],
+            ..Default::default()
+        };
+        config.add_mouse_attractor(20.0, 20.0, 2.0);
+        let effective = config.effective_attractors();
+        assert_eq!(effective.len(), 2);
+        assert_eq!(effective[0].strength, 1.0);
+        assert_eq!(effective[1].strength, 2.0);
+    }
+
+    #[test]
+    fn test_mouse_attractor_expiry() {
+        let mut ma = MouseAttractor::new(10.0, 10.0, 1.0, 0.01);
+        assert!(!ma.is_expired());
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        assert!(ma.is_expired());
+    }
+
+    #[test]
+    fn test_remove_expired_mouse_attractors() {
+        let mut config = SimConfig {
+            mouse_timeout: 0.01,
+            ..Default::default()
+        };
+        config.add_mouse_attractor(10.0, 10.0, 1.0);
+        assert_eq!(config.mouse_attractors.len(), 1);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        config.remove_expired_mouse_attractors();
+        assert_eq!(config.mouse_attractors.len(), 0);
+    }
+
+    #[test]
+    fn test_presets_valid() {
+        let presets = [
+            Preset::Network,
+            Preset::Exploratory,
+            Preset::Tendrils,
+            Preset::Organic,
+            Preset::Minimal,
+            Preset::Moss,
+            Preset::Cosmic,
+            Preset::Fire,
+            Preset::Zen,
+            Preset::Storm,
+            Preset::River,
+            Preset::Ethereal,
+        ];
+        for preset in presets {
+            let config: SimConfig = preset.into();
+            assert!(
+                config.validate().is_ok(),
+                "Preset {:?} failed validation",
+                preset
+            );
+        }
+    }
+
+    #[test]
+    fn test_obstacle_rect_bounce_sides() {
+        let rect = Obstacle::Rect {
+            x: 100.0,
+            y: 100.0,
+            width: 50.0,
+            height: 50.0,
+        };
+        // Bounce off top/bottom (dy > dx)
+        let h1 = rect.bounce(125.0, 99.9, 0.1, None);
+        assert!((h1 - (-0.1)).abs() < 0.001);
+        // Bounce off left/right (dx > dy)
+        let h2 = rect.bounce(99.9, 125.0, 0.1, None);
+        assert!((h2 - (PI - 0.1)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_species_config_validate_all() {
+        let s = SpeciesConfig {
+            sensor_angle: 1.0,
+            ..Default::default()
+        };
+        assert!(s.validate().is_err());
+        let s = SpeciesConfig {
+            rotation_angle: 1.0,
+            ..Default::default()
+        };
+        assert!(s.validate().is_err());
+        let s = SpeciesConfig {
+            step_size: 0.1,
+            ..Default::default()
+        };
+        assert!(s.validate().is_err());
+        let s = SpeciesConfig {
+            deposit_amount: 0.1,
+            ..Default::default()
+        };
+        assert!(s.validate().is_err());
     }
 }

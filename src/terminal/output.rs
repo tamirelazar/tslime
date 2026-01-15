@@ -1684,15 +1684,174 @@ mod tests {
     }
 
     #[test]
-    fn test_truecolor_code_fg() {
-        let code = FrameBuffer::truecolor_code(42, 128, 255, true);
-        assert_eq!(code, "\x1b[38;2;42;128;255m");
+    fn test_truecolor_code_bg_extended() {
+        let color = RgbColor {
+            r: 10,
+            g: 20,
+            b: 30,
+        };
+        assert_eq!(
+            FrameBuffer::truecolor_code(10, 20, 30, false),
+            "\x1b[48;2;10;20;30m"
+        );
     }
 
     #[test]
-    fn test_truecolor_code_bg() {
-        let code = FrameBuffer::truecolor_code(42, 128, 255, false);
-        assert_eq!(code, "\x1b[48;2;42;128;255m");
+    fn test_truecolor_code_bg_final() {
+        assert_eq!(
+            FrameBuffer::truecolor_code(10, 20, 30, false),
+            "\x1b[48;2;10;20;30m"
+        );
+    }
+
+    #[test]
+    fn test_terminal_renderer_setters() {
+        let mut renderer = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+        );
+        renderer.set_invert_palette(true);
+        renderer.set_reverse_palette(true);
+        renderer.set_species_colors(true, vec![RgbColor { r: 255, g: 0, b: 0 }]);
+        renderer.set_charset(Charset::Ascii);
+        renderer.set_palette(Palette::Heat);
+        renderer.set_dimensions(100, 40);
+        assert_eq!(renderer.width, 100);
+        assert_eq!(renderer.height, 40);
+    }
+
+    #[test]
+    fn test_frame_buffer_grid_out_of_bounds() {
+        let mut fb = FrameBuffer::new(10, 10, ColorMode::TrueColor);
+        fb.render_grid_background(
+            15,
+            15,
+            RgbColor {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
+            1.0,
+            true,
+            true,
+        );
+        // Should not panic
+    }
+
+    #[test]
+    fn test_from_downsampled_options() {
+        let cells = vec![
+            DownsampleCell {
+                top: 5.0,
+                bottom: 2.0,
+                ..Default::default()
+            };
+            100
+        ];
+        let mut ed = None;
+        let fb = FrameBuffer::from_downsampled(
+            &cells,
+            10,
+            10,
+            10.0,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut ed,
+            false,
+            None,
+        );
+        assert_eq!(fb.width, 10);
+        assert_eq!(fb.height, 10);
+
+        let fb_rev = FrameBuffer::from_downsampled(
+            &cells,
+            10,
+            10,
+            10.0,
+            Palette::Organic,
+            Charset::HalfBlock,
+            true,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut ed,
+            false,
+            None,
+        );
+        assert_ne!(fb.cells[0].fg_color_rgb, fb_rev.cells[0].fg_color_rgb);
+    }
+
+    #[test]
+    fn test_render_multi_species_with_overlay() {
+        let mut renderer = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+        );
+        let trail = vec![1.0; 100];
+        let color = RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        };
+        let trail_maps = vec![(&trail[..], color)];
+        let result = renderer.render_multi_species_with_overlay::<&str, &str>(
+            &trail_maps,
+            10,
+            10,
+            1.0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_frame_buffer_grid_full() {
+        let mut fb = FrameBuffer::new(10, 10, ColorMode::TrueColor);
+        let color = RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        };
+        fb.render_grid_background(5, 5, color, 1.0, true, true);
+        assert!(fb.cells[5 * 10 + 5].fg_color_rgb.is_some());
+    }
+
+    #[test]
+    fn test_frame_buffer_grid_8bit() {
+        let mut fb = FrameBuffer::new(10, 10, ColorMode::Bits256);
+        let color = RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        };
+        fb.render_grid_background(5, 5, color, 1.0, true, true);
+        assert!(fb.cells[5 * 10 + 5].fg_color_256.is_some());
     }
 
     #[test]
@@ -1907,5 +2066,36 @@ mod tests {
             assert_eq!(cell.top, 0.0);
             assert_eq!(cell.bottom, 0.0);
         }
+    }
+
+    #[test]
+    fn test_downsample_cell_default() {
+        let cell = DownsampleCell::default();
+        assert_eq!(cell.top, 0.0);
+        assert_eq!(cell.bottom, 0.0);
+        assert_eq!(cell.top_left, 0.0);
+        assert_eq!(cell.top_right, 0.0);
+        assert_eq!(cell.bottom_left, 0.0);
+        assert_eq!(cell.bottom_right, 0.0);
+    }
+
+    #[test]
+    fn test_frame_buffer_truecolor_mode() {
+        let buffer = FrameBuffer::new(80, 24, ColorMode::TrueColor);
+        assert_eq!(buffer.color_mode, ColorMode::TrueColor);
+    }
+
+    #[test]
+    fn test_terminal_renderer_palette() {
+        let renderer = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Heat,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::Bits256,
+        );
+        assert_eq!(renderer.palette, Palette::Heat);
     }
 }

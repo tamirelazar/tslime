@@ -577,7 +577,51 @@ mod tests {
     }
 
     #[test]
-    fn test_charset_level_count_braille() {
-        assert_eq!(charset_level_count(Charset::Braille), 16);
+    fn test_charset_from_args_quadrant() {
+        let args = Args {
+            quadrant: true,
+            ..Default::default()
+        };
+        assert_eq!(Charset::from_args(&args), Charset::Quadrant);
+    }
+
+    #[test]
+    fn test_charset_from_args_custom() {
+        let args = Args {
+            ascii_chars: Some("abc".to_string()),
+            ..Default::default()
+        };
+        assert!(matches!(Charset::from_args(&args), Charset::CustomAscii(_)));
+    }
+
+    #[test]
+    fn test_from_custom_string_sorting() {
+        let charset = Charset::from_custom_string("@.");
+        if let Charset::CustomAscii(chars) = charset {
+            assert_eq!(chars[0], '.');
+            assert_eq!(chars[1], '@');
+        } else {
+            panic!("Expected CustomAscii");
+        }
+    }
+
+    #[test]
+    fn test_map_brightness_quadrant() {
+        assert_eq!(map_brightness(0.0, None, Charset::Quadrant), ' ');
+        assert_eq!(map_brightness(1.0, None, Charset::Quadrant), '\u{1FB0E}');
+    }
+
+    #[test]
+    fn test_map_brightness_custom() {
+        let charset = Charset::CustomAscii(vec!['a', 'b', 'c']);
+        assert_eq!(map_brightness(0.0, None, charset.clone()), 'a');
+        assert_eq!(map_brightness(1.0, None, charset.clone()), 'c');
+        assert_eq!(map_brightness(0.5, None, charset.clone()), 'b');
+    }
+
+    #[test]
+    fn test_charset_level_count_extended() {
+        assert_eq!(charset_level_count(Charset::Quadrant), 16);
+        assert_eq!(charset_level_count(Charset::CustomAscii(vec!['a', 'b'])), 2);
     }
 }

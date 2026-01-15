@@ -511,4 +511,93 @@ mod tests {
             "heading should be finite after terrain bias"
         );
     }
+
+    #[test]
+    fn test_noise_wrapper_seed() {
+        let noise = NoiseWrapper::new(123);
+        assert_eq!(noise.seed_value(), 123);
+    }
+
+    #[test]
+    fn test_move_forward_with_obstacles() {
+        let mut agent = Agent::new(95.0, 100.0, 0.0, 0);
+        let obstacles = vec![Obstacle::Circle {
+            x: 100.0,
+            y: 100.0,
+            radius: 10.0,
+        }];
+        let obstacle_masks = vec![None];
+        // Move into circle
+        agent.move_forward(10.0, 400, 400, &obstacles, &obstacle_masks);
+        assert!(agent.heading != 0.0);
+    }
+
+    #[test]
+    fn test_deposit_out_of_bounds() {
+        let mut trail = vec![0.0; 100];
+        let agent = Agent::new(20.0, 20.0, 0.0, 0);
+        agent.deposit(&mut trail, 10, 10, 1.0);
+        assert!(trail.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn test_rotate_random_choice() {
+        let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(42);
+        // left == right, center is smaller
+        agent.rotate(10.0, 1.0, 10.0, 45.0, &mut rng);
+        let h1 = agent.heading;
+
+        let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(43); // Different seed
+        agent.rotate(10.0, 1.0, 10.0, 45.0, &mut rng);
+        let h2 = agent.heading;
+
+        assert!(h1 != h2 || h1 != 0.0); // At least one of them rotated
+    }
+
+    #[test]
+    fn test_sample_trail_out_of_bounds() {
+        let trail = vec![1.0; 100];
+        assert_eq!(sample_trail(&trail, 10, 10, -1.0, 5.0), 0.0);
+        assert_eq!(sample_trail(&trail, 10, 10, 11.0, 5.0), 0.0);
+        assert_eq!(sample_trail(&trail, 10, 10, 5.0, -1.0), 0.0);
+        assert_eq!(sample_trail(&trail, 10, 10, 5.0, 11.0), 0.0);
+    }
+}
+
+#[cfg(test)]
+mod prop_tests {
+    use super::*;
+    use proptest::prelude::*;
+    use rand::SeedableRng;
+
+    proptest! {
+        #[test]
+        fn test_agent_move_always_finite(
+            x in 0.0..1000.0f32,
+            y in 0.0..1000.0f32,
+            heading in -10.0..10.0f32,
+            step_size in 0.0..10.0f32,
+        ) {
+            let mut agent = Agent::new(x, y, heading, 0);
+            agent.move_forward(step_size, 1000, 1000, &[], &[]);
+            prop_assert!(agent.x.is_finite());
+            prop_assert!(agent.y.is_finite());
+            prop_assert!(agent.heading.is_finite());
+        }
+
+        #[test]
+        fn test_rotate_always_finite(
+            left in 0.0..1000.0f32,
+            center in 0.0..1000.0f32,
+            right in 0.0..1000.0f32,
+            rotation_angle in 0.0..180.0f32,
+        ) {
+            let mut agent = Agent::new(0.0, 0.0, 0.0, 0);
+            let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(42);
+            agent.rotate(left, center, right, rotation_angle, &mut rng);
+            prop_assert!(agent.heading.is_finite());
+        }
+    }
 }

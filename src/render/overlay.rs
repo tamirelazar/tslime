@@ -739,6 +739,110 @@ mod tests {
             "Multiple attractors should have consistent line lengths"
         );
     }
+
+    #[test]
+    fn test_window_builder_content_too_long() {
+        let builder = WindowBuilder::new(20, 1);
+        let content = vec!["this line is definitely too long for the builder".to_string()];
+        let result = builder.build(None, &content);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_window_builder_too_small() {
+        let _ = WindowBuilder::new(2, 1);
+    }
+
+    #[test]
+    fn test_window_builder_separator() {
+        let builder = WindowBuilder::new(10, 1);
+        let sep = builder.build_separator();
+        assert!(sep.starts_with('├'));
+        assert!(sep.ends_with('┤'));
+        assert_eq!(sep.chars().count(), 10);
+    }
+
+    #[test]
+    fn test_keyboard_hints_position() {
+        let (x, y) = KeyboardHintsOverlay::calculate_position(100, 100);
+        assert_eq!(x, 20);
+        assert_eq!(y, 35);
+    }
+
+    #[test]
+    fn test_warmup_overlay() {
+        let lines = WarmupOverlay::build_overlay(10, 100);
+        assert_eq!(lines.len(), 2);
+        assert!(lines[1].contains("10/100"));
+        let (x, y) = WarmupOverlay::calculate_position(100, 90);
+        assert_eq!(x, 50);
+        assert_eq!(y, 60);
+    }
+
+    #[test]
+    fn test_config_browser_overlay_empty() {
+        let lines = ConfigBrowserOverlay::build_overlay(&[], 0);
+        assert!(lines.iter().any(|l| l.contains("No saved configurations")));
+        let (x, y) = ConfigBrowserOverlay::calculate_position(100, 100);
+        assert_eq!(x, 22);
+    }
+
+    #[test]
+    fn test_config_save_overlay() {
+        let lines = ConfigSaveOverlay::build_overlay("test");
+        assert!(lines.iter().any(|l| l.contains("test")));
+        let (x, y) = ConfigSaveOverlay::calculate_position(100, 100);
+        assert_eq!(x, 31);
+    }
+
+    #[test]
+    fn test_overlay_renderer_helper_positions() {
+        assert_eq!(OverlayRenderer::status_line_x("abc", 10), 2);
+        assert_eq!(OverlayRenderer::status_line_x("abcdefghij", 10), 0);
+        assert_eq!(OverlayRenderer::paused_overlay_x(80), 68);
+    }
+
+    #[test]
+    fn test_build_help_with_obstacles() {
+        let base_help = ["base"];
+        let obstacles = vec![
+            Obstacle::Circle {
+                x: 1.0,
+                y: 2.0,
+                radius: 3.0,
+            },
+            Obstacle::Rect {
+                x: 1.0,
+                y: 2.0,
+                width: 3.0,
+                height: 4.0,
+            },
+            Obstacle::Image {
+                path: "test.png".to_string(),
+                x: 0.0,
+                y: 0.0,
+                width: 10,
+                height: 10,
+                invert: false,
+                threshold: 0.5,
+            },
+        ];
+        let lines = OverlayRenderer::build_help_with_obstacles(&base_help, &obstacles);
+        assert!(lines.len() > 1);
+        assert!(lines.iter().any(|l| l.contains("circle")));
+        assert!(lines.iter().any(|l| l.contains("rect")));
+        assert!(lines.iter().any(|l| l.contains("image")));
+    }
+
+    #[test]
+    fn test_build_help_with_mouse_attractors() {
+        let base_help = ["base"];
+        let mas = vec![MouseAttractor::new(10.0, 10.0, 1.0, 3.0)];
+        let lines = OverlayRenderer::build_help_with_mouse_attractors(&base_help, &mas, 100, 100);
+        assert!(lines.len() > 1);
+        assert!(lines.iter().any(|l| l.contains("attract")));
+    }
 }
 
 fn build_sparkline(history: &std::collections::VecDeque<f32>, min: f32, max: f32) -> String {

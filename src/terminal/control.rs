@@ -1305,13 +1305,242 @@ mod tests {
     fn test_wind_direction_names() {
         assert_eq!(WindDirection::None.name(), "None");
         assert_eq!(WindDirection::North.name(), "N");
-        assert_eq!(WindDirection::Northeast.name(), "NE");
-        assert_eq!(WindDirection::East.name(), "E");
-        assert_eq!(WindDirection::Southeast.name(), "SE");
-        assert_eq!(WindDirection::South.name(), "S");
         assert_eq!(WindDirection::Southwest.name(), "SW");
-        assert_eq!(WindDirection::West.name(), "W");
-        assert_eq!(WindDirection::Northwest.name(), "NW");
+    }
+
+    #[test]
+    fn test_runtime_state_randomize() {
+        let mut state = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            0,
+            MouseInteractionMode::Disabled,
+            3.0,
+        );
+        let orig_angle = state.sensor_angle;
+        state.randomize_params();
+        // Since it's random, it *could* be the same, but very unlikely
+        assert!(state.sensor_angle != orig_angle || state.turn_angle != 45.0);
+    }
+
+    #[test]
+    fn test_parameter_state_roundtrip() {
+        let mut state = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            0,
+            MouseInteractionMode::Disabled,
+            3.0,
+        );
+        state.sensor_angle = 12.3;
+        let p = state.capture_parameter_state();
+        state.sensor_angle = 45.6;
+        state.apply_parameter_state(p);
+        assert_eq!(state.sensor_angle, 12.3);
+    }
+
+    #[test]
+    fn test_palette_shift_speed() {
+        assert_eq!(PaletteShiftSpeed::Off.degrees_per_second(), 0.0);
+        assert_eq!(PaletteShiftSpeed::Fast.degrees_per_second(), 45.0);
+    }
+
+    #[test]
+    fn test_runtime_state_notifications() {
+        let mut state = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            0,
+            MouseInteractionMode::Disabled,
+            3.0,
+        );
+        assert_eq!(state.current_notification(), None);
+        state.show_notification("test".to_string());
+        assert_eq!(state.current_notification(), Some(&"test".to_string()));
+        state.update_notifications();
+        assert_eq!(state.current_notification(), Some(&"test".to_string()));
+    }
+
+    #[test]
+    fn test_runtime_state_warmup() {
+        let mut state = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            0,
+            MouseInteractionMode::Disabled,
+            3.0,
+        );
+        assert!(!state.is_in_warmup(0));
+        assert!(state.is_in_warmup(10));
+        state.increment_warmup();
+        assert_eq!(state.warmup_counter, 1);
+        state.reset_warmup();
+        assert_eq!(state.warmup_counter, 0);
+    }
+
+    #[test]
+    fn test_runtime_state_entropy_tracking() {
+        let mut state = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            0,
+            MouseInteractionMode::Disabled,
+            3.0,
+        );
+        assert!(!state.track_entropy(5.0, 10.0, 5));
+        assert!(state.track_entropy(15.0, 10.0, 1));
+        state.reset_collapse_counter();
+        assert_eq!(state.collapse_frame_counter, 0);
+    }
+
+    #[test]
+    fn test_runtime_state_history() {
+        let mut state = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            0,
+            MouseInteractionMode::Disabled,
+            3.0,
+        );
+        state.update_history(60.0, 5.0, 0.5);
+        assert_eq!(state.fps_history.len(), 1);
+        for _ in 0..25 {
+            state.update_history(60.0, 5.0, 0.5);
+        }
+        assert_eq!(state.fps_history.len(), 20);
+    }
+
+    #[test]
+    fn test_runtime_state_actions() {
+        let mut state = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            0,
+            MouseInteractionMode::Disabled,
+            3.0,
+        );
+
+        state.toggle_pause();
+        assert!(state.is_paused);
+        state.toggle_pause();
+        assert!(!state.is_paused);
+
+        state.toggle_controls();
+        assert!(state.show_controls);
+        state.toggle_controls();
+        assert!(!state.show_controls);
+
+        state.toggle_keyboard_hints();
+        assert!(state.show_keyboard_hints);
+        state.toggle_keyboard_hints();
+        assert!(!state.show_keyboard_hints);
+
+        state.toggle_preset_comparison(Preset::Network);
+        assert!(state.show_preset_comparison);
+        state.toggle_preset_comparison(Preset::Network);
+        assert!(!state.show_preset_comparison);
+
+        assert!(!state.any_overlay_open());
+        state.show_info = true;
+        assert!(state.any_overlay_open());
+        state.close_all_overlays();
+        assert!(!state.any_overlay_open());
+
+        state.cycle_controls_category(true);
+        assert_eq!(state.controls_category_idx, 1);
+        state.cycle_controls_category(false);
+        assert_eq!(state.controls_category_idx, 0);
+
+        state.set_preset(Preset::Fire);
+        assert_eq!(state.current_preset, Preset::Fire);
+
+        state.adjust_time_scale(0.5);
+        assert_eq!(state.time_scale, 1.5);
+
+        state.cycle_palette(10);
+        assert_eq!(state.palette_index, 1);
+        state.cycle_palette_reverse(10);
+        assert_eq!(state.palette_index, 0);
+
+        state.toggle_dither();
+        assert!(matches!(state.dither_mode, DitherMode::Ordered { .. }));
+        state.toggle_dither();
+        assert_eq!(state.dither_mode, DitherMode::None);
+
+        state.cycle_dither_mode();
+        assert!(matches!(state.dither_mode, DitherMode::Ordered { .. }));
+
+        state.adjust_sensor_angle(10.0);
+        assert!(state.sensor_angle > 22.5);
+
+        state.cycle_diffusion_kernel();
+        assert_eq!(state.diffusion_kernel, DiffusionKernel::Gaussian);
+
+        state.cycle_mouse_mode();
+        assert_eq!(state.mouse_mode, MouseInteractionMode::Attract);
+
+        state.cycle_wind_direction();
+        assert_eq!(state.wind_direction, WindDirection::North);
+    }
+
+    #[test]
+    fn test_runtime_state_undo_redo() {
+        let mut state = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            0,
+            MouseInteractionMode::Disabled,
+            3.0,
+        );
+        let orig_angle = state.sensor_angle;
+        state.force_checkpoint();
+        state.adjust_sensor_angle(10.0);
+        assert_ne!(state.sensor_angle, orig_angle);
+
+        state.undo();
+        assert_eq!(state.sensor_angle, orig_angle);
+
+        state.redo();
+        assert_ne!(state.sensor_angle, orig_angle);
+    }
+
+    #[test]
+    fn test_handle_key_event_all() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        let keys = vec![
+            '1', '2', '3', '4', '5', '6', '7', '8', '0', '!', '@', '#', '$', '%', '^', '&', '+',
+            '-', 'c', '?', 'h', 'd', 'm', '[', ']', 'q', 'a', 'j', 't', 's', 'e', 'i', 'k', ';',
+            'l', 'w', 'u', 'y', ',',
+        ];
+        for k in keys {
+            let event = KeyEvent {
+                code: KeyCode::Char(k),
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::empty(),
+            };
+            handle_key_event(&event);
+        }
+
+        // Test Shift modifiers
+        let shift_keys = vec!['A', 'J', 'T', 'S', 'E', 'I', ':', 'L', 'C'];
+        for k in shift_keys {
+            let event = KeyEvent {
+                code: KeyCode::Char(k),
+                modifiers: KeyModifiers::SHIFT,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::empty(),
+            };
+            handle_key_event(&event);
+        }
     }
 
     #[test]

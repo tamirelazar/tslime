@@ -702,6 +702,49 @@ mod tests {
     }
 
     #[test]
+    fn test_saved_config_to_sim_config() {
+        let saved = SavedConfig {
+            name: "test".to_string(),
+            description: None,
+            population: 10000,
+            sensor_angle: 20.0,
+            sensor_distance: 10.0,
+            rotation_angle: 30.0,
+            step_size: 1.0,
+            decay_factor: 0.9,
+            deposit_amount: 5.0,
+            max_brightness: 20.0,
+            diffusion_kernel: "gaussian".to_string(),
+            diffusion_sigma: 1.0,
+            palette: "organic".to_string(),
+            charset: "ascii".to_string(),
+            reverse_palette: false,
+            invert_palette: false,
+            warmup_frames: 0,
+            food_persist: false,
+            auto_reset: false,
+            grid: false,
+            grid_style: None,
+            init_mode: "random".to_string(),
+            food_path: None,
+        };
+        let sim_config = saved.to_sim_config().unwrap();
+        assert_eq!(sim_config.species_configs[0].count, 10000);
+        assert_eq!(sim_config.diffusion_kernel, DiffusionKernel::Gaussian);
+    }
+
+    #[test]
+    fn test_helper_parsers() {
+        assert_eq!(parse_init_mode("random").unwrap(), InitMode::Random);
+        assert_eq!(parse_init_mode("circle").unwrap(), InitMode::Circle);
+        assert!(parse_init_mode("invalid").is_err());
+
+        assert_eq!(parse_charset("ascii").unwrap(), Charset::Ascii);
+        assert_eq!(parse_charset("braille").unwrap(), Charset::Braille);
+        assert!(parse_charset("invalid").is_err());
+    }
+
+    #[test]
     fn test_full_config_roundtrip() {
         let mut state = create_test_runtime_state();
 

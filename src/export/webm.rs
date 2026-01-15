@@ -125,3 +125,64 @@ impl Drop for WebmExporter {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_webm_exporter_new() {
+        let exporter = WebmExporter::new(640, 480, "test.webm", 30);
+        assert!(exporter.is_ok());
+        let exporter = exporter.unwrap();
+        assert_eq!(exporter.width, 640);
+        assert_eq!(exporter.height, 480);
+        assert_eq!(exporter.fps, 30);
+    }
+
+    #[test]
+    fn test_webm_exporter_temp_dir_created() {
+        let exporter = WebmExporter::new(640, 480, "test.webm", 30).unwrap();
+        assert!(exporter.temp_dir.exists());
+        assert!(exporter.temp_dir.to_string_lossy().contains("webm_frames_"));
+        let _ = std::fs::remove_dir_all(&exporter.temp_dir);
+    }
+
+    #[test]
+    fn test_webm_exporter_add_frame() {
+        let mut exporter = WebmExporter::new(2, 2, "test.webm", 30).unwrap();
+        let pixels = vec![255u8; 12]; // 2x2 RGB = 12 bytes
+        let result = exporter.add_frame_png(&pixels);
+        assert!(result.is_ok());
+        // Don't check frame count here as Drop may have cleaned up
+    }
+
+    #[test]
+    fn test_webm_exporter_multiple_frames() {
+        let mut exporter = WebmExporter::new(2, 2, "test.webm", 30).unwrap();
+        let pixels = vec![255u8; 12];
+
+        for i in 0..5 {
+            let result = exporter.add_frame_png(&pixels);
+            assert!(result.is_ok(), "Failed to add frame {}", i);
+        }
+        // Verify frames were added before Drop cleans up
+        assert_eq!(exporter.frames.len(), 5);
+    }
+
+    #[test]
+    fn test_webm_exporter_cleanup_removes_frames() {
+        let mut exporter = WebmExporter::new(2, 2, "test.webm", 30).unwrap();
+        let pixels = vec![255u8; 12];
+        let _ = exporter.add_frame_png(&pixels);
+
+        // Verify frames exist before cleanup
+        assert!(!exporter.frames.is_empty());
+
+        let temp_dir_path = exporter.temp_dir.clone();
+        assert!(temp_dir_path.exists());
+
+        let _ = exporter.cleanup();
+        assert!(!temp_dir_path.exists());
+    }
+}

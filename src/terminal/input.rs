@@ -111,4 +111,24 @@ mod tests {
         poller.set_poll_timeout(Duration::from_millis(100));
         assert_eq!(poller.poll_timeout, Duration::from_millis(100));
     }
+
+    #[test]
+    fn test_is_exit_key() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        let q = KeyEvent {
+            code: KeyCode::Char('q'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert!(InputPoller::is_exit_key(&q));
+
+        let x = KeyEvent {
+            code: KeyCode::Char('x'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert!(!InputPoller::is_exit_key(&x));
+    }
 }

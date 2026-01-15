@@ -68,3 +68,74 @@ impl GifExporter {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_gif_exporter_new() {
+        let exporter = GifExporter::new(640, 480, "test.gif", 30);
+        assert!(exporter.is_ok());
+        let exporter = exporter.unwrap();
+        assert_eq!(exporter.width, 640);
+        assert_eq!(exporter.height, 480);
+    }
+
+    #[test]
+    fn test_gif_exporter_new_zero_fps() {
+        let exporter = GifExporter::new(640, 480, "test.gif", 0);
+        assert!(exporter.is_ok());
+        let exporter = exporter.unwrap();
+        assert_eq!(exporter.delay, 10);
+    }
+
+    #[test]
+    fn test_gif_exporter_add_frame() {
+        let mut exporter = GifExporter::new(2, 2, "test.gif", 30).unwrap();
+        let pixels = vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255]; // RGB for 2x2
+        exporter.add_frame_rgb(&pixels);
+        assert_eq!(exporter.frames.len(), 1);
+    }
+
+    #[test]
+    fn test_gif_exporter_add_frame_wrong_size() {
+        let mut exporter = GifExporter::new(2, 2, "test.gif", 30).unwrap();
+        let wrong_pixels = vec![255, 0, 0]; // Wrong size
+        exporter.add_frame_rgb(&wrong_pixels);
+        assert_eq!(exporter.frames.len(), 0);
+    }
+
+    #[test]
+    fn test_gif_exporter_finish_no_frames() {
+        let mut exporter = GifExporter::new(2, 2, "test.gif", 30).unwrap();
+        let result = exporter.finish("/tmp/nonexistent/test.gif");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "No frames to export");
+    }
+
+    #[test]
+    fn test_gif_exporter_finish_with_frames() {
+        let mut exporter = GifExporter::new(2, 2, "test.gif", 30).unwrap();
+        let pixels = vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255];
+        exporter.add_frame_rgb(&pixels);
+
+        let output_path = "/tmp/tslime_test.gif";
+        let result = exporter.finish(output_path);
+        assert!(result.is_ok());
+
+        let _ = std::fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn test_gif_exporter_multiple_frames() {
+        let mut exporter = GifExporter::new(2, 2, "test.gif", 30).unwrap();
+        let pixels = vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255];
+
+        for _ in 0..3 {
+            exporter.add_frame_rgb(&pixels);
+        }
+
+        assert_eq!(exporter.frames.len(), 3);
+    }
+}

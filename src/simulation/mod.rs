@@ -1179,6 +1179,7 @@ mod tests {
                     rotation_angle: 45.0,
                     step_size: 1.0,
                     deposit_amount: 5.0,
+                    ..Default::default()
                 },
                 SpeciesConfig {
                     name: "blue".to_string(),
@@ -1188,6 +1189,7 @@ mod tests {
                     rotation_angle: 45.0,
                     step_size: 1.0,
                     deposit_amount: 5.0,
+                    ..Default::default()
                 },
             ],
             separate_species_trails: true,
@@ -1220,5 +1222,94 @@ mod tests {
             "Blue species trail (index 1, 500 agents) should have significant values, got sum: {}",
             blue_trail_sum
         );
+    }
+
+    #[test]
+    fn test_simulation_reset() {
+        let config = SimConfig::default();
+        let mut sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
+        sim.update(1.0);
+        let sum_before = sim.trail_map().current().iter().sum::<f32>();
+        assert!(sum_before > 0.0);
+
+        sim.reset(123, InitMode::CentralBurst);
+        assert_eq!(sim.trail_map().current().iter().sum::<f32>(), 0.0);
+        assert_eq!(sim.agent_count(), 50000);
+    }
+
+    #[test]
+    fn test_update_config() {
+        let config = SimConfig::default();
+        let mut sim = Simulation::new(100, 100, config.clone(), 42, InitMode::Random, 0);
+
+        let mut new_config = config;
+        new_config.separate_species_trails = true;
+        new_config.species_configs.push(SpeciesConfig {
+            name: "blue".to_string(),
+            count: 100,
+            color: "0000ff".to_string(),
+            ..Default::default()
+        });
+
+        sim.update_config(new_config);
+        assert_eq!(sim.trail_maps().len(), 2);
+    }
+
+    #[test]
+    fn test_add_mouse_attractor() {
+        let config = SimConfig::default();
+        let mut sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
+        sim.add_mouse_attractor(50.0, 50.0, 5.0);
+        assert_eq!(sim.attractor_count(), 1);
+    }
+
+    #[test]
+    fn test_create_food_attractors_empty() {
+        let attractors =
+            Simulation::create_food_attractors(100, 100, "nonexistent.png", false, 1.0, 1.0, 0.5);
+        assert!(attractors.is_empty());
+    }
+
+    #[test]
+    fn test_init_modes() {
+        let modes = [
+            InitMode::Random,
+            InitMode::CentralBurst,
+            InitMode::Circle,
+            InitMode::Gradient,
+            InitMode::WaveFront,
+            InitMode::Spiral,
+            InitMode::RandomClusters,
+            InitMode::Food, // Falls back to random if no path
+        ];
+
+        for mode in modes {
+            let config = SimConfig {
+                species_configs: vec![SpeciesConfig {
+                    count: 100,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let sim = Simulation::new(100, 100, config, 42, mode, 0);
+            assert_eq!(sim.agent_count(), 100, "Failed for mode {:?}", mode);
+        }
+    }
+
+    #[test]
+    fn test_counts() {
+        let config = SimConfig {
+            attractors: vec![crate::simulation::config::Attractor::new(1.0, 1.0, 1.0)],
+            obstacles: vec![crate::simulation::config::Obstacle::Circle {
+                x: 1.0,
+                y: 1.0,
+                radius: 1.0,
+            }],
+            ..Default::default()
+        };
+        let sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
+        assert_eq!(sim.attractor_count(), 1);
+        assert_eq!(sim.obstacle_count(), 1);
+        assert_eq!(sim.species_count(), 1);
     }
 }

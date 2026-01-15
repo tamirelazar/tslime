@@ -271,4 +271,164 @@ mod tests {
         let dithered = apply_dither(0, 0, 1.5, 1.0);
         assert_eq!(dithered, 1.0);
     }
+
+    #[test]
+    fn test_ordered_dither_different_matrices() {
+        let brightness = 0.5;
+        let result_bayer = apply_ordered_dither(0, 0, brightness, 1.0, DitherMatrix::Bayer4x4);
+        let result_bayer_8x8 = apply_ordered_dither(0, 0, brightness, 1.0, DitherMatrix::Bayer8x8);
+        assert!(result_bayer >= 0.0 && result_bayer <= 1.0);
+        assert!(result_bayer_8x8 >= 0.0 && result_bayer_8x8 <= 1.0);
+    }
+
+    #[test]
+    fn test_dither_mode_name() {
+        assert_eq!(DitherMode::None.name(), "None");
+        assert_eq!(
+            DitherMode::Ordered {
+                intensity: 1.0,
+                matrix: DitherMatrix::Bayer4x4
+            }
+            .name(),
+            "Ordered"
+        );
+        assert_eq!(
+            DitherMode::ErrorDiffusion { serpentine: true }.name(),
+            "ErrorDiff"
+        );
+        assert_eq!(
+            DitherMode::Hybrid {
+                edge_threshold: 0.5,
+                intensity: 1.0,
+                matrix: DitherMatrix::Bayer4x4
+            }
+            .name(),
+            "Hybrid"
+        );
+    }
+
+    #[test]
+    fn test_dither_mode_default() {
+        assert_eq!(DitherMode::default(), DitherMode::None);
+    }
+
+    #[test]
+    fn test_ordered_dither_tile_consistency() {
+        let brightness = 0.5;
+        for matrix in [DitherMatrix::Bayer4x4, DitherMatrix::Bayer8x8] {
+            for y in 0..4 {
+                for x in 0..4 {
+                    let result = apply_ordered_dither(x, y, brightness, 1.0, matrix);
+                    assert!(
+                        result >= 0.0 && result <= 1.0,
+                        "Result out of bounds for matrix {:?}",
+                        matrix
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_ordered_dither_low_brightness() {
+        let result = apply_ordered_dither(0, 0, 0.1, 1.0, DitherMatrix::Bayer4x4);
+        assert!(result <= 0.1);
+    }
+
+    #[test]
+    fn test_ordered_dither_high_brightness() {
+        let result = apply_ordered_dither(0, 0, 0.9, 1.0, DitherMatrix::Bayer4x4);
+        assert!(result >= 0.0 && result <= 1.0);
+    }
+
+    #[test]
+    fn test_local_variance_basic() {
+        use crate::render::downsample::Cell;
+
+        let mut downsampled = vec![
+            Cell {
+                top: 0.5,
+                bottom: 0.5,
+                top_left: 0.5,
+                top_right: 0.5,
+                bottom_left: 0.5,
+                bottom_right: 0.5,
+            };
+            100
+        ];
+        downsampled[50] = Cell {
+            top: 1.0,
+            bottom: 0.0,
+            top_left: 1.0,
+            top_right: 0.0,
+            bottom_left: 0.5,
+            bottom_right: 0.5,
+        };
+
+        let variance = local_variance(&downsampled, 10, 5, 5, 1);
+        assert!(variance >= 0.0);
+        assert!(variance.is_finite());
+    }
+
+    #[test]
+    fn test_local_variance_edge_case() {
+        use crate::render::downsample::Cell;
+
+        let downsampled = vec![
+            Cell {
+                top: 0.5,
+                bottom: 0.5,
+                top_left: 0.5,
+                top_right: 0.5,
+                bottom_left: 0.5,
+                bottom_right: 0.5,
+            };
+            4
+        ];
+        let variance = local_variance(&downsampled, 2, 0, 0, 1);
+        assert!(variance >= 0.0);
+    }
+
+    #[test]
+    fn test_local_variance_empty_region() {
+        use crate::render::downsample::Cell;
+
+        let downsampled: Vec<Cell> = vec![];
+        let variance = local_variance(&downsampled, 0, 0, 0, 1);
+        assert_eq!(variance, 0.0);
+    }
+
+    #[test]
+    fn test_local_variance_zero_radius() {
+        use crate::render::downsample::Cell;
+
+        let downsampled = vec![
+            Cell {
+                top: 0.5,
+                bottom: 0.5,
+                top_left: 0.5,
+                top_right: 0.5,
+                bottom_left: 0.5,
+                bottom_right: 0.5,
+            };
+            100
+        ];
+        let variance = local_variance(&downsampled, 10, 5, 5, 0);
+        assert_eq!(variance, 0.0);
+    }
+
+    #[test]
+    fn test_quantize_to_levels() {
+        assert_eq!(quantize_to_levels(0.0, 2), 0.0);
+        assert_eq!(quantize_to_levels(1.0, 2), 1.0);
+        let result = quantize_to_levels(0.5, 2);
+        assert!(result == 0.0 || result == 1.0);
+    }
+
+    #[test]
+    fn test_quantize_to_levels_more_levels() {
+        assert_eq!(quantize_to_levels(0.0, 4), 0.0);
+        assert_eq!(quantize_to_levels(1.0, 4), 1.0);
+        assert!((quantize_to_levels(0.33, 4) - 0.333).abs() < 0.01);
+    }
 }
