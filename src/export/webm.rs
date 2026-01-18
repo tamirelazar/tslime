@@ -1,3 +1,4 @@
+use rand::Rng;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -16,12 +17,14 @@ impl WebmExporter {
         _output_path: &str,
         fps: usize,
     ) -> Result<Self, String> {
+        let mut rng = rand::thread_rng();
         let temp_dir = PathBuf::from(format!(
-            "webm_frames_{}",
+            "webm_frames_{}_{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_millis()
+                .as_millis(),
+            rng.gen::<u32>()
         ));
 
         std::fs::create_dir_all(&temp_dir)

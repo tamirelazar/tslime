@@ -35,7 +35,13 @@
 //! let trail = sim.trail_map_blended();
 //! ```
 
+pub mod app;
+pub mod cli;
+pub mod config_manager;
+pub mod export;
+pub mod render;
 pub mod simulation;
+pub mod terminal;
 
 // Re-export commonly used types
 pub use simulation::Simulation;

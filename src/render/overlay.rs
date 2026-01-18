@@ -1408,4 +1408,60 @@ mod status_line_tests {
             );
         }
     }
+
+    #[test]
+    fn test_preset_comparison_overlay() {
+        let mut state = crate::terminal::control::RuntimeState::new(
+            42,
+            crate::simulation::config::InitMode::Random,
+            Preset::Organic,
+            0,
+            crate::terminal::control::MouseInteractionMode::Disabled,
+            0.0,
+        );
+        state.sensor_angle = 90.0; // Changed from default
+
+        let lines = PresetComparisonOverlay::build_overlay(&state, Preset::Organic);
+        assert!(!lines.is_empty());
+        let content_lines = lines
+            .iter()
+            .filter(|l| l.contains("Sensor Angle"))
+            .collect::<Vec<_>>();
+        assert!(!content_lines.is_empty());
+        // Should show modified marker *
+        assert!(content_lines[0].contains('*'));
+    }
+
+    #[test]
+    fn test_config_browser_overlay_items() {
+        let configs = vec![crate::config_manager::SavedConfig {
+            name: "Test Config".to_string(),
+            description: None,
+            population: 10000,
+            sensor_angle: 0.0,
+            sensor_distance: 0.0,
+            rotation_angle: 0.0,
+            step_size: 0.0,
+            decay_factor: 0.0,
+            deposit_amount: 0.0,
+            max_brightness: 0.0,
+            diffusion_kernel: "mean3x3".to_string(),
+            diffusion_sigma: 0.0,
+            palette: "Forest".to_string(),
+            charset: "ascii".to_string(),
+            reverse_palette: false,
+            invert_palette: false,
+            warmup_frames: 0,
+            food_persist: false,
+            auto_reset: false,
+            grid: false,
+            grid_style: None,
+            init_mode: "random".to_string(),
+            food_path: None,
+        }];
+
+        let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
+        assert!(lines.iter().any(|l| l.contains("Test Config")));
+        assert!(lines.iter().any(|l| l.contains("10k agents")));
+    }
 }

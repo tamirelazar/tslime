@@ -123,6 +123,14 @@ mod tests {
         };
         assert!(InputPoller::is_exit_key(&q));
 
+        let q_upper = KeyEvent {
+            code: KeyCode::Char('Q'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert!(InputPoller::is_exit_key(&q_upper));
+
         let x = KeyEvent {
             code: KeyCode::Char('x'),
             modifiers: KeyModifiers::NONE,

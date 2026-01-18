@@ -63,9 +63,11 @@ impl FrameBuffer {
         }
     }
 
-    /// Renders grid as a background layer at position (x, y).
-    /// Grid should appear behind the simulation, not blended with it.
-    /// on_vertical and on_horizontal indicate which grid lines this position is on.
+    #[cfg(test)]
+    fn get_cell(&self, x: usize, y: usize) -> &Cell {
+        &self.cells[y * self.width + x]
+    }
+
     pub fn render_grid_background(
         &mut self,
         x: usize,
@@ -2097,5 +2099,41 @@ mod tests {
             ColorMode::Bits256,
         );
         assert_eq!(renderer.palette, Palette::Heat);
+    }
+
+    #[test]
+    fn test_draw_text_overlay() {
+        let mut buffer = FrameBuffer::new(10, 5, ColorMode::Bits256);
+        let text = vec!["Hello", "World"];
+
+        buffer.draw_text_overlay(&text, 0, 0, 15, None);
+
+        assert_eq!(buffer.get_cell(0, 0).char, 'H');
+        assert_eq!(buffer.get_cell(4, 0).char, 'o');
+        assert_eq!(buffer.get_cell(0, 1).char, 'W');
+        assert_eq!(buffer.get_cell(4, 1).char, 'd');
+        assert_eq!(buffer.get_cell(0, 0).fg_color_256, Some(15));
+    }
+
+    #[test]
+    fn test_render_grid_background() {
+        let mut buffer = FrameBuffer::new(10, 5, ColorMode::TrueColor);
+        let grid_color = RgbColor {
+            r: 100,
+            g: 100,
+            b: 100,
+        };
+
+        // Render intersection
+        buffer.render_grid_background(5, 2, grid_color, 0.5, true, true);
+        assert_eq!(buffer.get_cell(5, 2).char, '┼');
+
+        // Render vertical
+        buffer.render_grid_background(5, 1, grid_color, 0.5, true, false);
+        assert_eq!(buffer.get_cell(5, 1).char, '│');
+
+        // Render horizontal
+        buffer.render_grid_background(4, 2, grid_color, 0.5, false, true);
+        assert_eq!(buffer.get_cell(4, 2).char, '─');
     }
 }
