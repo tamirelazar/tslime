@@ -591,6 +591,41 @@ Contributions are welcome! Areas of interest:
 
 ---
 
+## 🛡️ Security
+
+### Reporting Vulnerabilities
+If you discover a security vulnerability in tslime, please report it privately via email to the maintainers or open a draft security advisory on GitHub. Do not disclose vulnerabilities publicly until a fix is available.
+
+### Dependency Management
+- Dependencies are regularly audited using `cargo audit`.
+- The lockfile (`Cargo.lock`) is committed to version control to ensure reproducible builds.
+- Semantic versioning is used to track breaking changes.
+
+## ⚠️ Threat Model
+
+### Scope
+tslime is a CLI application that runs locally. It does not open network ports, bind listeners, or execute arbitrary code from remote sources.
+
+### Trusted Inputs
+- **CLI Arguments**: The user is trusted to provide valid command-line arguments.
+- **Configuration Files**: Local configuration files are assumed to be safe.
+- **Terminal Environment**: The hosting terminal emulator is assumed to be trusted.
+
+### Attack Surface
+1.  **Denial of Service (DoS)**:
+    -   *Risk*: Excessive resource consumption (CPU/RAM).
+    -   *Mitigation*: Memory usage is bounded by grid resolution (fixed at startup). CPU usage is limited by frame rate caps and sleep intervals.
+2.  **Terminal State Corruption**:
+    -   *Risk*: Leaving the terminal in an unusable state (hidden cursor, raw mode).
+    -   *Mitigation*: Signal handlers (SIGINT, SIGTERM) and `Drop` implementations ensure terminal state is restored on exit.
+3.  **Input Handling**:
+    -   *Risk*: Malformed input events causing crashes.
+    -   *Mitigation*: The `crossterm` crate handles low-level input parsing safely.
+
+### Out of Scope
+-   Protection against malicious users with local shell access (who can already execute arbitrary code).
+-   Vulnerabilities in the operating system or terminal emulator itself.
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
