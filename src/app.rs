@@ -6,7 +6,6 @@ use std::io::{self, Write};
 
 use crate::cli;
 use crate::config_manager;
-use crate::export;
 use crate::render;
 use crate::simulation;
 use crate::terminal;
@@ -517,7 +516,7 @@ pub fn print_mode(
 
     // Apply grid rendering if enabled
     if args.grid {
-        let grid_style = GridStyle::from_str(&args.grid_style).unwrap_or(GridStyle::Cross);
+        let grid_style = args.grid_style.parse().unwrap_or(GridStyle::Cross);
         let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor {
             r: 255,
             g: 255,
@@ -645,7 +644,7 @@ pub fn capture_frames_mode(
 
         // Apply grid rendering if enabled
         if args.grid {
-            let grid_style = GridStyle::from_str(&args.grid_style).unwrap_or(GridStyle::Cross);
+            let grid_style = args.grid_style.parse().unwrap_or(GridStyle::Cross);
             let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor {
                 r: 255,
                 g: 255,
@@ -1080,7 +1079,7 @@ pub fn run_simulation(
 
     // Initialize grid renderer if enabled
     let mut grid_renderer = if args.grid {
-        let grid_style = GridStyle::from_str(&args.grid_style).unwrap_or(GridStyle::Cross);
+        let grid_style = args.grid_style.parse().unwrap_or(GridStyle::Cross);
         let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor {
             r: 255,
             g: 255,
