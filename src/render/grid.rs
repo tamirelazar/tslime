@@ -1,4 +1,5 @@
 use crate::render::palette::RgbColor;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GridStyle {
@@ -7,8 +8,10 @@ pub enum GridStyle {
     Gradient,
 }
 
-impl GridStyle {
-    pub fn from_str(s: &str) -> Result<Self, String> {
+impl FromStr for GridStyle {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "cross" => Ok(GridStyle::Cross),
             "dots" => Ok(GridStyle::Dots),

@@ -1596,4 +1596,21 @@ mod tests {
 
         assert_eq!(state.wind_direction, WindDirection::North);
     }
+
+    #[test]
+    fn test_wind_direction_values() {
+        assert!(WindDirection::None.to_wind().is_none());
+        assert!(WindDirection::North.to_wind().is_some());
+        assert!(WindDirection::Northeast.to_wind().is_some());
+        assert!(WindDirection::East.to_wind().is_some());
+        assert!(WindDirection::Southeast.to_wind().is_some());
+        assert!(WindDirection::South.to_wind().is_some());
+        assert!(WindDirection::Southwest.to_wind().is_some());
+        assert!(WindDirection::West.to_wind().is_some());
+        assert!(WindDirection::Northwest.to_wind().is_some());
+
+        let north = WindDirection::North.to_wind().unwrap();
+        assert_eq!(north.dx, 0.0);
+        assert_eq!(north.dy, -1.0);
+    }
 }

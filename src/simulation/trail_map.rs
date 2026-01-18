@@ -270,7 +270,7 @@ impl TrailMap {
                 x += simd_width;
             }
 
-            let mut x = limit;
+            let mut x = limit.max(1);
             while x < width - 1 {
                 let idx = current_row + x;
                 let mut sum = 0.0f32;
@@ -347,7 +347,7 @@ impl TrailMap {
                 x += simd_width;
             }
 
-            let mut x = limit;
+            let mut x = limit.max(1);
             while x < width - 1 {
                 let idx = current_row + x;
                 let mut sum = 0.0f32;
@@ -629,7 +629,7 @@ impl TrailMap {
                 x += simd_width;
             }
 
-            let mut x = limit;
+            let mut x = limit.max(2);
             while x < width - 2 {
                 let idx = current_row + x;
                 let mut sum = 0.0f32;
@@ -950,6 +950,23 @@ mod tests {
         trail.set(10, 10, 9.0);
         trail.diffuse_gaussian_simd();
         assert!(trail.get(10, 10) < 9.0);
+    }
+    #[test]
+    fn test_diffuse_simd_small_width() {
+        let mut trail = TrailMap::new(4, 10);
+        trail.set(1, 1, 9.0);
+        trail.diffuse_simd();
+        // Just ensure it doesn't panic
+        assert!(trail.get(1, 1) < 9.0);
+    }
+
+    #[test]
+    fn test_diffuse_gaussian_simd_small_width() {
+        let mut trail = TrailMap::new(4, 10);
+        trail.set(1, 1, 9.0);
+        trail.diffuse_gaussian_simd();
+        // Just ensure it doesn't panic
+        assert!(trail.get(1, 1) < 9.0);
     }
 }
 

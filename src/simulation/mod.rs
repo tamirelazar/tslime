@@ -1312,4 +1312,38 @@ mod tests {
         assert_eq!(sim.obstacle_count(), 1);
         assert_eq!(sim.species_count(), 1);
     }
+
+    #[test]
+    fn test_init_from_food_fallback() {
+        // Test fallback when image path is missing
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(42);
+        let mut agents = Vec::new();
+        let population = 100;
+        let species_id = 0;
+        let width = 100;
+        let height = 100;
+
+        Simulation::init_from_food(
+            &mut rng,
+            width,
+            height,
+            &mut agents,
+            population,
+            species_id,
+            "nonexistent.png",
+            false,
+            1.0,
+        );
+
+        assert_eq!(agents.len(), population);
+        // Verify agents are distributed randomly (not all at 0,0 or something)
+        let unique_positions = agents
+            .iter()
+            .map(|a| ((a.x as i32), (a.y as i32)))
+            .collect::<std::collections::HashSet<_>>();
+        assert!(
+            unique_positions.len() > 50,
+            "Agents should be randomly distributed"
+        );
+    }
 }
