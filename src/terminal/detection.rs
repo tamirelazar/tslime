@@ -73,7 +73,9 @@ fn detect_truecolor() -> ColorCapability {
         let term_lower = term.to_lowercase();
         if term_lower.contains("iterm")
             || term_lower.contains("terminal.app")
+            || term_lower.contains("apple_terminal")
             || term_lower.contains("warp")
+            || term_lower.contains("vscode")
         {
             return ColorCapability::TrueColor;
         }
