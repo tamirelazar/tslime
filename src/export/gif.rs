@@ -1,6 +1,7 @@
 use gif::{Encoder, Frame, Repeat};
 use std::fs::File;
 
+/// Encodes video frames into an animated GIF file.
 pub struct GifExporter {
     width: usize,
     height: usize,
@@ -9,6 +10,13 @@ pub struct GifExporter {
 }
 
 impl GifExporter {
+    /// Creates a new GIF exporter.
+    ///
+    /// # Arguments
+    /// * `width` - Frame width.
+    /// * `height` - Frame height.
+    /// * `_output_path` - Output path (unused in new, used in finish).
+    /// * `fps` - Frames per second.
     pub fn new(
         width: usize,
         height: usize,
@@ -29,12 +37,16 @@ impl GifExporter {
         })
     }
 
+    /// Adds a frame to the animation.
+    ///
+    /// The pixels should be a flat byte slice of RGB data.
     pub fn add_frame_rgb(&mut self, pixels: &[u8]) {
         if pixels.len() == self.width * self.height * 3 {
             self.frames.push(pixels.to_vec());
         }
     }
 
+    /// Finalizes and writes the GIF to the output path.
     pub fn finish(&mut self, output_path: &str) -> Result<(), String> {
         if self.frames.is_empty() {
             return Err("No frames to export".to_string());

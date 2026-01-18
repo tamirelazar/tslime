@@ -1,4 +1,5 @@
 #[allow(dead_code)]
+/// A frame of downsampled simulation data, ready for rendering.
 pub struct DownsampledFrame {
     width: usize,
     height: usize,
@@ -6,24 +7,35 @@ pub struct DownsampledFrame {
 }
 
 #[derive(Clone, Copy, Default)]
+/// Represents a single terminal cell containing subpixel brightness values.
 pub struct Cell {
+    /// Top half brightness.
     pub top: f32,
+    /// Bottom half brightness.
     pub bottom: f32,
     // Quadrant support: when using quadrant charset, these provide 4× vertical resolution
+    /// Top-left quadrant brightness.
     pub top_left: f32,
+    /// Top-right quadrant brightness.
     pub top_right: f32,
+    /// Bottom-left quadrant brightness.
     pub bottom_left: f32,
+    /// Bottom-right quadrant brightness.
     pub bottom_right: f32,
 }
 
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
+/// Helper struct for multi-species rendering (unused in current simple downsampler).
 pub struct MultiSpeciesCell {
+    /// Total brightness.
     pub brightness: f32,
+    /// Dominant species index.
     pub species_index: usize,
 }
 
 impl DownsampledFrame {
+    /// Creates a new, empty downsampled frame.
     pub fn new(width: usize, height: usize) -> Self {
         Self {
             width,
@@ -43,20 +55,24 @@ impl DownsampledFrame {
     }
 
     #[allow(dead_code)]
+    /// Returns the width of the frame in cells.
     pub fn width(&self) -> usize {
         self.width
     }
 
     #[allow(dead_code)]
+    /// Returns the height of the frame in cells.
     pub fn height(&self) -> usize {
         self.height
     }
 
+    /// Returns a slice of all cells in row-major order.
     pub fn cells(&self) -> &[Cell] {
         &self.cells
     }
 
     #[allow(dead_code)]
+    /// Returns the cell at the specified coordinates.
     pub fn get(&self, x: usize, y: usize) -> Cell {
         if x < self.width && y < self.height {
             self.cells[y * self.width + x]
@@ -73,6 +89,10 @@ impl DownsampledFrame {
     }
 }
 
+/// Downsamples a high-resolution trail map to terminal dimensions.
+///
+/// Aggregates grid cells into terminal character cells, computing average brightness
+/// for sub-regions (top/bottom, quadrants) to support high-res rendering modes.
 pub fn downsample(
     trail_map: &[f32],
     sim_width: usize,
@@ -162,6 +182,9 @@ pub fn downsample(
     frame
 }
 
+/// Downsamples multiple trail maps, aggregating brightness across species.
+///
+/// Similar to `downsample`, but sums contributions from multiple species layers.
 pub fn downsample_multi_species(
     trail_maps: &[(&[f32], usize)],
     sim_width: usize,

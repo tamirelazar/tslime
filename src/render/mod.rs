@@ -1,9 +1,18 @@
+/// Adaptive brightness normalization logic.
 pub mod adaptive_brightness;
+/// Character set definitions and mapping logic.
 pub mod charset;
+/// Dithering algorithms (ordered, error diffusion).
 pub mod dither;
+/// Downsampling from simulation grid to terminal grid.
 pub mod downsample;
+/// Error diffusion specific implementation.
 pub mod error_diffusion;
+/// Background grid rendering.
 pub mod grid;
+/// Controls overlay rendering.
 pub mod options_overlay;
+/// General overlay rendering utilities (help, stats, etc.).
 pub mod overlay;
+/// Color palette definitions and conversions.
 pub mod palette;

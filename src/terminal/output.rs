@@ -1,3 +1,10 @@
+//! Terminal output rendering and buffer management.
+//!
+//! This module handles the low-level details of converting simulation data into
+//! ANSI escape sequences or character grids for display in the terminal.
+//! It supports double-buffering, color mapping, downsampling, and various
+//! character sets (Block, Braille, ASCII).
+
 use crate::cli::ColorMode;
 use crate::cli::Palette;
 use crate::render::charset::{self, Charset};
@@ -19,6 +26,10 @@ struct Cell {
     bg_color_rgb: Option<RgbColor>,
 }
 
+/// A double-buffered screen buffer for terminal rendering.
+///
+/// Stores character and color information for each cell in the terminal grid.
+/// Handles efficient updates and string building for output.
 pub struct FrameBuffer {
     width: usize,
     height: usize,
@@ -29,14 +40,17 @@ pub struct FrameBuffer {
 }
 
 impl FrameBuffer {
+    /// Get the width of the frame buffer.
     pub fn width(&self) -> usize {
         self.width
     }
 
+    /// Get the height of the frame buffer.
     pub fn height(&self) -> usize {
         self.height
     }
 
+    /// Create a new empty frame buffer.
     pub fn new(width: usize, height: usize, color_mode: ColorMode) -> Self {
         Self {
             width,
@@ -68,6 +82,9 @@ impl FrameBuffer {
         &self.cells[y * self.width + x]
     }
 
+    /// Render a grid background pattern into the buffer.
+    ///
+    /// Used for overlaying a visual grid on top of empty space.
     pub fn render_grid_background(
         &mut self,
         x: usize,
@@ -128,6 +145,9 @@ impl FrameBuffer {
         // If cell is not empty, don't render grid (simulation takes precedence)
     }
 
+    /// Draw text directly onto the frame buffer.
+    ///
+    /// Used for UI overlays like help text, status lines, etc.
     pub fn draw_text_overlay<T: AsRef<str>>(
         &mut self,
         text_lines: &[T],
@@ -179,6 +199,10 @@ impl FrameBuffer {
             .fold(0.0, |acc, v| acc.max(v))
     }
 
+    /// Create a frame buffer from downsampled simulation data.
+    ///
+    /// This is the main method for converting simulation state into renderable cells.
+    /// It handles color mapping, character selection, dithering, and multi-species blending.
     #[allow(clippy::too_many_arguments)]
     pub fn from_downsampled(
         downsampled: &[DownsampleCell],
@@ -565,6 +589,9 @@ impl FrameBuffer {
         }
     }
 
+    /// Build the final ANSI string for the frame.
+    ///
+    /// Optimizes output by only emitting color codes when they change.
     pub fn build_frame_string(&self, plain_output: bool, color_mode: ColorMode) -> String {
         let mut output = String::new();
 
@@ -646,6 +673,9 @@ impl FrameBuffer {
         output
     }
 
+    /// Get the raw RGB values for all pixels in the frame buffer.
+    ///
+    /// Useful for exporting the frame to an image file.
     pub fn get_rgb_pixels(&self) -> Vec<u8> {
         let mut pixels = Vec::with_capacity(self.width * self.height * 3);
         for cell in &self.cells {
@@ -666,6 +696,9 @@ impl FrameBuffer {
     }
 }
 
+/// Render a single frame to stdout.
+///
+/// This is a convenience wrapper around creating a `FrameBuffer` and writing it.
 #[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 pub fn render_frame(
@@ -707,6 +740,9 @@ pub fn render_frame(
     execute!(std::io::stdout(), &buffer)
 }
 
+/// Handles the state and logic for rendering frames to the terminal.
+///
+/// Maintains persistent state like error diffusion buffers and configuration.
 pub struct TerminalRenderer {
     stdout: Stdout,
     width: usize,
@@ -724,6 +760,7 @@ pub struct TerminalRenderer {
 }
 
 impl TerminalRenderer {
+    /// Create a new terminal renderer.
     pub fn new(
         width: usize,
         height: usize,
@@ -750,6 +787,9 @@ impl TerminalRenderer {
         }
     }
 
+    /// Set the dithering mode.
+    ///
+    /// This may allocate or resize error diffusion buffers.
     pub fn set_dither_mode(&mut self, mode: DitherMode) {
         self.dither_mode = mode;
         self.error_diffusion = match mode {
@@ -762,11 +802,15 @@ impl TerminalRenderer {
         };
     }
 
+    /// Get the current dithering mode.
     #[allow(dead_code)]
     pub fn dither_mode(&self) -> DitherMode {
         self.dither_mode
     }
 
+    /// Reset error diffusion error accumulators.
+    ///
+    /// Should be called at the start of each frame.
     #[allow(dead_code)]
     pub fn reset_error_diffusion(&mut self) {
         if let Some(ref mut ed) = self.error_diffusion {
@@ -774,6 +818,7 @@ impl TerminalRenderer {
         }
     }
 
+    /// Resize error diffusion buffers.
     #[allow(dead_code)]
     pub fn resize_error_diffusion(&mut self, width: usize, height: usize) {
         if let Some(ref mut ed) = self.error_diffusion {
@@ -781,44 +826,53 @@ impl TerminalRenderer {
         }
     }
 
+    /// Update the renderer dimensions.
     pub fn set_dimensions(&mut self, width: usize, height: usize) {
         self.width = width;
         self.height = height;
     }
 
+    /// Update the color palette.
     #[allow(dead_code)]
     pub fn set_palette(&mut self, palette: Palette) {
         self.palette = palette;
     }
 
+    /// Set the hue shift amount (0.0 to 1.0).
     #[allow(dead_code)]
     pub fn set_hue_shift(&mut self, hue_shift: f32) {
         self.hue_shift = hue_shift;
     }
 
+    /// Update the character set used for rendering.
     #[allow(dead_code)]
     pub fn set_charset(&mut self, charset: Charset) {
         self.charset = charset;
     }
 
+    /// Enable or disable palette inversion (light <-> dark).
     pub fn set_invert_palette(&mut self, invert: bool) {
         self.invert_palette = invert;
     }
 
+    /// Enable or disable palette reversal (start <-> end color).
     pub fn set_reverse_palette(&mut self, reverse: bool) {
         self.reverse_palette = reverse;
     }
 
+    /// Set specific colors for multi-species rendering.
     pub fn set_species_colors(&mut self, enabled: bool, colors: Vec<RgbColor>) {
         self.species_colors_enabled = enabled;
         self.species_rgb_colors = colors;
     }
 
+    /// Get a mutable reference to the standard output.
     #[allow(dead_code)]
     pub fn stdout_mut(&mut self) -> &mut Stdout {
         &mut self.stdout
     }
 
+    /// Render a frame to the terminal.
     #[allow(dead_code)]
     pub fn render(
         &mut self,
@@ -852,6 +906,9 @@ impl TerminalRenderer {
         execute!(self.stdout, &buffer)
     }
 
+    /// Render a frame with text overlays.
+    ///
+    /// Supports various overlay types: help, controls, status, stats, info, config, etc.
     #[allow(clippy::too_many_arguments)]
     pub fn render_with_overlay<T: AsRef<str>, U: AsRef<str>>(
         &mut self,
@@ -995,6 +1052,9 @@ impl TerminalRenderer {
         execute!(self.stdout, &buffer)
     }
 
+    /// Render a multi-species frame with text overlays.
+    ///
+    /// Combines multiple trail maps, assigning a distinct color to each species.
     #[allow(clippy::too_many_arguments)]
     pub fn render_multi_species_with_overlay<T: AsRef<str>, U: AsRef<str>>(
         &mut self,

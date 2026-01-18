@@ -41,11 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Duplicate build targets for memory benchmarks
 - Unsafe unwrap() calls in WebM export and frame capture
 - Future-incompatibility warnings from deprecated num-* crates
+- Duplicate code blocks in `trail_map.rs` and `timing.rs`
 
 ### Documentation
-- Added rustdoc comments to public API
+- Completed API documentation for all public modules (100% coverage)
 - Updated README with all 16 palettes and 12 presets
 - Added module-level documentation
+- Fixed intra-doc links in library documentation
 
 ## [0.1.0] - 2024-12-24
 

@@ -2,6 +2,7 @@ use rand::Rng;
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Encodes video frames into a WebM video using FFmpeg.
 pub struct WebmExporter {
     width: usize,
     height: usize,
@@ -11,6 +12,9 @@ pub struct WebmExporter {
 }
 
 impl WebmExporter {
+    /// Creates a new WebM exporter.
+    ///
+    /// Initializes a temporary directory for storing individual frames.
     pub fn new(
         width: usize,
         height: usize,
@@ -39,6 +43,9 @@ impl WebmExporter {
         })
     }
 
+    /// Adds a frame to the animation.
+    ///
+    /// The pixels should be a flat byte slice of RGB data. Saves the frame as a PNG in the temp dir.
     pub fn add_frame_png(&mut self, pixels: &[u8]) -> Result<(), String> {
         let frame_idx = self.frames.len();
         let filename = self.temp_dir.join(format!("frame_{:04}.png", frame_idx));
@@ -56,6 +63,9 @@ impl WebmExporter {
         Ok(())
     }
 
+    /// Finalizes the export by invoking FFmpeg.
+    ///
+    /// Compiles the temporary frames into a WebM video and cleans up the temp dir.
     pub fn finish(&mut self, output_path: &str) -> Result<(), String> {
         if self.frames.is_empty() {
             return Err("No frames to export".to_string());

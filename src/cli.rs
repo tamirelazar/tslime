@@ -10,46 +10,78 @@ use crate::simulation::config::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Operational mode of the application.
 pub enum Mode {
+    /// Standard interactive mode (default).
     Default,
+    /// Explicit interactive mode.
     Live,
+    /// Screensaver mode (exits on input).
     Screensaver,
+    /// Print a single frame and exit.
     Print,
+    /// Capture a sequence of frames to files.
     CaptureFrames,
+    /// Export animation to GIF.
     GifExport,
+    /// Export animation to WebM.
     WebmExport,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Terminal color depth capability.
 pub enum ColorMode {
+    /// 24-bit True Color (16.7 million colors).
     TrueColor,
+    /// Standard 3-bit color (8 colors).
     Bits8,
+    /// 4-bit color (16 colors).
     Bits16,
+    /// 8-bit color (256 colors).
     Bits256,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Color palette for rendering trails.
 pub enum Palette {
+    /// Organic green/brown tones.
     Organic,
+    /// Thermal camera style (black-red-yellow-white).
     Heat,
+    /// Deep ocean blues and teals.
     Ocean,
+    /// Monochrome grayscale.
     Mono,
+    /// Deep forest greens.
     Forest,
+    /// Cyberpunk neon colors.
     Neon,
+    /// Warm earth tones.
     Warm,
+    /// High saturation vibrant colors.
     Vibrant,
+    /// High contrast monochrome for readability.
     LegibleMono,
+    /// Radioactive green slime.
     Slime,
+    /// Dark moldy colors.
     Mold,
+    /// Fungal growth colors.
     Fungus,
+    /// Murky swamp colors.
     Swamp,
+    /// Soft mossy greens.
     Moss,
+    /// Deep space purples and blues.
     Cosmic,
+    /// Ghostly pale colors.
     Ethereal,
+    /// Custom user-defined palette.
     Custom(Vec<RgbColor>),
 }
 
 impl Palette {
+    /// Returns the string representation of the palette name.
     pub fn name(&self) -> &str {
         match self {
             Palette::Organic => "Organic",
@@ -74,19 +106,30 @@ impl Palette {
 }
 
 #[derive(Debug, Clone)]
+/// Simulation grid resolution.
 pub struct Resolution {
+    /// Width of the simulation grid.
     pub width: usize,
+    /// Height of the simulation grid.
     pub height: usize,
 }
 
 #[derive(Debug, Clone)]
+/// Configuration for a specific agent species.
 pub struct SpeciesArg {
+    /// Name of the species.
     pub name: String,
+    /// Number of agents.
     pub count: usize,
+    /// Sensor angle in degrees.
     pub sensor_angle: f32,
+    /// Maximum rotation angle in degrees.
     pub rotation_angle: f32,
+    /// Movement speed.
     pub step_size: f32,
+    /// Amount of pheromone deposited.
     pub deposit_amount: f32,
+    /// Hex color code.
     pub color: String,
 }
 
@@ -274,9 +317,13 @@ impl FromStr for InitMode {
 }
 
 #[derive(Debug, Clone)]
+/// Configuration for a point attractor/repeller.
 pub struct AttractorArg {
+    /// X coordinate.
     pub x: f32,
+    /// Y coordinate.
     pub y: f32,
+    /// Strength (positive = attract, negative = repel).
     pub strength: f32,
 }
 
@@ -307,8 +354,11 @@ impl std::str::FromStr for AttractorArg {
 }
 
 #[derive(Debug, Clone)]
+/// Configuration for wind force.
 pub struct WindArg {
+    /// Horizontal wind component.
     pub dx: f32,
+    /// Vertical wind component.
     pub dy: f32,
 }
 
@@ -335,7 +385,9 @@ impl std::str::FromStr for WindArg {
 }
 
 #[derive(Debug, Clone)]
+/// Configuration for a physical obstacle.
 pub struct ObstacleArg {
+    /// The obstacle definition.
     pub obstacle: Obstacle,
 }
 
@@ -478,8 +530,10 @@ impl FromStr for DiffusionKernel {
 #[command(name = "tslime")]
 #[command(about = "Terminal physarum simulation screensaver", long_about = None)]
 #[command(version)]
+/// Command-line arguments for configuring the simulation.
 pub struct Args {
     #[arg(short = 'l', long = "live", help = "Continuous animation mode")]
+    /// Continuous animation mode (interactive).
     pub live: bool,
 
     #[arg(
@@ -487,15 +541,18 @@ pub struct Args {
         long = "screensaver",
         help = "Screensaver mode (exit on keypress)"
     )]
+    /// Screensaver mode - exits on any keypress.
     pub screensaver: bool,
 
     #[arg(short = 'p', long = "print", help = "Print single frame and exit")]
+    /// Print a single frame and exit (non-interactive).
     pub print: bool,
 
     #[arg(
         long = "capture-frames",
         help = "Capture simulation frames for GIF generation"
     )]
+    /// Capture simulation frames to text files.
     pub capture_frames: bool,
 
     #[arg(
@@ -504,6 +561,7 @@ pub struct Args {
         default_value = "50",
         help = "Number of frames to capture"
     )]
+    /// Number of frames to capture.
     pub frame_count: usize,
 
     #[arg(
@@ -512,6 +570,7 @@ pub struct Args {
         default_value = "50",
         help = "Simulation steps between captured frames"
     )]
+    /// Number of simulation steps to skip between captured frames.
     pub frame_skip: usize,
 
     #[arg(
@@ -520,6 +579,7 @@ pub struct Args {
         default_value = "frames",
         help = "Directory to save captured frames"
     )]
+    /// Directory to save captured frames.
     pub frame_dir: String,
 
     #[arg(
@@ -528,6 +588,7 @@ pub struct Args {
         value_name = "INT",
         help = "Random seed for reproducibility"
     )]
+    /// Random seed for reproducible results.
     pub seed: Option<u64>,
 
     #[arg(
@@ -537,6 +598,7 @@ pub struct Args {
         default_value = "50000",
         help = "Number of agents"
     )]
+    /// Number of agents in the simulation.
     pub population: usize,
 
     #[arg(
@@ -545,6 +607,7 @@ pub struct Args {
         default_value = "22.5",
         help = "Sensor spread angle"
     )]
+    /// Angle between sensors (in degrees).
     pub sensor_angle: f32,
 
     #[arg(
@@ -553,6 +616,7 @@ pub struct Args {
         default_value = "9.0",
         help = "Sensor range"
     )]
+    /// Distance to sensors.
     pub sensor_distance: f32,
 
     #[arg(
@@ -561,6 +625,7 @@ pub struct Args {
         default_value = "45.0",
         help = "Turn amount per step"
     )]
+    /// Maximum rotation angle per step (in degrees).
     pub rotation_angle: f32,
 
     #[arg(
@@ -569,6 +634,7 @@ pub struct Args {
         default_value = "1.0",
         help = "Movement speed"
     )]
+    /// Distance moved per step.
     pub step_size: f32,
 
     #[arg(
@@ -577,6 +643,7 @@ pub struct Args {
         default_value = "0.5",
         help = "Trail decay factor"
     )]
+    /// Trail decay factor (0.0-1.0).
     pub decay_factor: f32,
 
     #[arg(
@@ -585,6 +652,7 @@ pub struct Args {
         default_value = "5.0",
         help = "Amount of pheromone deposited by agents per step"
     )]
+    /// Amount of pheromone deposited per step.
     pub deposit_amount: f32,
 
     #[arg(
@@ -593,6 +661,7 @@ pub struct Args {
         default_value = "100.0",
         help = "Fixed maximum brightness for normalization (prevents flickering)"
     )]
+    /// Maximum brightness for normalization.
     pub max_brightness: f32,
 
     #[arg(
@@ -600,6 +669,7 @@ pub struct Args {
         value_name = "TYPE",
         help = "Diffusion kernel type (mean3x3, gaussian)"
     )]
+    /// Diffusion kernel type (mean3x3 or gaussian).
     pub diffusion_kernel: Option<DiffusionKernel>,
 
     #[arg(
@@ -607,6 +677,7 @@ pub struct Args {
         value_name = "FLOAT",
         help = "Gaussian kernel sigma value (0.5-2.0, only used with gaussian kernel)"
     )]
+    /// Sigma value for Gaussian diffusion.
     pub diffusion_sigma: Option<f32>,
 
     #[arg(
@@ -614,6 +685,7 @@ pub struct Args {
         value_name = "NAME",
         help = "Use named preset (network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river)"
     )]
+    /// Named parameter preset.
     pub preset: Option<Preset>,
 
     #[arg(
@@ -622,6 +694,7 @@ pub struct Args {
         default_value = "food",
         help = "Initialization mode (random, central, circle, gradient, wave, spiral, clusters, food)"
     )]
+    /// Agent initialization pattern.
     pub init: InitMode,
 
     #[arg(
@@ -630,6 +703,7 @@ pub struct Args {
         default_value = "assets/tslime_logo.png",
         help = "Load agents from PNG image. High-brightness areas spawn more agents. Use with --init food"
     )]
+    /// Path to image for food-based initialization.
     pub food: String,
 
     #[arg(
@@ -639,6 +713,7 @@ pub struct Args {
         default_value_t = true,
         help = "Invert the food image values (dark areas spawn more agents instead of bright areas)"
     )]
+    /// Invert food image brightness.
     pub food_invert: bool,
 
     #[arg(
@@ -647,6 +722,7 @@ pub struct Args {
         default_value = "1.5",
         help = "Scale factor for food image relative to canvas (0.1-5.0, e.g., 0.5 = half size, 2.0 = double size)"
     )]
+    /// Scale factor for food image.
     pub food_scale: f32,
 
     #[arg(
@@ -656,6 +732,7 @@ pub struct Args {
         default_value = "0.033",
         help = "Frame delay in seconds"
     )]
+    /// Frame delay in seconds.
     pub frame_delay: f32,
 
     #[arg(
@@ -664,6 +741,7 @@ pub struct Args {
         default_value = "30",
         help = "Target frames per second"
     )]
+    /// Target FPS.
     pub fps: usize,
 
     #[arg(
@@ -672,6 +750,7 @@ pub struct Args {
         default_value = "1.0",
         help = "Time scaling factor (1.0 = normal, 0.5 = half speed, 2.0 = double speed)"
     )]
+    /// Simulation time scale.
     pub time_scale: f32,
 
     #[arg(
@@ -680,6 +759,7 @@ pub struct Args {
         default_value = "400x200",
         help = "Simulation resolution"
     )]
+    /// Simulation grid resolution.
     pub resolution: Resolution,
 
     #[arg(
@@ -688,6 +768,7 @@ pub struct Args {
         default_value = "forest",
         help = "Color palette (organic, heat, ocean, mono, forest, neon, warm, vibrant, legiblemono, slime, mold, fungus, swamp, moss, cosmic, ethereal) or custom: \"#rrggbb,#rrggbb,...\" (2-11 colors)"
     )]
+    /// Color palette name or definition.
     pub palette: String,
 
     #[arg(
@@ -696,24 +777,29 @@ pub struct Args {
         default_value = "true",
         help = "Color mode (8, 16, 256, true)"
     )]
+    /// Terminal color depth mode.
     pub colors: String,
 
     #[arg(long = "ascii", help = "Use ASCII characters only")]
+    /// Force ASCII character set.
     pub ascii: bool,
 
     #[arg(long = "braille", help = "Use braille characters")]
+    /// Force Braille character set.
     pub braille: bool,
 
     #[arg(
         long = "quadrant",
         help = "Use Unicode quadrant characters for 4× vertical resolution"
     )]
+    /// Force Quadrant character set.
     pub quadrant: bool,
 
     #[arg(
         long = "plain-output",
         help = "Output plain text without ANSI color codes (for frame capture)"
     )]
+    /// Output without ANSI color codes.
     pub plain_output: bool,
 
     #[arg(
@@ -721,18 +807,21 @@ pub struct Args {
         long = "verbose",
         help = "Print performance stats to stderr"
     )]
+    /// Enable verbose logging.
     pub verbose: bool,
 
     #[arg(
         long = "reverse-palette",
         help = "Reverse palette order (dark becomes light, light becomes dark)"
     )]
+    /// Reverse the color palette.
     pub reverse_palette: bool,
 
     #[arg(
         long = "invert-palette",
         help = "Invert palette colors (complementary colors)"
     )]
+    /// Invert palette colors.
     pub invert_palette: bool,
 
     #[arg(
@@ -741,6 +830,7 @@ pub struct Args {
         default_value = "0",
         help = "Rotate palette hue over time (degrees per second, negative for reverse rotation)"
     )]
+    /// Palette hue shift speed (degrees/sec).
     pub palette_shift: f32,
 
     #[arg(
@@ -749,18 +839,21 @@ pub struct Args {
         default_value = "0",
         help = "Number of historical frames to blend for motion blur (0=disabled, max 10)"
     )]
+    /// Number of frames to blend for trails.
     pub trail_history: usize,
 
     #[arg(
         long = "motion-blur",
         help = "Enable motion blur effect (equivalent to --trail-history 3)"
     )]
+    /// Enable simple motion blur.
     pub motion_blur: bool,
 
     #[arg(
         long = "auto-normalize",
         help = "Enable adaptive brightness normalization to prevent flickering"
     )]
+    /// Enable adaptive brightness normalization.
     pub auto_normalize: bool,
 
     #[arg(
@@ -769,6 +862,7 @@ pub struct Args {
         default_value = "30",
         help = "Number of frames for adaptive brightness normalization window (1-100)"
     )]
+    /// Window size for brightness normalization.
     pub normalize_window: usize,
 
     #[arg(
@@ -776,6 +870,7 @@ pub struct Args {
         value_name = "X,Y,STRENGTH",
         help = "Add point attractor (positive=attract, negative=repel). Can be specified multiple times. Example: --attract 200,200,1.0"
     )]
+    /// List of point attractors.
     pub attract: Vec<AttractorArg>,
 
     #[arg(
@@ -783,6 +878,7 @@ pub struct Args {
         value_name = "TYPE:X,Y,PARAMS",
         help = "Add obstacle (circle:x,y,r or rect:x,y,w,h or image:path,x,y,w,h,invert,threshold). Can be specified multiple times. Example: --obstacle circle:200,200,50"
     )]
+    /// List of obstacles.
     pub obstacle: Vec<ObstacleArg>,
 
     #[arg(
@@ -791,6 +887,7 @@ pub struct Args {
         default_value = "1.0",
         help = "Global multiplier for attractor/repeller strength (0.1-10.0)"
     )]
+    /// Global strength multiplier for attractors.
     pub attractor_strength: f32,
 
     #[arg(
@@ -799,6 +896,7 @@ pub struct Args {
         default_value = "none",
         help = "Dithering mode: none, ordered, error-diffusion, hybrid"
     )]
+    /// Dithering algorithm mode.
     pub dither_mode: String,
 
     #[arg(
@@ -807,6 +905,7 @@ pub struct Args {
         default_value = "0.5",
         help = "Dithering intensity for ordered/hybrid modes (0.0-1.0, higher = more dithering effect)"
     )]
+    /// Intensity of dithering effect.
     pub dither_intensity: f32,
 
     #[arg(
@@ -815,15 +914,18 @@ pub struct Args {
         default_value = "4x4",
         help = "Dither matrix for ordered mode: 4x4, 8x8"
     )]
+    /// Matrix size for ordered dithering.
     pub dither_matrix: String,
 
     #[arg(
         long = "dither-swap",
         help = "Swap to next dither mode (cycle through none -> ordered -> error-diffusion -> hybrid)"
     )]
+    /// Cycle through dither modes.
     pub dither_swap: bool,
 
     #[arg(long = "error-diffusion-swap", help = "Toggle error diffusion mode")]
+    /// Toggle error diffusion dithering.
     pub error_diffusion_swap: bool,
 
     #[arg(
@@ -831,24 +933,28 @@ pub struct Args {
         value_name = "SPEC",
         help = "Define agent species with format 'name:count@sensor_angle,rotation_angle,step_size,deposit:color'. Can be specified multiple times or comma-separated. Example: --species 'red:20k@22.5,45,1.0,5.0:ff0000,blue:30k@30,60,1.5,3.0:0000ff'"
     )]
+    /// List of agent species.
     pub species: Vec<SpeciesArg>,
 
     #[arg(
         long = "separate-species-trails",
         help = "Each species maintains its own separate trail map (higher memory, allows species-specific patterns)"
     )]
+    /// Use separate trail maps for each species.
     pub separate_species_trails: bool,
 
     #[arg(
         long = "species-colors",
         help = "Enable species-specific rendering using each species' configured color. Automatically enables --separate-species-trails."
     )]
+    /// Render using species-specific colors.
     pub species_colors: bool,
 
     #[arg(
         long = "simd-off",
         help = "Disable SIMD acceleration for diffusion (use scalar fallback)"
     )]
+    /// Disable SIMD acceleration.
     pub simd_off: bool,
 
     #[arg(
@@ -856,6 +962,7 @@ pub struct Args {
         value_name = "DX,DY",
         help = "Apply constant wind force (dx,dy from -1.0 to 1.0). Example: --wind 0.5,0.0 for rightward wind"
     )]
+    /// Constant wind force vector.
     pub wind: Option<WindArg>,
 
     #[arg(
@@ -864,6 +971,7 @@ pub struct Args {
         default_value = "none",
         help = "Terrain type for organic movement patterns: none, smooth, turbulent, mixed"
     )]
+    /// Terrain type for organic movement.
     pub terrain: String,
 
     #[arg(
@@ -872,6 +980,7 @@ pub struct Args {
         default_value = "1.0",
         help = "Strength of terrain influence (0.1-5.0)"
     )]
+    /// Strength of terrain effect.
     pub terrain_strength: f32,
 
     #[arg(
@@ -879,6 +988,7 @@ pub struct Args {
         value_name = "PATH",
         help = "Export simulation to GIF file"
     )]
+    /// Path for GIF export.
     pub export_gif: Option<String>,
 
     #[arg(
@@ -886,6 +996,7 @@ pub struct Args {
         value_name = "PATH",
         help = "Export simulation to WebM video file (requires FFmpeg)"
     )]
+    /// Path for WebM export.
     pub export_webm: Option<String>,
 
     #[arg(
@@ -894,6 +1005,7 @@ pub struct Args {
         default_value = "50",
         help = "Number of frames to capture for GIF export"
     )]
+    /// Number of frames to export.
     pub export_frames: usize,
 
     #[arg(
@@ -902,18 +1014,21 @@ pub struct Args {
         default_value = "30",
         help = "GIF playback speed (frames per second)"
     )]
+    /// FPS for exported animation.
     pub export_fps: usize,
 
     #[arg(
         long = "mouse-attract",
         help = "Enable mouse clicks to create temporary attractors at cursor position"
     )]
+    /// Enable mouse attraction.
     pub mouse_attract: bool,
 
     #[arg(
         long = "mouse-repel",
         help = "Enable mouse clicks to create temporary repellers at cursor position"
     )]
+    /// Enable mouse repulsion.
     pub mouse_repel: bool,
 
     #[arg(
@@ -922,9 +1037,11 @@ pub struct Args {
         default_value = "3.0",
         help = "Time in seconds before mouse-created attractors/repellers expire (0.1-30.0)"
     )]
+    /// Duration of mouse effects.
     pub mouse_timeout: f32,
 
     #[arg(long = "stats", help = "Display real-time statistics overlay")]
+    /// Show performance statistics.
     pub stats: bool,
 
     #[arg(
@@ -933,6 +1050,7 @@ pub struct Args {
         default_value_t = false,
         help = "Enable automatic FPS adjustment when performance drops"
     )]
+    /// Enable automatic FPS adjustment.
     pub auto_fps: bool,
 
     // ===== Warmup frames =====
@@ -942,6 +1060,7 @@ pub struct Args {
         default_value = "60",
         help = "Number of frames to display logo before simulation (0 to disable)"
     )]
+    /// Number of warmup frames.
     pub warmup_frames: usize,
 
     #[arg(
@@ -950,6 +1069,7 @@ pub struct Args {
         default_value = "2.5",
         help = "Brightness multiplier during warmup phase"
     )]
+    /// Brightness multiplier during warmup.
     pub warmup_brightness_multiplier: f32,
 
     #[arg(
@@ -958,9 +1078,11 @@ pub struct Args {
         default_value = "0.99",
         help = "Decay factor during warmup (higher = logo persists longer)"
     )]
+    /// Trail decay during warmup.
     pub warmup_decay: f32,
 
     #[arg(long = "skip-warmup", help = "Skip warmup phase (useful for exports)")]
+    /// Skip the warmup phase.
     pub skip_warmup: bool,
 
     // ===== Food persistence =====
@@ -968,6 +1090,7 @@ pub struct Args {
         long = "food-persist",
         help = "Keep agents near original food/logo location using attractors"
     )]
+    /// Enable food persistence.
     pub food_persist: bool,
 
     #[arg(
@@ -976,6 +1099,7 @@ pub struct Args {
         default_value = "0.3",
         help = "Strength of food persistence attractors (0.0-5.0)"
     )]
+    /// Strength of food persistence.
     pub food_persist_strength: f32,
 
     #[arg(
@@ -984,6 +1108,7 @@ pub struct Args {
         default_value = "50.0",
         help = "Radius of influence for food persistence attractors"
     )]
+    /// Radius of food persistence.
     pub food_persist_radius: f32,
 
     #[arg(
@@ -992,6 +1117,7 @@ pub struct Args {
         default_value = "300",
         help = "Number of frames before food attractors fade out (0 = permanent)"
     )]
+    /// Duration of food persistence.
     pub food_persist_duration: usize,
 
     // ===== Entropy-based auto-reset =====
@@ -1000,6 +1126,7 @@ pub struct Args {
         help = "Automatically restart simulation when it collapses",
         default_value = "false"
     )]
+    /// Enable auto-reset on collapse.
     pub auto_reset: bool,
 
     #[arg(
@@ -1008,6 +1135,7 @@ pub struct Args {
         default_value = "0.95",
         help = "Entropy threshold to detect collapse (0.0-1.0, higher = more sensitive)"
     )]
+    /// Entropy threshold for collapse detection.
     pub collapse_entropy_threshold: f32,
 
     #[arg(
@@ -1016,10 +1144,12 @@ pub struct Args {
         default_value = "90",
         help = "Number of frames simulation must stay collapsed before auto-reset"
     )]
+    /// Duration to wait before reset.
     pub collapse_duration_frames: usize,
 
     // ===== Background grid =====
     #[arg(long = "grid", help = "Enable background grid rendering")]
+    /// Enable background grid.
     pub grid: bool,
 
     #[arg(
@@ -1028,6 +1158,7 @@ pub struct Args {
         default_value = "10",
         help = "Grid cell size (number of cells per dimension)"
     )]
+    /// Grid cell size.
     pub grid_size: usize,
 
     #[arg(
@@ -1036,6 +1167,7 @@ pub struct Args {
         default_value = "cross",
         help = "Grid rendering style (cross, dots, gradient)"
     )]
+    /// Grid style (cross, dots, gradient).
     pub grid_style: String,
 
     #[arg(
@@ -1044,6 +1176,7 @@ pub struct Args {
         default_value = "ffffff",
         help = "Grid color as hex (without #)"
     )]
+    /// Grid color (hex).
     pub grid_color: String,
 
     #[arg(
@@ -1052,12 +1185,14 @@ pub struct Args {
         default_value = "0.15",
         help = "Grid opacity (0.0-1.0)"
     )]
+    /// Grid opacity.
     pub grid_opacity: f32,
 
     #[arg(
         long = "grid-adaptive",
         help = "Increase grid opacity when trails are sparse"
     )]
+    /// Adapt grid opacity to trail density.
     pub grid_adaptive: bool,
 
     // ===== Custom ASCII charset =====
@@ -1066,15 +1201,18 @@ pub struct Args {
         value_name = "STRING",
         help = "Custom ASCII character set for rendering (e.g., \" .:-=+*#@\")"
     )]
+    /// Custom ASCII character set.
     pub ascii_chars: Option<String>,
 
     #[arg(long = "random", help = "Start with randomized parameters")]
+    /// Start with randomized parameters.
     pub random: bool,
 
     #[arg(
         long = "explain",
         help = "Show detailed explanation of all simulation parameters and exit"
     )]
+    /// Explain parameters and exit.
     pub explain: bool,
 
     #[arg(
@@ -1082,10 +1220,12 @@ pub struct Args {
         value_name = "SHELL",
         help = "Generate shell completions for the specified shell (bash, zsh, fish, powershell, elvish)"
     )]
+    /// Generate shell completions.
     pub completions: Option<String>,
 }
 
 impl Args {
+    /// Determines the operational mode based on flags.
     pub fn mode(&self) -> Mode {
         if self.screensaver {
             Mode::Screensaver
@@ -1104,6 +1244,7 @@ impl Args {
         }
     }
 
+    /// Parses the color mode string.
     pub fn color_mode(&self) -> Result<ColorMode, String> {
         match self.colors.as_str() {
             "true" => Ok(ColorMode::TrueColor),
@@ -1114,6 +1255,7 @@ impl Args {
         }
     }
 
+    /// Parses the palette name or custom definition.
     pub fn palette(&self) -> Result<Palette, String> {
         if self.palette.starts_with('#') || self.palette.contains(',') {
             return parse_custom_palette(&self.palette);
@@ -1139,6 +1281,7 @@ impl Args {
         }
     }
 
+    /// Parses the dither mode string.
     pub fn dither_mode(&self) -> Result<DitherMode, String> {
         match self.dither_mode.as_str() {
             "none" => Ok(DitherMode::None),
@@ -1166,6 +1309,7 @@ impl Args {
         }
     }
 
+    /// Converts CLI arguments to simulation configuration.
     pub fn to_sim_config(&self) -> SimConfig {
         let mut config = if let Some(preset) = self.preset {
             SimConfig::from(preset)
@@ -1246,6 +1390,7 @@ impl Args {
         config
     }
 
+    /// Validates arguments for correctness and safety bounds.
     pub fn validate(&self) -> Result<(), String> {
         // Resolution bounds - prevent excessive memory allocation
         if self.resolution.width < 10 || self.resolution.width > 2000 {
@@ -1392,6 +1537,7 @@ impl Args {
         Ok(())
     }
 
+    /// Calculates the effective number of history frames to blend.
     pub fn effective_trail_history(&self) -> usize {
         if self.motion_blur {
             3

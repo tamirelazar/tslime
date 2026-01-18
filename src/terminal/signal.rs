@@ -1,16 +1,28 @@
+//! Global signal handling for application shutdown.
+//!
+//! Provides a thread-safe atomic flag to coordinate shutdown across the application,
+//! primarily triggered by Unix signals (SIGINT, SIGTERM) caught in `screen.rs`.
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
+/// Global flag indicating if a shutdown has been requested (e.g., via Ctrl+C).
 pub static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+/// Signal that the application should shut down.
+///
+/// This is typically called from signal handlers in `screen.rs` or from the main loop
+/// when the user presses 'q'.
 #[cfg(unix)]
 pub fn request_shutdown() {
     SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
 }
 
+/// Check if a shutdown has been requested.
 pub fn is_shutdown_requested() -> bool {
     SHUTDOWN_REQUESTED.load(Ordering::SeqCst)
 }
 
+/// Reset the shutdown flag (for testing purposes).
 #[cfg(test)]
 pub fn clear_shutdown_request() {
     SHUTDOWN_REQUESTED.store(false, Ordering::SeqCst);

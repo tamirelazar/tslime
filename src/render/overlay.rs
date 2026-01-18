@@ -132,11 +132,14 @@ impl WindowBuilder {
 
 // --- END WindowBuilder ---
 
+/// Overlay showing keyboard shortcuts.
 pub struct KeyboardHintsOverlay;
 
 impl KeyboardHintsOverlay {
+    /// Width of the keyboard hints window.
     pub const WIDTH: usize = 60;
 
+    /// Builds the keyboard hints overlay content.
     pub fn build_overlay() -> Vec<String> {
         let builder = WindowBuilder::new(Self::WIDTH, 2);
         let content = vec![
@@ -173,6 +176,7 @@ impl KeyboardHintsOverlay {
             .unwrap_or_default()
     }
 
+    /// Calculates center position for the overlay.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
         let y = (term_height.saturating_sub(30)) / 2;
@@ -180,11 +184,14 @@ impl KeyboardHintsOverlay {
     }
 }
 
+/// Overlay for comparing current settings against a preset.
 pub struct PresetComparisonOverlay;
 
 impl PresetComparisonOverlay {
+    /// Width of the comparison window.
     pub const WIDTH: usize = 62;
 
+    /// Builds the comparison overlay showing modified parameters.
     pub fn build_overlay(
         current: &crate::terminal::control::RuntimeState,
         preset: Preset,
@@ -267,6 +274,7 @@ impl PresetComparisonOverlay {
             .unwrap_or_default()
     }
 
+    /// Calculates center position for the comparison overlay.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
         let y = (term_height.saturating_sub(15)) / 2;
@@ -275,10 +283,12 @@ impl PresetComparisonOverlay {
 }
 
 #[allow(dead_code)]
+/// Overlay shown during warmup phase.
 pub struct WarmupOverlay;
 
 #[allow(dead_code)]
 impl WarmupOverlay {
+    /// Builds the warmup status message.
     pub fn build_overlay(frame_counter: usize, max_frames: usize) -> Vec<String> {
         // Create a pulsing effect using sine wave
         let progress = (frame_counter as f32 / 30.0 * std::f32::consts::PI)
@@ -293,6 +303,7 @@ impl WarmupOverlay {
         vec![message, frame_info]
     }
 
+    /// Calculates position for warmup overlay (bottom center).
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         // Center horizontally, bottom third vertically
         let y = (term_height * 2) / 3;
@@ -301,11 +312,14 @@ impl WarmupOverlay {
     }
 }
 
+/// Overlay for browsing saved configurations.
 pub struct ConfigBrowserOverlay;
 
 impl ConfigBrowserOverlay {
+    /// Width of the browser window.
     pub const WIDTH: usize = 56;
 
+    /// Builds the configuration list overlay.
     pub fn build_overlay(
         configs: &[crate::config_manager::SavedConfig],
         selected_index: usize,
@@ -350,6 +364,7 @@ impl ConfigBrowserOverlay {
             .unwrap_or_default()
     }
 
+    /// Calculates center position for the browser overlay.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
         let y = (term_height.saturating_sub(15)) / 2;
@@ -357,9 +372,11 @@ impl ConfigBrowserOverlay {
     }
 }
 
+/// Overlay for saving a new configuration.
 pub struct ConfigSaveOverlay;
 
 impl ConfigSaveOverlay {
+    /// Builds the save dialog overlay.
     pub fn build_overlay(name_input: &str) -> Vec<String> {
         let builder = WindowBuilder::new(38, 1);
         let content = vec![
@@ -373,6 +390,7 @@ impl ConfigSaveOverlay {
             .unwrap_or_default()
     }
 
+    /// Calculates center position for the save dialog.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(38)) / 2;
         let y = (term_height.saturating_sub(5)) / 2;
@@ -380,11 +398,13 @@ impl ConfigSaveOverlay {
     }
 }
 
+/// Utilities for rendering overlay elements (status line, help lists).
 pub struct OverlayRenderer;
 
 impl OverlayRenderer {
     #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
+    /// Builds the status bar string displayed at the bottom of the screen.
     pub fn build_status_line(
         _is_paused: bool,
         preset: Preset,
@@ -458,6 +478,7 @@ impl OverlayRenderer {
     }
 
     #[allow(dead_code)]
+    /// Calculates the X position for the status line (left-aligned or centered).
     pub fn status_line_x(status_line: &str, width: usize) -> usize {
         if status_line.len() < width {
             2
@@ -467,12 +488,14 @@ impl OverlayRenderer {
     }
 
     #[allow(dead_code)]
+    /// Calculates the X position for the paused indicator.
     pub fn paused_overlay_x(_width: usize) -> usize {
         let paused_text = "[ PAUSED ]";
         _width.saturating_sub(paused_text.len() + 2)
     }
 
     #[allow(dead_code)]
+    /// Appends attractor help information to the help window.
     pub fn build_help_with_attractors(base_help: &[&str], attractors: &[Attractor]) -> Vec<String> {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
@@ -509,6 +532,7 @@ impl OverlayRenderer {
     }
 
     #[allow(dead_code)]
+    /// Appends obstacle help information to the help window.
     pub fn build_help_with_obstacles(base_help: &[&str], obstacles: &[Obstacle]) -> Vec<String> {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
@@ -578,6 +602,7 @@ impl OverlayRenderer {
     }
 
     #[allow(dead_code)]
+    /// Appends mouse attractor help information to the help window.
     pub fn build_help_with_mouse_attractors(
         base_help: &[&str],
         mouse_attractors: &[MouseAttractor],
@@ -867,12 +892,15 @@ fn build_sparkline(history: &std::collections::VecDeque<f32>, min: f32, max: f32
     format!("{:<20}", sparkline)
 }
 
+/// Overlay showing real-time statistics.
 pub struct StatsOverlay;
 
 impl StatsOverlay {
+    /// Width of the stats window.
     pub const WIDTH: usize = 32;
 
     #[allow(clippy::too_many_arguments)]
+    /// Builds the stats overlay content.
     pub fn build_overlay(
         agent_count: usize,
         trail_sum: f32,
@@ -948,6 +976,7 @@ impl StatsOverlay {
         lines
     }
 
+    /// Calculates the X position for the stats overlay (top-right).
     pub fn calculate_x_position(term_width: usize) -> usize {
         if term_width > Self::WIDTH + 2 {
             term_width.saturating_sub(Self::WIDTH + 2)
@@ -956,6 +985,7 @@ impl StatsOverlay {
         }
     }
 
+    /// Calculates entropy of the trail map for complexity analysis.
     pub fn calculate_entropy(trail_map: &[f32], sample_rate: usize) -> f32 {
         if trail_map.is_empty() {
             return 0.0;
@@ -995,12 +1025,15 @@ impl StatsOverlay {
     }
 }
 
+/// Overlay showing general simulation info.
 pub struct InfoOverlay;
 
 impl InfoOverlay {
+    /// Width of the info window.
     pub const WIDTH: usize = 28;
 
     #[allow(clippy::too_many_arguments)]
+    /// Builds the info overlay content.
     pub fn build_overlay(
         sim_width: usize,
         sim_height: usize,
@@ -1056,6 +1089,7 @@ impl InfoOverlay {
         builder.build(Some("INFO"), &content).unwrap_or_default()
     }
 
+    /// Calculates X position for the info overlay.
     pub fn calculate_x_position(term_width: usize) -> usize {
         if term_width > Self::WIDTH + 2 {
             term_width.saturating_sub(Self::WIDTH + 2)

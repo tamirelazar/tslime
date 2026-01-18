@@ -1,23 +1,33 @@
 use crate::cli::Palette;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// An RGB color value.
 pub struct RgbColor {
+    /// Red component (0-255).
     pub r: u8,
+    /// Green component (0-255).
     pub g: u8,
+    /// Blue component (0-255).
     pub b: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+/// An HSV color value.
 pub struct HsvColor {
+    /// Hue (0.0-360.0).
     pub h: f32,
+    /// Saturation (0.0-1.0).
     pub s: f32,
+    /// Value/Brightness (0.0-1.0).
     pub v: f32,
 }
 
-/// A gradient control point with position (0.0-1.0) and RGB color
+/// A gradient control point with position (0.0-1.0) and RGB color.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GradientStop {
+    /// Position along the gradient (0.0 to 1.0).
     pub position: f32,
+    /// Color at this position.
     pub color: RgbColor,
 }
 
@@ -77,6 +87,7 @@ pub fn interpolate_gradient(stops: &[GradientStop], t: f32) -> RgbColor {
     }
 }
 
+/// Mapping from ANSI 256 color codes to RGB values.
 pub const ANSI_256_TO_RGB: [RgbColor; 256] = {
     // Colors 0-15: Standard ANSI system colors
     // Colors 16-231: 6×6×6 RGB cube with values [0, 95, 135, 175, 215, 255]
@@ -1265,6 +1276,7 @@ pub const ANSI_256_TO_RGB: [RgbColor; 256] = {
     ]
 };
 
+/// Converts an RGB color to HSV.
 pub fn rgb_to_hsv(rgb: RgbColor) -> HsvColor {
     let r = rgb.r as f32 / 255.0;
     let g = rgb.g as f32 / 255.0;
@@ -1294,6 +1306,7 @@ pub fn rgb_to_hsv(rgb: RgbColor) -> HsvColor {
     }
 }
 
+/// Converts an HSV color to RGB.
 pub fn hsv_to_rgb(hsv: HsvColor) -> RgbColor {
     let h = hsv.h;
     let s = hsv.s;
@@ -1324,6 +1337,7 @@ pub fn hsv_to_rgb(hsv: HsvColor) -> RgbColor {
     }
 }
 
+/// Rotates the hue of an HSV color.
 pub fn rotate_hue(hsv: HsvColor, degrees: f32) -> HsvColor {
     HsvColor {
         h: (hsv.h + degrees) % 360.0,
@@ -1332,6 +1346,9 @@ pub fn rotate_hue(hsv: HsvColor, degrees: f32) -> HsvColor {
     }
 }
 
+/// Finds the nearest ANSI 256 color code for a given RGB color.
+///
+/// Uses Euclidean distance in RGB space to find the best match.
 pub fn rgb_to_256(rgb: RgbColor) -> u8 {
     let gray_diff = (rgb.r as i16 - rgb.g as i16).abs()
         + (rgb.g as i16 - rgb.b as i16).abs()
@@ -1367,6 +1384,7 @@ pub fn rgb_to_256(rgb: RgbColor) -> u8 {
     16 + (r_idx * 36 + g_idx * 6 + b_idx)
 }
 
+/// Inverts an ANSI 256 color code (hue rotation of 180 degrees).
 pub fn invert_256_color(color_code: u8) -> u8 {
     let rgb = ANSI_256_TO_RGB[color_code as usize];
     let hsv = rgb_to_hsv(rgb);
@@ -1375,6 +1393,7 @@ pub fn invert_256_color(color_code: u8) -> u8 {
     rgb_to_256(new_rgb)
 }
 
+/// Parses a hex color string (e.g., "#FF0000" or "FF0000") into `RgbColor`.
 pub fn hex_to_rgb(hex: &str) -> Option<RgbColor> {
     let hex = hex.trim_start_matches('#');
     if hex.len() != 6 {
@@ -1386,6 +1405,12 @@ pub fn hex_to_rgb(hex: &str) -> Option<RgbColor> {
     Some(RgbColor { r, g, b })
 }
 
+/// Maps brightness to a color based on a base species color.
+///
+/// This generates a gradient from dark to the base color (modulated by brightness).
+/// Maps brightness to a color based on a base species color.
+///
+/// This generates a gradient from dark to the base color (modulated by brightness).
 pub fn map_species_brightness(brightness: f32, base_color: RgbColor, reverse: bool) -> u8 {
     let hsv = rgb_to_hsv(base_color);
     let brightness = if reverse {
@@ -1409,6 +1434,8 @@ pub fn map_species_brightness(brightness: f32, base_color: RgbColor, reverse: bo
     rgb_to_256(final_rgb)
 }
 
+/// Maps brightness to an RGB color based on a base species color.
+/// Maps brightness to an RGB color based on a base species color.
 pub fn map_species_brightness_rgb(
     brightness: f32,
     base_color: RgbColor,
@@ -2501,6 +2528,7 @@ fn invert_color(color_code: u8) -> u8 {
     invert_256_color(color_code)
 }
 
+/// Maps brightness to an ANSI 256 color based on the selected palette.
 pub fn map_brightness(brightness: f32, palette: Palette, reverse: bool, invert: bool) -> u8 {
     let mut brightness = brightness.clamp(0.0, 1.0);
 
@@ -2546,6 +2574,9 @@ fn invert_rgb(rgb: RgbColor) -> RgbColor {
     }
 }
 
+/// Maps brightness to an RGB color based on the selected palette.
+///
+/// Supports smooth gradients, reversing, inverting, and hue shifting.
 pub fn map_brightness_rgb(
     brightness: f32,
     palette: Palette,
@@ -2577,22 +2608,19 @@ pub fn map_brightness_rgb(
 }
 
 #[allow(dead_code)]
+/// Generates an ANSI escape sequence for a truecolor foreground or background.
 pub fn truecolor_ansi(r: u8, g: u8, b: u8, is_fg: bool) -> String {
-    if is_fg {
-        format!("\x1b[38;2;{};{};{}m", r, g, b)
-    } else {
-        format!("\x1b[48;2;{};{};{}m", r, g, b)
-    }
+    format!("\x1b[{};2;{};{};{}m", if is_fg { 38 } else { 48 }, r, g, b)
 }
 
-#[allow(dead_code)]
+/// Generates an ANSI escape sequence for a truecolor foreground.
 pub fn truecolor_ansi_fg(r: u8, g: u8, b: u8) -> String {
-    format!("\x1b[38;2;{};{};{}m", r, g, b)
+    truecolor_ansi(r, g, b, true)
 }
 
-#[allow(dead_code)]
+/// Generates an ANSI escape sequence for a truecolor background.
 pub fn truecolor_ansi_bg(r: u8, g: u8, b: u8) -> String {
-    format!("\x1b[48;2;{};{};{}m", r, g, b)
+    truecolor_ansi(r, g, b, false)
 }
 
 #[cfg(test)]

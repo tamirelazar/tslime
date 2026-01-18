@@ -1,24 +1,38 @@
+//! Input handling for the terminal application.
+//!
+//! This module provides a non-blocking input poller that handles keyboard
+//! and mouse events using `crossterm`.
+
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, MouseEventKind};
 use std::io;
 use std::time::Duration;
 
+/// Represents a 2D coordinate for mouse events.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MousePosition {
+    /// Column index (0-based).
     pub x: usize,
+    /// Row index (0-based).
     pub y: usize,
 }
 
+/// The type of mouse interaction detected.
 pub enum MouseEventType {
+    /// Mouse button was pressed down.
     Down,
+    /// Mouse is being dragged with a button held down.
     Drag,
+    /// Mouse moved without buttons pressed.
     Moved,
 }
 
+/// Handles non-blocking input polling for keyboard and mouse events.
 pub struct InputPoller {
     poll_timeout: Duration,
 }
 
 impl InputPoller {
+    /// Create a new input poller with zero timeout (non-blocking).
     #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
@@ -26,11 +40,17 @@ impl InputPoller {
         }
     }
 
+    /// Set the timeout duration for polling operations.
     #[allow(dead_code)]
     pub fn set_poll_timeout(&mut self, timeout: Duration) {
         self.poll_timeout = timeout;
     }
 
+    /// Check for a keyboard event.
+    ///
+    /// Returns `Ok(Some(KeyEvent))` if a key was pressed within the timeout.
+    /// Returns `Ok(None)` if no key was pressed.
+    /// Returns `Err` if polling failed.
     #[allow(dead_code)]
     pub fn poll_keypress(&self) -> io::Result<Option<KeyEvent>> {
         if event::poll(self.poll_timeout)? {
@@ -43,6 +63,10 @@ impl InputPoller {
         Ok(None)
     }
 
+    /// Check for a mouse event.
+    ///
+    /// Returns `Ok(Some((MousePosition, MouseEventType)))` if a relevant mouse event occurred.
+    /// Ignores mouse up and scroll events for now.
     #[allow(dead_code)]
     pub fn poll_mouse_event(&self) -> io::Result<Option<(MousePosition, MouseEventType)>> {
         if event::poll(Duration::from_millis(1))? {
@@ -69,6 +93,9 @@ impl InputPoller {
         Ok(None)
     }
 
+    /// Read all pending events from the input queue.
+    ///
+    /// Useful for flushing the input buffer or processing multiple events in one tick.
     pub fn drain_all_events(&self) -> io::Result<Vec<Event>> {
         let mut events = Vec::new();
         while event::poll(Duration::from_millis(0))? {
@@ -77,6 +104,7 @@ impl InputPoller {
         Ok(events)
     }
 
+    /// Check if the given key event corresponds to an exit command (e.g., 'q' or 'Q').
     pub fn is_exit_key(key_event: &KeyEvent) -> bool {
         // Note: Esc is handled separately to close overlays first
         matches!(key_event.code, KeyCode::Char('q') | KeyCode::Char('Q'))

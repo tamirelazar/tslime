@@ -68,11 +68,16 @@ pub enum InitMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Types of terrain-based steering bias.
 pub enum TerrainType {
+    /// No terrain effect.
     #[default]
     None,
+    /// Smooth, flowing patterns based on Perlin noise.
     Smooth,
+    /// Chaotic, turbulent patterns.
     Turbulent,
+    /// Combination of smooth and turbulent layers.
     Mixed,
 }
 
@@ -94,16 +99,21 @@ impl std::str::FromStr for TerrainType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Global wind force configuration.
 pub struct Wind {
+    /// Horizontal wind strength (-1.0 to 1.0).
     pub dx: f32,
+    /// Vertical wind strength (-1.0 to 1.0).
     pub dy: f32,
 }
 
 impl Wind {
+    /// Creates a new wind vector.
     pub fn new(dx: f32, dy: f32) -> Self {
         Self { dx, dy }
     }
 
+    /// Validates wind parameters.
     pub fn validate(&self) -> Result<(), String> {
         if self.dx < -1.0 || self.dx > 1.0 {
             return Err(format!(
@@ -153,28 +163,40 @@ impl std::str::FromStr for Wind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// A point attractor or repeller.
 pub struct Attractor {
+    /// X coordinate.
     pub x: f32,
+    /// Y coordinate.
     pub y: f32,
+    /// Strength of attraction (negative for repulsion).
     pub strength: f32,
 }
 
 impl Attractor {
+    /// Creates a new attractor.
     pub fn new(x: f32, y: f32, strength: f32) -> Self {
         Self { x, y, strength }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// A temporary attractor created by mouse interaction.
 pub struct MouseAttractor {
+    /// X coordinate.
     pub x: f32,
+    /// Y coordinate.
     pub y: f32,
+    /// Strength of attraction/repulsion.
     pub strength: f32,
+    /// Time of creation.
     pub created_at: std::time::Instant,
+    /// Duration in seconds before expiration.
     pub timeout_seconds: f32,
 }
 
 impl MouseAttractor {
+    /// Creates a new mouse attractor.
     pub fn new(x: f32, y: f32, strength: f32, timeout_seconds: f32) -> Self {
         Self {
             x,
@@ -185,19 +207,27 @@ impl MouseAttractor {
         }
     }
 
+    /// Checks if the attractor has expired.
     pub fn is_expired(&self) -> bool {
         self.created_at.elapsed().as_secs_f32() >= self.timeout_seconds
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// Mask data for image-based obstacles.
 pub struct ObstacleMask {
+    /// Flattened pixel data (normalized brightness).
     pub pixels: Vec<f32>,
+    /// Width of the mask.
     pub width: usize,
+    /// Height of the mask.
     pub height: usize,
 }
 
 impl ObstacleMask {
+    /// Creates a mask from an image file.
+    ///
+    /// Resizes the image to target dimensions.
     pub fn from_image(
         image_path: &str,
         target_width: usize,
@@ -243,30 +273,49 @@ impl ObstacleMask {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// Geometric shape or image obstacle definition.
 pub enum Obstacle {
+    /// Circular obstacle.
     Circle {
+        /// Center X.
         x: f32,
+        /// Center Y.
         y: f32,
+        /// Radius.
         radius: f32,
     },
+    /// Rectangular obstacle.
     Rect {
+        /// Top-left X.
         x: f32,
+        /// Top-left Y.
         y: f32,
+        /// Width.
         width: f32,
+        /// Height.
         height: f32,
     },
+    /// Image-based obstacle mask.
     Image {
+        /// Path to image file.
         path: String,
+        /// Top-left X.
         x: f32,
+        /// Top-left Y.
         y: f32,
+        /// Width.
         width: usize,
+        /// Height.
         height: usize,
+        /// Whether to invert the image mask.
         invert: bool,
+        /// Brightness threshold for collision.
         threshold: f32,
     },
 }
 
 impl Obstacle {
+    /// Checks if a point is contained within the obstacle.
     pub fn contains(&self, px: f32, py: f32, mask: Option<&ObstacleMask>) -> bool {
         match self {
             Obstacle::Circle { x, y, radius } => {
@@ -309,6 +358,7 @@ impl Obstacle {
         }
     }
 
+    /// Calculates new heading after bouncing off the obstacle.
     pub fn bounce(&self, px: f32, py: f32, heading: f32, _mask: Option<&ObstacleMask>) -> f32 {
         match self {
             Obstacle::Circle { x, y, radius: _ } => {
@@ -354,13 +404,21 @@ impl Obstacle {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// Configuration for a single agent species.
 pub struct SpeciesConfig {
+    /// Species name.
     pub name: String,
+    /// Population count.
     pub count: usize,
+    /// Sensor angle (degrees).
     pub sensor_angle: f32,
+    /// Rotation angle (degrees).
     pub rotation_angle: f32,
+    /// Step size (speed).
     pub step_size: f32,
+    /// Amount of pheromone deposited.
     pub deposit_amount: f32,
+    /// Color hex code.
     pub color: String,
 }
 
@@ -379,6 +437,7 @@ impl Default for SpeciesConfig {
 }
 
 impl SpeciesConfig {
+    /// Validates species configuration.
     pub fn validate(&self) -> Result<(), String> {
         if self.count < 100 || self.count > 200_000 {
             return Err(format!(
@@ -415,30 +474,55 @@ impl SpeciesConfig {
 }
 
 #[derive(Debug, Clone)]
+/// Global simulation configuration.
 pub struct SimConfig {
+    /// Sensor angle (degrees).
     pub sensor_angle: f32,
+    /// Sensor offset distance (pixels).
     pub sensor_distance: f32,
+    /// Rotation angle (degrees).
     pub rotation_angle: f32,
+    /// Agent speed (pixels/step).
     pub step_size: f32,
+    /// Trail decay factor (0.0-1.0).
     pub decay_factor: f32,
+    /// Amount of trail deposited per step.
     pub deposit_amount: f32,
+    /// Diffusion algorithm.
     pub diffusion_kernel: DiffusionKernel,
+    /// Sigma for Gaussian diffusion.
     pub diffusion_sigma: f32,
+    /// Max brightness for normalization.
     pub max_brightness: f32,
+    /// List of active attractors.
     pub attractors: Vec<Attractor>,
+    /// Global attractor strength multiplier.
     pub attractor_strength: f32,
+    /// Temporary mouse attractors.
     pub mouse_attractors: Vec<MouseAttractor>,
+    /// Timeout for mouse attractors (seconds).
     pub mouse_timeout: f32,
+    /// Configuration for each species.
     pub species_configs: Vec<SpeciesConfig>,
+    /// Whether to use separate trail maps per species.
     pub separate_species_trails: bool,
+    /// Whether to use SIMD acceleration.
     pub use_simd: bool,
+    /// Path to food image for initialization.
     pub food_image_path: Option<String>,
+    /// Whether to invert food image brightness.
     pub food_image_invert: bool,
+    /// Scaling factor for food image.
     pub food_image_scale: f32,
+    /// List of obstacles.
     pub obstacles: Vec<Obstacle>,
+    /// Loaded masks for image obstacles.
     pub obstacle_masks: Vec<Option<ObstacleMask>>,
+    /// Global wind force.
     pub wind: Option<Wind>,
+    /// Active terrain effect.
     pub terrain: TerrainType,
+    /// Strength of terrain effect.
     pub terrain_strength: f32,
 }
 
@@ -474,6 +558,7 @@ impl Default for SimConfig {
 }
 
 impl SimConfig {
+    /// Validates the simulation configuration.
     pub fn validate(&self) -> Result<(), String> {
         if self.species_configs.is_empty() {
             return Err("at least one species must be configured".to_string());
@@ -563,10 +648,12 @@ impl SimConfig {
         Ok(())
     }
 
+    /// Returns the total population across all species.
     pub fn total_population(&self) -> usize {
         self.species_configs.iter().map(|s| s.count).sum()
     }
 
+    /// Loads mask data for all image-based obstacles.
     pub fn load_obstacle_masks(&mut self) -> Result<(), String> {
         self.obstacle_masks.clear();
         for obstacle in &self.obstacles {
@@ -589,15 +676,18 @@ impl SimConfig {
         Ok(())
     }
 
+    /// Adds a new mouse-controlled attractor.
     pub fn add_mouse_attractor(&mut self, x: f32, y: f32, strength: f32) {
         self.mouse_attractors
             .push(MouseAttractor::new(x, y, strength, self.mouse_timeout));
     }
 
+    /// Removes mouse attractors that have timed out.
     pub fn remove_expired_mouse_attractors(&mut self) {
         self.mouse_attractors.retain(|ma| !ma.is_expired());
     }
 
+    /// Returns a combined list of all active attractors (static + mouse).
     pub fn effective_attractors(&self) -> Vec<Attractor> {
         let mut result = self.attractors.clone();
         for ma in &self.mouse_attractors {

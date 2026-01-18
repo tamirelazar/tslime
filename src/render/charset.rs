@@ -1,15 +1,22 @@
 use crate::cli::Args;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Character set for rendering simulation trails.
 pub enum Charset {
+    /// Half-block characters (▀, ▄, █) for 2× vertical resolution.
     HalfBlock,
+    /// Standard ASCII characters mapped by density.
     Ascii,
+    /// Braille patterns for 4×2 subpixel resolution.
     Braille,
+    /// Unicode quadrant characters for 2×2 subpixel resolution.
     Quadrant,
+    /// User-defined ASCII character set.
     CustomAscii(Vec<char>),
 }
 
 impl Charset {
+    /// Selects the appropriate character set based on command-line arguments.
     pub fn from_args(args: &Args) -> Self {
         if args.quadrant {
             Charset::Quadrant
@@ -127,6 +134,10 @@ fn estimate_char_density(c: char) -> f32 {
     }
 }
 
+/// Maps two vertical subpixels to a Braille character.
+///
+/// Uses Braille patterns to represent 2-pixel height with variable horizontal density.
+/// Note: This is a simplified mapping that uses dot patterns to approximate intensity.
 pub fn map_braille_subpixel(top: f32, bottom: f32, threshold: f32) -> char {
     let top = top.clamp(0.0, 1.0);
     let bottom = bottom.clamp(0.0, 1.0);
@@ -194,6 +205,12 @@ pub fn map_quadrant(
     }
 }
 
+/// Maps a brightness value to a character from the selected charset.
+///
+/// # Arguments
+/// * `top` - Brightness of the top subpixel (or overall cell).
+/// * `bottom` - Optional brightness of the bottom subpixel (for half-block/braille).
+/// * `charset` - The character set to use.
 pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
     match charset {
         Charset::HalfBlock => {
@@ -240,6 +257,9 @@ pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
     }
 }
 
+/// Maps two vertical subpixel values to a block character.
+///
+/// Returns '█', '▀', '▄', or ' ' based on which subpixels exceed the threshold.
 pub fn map_vertical_block(top: f32, bottom: f32) -> char {
     const THRESHOLD: f32 = 0.05;
     let top_above = top > THRESHOLD;
@@ -253,6 +273,9 @@ pub fn map_vertical_block(top: f32, bottom: f32) -> char {
     }
 }
 
+/// Maps brightness to an ASCII character, selecting from top-heavy or bottom-heavy sets.
+///
+/// This provides a pseudo-vertical-resolution effect using characters like `'` vs `.`.
 pub fn map_ascii_directional(brightness: f32, is_top: bool) -> char {
     let brightness = brightness.clamp(0.0, 1.0);
     let chars = if is_top {
@@ -264,6 +287,7 @@ pub fn map_ascii_directional(brightness: f32, is_top: bool) -> char {
     chars[index]
 }
 
+/// Returns the number of distinct brightness levels supported by the charset.
 pub fn charset_level_count(charset: Charset) -> usize {
     match charset {
         Charset::HalfBlock => 9,

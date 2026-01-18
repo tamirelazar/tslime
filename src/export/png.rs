@@ -4,6 +4,9 @@ use crate::render::palette;
 use image::{Rgb, RgbImage};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Saves a single simulation frame as a PNG image.
+///
+/// Converts the downsampled grid into an image using the specified palette and settings.
 #[allow(clippy::too_many_arguments)]
 pub fn save_frame_as_png(
     downsampled: &[Cell],

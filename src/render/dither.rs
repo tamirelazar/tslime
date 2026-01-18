@@ -1,31 +1,46 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+/// Matrix size for ordered dithering.
 pub enum DitherMatrix {
+    /// Standard 4×4 Bayer matrix.
     #[default]
     Bayer4x4,
+    /// Larger 8×8 Bayer matrix for smoother gradients.
     Bayer8x8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+/// Algorithm used for color quantization and dithering.
 pub enum DitherMode {
+    /// No dithering (nearest neighbor quantization).
     #[default]
     None,
+    /// Ordered dithering using a Bayer matrix.
     Ordered {
+        /// Intensity of the dither noise (0.0-1.0).
         intensity: f32,
+        /// The matrix pattern to use.
         matrix: DitherMatrix,
     },
+    /// Error diffusion (Floyd-Steinberg).
     ErrorDiffusion {
+        /// Whether to alternate scan direction (serpentine) to reduce artifacts.
         serpentine: bool,
     },
+    /// Hybrid approach combining ordered dithering and error diffusion.
     Hybrid {
+        /// Threshold for edge detection (to switch modes).
         edge_threshold: f32,
+        /// Intensity of the ordered dither component.
         intensity: f32,
+        /// The matrix pattern to use.
         matrix: DitherMatrix,
     },
 }
 
 impl DitherMode {
+    /// Returns the display name of the dither mode.
     pub fn name(&self) -> &str {
         match self {
             DitherMode::None => "None",
@@ -36,8 +51,10 @@ impl DitherMode {
     }
 }
 
+/// 4×4 Bayer ordered dithering matrix.
 pub const BAYER_4X4: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
 
+/// 8×8 Bayer ordered dithering matrix.
 pub const BAYER_8X8: [[u8; 8]; 8] = [
     [0, 48, 12, 60, 3, 51, 15, 63],
     [32, 16, 44, 28, 35, 19, 47, 31],
@@ -56,6 +73,9 @@ fn bayer_threshold(x: usize, y: usize, matrix: DitherMatrix) -> f32 {
     }
 }
 
+/// Applies ordered dithering to a pixel.
+///
+/// Modulates the pixel brightness based on its coordinate and the dither matrix.
 pub fn apply_ordered_dither(
     x: usize,
     y: usize,
@@ -68,6 +88,9 @@ pub fn apply_ordered_dither(
     dithered.clamp(0.0, 1.0)
 }
 
+/// Applies ordered dithering with temporal modulation (animation).
+///
+/// Shifts the dither threshold based on the frame number to create animated noise.
 #[allow(dead_code)]
 pub fn apply_ordered_dither_with_frame(
     x: usize,
@@ -84,6 +107,7 @@ pub fn apply_ordered_dither_with_frame(
     dithered.clamp(0.0, 1.0)
 }
 
+/// Quantizes a brightness value to a specific number of discrete levels.
 pub fn quantize_to_levels(brightness: f32, num_levels: usize) -> f32 {
     if num_levels <= 1 {
         return 0.0;
@@ -93,6 +117,9 @@ pub fn quantize_to_levels(brightness: f32, num_levels: usize) -> f32 {
     quantized as f32 / levels_minus_one as f32
 }
 
+/// Calculates the local variance of brightness in a region.
+///
+/// Used for edge detection in hybrid dithering modes.
 pub fn local_variance(
     downsampled: &[crate::render::downsample::Cell],
     width: usize,
@@ -134,6 +161,7 @@ pub fn local_variance(
 
 #[deprecated(since = "0.1.0", note = "Use apply_ordered_dither instead")]
 #[allow(dead_code)]
+/// Legacy dither function (deprecated).
 pub fn apply_dither(x: usize, y: usize, brightness: f32, intensity: f32) -> f32 {
     apply_ordered_dither(x, y, brightness, intensity, DitherMatrix::Bayer4x4)
 }

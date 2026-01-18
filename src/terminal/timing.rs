@@ -1,3 +1,9 @@
+//! Timer and FPS management for the simulation loop.
+//!
+//! This module provides a high-precision timer that manages the update/render loop,
+//! tracks performance metrics (FPS, frame times), and implements adaptive FPS scaling
+//! when performance drops.
+
 use std::time::{Duration, Instant};
 
 const FPS_SAMPLE_COUNT: usize = 30;
@@ -39,7 +45,6 @@ const FPS_STEPS: [usize; 6] = [60, 45, 30, 25, 20, 15];
 ///     timer.tick();  // Sleeps to maintain target FPS, increments frame count
 /// }
 /// ```
-
 #[derive(Debug, Clone)]
 pub struct FrameTimer {
     target_fps: usize,
@@ -57,15 +62,18 @@ pub struct FrameTimer {
     adaptive_fps_enabled: bool,
     adaptive_check_counter: usize,
     last_adjusted_fps: usize,
+    /// Flag indicating if the FPS was automatically adjusted in the last frame.
     pub fps_adjusted_notification: bool,
 }
 
 impl FrameTimer {
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn new(fps: usize, frame_delay_seconds: f32) -> Self {
         Self::with_time_scale(fps, frame_delay_seconds, 1.0)
     }
 
+    /// Create a new frame timer with specified FPS, delay, and time scale.
     pub fn with_time_scale(fps: usize, frame_delay_seconds: f32, time_scale: f32) -> Self {
         let _target_frame_time = Duration::from_secs_f64(1.0 / fps as f64);
         let frame_delay = Duration::from_secs_f32(frame_delay_seconds);
@@ -90,10 +98,12 @@ impl FrameTimer {
         }
     }
 
+    /// Enable or disable adaptive FPS scaling.
     pub fn set_adaptive_fps(&mut self, enabled: bool) {
         self.adaptive_fps_enabled = enabled;
     }
 
+    /// Check if the frame rate should be lowered based on recent performance.
     pub fn should_adjust_fps(&mut self) -> bool {
         if !self.adaptive_fps_enabled {
             return false;
@@ -112,6 +122,7 @@ impl FrameTimer {
         avg_fps < threshold && self.target_fps > MIN_ADAPTIVE_FPS
     }
 
+    /// Calculate the next lower safe FPS step.
     pub fn get_adjusted_fps(&self) -> Option<usize> {
         if !self.adaptive_fps_enabled || self.target_fps <= MIN_ADAPTIVE_FPS {
             return None;
@@ -125,6 +136,7 @@ impl FrameTimer {
             .copied()
     }
 
+    /// Apply a new target FPS limit.
     pub fn apply_fps_adjustment(&mut self, new_fps: usize) {
         if new_fps < self.target_fps && new_fps >= MIN_ADAPTIVE_FPS {
             self.target_fps = new_fps;
@@ -153,18 +165,22 @@ impl FrameTimer {
         self.frame_delay = Duration::from_secs_f32(frame_delay_seconds);
     }
 
+    /// Get the total number of frames processed.
     pub fn frame_count(&self) -> u64 {
         self.frame_count
     }
 
+    /// Get the time elapsed since the last frame.
     pub fn elapsed(&self) -> Duration {
         self.last_frame_time.elapsed()
     }
 
+    /// Get the time elapsed since the last frame in milliseconds.
     pub fn last_frame_ms(&self) -> f32 {
         self.last_frame_time.elapsed().as_secs_f32() * 1000.0
     }
 
+    /// Calculate the instantaneous FPS based on the last frame time.
     pub fn current_fps(&self) -> f64 {
         let elapsed = self.elapsed().as_secs_f64();
         if elapsed > 0.0 {
@@ -174,6 +190,7 @@ impl FrameTimer {
         }
     }
 
+    /// Calculate the average FPS over the last `FPS_SAMPLE_COUNT` frames.
     pub fn average_fps(&self) -> f64 {
         if self.fps_count == 0 {
             0.0
@@ -187,27 +204,36 @@ impl FrameTimer {
         }
     }
 
+    /// Get the duration of the last simulation step.
     pub fn sim_duration(&self) -> Duration {
         self.sim_duration
     }
 
+    /// Get the duration of the last render step.
     pub fn render_duration(&self) -> Duration {
         self.render_duration
     }
 
+    /// Mark the start of the simulation update.
     pub fn start_sim(&mut self) {
         self.sim_start = Instant::now();
     }
 
+    /// Mark the end of simulation and start of rendering.
     pub fn end_sim_start_render(&mut self) {
         self.sim_duration = self.sim_start.elapsed();
         self.render_start = Instant::now();
     }
 
+    /// Mark the end of rendering.
     pub fn end_render(&mut self) {
         self.render_duration = self.render_start.elapsed();
     }
 
+    /// Calculate delta time for the current frame.
+    ///
+    /// This updates the internal timer state and returns the elapsed time
+    /// multiplied by the time scale.
     pub fn delta_time(&mut self) -> f32 {
         let elapsed = self.last_frame_time.elapsed();
         self.last_frame_time = Instant::now();
@@ -227,10 +253,12 @@ impl FrameTimer {
         elapsed.as_secs_f32() * self.time_scale
     }
 
+    /// Set the simulation time scale.
     pub fn set_time_scale(&mut self, time_scale: f32) {
         self.time_scale = time_scale;
     }
 
+    /// Sleep to maintain the target frame rate.
     pub fn tick(&mut self) {
         let elapsed = self.last_frame_time.elapsed();
         let target_frame_time = Duration::from_secs_f64(1.0 / self.target_fps as f64);

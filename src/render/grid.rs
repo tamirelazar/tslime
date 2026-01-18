@@ -2,9 +2,13 @@ use crate::render::palette::RgbColor;
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Visual style of the background grid.
 pub enum GridStyle {
+    /// Solid lines intersecting at grid points.
     Cross,
+    /// Points only at intersections.
     Dots,
+    /// Lines that fade out from the center.
     Gradient,
 }
 
@@ -22,17 +26,24 @@ impl FromStr for GridStyle {
 }
 
 #[derive(Clone)]
+/// Renders a background grid to provide spatial reference.
 pub struct GridRenderer {
+    /// Rendering style.
     pub style: GridStyle,
+    /// Spacing between grid lines.
     pub size: usize,
+    /// Grid line color.
     pub color: RgbColor,
+    /// Base opacity of the grid.
     pub opacity: f32,
+    /// Whether opacity adapts to content brightness.
     pub adaptive: bool,
     col_positions: Vec<usize>,
     row_positions: Vec<usize>,
 }
 
 impl GridRenderer {
+    /// Creates a new grid renderer.
     pub fn new(
         style: GridStyle,
         size: usize,
@@ -104,6 +115,7 @@ impl GridRenderer {
         self.row_positions = Self::calculate_grid_positions(height, self.size);
     }
 
+    /// Checks if a pixel coordinate lies on a grid line or intersection.
     pub fn is_grid_position(&self, x: usize, y: usize, _width: usize, _height: usize) -> bool {
         let on_vertical = self.col_positions.contains(&x);
         let on_horizontal = self.row_positions.contains(&y);
@@ -131,6 +143,9 @@ impl GridRenderer {
         (on_vertical, on_horizontal)
     }
 
+    /// Calculates the effective opacity for a grid pixel.
+    ///
+    /// Accounts for adaptive opacity (based on content brightness) and gradient style.
     pub fn calculate_opacity(
         &self,
         x: usize,
@@ -161,6 +176,7 @@ impl GridRenderer {
     }
 
     #[allow(dead_code)]
+    /// Blends the grid color with the underlying cell color.
     pub fn blend_color(
         &self,
         grid_color: RgbColor,

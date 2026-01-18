@@ -34,13 +34,22 @@
 //! // Get trail map for rendering
 //! let trail = sim.trail_map_blended();
 //! ```
+//!
+#![warn(missing_docs)]
 
+/// Application entry point and high-level logic.
 pub mod app;
+/// Command-line argument parsing and configuration.
 pub mod cli;
+/// Configuration management (load/save/delete).
 pub mod config_manager;
+/// Export functionality (GIF, WebM, PNG).
 pub mod export;
+/// Rendering logic (ASCII/Unicode, color palettes, dithering).
 pub mod render;
+/// Core simulation logic (agents, trail map).
 pub mod simulation;
+/// Terminal handling (input, output, raw mode).
 pub mod terminal;
 
 // Re-export commonly used types

@@ -1,3 +1,8 @@
+//! Terminal screen state and raw mode management.
+//!
+//! This module handles entering/exiting alternate screen buffers, enabling raw mode,
+//! and managing signal handlers for window resizing and interrupts.
+
 #[cfg(unix)]
 use crate::terminal::signal::request_shutdown;
 use crossterm::{
@@ -12,6 +17,10 @@ use std::io::{self, Stdout};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+/// Manages the terminal screen state.
+///
+/// Handles entering/leaving the alternate screen, managing raw mode,
+/// and cleaning up on exit.
 pub struct TerminalScreen {
     stdout: Stdout,
     is_active: bool,
@@ -25,6 +34,7 @@ pub struct TerminalScreen {
 }
 
 impl TerminalScreen {
+    /// Create a new terminal screen manager.
     pub fn new() -> Self {
         let resize_flag = Arc::new(AtomicBool::new(false));
         Self {
@@ -40,6 +50,9 @@ impl TerminalScreen {
         }
     }
 
+    /// Enter the alternate screen and enable raw mode.
+    ///
+    /// Registers signal handlers for SIGWINCH, SIGINT, and SIGTERM (on Unix).
     pub fn setup(&mut self) -> io::Result<()> {
         if self.is_active {
             return Ok(());
@@ -110,14 +123,21 @@ impl TerminalScreen {
         Ok(())
     }
 
+    /// Get the current size of the terminal.
     pub fn get_size(&self) -> io::Result<(u16, u16)> {
         terminal::size()
     }
 
+    /// Check if a resize event has occurred since the last check.
+    ///
+    /// Resets the flag to false.
     pub fn check_resize(&self) -> bool {
         self.resize_flag.swap(false, Ordering::SeqCst)
     }
 
+    /// Leave the alternate screen and disable raw mode.
+    ///
+    /// Unregisters signal handlers.
     pub fn teardown(&mut self) -> io::Result<()> {
         if !self.is_active {
             return Ok(());
@@ -142,11 +162,13 @@ impl TerminalScreen {
         Ok(())
     }
 
+    /// Check if the screen is currently active (raw mode enabled).
     #[allow(dead_code)]
     pub fn is_active(&self) -> bool {
         self.is_active
     }
 
+    /// Clear the screen content.
     #[allow(dead_code)]
     pub fn clear(&mut self) -> io::Result<()> {
         if !self.is_active {

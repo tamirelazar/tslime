@@ -42,6 +42,10 @@ use crate::terminal::timing::FrameTimer;
 
 const REFERENCE_TIME_STEP: f32 = 1.0 / 30.0;
 
+/// Prints detailed explanations of all simulation parameters to stdout.
+///
+/// This output is intended for the `--explain` flag, providing users with
+/// context on how each parameter affects the simulation behavior.
 pub fn print_parameter_explanations() {
     println!("\n╔═══════════════════════════════════════════════════════════════════════╗");
     println!("║                    TSLIME PARAMETER REFERENCE                         ║");
@@ -290,6 +294,9 @@ pub fn print_parameter_explanations() {
     println!();
 }
 
+/// Extracts the RGB colors for each species defined in the configuration.
+///
+/// Returns a vector of `RgbColor` corresponding to the species order.
 pub fn extract_species_rgb_colors(config: &SimConfig) -> Vec<RgbColor> {
     config
         .species_configs
@@ -298,6 +305,10 @@ pub fn extract_species_rgb_colors(config: &SimConfig) -> Vec<RgbColor> {
         .collect()
 }
 
+/// Applies randomized configuration parameters to the simulation and runtime state.
+///
+/// This updates the simulation configuration (sensors, movement, decay, etc.),
+/// generates random attractors and obstacles, and updates the renderer's palette.
 pub fn apply_random_config(
     runtime_state: &RuntimeState,
     sim: &mut Simulation,
@@ -398,6 +409,10 @@ pub fn generate_completions(shell: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// Main entry point for the application logic.
+///
+/// Parses command-line arguments, validates them, and dispatches to the
+/// appropriate mode handler (Live, Screensaver, Print, Capture, Export).
 pub fn run() -> io::Result<()> {
     let args = Args::parse();
 
@@ -455,6 +470,11 @@ pub fn run() -> io::Result<()> {
     Ok(())
 }
 
+/// Executes the "Print" mode.
+///
+/// Runs the simulation for one step (or more if needed) and outputs a single
+/// frame to stdout, then exits. Useful for generating static images or
+/// piping output.
 pub fn print_mode(
     sim: &mut Simulation,
     args: &Args,
@@ -577,6 +597,10 @@ pub fn print_mode(
     Ok(())
 }
 
+/// Executes the "Capture Frames" mode.
+///
+/// Runs the simulation and saves a sequence of frames as text files to a
+/// specified directory. Also generates a metadata JSON file.
 pub fn capture_frames_mode(
     sim: &mut Simulation,
     args: &Args,
@@ -732,6 +756,9 @@ pub fn capture_frames_mode(
     Ok(())
 }
 
+/// Executes the "GIF Export" mode.
+///
+/// Runs the simulation and renders frames directly to an animated GIF file.
 pub fn export_gif_mode(
     sim: &mut Simulation,
     args: &Args,
@@ -829,6 +856,10 @@ pub fn export_gif_mode(
     Ok(())
 }
 
+/// Executes the "WebM Export" mode.
+///
+/// Runs the simulation and streams frames to an external FFmpeg process
+/// to generate a WebM video file. Requires FFmpeg to be installed.
 pub fn export_webm_mode(
     sim: &mut Simulation,
     args: &Args,
@@ -930,6 +961,10 @@ pub fn export_webm_mode(
     Ok(())
 }
 
+/// Runs the interactive simulation loop (Live or Screensaver mode).
+///
+/// Handles terminal setup, input processing, simulation updates, and rendering
+/// loop.
 #[allow(unused_assignments)]
 pub fn run_simulation(
     sim: &mut Simulation,

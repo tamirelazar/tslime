@@ -1,20 +1,37 @@
+//! Terminal capability detection.
+//!
+//! This module provides functionality to inspect the current terminal environment
+//! and determine its capabilities, such as color support (TrueColor vs 256 colors),
+//! mouse tracking support, and estimated refresh rate.
+
 use std::env;
 
+/// Detected color capabilities of the terminal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorCapability {
+    /// Terminal supports 24-bit TrueColor (16 million colors).
     TrueColor,
+    /// Terminal supports 8-bit color (256 colors).
     Bits256,
 }
 
+/// Aggregated capabilities of the detected terminal environment.
 #[derive(Debug, Clone)]
 pub struct TerminalCapabilities {
+    /// The best supported color mode.
     pub color_capability: ColorCapability,
+    /// Estimated screen refresh rate (e.g., 60Hz), derived from environment or defaults.
     pub estimated_refresh_rate: f32,
+    /// Whether the terminal likely supports mouse input tracking.
     pub supports_mouse_tracking: bool,
+    /// The name of the terminal program, if detected (e.g., "iTerm.app").
     pub terminal_name: Option<String>,
 }
 
 impl TerminalCapabilities {
+    /// Detect the capabilities of the current terminal environment.
+    ///
+    /// Inspects environment variables like `COLORTERM`, `TERM`, and `TERM_PROGRAM`.
     pub fn detect() -> Self {
         Self {
             color_capability: detect_truecolor(),
@@ -24,6 +41,10 @@ impl TerminalCapabilities {
         }
     }
 
+    /// Select the appropriate color mode based on capabilities and user request.
+    ///
+    /// If a specific mode is requested, it is returned. Otherwise, the best available
+    /// detected mode is used.
     pub fn auto_select_color_mode(
         &self,
         requested: Option<super::super::cli::ColorMode>,
@@ -97,6 +118,7 @@ fn detect_terminal_name() -> Option<String> {
     env::var("TERM_PROGRAM").or_else(|_| env::var("TERM")).ok()
 }
 
+/// Log the detected terminal capabilities to standard error if verbose mode is enabled.
 pub fn log_capabilities(caps: &TerminalCapabilities, verbose: bool) {
     if !verbose {
         return;

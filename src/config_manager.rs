@@ -10,42 +10,67 @@ const CONFIG_DIR: &str = ".config/tslime";
 const CONFIG_FILE: &str = "presets.toml";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a saved simulation configuration.
 pub struct SavedConfig {
+    /// Name of the preset.
     pub name: String,
+    /// Optional description of the preset.
     pub description: Option<String>,
 
     // Simulation parameters
+    /// Number of agents.
     pub population: usize,
+    /// Angle between sensors.
     pub sensor_angle: f32,
+    /// Distance to sensors.
     pub sensor_distance: f32,
+    /// Rotation angle per step.
     pub rotation_angle: f32,
+    /// Movement step size.
     pub step_size: f32,
+    /// Trail decay factor.
     pub decay_factor: f32,
+    /// Amount of trail deposited.
     pub deposit_amount: f32,
+    /// Max brightness for normalization.
     pub max_brightness: f32,
+    /// Diffusion kernel name.
     pub diffusion_kernel: String,
+    /// Sigma for gaussian diffusion.
     pub diffusion_sigma: f32,
 
     // Visual parameters
+    /// Color palette name or definition.
     pub palette: String,
+    /// Character set name.
     pub charset: String,
+    /// Whether palette is reversed.
     pub reverse_palette: bool,
+    /// Whether palette is inverted.
     pub invert_palette: bool,
 
     // Feature flags
+    /// Number of warmup frames.
     pub warmup_frames: usize,
+    /// Whether food persistence is enabled.
     pub food_persist: bool,
+    /// Whether auto-reset is enabled.
     pub auto_reset: bool,
+    /// Whether grid is enabled.
     pub grid: bool,
+    /// Grid style name.
     pub grid_style: Option<String>,
 
     // Init mode
+    /// Initialization mode name.
     pub init_mode: String,
+    /// Optional path to food image.
     pub food_path: Option<String>,
 }
 
 impl SavedConfig {
     #[allow(clippy::too_many_arguments)]
+    /// Creates a new `SavedConfig` from the current runtime state.
     pub fn from_runtime(
         name: String,
         sim_config: &SimConfig,
@@ -276,6 +301,9 @@ struct ConfigFile {
     presets: Vec<SavedConfig>,
 }
 
+/// Returns the path to the configuration file.
+///
+/// Creates the config directory if it doesn't exist.
 pub fn get_config_path() -> Result<PathBuf, String> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
@@ -318,6 +346,9 @@ fn save_config_file(config_file: &ConfigFile) -> Result<(), String> {
     Ok(())
 }
 
+/// Saves a configuration to the config file.
+///
+/// Overwrites any existing configuration with the same name.
 pub fn save_config(config: SavedConfig) -> Result<(), String> {
     let mut config_file = load_config_file()?;
 
@@ -331,6 +362,7 @@ pub fn save_config(config: SavedConfig) -> Result<(), String> {
 }
 
 #[allow(dead_code)]
+/// Loads a specific configuration by name.
 pub fn load_config(name: &str) -> Result<SavedConfig, String> {
     let config_file = load_config_file()?;
 
@@ -342,11 +374,13 @@ pub fn load_config(name: &str) -> Result<SavedConfig, String> {
         .ok_or_else(|| format!("Config '{}' not found", name))
 }
 
+/// Lists all saved configurations.
 pub fn list_configs() -> Result<Vec<SavedConfig>, String> {
     let config_file = load_config_file()?;
     Ok(config_file.presets)
 }
 
+/// Deletes a configuration by name.
 pub fn delete_config(name: &str) -> Result<(), String> {
     let mut config_file = load_config_file()?;
 

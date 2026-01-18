@@ -5,16 +5,21 @@ use crate::terminal::control::PaletteShiftSpeed;
 use crate::terminal::control::WindDirection;
 
 // Renamed from OptionsOverlay - this is now the Controls overlay
+/// Overlay that displays current simulation controls and parameters.
 pub struct ControlsOverlay;
 
 // Type alias for backwards compatibility
 #[allow(dead_code)]
+/// Deprecated alias for `ControlsOverlay`.
 pub type OptionsOverlay = ControlsOverlay;
 
 impl ControlsOverlay {
+    /// Width of the controls overlay window.
     pub const WIDTH: usize = 48;
+    /// Total number of control categories.
     pub const TOTAL_CATEGORIES: usize = 6;
 
+    /// Returns the name of a specific control category.
     pub fn category_name(idx: usize) -> &'static str {
         match idx {
             0 => "SIMULATION CORE",
@@ -28,11 +33,13 @@ impl ControlsOverlay {
     }
 
     #[allow(dead_code)]
+    /// Returns the total number of categories.
     pub fn total_categories() -> usize {
         Self::TOTAL_CATEGORIES
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Builds the list of strings for the controls overlay based on current state.
     pub fn build_overlay(
         category_idx: usize,
         sensor_angle: f32,

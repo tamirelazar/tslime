@@ -5,18 +5,26 @@ use crossterm::event::KeyEvent;
 use rand::Rng;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Represents a mouse cursor position in the terminal grid.
 pub struct MousePosition {
+    /// X coordinate (column).
     pub x: usize,
+    /// Y coordinate (row).
     pub y: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Defines how mouse interaction affects the simulation.
 pub enum MouseInteractionMode {
+    /// Mouse interaction disabled.
     Disabled,
+    /// Mouse click creates an attractor.
     Attract,
+    /// Mouse click creates a repeller.
     Repel,
 }
 
+/// List of all available color palettes for cycling.
 pub const ALL_PALETTES: [Palette; 16] = [
     Palette::Organic,
     Palette::Heat,
@@ -37,14 +45,20 @@ pub const ALL_PALETTES: [Palette; 16] = [
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Speed of automatic palette hue shifting.
 pub enum PaletteShiftSpeed {
+    /// No shift.
     Off,
+    /// Slow shift (5 degrees/sec).
     Slow,
+    /// Medium shift (15 degrees/sec).
     Medium,
+    /// Fast shift (45 degrees/sec).
     Fast,
 }
 
 impl PaletteShiftSpeed {
+    /// Returns the shift speed in degrees per second.
     pub fn degrees_per_second(&self) -> f32 {
         match self {
             PaletteShiftSpeed::Off => 0.0,
@@ -56,20 +70,31 @@ impl PaletteShiftSpeed {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Predefined wind directions for easy control.
 pub enum WindDirection {
+    /// No wind.
     None,
+    /// Wind blowing North (up).
     North,
+    /// Wind blowing Northeast.
     Northeast,
+    /// Wind blowing East (right).
     East,
+    /// Wind blowing Southeast.
     Southeast,
+    /// Wind blowing South (down).
     South,
+    /// Wind blowing Southwest.
     Southwest,
+    /// Wind blowing West (left).
     West,
+    /// Wind blowing Northwest.
     Northwest,
 }
 
 impl WindDirection {
     #[allow(clippy::wrong_self_convention)]
+    /// Converts the enum variant to a `Wind` vector.
     pub fn to_wind(&self) -> Option<Wind> {
         match self {
             WindDirection::None => None,
@@ -84,6 +109,7 @@ impl WindDirection {
         }
     }
 
+    /// Returns the display name of the direction.
     pub fn name(&self) -> &'static str {
         match self {
             WindDirection::None => "None",
@@ -100,97 +126,180 @@ impl WindDirection {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Actions triggered by keyboard or other input events.
 pub enum ControlAction {
+    /// Pause/resume simulation.
     TogglePause,
+    /// Restart simulation with new seed.
     Restart,
+    /// Apply a preset configuration.
     SetPreset(Preset),
+    /// Show preset comparison overlay.
     ComparePreset(Preset),
+    /// Adjust simulation speed.
     AdjustTimeScale(f32),
+    /// Cycle to next color palette.
     CyclePalette,
+    /// Cycle to previous color palette.
     CyclePaletteReverse,
+    /// Toggle controls overlay.
     ToggleControls,
+    /// Toggle keyboard shortcuts overlay.
     ToggleKeyboardHints,
+    /// Close all open overlays.
     CloseOverlays,
+    /// Toggle dithering on/off.
     ToggleDither,
+    /// Cycle through dithering modes.
     CycleDitherMode,
+    /// Adjust dithering intensity.
     AdjustDitherIntensity(f32),
+    /// Quit application.
     Quit,
+    /// Adjust sensor angle.
     AdjustSensorAngle(f32),
+    /// Adjust sensor distance.
     AdjustSensorDistance(f32),
+    /// Adjust turn angle.
     AdjustTurnAngle(f32),
+    /// Adjust step size.
     AdjustStepSize(f32),
+    /// Adjust decay factor.
     AdjustDecay(f32),
+    /// Adjust deposit amount.
     AdjustDeposit(f32),
+    /// Cycle diffusion kernel type.
     CycleDiffusionKernel,
+    /// Adjust diffusion sigma.
     AdjustDiffusionSigma(f32),
+    /// Adjust attractor strength.
     AdjustAttractorStrength(f32),
+    /// Cycle mouse interaction mode.
     CycleMouseMode,
+    /// Cycle wind direction.
     CycleWindDirection,
+    /// Adjust terrain strength.
     AdjustTerrainStrength(f32),
+    /// Cycle terrain type.
     CycleTerrainType,
+    /// Toggle auto-normalization.
     ToggleAutoNormalize,
+    /// Cycle motion blur amount.
     CycleMotionBlur,
+    /// Adjust max brightness target.
     AdjustMaxBrightness(f32),
+    /// Save current frame to PNG.
     SaveFrameToPng,
+    /// Toggle fast rendering mode.
     ToggleFastMode,
+    /// Cycle palette shift speed.
     CyclePaletteShiftSpeed,
+    /// Toggle inverted palette.
     ToggleInvertPalette,
+    /// Toggle reversed palette.
     ToggleReversePalette,
+    /// Reset parameters to defaults.
     ResetToDefaults,
+    /// Cycle controls category forward.
     CycleOptionsCategory,
+    /// Cycle controls category backward.
     CycleOptionsCategoryReverse,
+    /// Toggle statistics overlay.
     ToggleStats,
+    /// Toggle info overlay.
     ToggleInfo,
+    /// Show configuration browser.
     ShowConfigBrowser,
+    /// Show configuration save dialog.
     ShowConfigSaveDialog,
+    /// Randomize all parameters.
     RandomizeParams,
+    /// Undo last parameter change.
     Undo,
+    /// Redo last undone change.
     Redo,
+    /// No action.
     None,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// Snapshot of all simulation parameters for undo/redo.
 pub struct ParameterState {
+    /// Sensor angle.
     pub sensor_angle: f32,
+    /// Sensor distance.
     pub sensor_distance: f32,
+    /// Turn angle.
     pub turn_angle: f32,
+    /// Step size.
     pub step_size: f32,
+    /// Decay factor.
     pub decay_factor: f32,
+    /// Deposit amount.
     pub deposit_amount: f32,
+    /// Diffusion kernel.
     pub diffusion_kernel: DiffusionKernel,
+    /// Diffusion sigma.
     pub diffusion_sigma: f32,
+    /// Attractor strength.
     pub attractor_strength: f32,
+    /// Wind direction.
     pub wind_direction: WindDirection,
+    /// Terrain type.
     pub terrain_type: TerrainType,
+    /// Terrain strength.
     pub terrain_strength: f32,
+    /// Max brightness.
     pub max_brightness: f32,
+    /// Palette index.
     pub palette_index: usize,
+    /// Invert palette flag.
     pub invert_palette: bool,
+    /// Reverse palette flag.
     pub reverse_palette: bool,
+    /// Dither mode.
     pub dither_mode: DitherMode,
+    /// Motion blur frames.
     pub motion_blur_frames: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Default parameter values for reset functionality.
 pub struct DefaultValues {
+    /// Sensor angle.
     pub sensor_angle: f32,
+    /// Sensor distance.
     pub sensor_distance: f32,
+    /// Turn angle.
     pub turn_angle: f32,
+    /// Step size.
     pub step_size: f32,
+    /// Decay factor.
     pub decay_factor: f32,
+    /// Deposit amount.
     pub deposit_amount: f32,
+    /// Diffusion kernel.
     pub diffusion_kernel: DiffusionKernel,
+    /// Diffusion sigma.
     pub diffusion_sigma: f32,
+    /// Attractor strength.
     pub attractor_strength: f32,
+    /// Wind direction.
     pub wind_direction: WindDirection,
+    /// Terrain type.
     pub terrain_type: TerrainType,
+    /// Terrain strength.
     pub terrain_strength: f32,
+    /// Auto normalize enabled.
     pub auto_normalize: bool,
+    /// Motion blur frames.
     pub motion_blur_frames: usize,
+    /// Max brightness.
     pub max_brightness: f32,
 }
 
 impl DefaultValues {
+    /// Create default values from a preset.
     pub fn from_preset(preset: Preset) -> Self {
         let config = SimConfig::from(preset);
         Self {
@@ -229,63 +338,118 @@ impl DefaultValues {
 }
 
 #[derive(Debug, Clone)]
+/// Global runtime state managing simulation parameters and UI state.
 pub struct RuntimeState {
+    /// Whether simulation is paused.
     pub is_paused: bool,
+    /// Show controls overlay.
     pub show_controls: bool,
+    /// Show keyboard hints overlay.
     pub show_keyboard_hints: bool,
+    /// Show preset comparison overlay.
     pub show_preset_comparison: bool,
+    /// Preset being compared against.
     pub comparison_preset: Preset,
+    /// Current category tab in controls overlay.
     pub controls_category_idx: usize,
+    /// Time scale multiplier.
     pub time_scale: f32,
+    /// Currently active preset.
     pub current_preset: Preset,
+    /// Index of current palette.
     pub palette_index: usize,
+    /// Random seed used for initialization.
     pub original_seed: u64,
+    /// Initialization mode used.
     pub original_init_mode: InitMode,
+    /// Current dithering mode.
     pub dither_mode: DitherMode,
+    /// Last used dither mode (for toggling).
     pub last_dither_mode: Option<DitherMode>,
+    /// Current mouse interaction mode.
     pub mouse_mode: MouseInteractionMode,
+    /// Timeout for mouse effects.
     pub mouse_timeout: f32,
+    /// Sensor angle.
     pub sensor_angle: f32,
+    /// Sensor distance.
     pub sensor_distance: f32,
+    /// Turn angle.
     pub turn_angle: f32,
+    /// Step size.
     pub step_size: f32,
+    /// Decay factor.
     pub decay_factor: f32,
+    /// Deposit amount.
     pub deposit_amount: f32,
+    /// Diffusion kernel.
     pub diffusion_kernel: DiffusionKernel,
+    /// Diffusion sigma.
     pub diffusion_sigma: f32,
+    /// Attractor strength.
     pub attractor_strength: f32,
+    /// Wind direction.
     pub wind_direction: WindDirection,
+    /// Terrain type.
     pub terrain_type: TerrainType,
+    /// Terrain strength.
     pub terrain_strength: f32,
+    /// Auto normalize enabled.
     pub auto_normalize: bool,
+    /// Motion blur frames.
     pub motion_blur_frames: usize,
+    /// Max brightness.
     pub max_brightness: f32,
+    /// Fast mode enabled.
     pub fast_mode_enabled: bool,
+    /// Palette shift speed.
     pub palette_shift_speed: PaletteShiftSpeed,
+    /// Invert palette.
     pub invert_palette: bool,
+    /// Reverse palette.
     pub reverse_palette: bool,
+    /// Show stats overlay.
     pub show_stats: bool,
+    /// Show info overlay.
     pub show_info: bool,
+    /// Current notification message.
     pub notification: Option<(String, std::time::Instant)>,
+    /// Frame counter for entropy collapse detection.
     pub collapse_frame_counter: usize,
+    /// Warmup frame counter.
     pub warmup_counter: usize,
+    /// Food persistence counter.
     pub food_persist_counter: usize,
+    /// Food persistence enabled.
     pub food_persist_enabled: bool,
+    /// Initial food attractors.
     pub initial_food_attractors: Vec<crate::simulation::config::Attractor>,
+    /// Show config browser overlay.
     pub show_config_browser: bool,
+    /// Show config save dialog.
     pub show_config_save_dialog: bool,
+    /// Selected index in config browser.
     pub config_browser_selected_index: usize,
+    /// Input buffer for save dialog.
     pub config_save_name_input: String,
+    /// Default values for reset.
     pub default_values: DefaultValues,
+    /// Undo history stack.
     pub undo_stack: Vec<ParameterState>,
+    /// Redo history stack.
     pub redo_stack: Vec<ParameterState>,
+    /// Time of last undo checkpoint.
     pub last_checkpoint_time: std::time::Instant,
+    /// Recent FPS history.
     pub fps_history: std::collections::VecDeque<f32>,
+    /// Recent entropy history.
     pub entropy_history: std::collections::VecDeque<f32>,
+    /// Recent density history.
     pub density_history: std::collections::VecDeque<f32>,
 }
 
 impl RuntimeState {
+    /// Creates a new runtime state with default values.
     pub fn new(
         seed: u64,
         init_mode: InitMode,
@@ -352,6 +516,7 @@ impl RuntimeState {
         }
     }
 
+    /// Captures the current state of parameters for undo.
     pub fn capture_parameter_state(&self) -> ParameterState {
         ParameterState {
             sensor_angle: self.sensor_angle,
@@ -375,6 +540,7 @@ impl RuntimeState {
         }
     }
 
+    /// Restores parameters from a saved state.
     pub fn apply_parameter_state(&mut self, state: ParameterState) {
         self.sensor_angle = state.sensor_angle;
         self.sensor_distance = state.sensor_distance;
@@ -396,6 +562,7 @@ impl RuntimeState {
         self.motion_blur_frames = state.motion_blur_frames;
     }
 
+    /// Creates an undo checkpoint if enough time has passed.
     pub fn checkpoint(&mut self) {
         if self.last_checkpoint_time.elapsed().as_millis() < 500 {
             return;
@@ -416,6 +583,7 @@ impl RuntimeState {
         self.last_checkpoint_time = std::time::Instant::now();
     }
 
+    /// Forces creation of an undo checkpoint regardless of time.
     pub fn force_checkpoint(&mut self) {
         let current = self.capture_parameter_state();
         self.undo_stack.push(current);
@@ -426,6 +594,7 @@ impl RuntimeState {
         self.last_checkpoint_time = std::time::Instant::now();
     }
 
+    /// Undoes the last parameter change.
     pub fn undo(&mut self) -> Option<ParameterState> {
         if self.undo_stack.is_empty() {
             return None;
@@ -439,6 +608,7 @@ impl RuntimeState {
         Some(previous)
     }
 
+    /// Redoes the last undone change.
     pub fn redo(&mut self) -> Option<ParameterState> {
         if self.redo_stack.is_empty() {
             return None;
@@ -452,18 +622,22 @@ impl RuntimeState {
         Some(next)
     }
 
+    /// Toggles the paused state.
     pub fn toggle_pause(&mut self) {
         self.is_paused = !self.is_paused;
     }
 
+    /// Toggles the controls overlay.
     pub fn toggle_controls(&mut self) {
         self.show_controls = !self.show_controls;
     }
 
+    /// Toggles the keyboard shortcuts overlay.
     pub fn toggle_keyboard_hints(&mut self) {
         self.show_keyboard_hints = !self.show_keyboard_hints;
     }
 
+    /// Toggles the preset comparison overlay.
     pub fn toggle_preset_comparison(&mut self, preset: Preset) {
         if self.show_preset_comparison && self.comparison_preset == preset {
             self.show_preset_comparison = false;
@@ -473,6 +647,7 @@ impl RuntimeState {
         }
     }
 
+    /// Checks if any overlay window is currently open.
     pub fn any_overlay_open(&self) -> bool {
         self.show_controls
             || self.show_keyboard_hints
@@ -481,6 +656,7 @@ impl RuntimeState {
             || self.show_info
     }
 
+    /// Closes all open overlay windows.
     pub fn close_all_overlays(&mut self) {
         self.show_controls = false;
         self.show_keyboard_hints = false;
@@ -489,6 +665,7 @@ impl RuntimeState {
         self.show_info = false;
     }
 
+    /// Cycles through control categories.
     pub fn cycle_controls_category(&mut self, forward: bool) {
         const TOTAL_CATEGORIES: usize = 6;
 
@@ -503,23 +680,27 @@ impl RuntimeState {
         }
     }
 
+    /// Applies a preset configuration.
     pub fn set_preset(&mut self, preset: Preset) {
         self.force_checkpoint();
         self.current_preset = preset;
         self.default_values = DefaultValues::from_preset(preset);
     }
 
+    /// Adjusts simulation time scale.
     pub fn adjust_time_scale(&mut self, delta: f32) {
         self.checkpoint();
         let new_scale = (self.time_scale + delta).clamp(0.5, 4.0);
         self.time_scale = new_scale;
     }
 
+    /// Cycles to the next color palette.
     pub fn cycle_palette(&mut self, num_palettes: usize) {
         self.force_checkpoint();
         self.palette_index = (self.palette_index + 1) % num_palettes;
     }
 
+    /// Cycles to the previous color palette.
     pub fn cycle_palette_reverse(&mut self, num_palettes: usize) {
         self.force_checkpoint();
         if self.palette_index == 0 {
@@ -529,10 +710,12 @@ impl RuntimeState {
         }
     }
 
+    /// Gets the currently active palette.
     pub fn current_palette(&self, palettes: &[Palette; 16]) -> Palette {
         palettes[self.palette_index].clone()
     }
 
+    /// Toggles dithering on/off.
     pub fn toggle_dither(&mut self) {
         self.force_checkpoint();
         self.dither_mode = match self.dither_mode {
@@ -553,6 +736,7 @@ impl RuntimeState {
         };
     }
 
+    /// Cycles through available dithering modes.
     pub fn cycle_dither_mode(&mut self) {
         self.force_checkpoint();
         self.dither_mode = match self.dither_mode {
@@ -576,6 +760,7 @@ impl RuntimeState {
         }
     }
 
+    /// Adjusts dithering intensity.
     pub fn adjust_dither_intensity(&mut self, delta: f32) {
         self.checkpoint();
         self.dither_mode = match self.dither_mode {
@@ -602,6 +787,7 @@ impl RuntimeState {
         };
     }
 
+    /// Adjusts sensor angle.
     pub fn adjust_sensor_angle(&mut self, delta: f32) -> bool {
         self.checkpoint();
         let new_value = (self.sensor_angle + delta).clamp(5.0, 90.0);
@@ -610,6 +796,7 @@ impl RuntimeState {
         at_bound
     }
 
+    /// Adjusts sensor distance.
     pub fn adjust_sensor_distance(&mut self, delta: f32) -> bool {
         self.checkpoint();
         let new_value = (self.sensor_distance + delta).clamp(1.0, 50.0);
@@ -618,6 +805,7 @@ impl RuntimeState {
         at_bound
     }
 
+    /// Adjusts rotation angle.
     pub fn adjust_turn_angle(&mut self, delta: f32) -> bool {
         self.checkpoint();
         let new_value = (self.turn_angle + delta).clamp(5.0, 90.0);
@@ -626,6 +814,7 @@ impl RuntimeState {
         at_bound
     }
 
+    /// Adjusts step size.
     pub fn adjust_step_size(&mut self, delta: f32) -> bool {
         self.checkpoint();
         let new_value = (self.step_size + delta).clamp(0.5, 5.0);
@@ -634,6 +823,7 @@ impl RuntimeState {
         at_bound
     }
 
+    /// Adjusts decay factor.
     pub fn adjust_decay(&mut self, delta: f32) -> bool {
         self.checkpoint();
         let new_value = (self.decay_factor + delta).clamp(0.5, 0.99);
@@ -642,6 +832,7 @@ impl RuntimeState {
         at_bound
     }
 
+    /// Adjusts deposit amount.
     pub fn adjust_deposit(&mut self, delta: f32) -> bool {
         self.checkpoint();
         let new_value = (self.deposit_amount + delta).clamp(1.0, 20.0);
@@ -650,6 +841,7 @@ impl RuntimeState {
         at_bound
     }
 
+    /// Cycles through diffusion kernels.
     pub fn cycle_diffusion_kernel(&mut self) {
         self.force_checkpoint();
         self.diffusion_kernel = match self.diffusion_kernel {
@@ -658,6 +850,7 @@ impl RuntimeState {
         };
     }
 
+    /// Adjusts diffusion sigma (for Gaussian kernel).
     pub fn adjust_diffusion_sigma(&mut self, delta: f32) -> bool {
         self.checkpoint();
         let new_value = (self.diffusion_sigma + delta).clamp(0.5, 2.0);
@@ -666,6 +859,7 @@ impl RuntimeState {
         at_bound
     }
 
+    /// Adjusts global attractor strength.
     pub fn adjust_attractor_strength(&mut self, delta: f32) -> bool {
         self.checkpoint();
         let new_value = (self.attractor_strength + delta).clamp(0.1, 10.0);
@@ -674,6 +868,7 @@ impl RuntimeState {
         at_bound
     }
 
+    /// Cycles mouse interaction mode.
     pub fn cycle_mouse_mode(&mut self) {
         self.force_checkpoint();
         self.mouse_mode = match self.mouse_mode {
@@ -683,6 +878,7 @@ impl RuntimeState {
         };
     }
 
+    /// Cycles wind direction.
     pub fn cycle_wind_direction(&mut self) {
         self.force_checkpoint();
         self.wind_direction = match self.wind_direction {
@@ -698,6 +894,7 @@ impl RuntimeState {
         };
     }
 
+    /// Adjusts terrain strength.
     pub fn adjust_terrain_strength(&mut self, delta: f32) -> bool {
         self.checkpoint();
         let new_value = (self.terrain_strength + delta).clamp(0.1, 5.0);
@@ -706,6 +903,7 @@ impl RuntimeState {
         at_bound
     }
 
+    /// Cycles terrain type.
     pub fn cycle_terrain_type(&mut self) {
         self.force_checkpoint();
         self.terrain_type = match self.terrain_type {
@@ -716,11 +914,13 @@ impl RuntimeState {
         };
     }
 
+    /// Toggles auto-normalization of brightness.
     pub fn toggle_auto_normalize(&mut self) {
         self.force_checkpoint();
         self.auto_normalize = !self.auto_normalize;
     }
 
+    /// Cycles motion blur amount.
     pub fn cycle_motion_blur(&mut self) {
         self.force_checkpoint();
         self.motion_blur_frames = match self.motion_blur_frames {
@@ -732,6 +932,7 @@ impl RuntimeState {
         };
     }
 
+    /// Adjusts max brightness target.
     pub fn adjust_max_brightness(&mut self, delta: f32) -> bool {
         self.checkpoint();
         let new_value = (self.max_brightness + delta).clamp(1.0, 100.0);
@@ -740,11 +941,13 @@ impl RuntimeState {
         at_bound
     }
 
+    /// Toggles fast rendering mode.
     pub fn toggle_fast_mode(&mut self) {
         self.force_checkpoint();
         self.fast_mode_enabled = !self.fast_mode_enabled;
     }
 
+    /// Cycles palette shift speed.
     pub fn cycle_palette_shift_speed(&mut self) {
         self.force_checkpoint();
         self.palette_shift_speed = match self.palette_shift_speed {
@@ -755,24 +958,29 @@ impl RuntimeState {
         };
     }
 
+    /// Toggles inverted palette.
     pub fn toggle_invert_palette(&mut self) {
         self.force_checkpoint();
         self.invert_palette = !self.invert_palette;
     }
 
+    /// Toggles reversed palette.
     pub fn toggle_reverse_palette(&mut self) {
         self.force_checkpoint();
         self.reverse_palette = !self.reverse_palette;
     }
 
+    /// Toggles statistics overlay.
     pub fn toggle_stats(&mut self) {
         self.show_stats = !self.show_stats;
     }
 
+    /// Toggles info overlay.
     pub fn toggle_info(&mut self) {
         self.show_info = !self.show_info;
     }
 
+    /// Resets all parameters to default values.
     pub fn reset_to_defaults(&mut self) {
         self.force_checkpoint();
         let defaults = self.default_values;
@@ -797,6 +1005,7 @@ impl RuntimeState {
         self.reverse_palette = false;
     }
 
+    /// Randomizes simulation parameters.
     pub fn randomize_params(&mut self) {
         self.force_checkpoint();
         let mut rng = rand::thread_rng();
@@ -825,10 +1034,12 @@ impl RuntimeState {
         self.max_brightness = rng.gen_range(10.0..40.0);
     }
 
+    /// Shows a temporary notification message.
     pub fn show_notification(&mut self, message: String) {
         self.notification = Some((message, std::time::Instant::now()));
     }
 
+    /// Updates notification state (clears expired notifications).
     pub fn update_notifications(&mut self) {
         if let Some((_, time)) = self.notification {
             if time.elapsed().as_secs() >= 3 {
@@ -837,22 +1048,29 @@ impl RuntimeState {
         }
     }
 
+    /// Returns the current notification message if any.
     pub fn current_notification(&self) -> Option<&String> {
         self.notification.as_ref().map(|(msg, _)| msg)
     }
 
+    /// Checks if the simulation is in the warmup phase.
     pub fn is_in_warmup(&self, warmup_frames: usize) -> bool {
         warmup_frames > 0 && self.warmup_counter < warmup_frames
     }
 
+    /// Increments the warmup frame counter.
     pub fn increment_warmup(&mut self) {
         self.warmup_counter += 1;
     }
 
+    /// Resets the warmup frame counter.
     pub fn reset_warmup(&mut self) {
         self.warmup_counter = 0;
     }
 
+    /// Tracks entropy for collapse detection.
+    ///
+    /// Returns true if collapse detected (entropy > threshold for duration).
     pub fn track_entropy(&mut self, entropy: f32, threshold: f32, duration_frames: usize) -> bool {
         if entropy > threshold {
             self.collapse_frame_counter += 1;
@@ -863,10 +1081,12 @@ impl RuntimeState {
         }
     }
 
+    /// Resets the collapse frame counter.
     pub fn reset_collapse_counter(&mut self) {
         self.collapse_frame_counter = 0;
     }
 
+    /// Updates statistics history buffers.
     pub fn update_history(&mut self, fps: f32, entropy: f32, density: f32) {
         self.fps_history.push_back(fps);
         if self.fps_history.len() > 20 {
@@ -885,10 +1105,12 @@ impl RuntimeState {
     }
 }
 
+/// Returns the total number of available palettes.
 pub fn num_palettes() -> usize {
     ALL_PALETTES.len()
 }
 
+/// Maps a keyboard event to a control action.
 pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
     use crossterm::event::{KeyCode, KeyModifiers};
 
@@ -1031,6 +1253,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
     }
 }
 
+/// Returns the display name of a preset.
 pub fn preset_name(preset: Preset) -> &'static str {
     match preset {
         Preset::Network => "Network",
@@ -1048,6 +1271,7 @@ pub fn preset_name(preset: Preset) -> &'static str {
     }
 }
 
+/// Returns the display name of a palette.
 pub fn palette_name(palette: Palette) -> &'static str {
     match palette {
         Palette::Organic => "Organic",

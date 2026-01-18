@@ -1,3 +1,6 @@
+/// Implements Floyd-Steinberg error diffusion dithering.
+///
+/// Maintains error buffers for the current and next row to propagate quantization errors.
 pub struct ErrorDiffusion {
     width: usize,
     height: usize,
@@ -11,6 +14,7 @@ pub struct ErrorDiffusion {
 }
 
 impl ErrorDiffusion {
+    /// Creates a new error diffusion state.
     pub fn new(width: usize, height: usize) -> Self {
         Self {
             width,
@@ -25,6 +29,7 @@ impl ErrorDiffusion {
         }
     }
 
+    /// Resets all error buffers to zero.
     pub fn reset(&mut self) {
         self.current_row_errors_top.fill(0.0);
         self.current_row_errors_bottom.fill(0.0);
@@ -35,6 +40,7 @@ impl ErrorDiffusion {
         self.current_y = 0;
     }
 
+    /// Resizes the error buffers to match new dimensions.
     pub fn resize(&mut self, width: usize, height: usize) {
         self.width = width;
         self.height = height;
@@ -47,6 +53,9 @@ impl ErrorDiffusion {
         self.reset();
     }
 
+    /// Prepares for processing a new row.
+    ///
+    /// Swaps the "next" row errors into "current", and clears "next".
     pub fn start_row(&mut self, y: usize) {
         self.current_y = y;
         std::mem::swap(
@@ -61,6 +70,8 @@ impl ErrorDiffusion {
         self.next_row_errors_bottom.fill(0.0);
     }
 
+    /// Backs up the current row errors to the "last" buffer.
+    /// Used for wrapping errors in some modes.
     pub fn transfer_boundary_errors(&mut self) {
         for x in 0..self.width {
             self.last_row_errors_top[x] = self.current_row_errors_top[x];
@@ -68,6 +79,7 @@ impl ErrorDiffusion {
         }
     }
 
+    /// Injects errors from the previous frame/row into the current one.
     pub fn inject_boundary_errors(&mut self) {
         for x in 0..self.width {
             self.current_row_errors_top[x] += self.last_row_errors_top[x];
@@ -75,6 +87,16 @@ impl ErrorDiffusion {
         }
     }
 
+    /// Applies error diffusion to a single pixel.
+    ///
+    /// # Arguments
+    /// * `x`, `y` - Pixel coordinates.
+    /// * `brightness` - Original brightness value.
+    /// * `quantized` - The chosen quantized value.
+    /// * `is_top` - Whether this is the top or bottom subpixel (for half-block charsets).
+    /// * `serpentine` - If true, alternates error distribution direction.
+    ///
+    /// Returns the quantized value (passed through).
     pub fn apply_and_distribute(
         &mut self,
         x: usize,
@@ -127,10 +149,12 @@ impl ErrorDiffusion {
         quantized
     }
 
+    /// Returns the width of the error buffer.
     pub fn width(&self) -> usize {
         self.width
     }
 
+    /// Returns the height of the error buffer.
     pub fn height(&self) -> usize {
         self.height
     }

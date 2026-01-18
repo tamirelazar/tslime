@@ -2,10 +2,10 @@
 //!
 //! This module contains the core simulation logic including:
 //! - [`Simulation`]: The main simulation orchestrator
-//! - [`agent`]: Individual agent behavior (sense, rotate, move)
-//! - [`config`]: Configuration and presets
-//! - [`trail_map`]: Pheromone trail grid and diffusion
-//! - [`food`]: Food source loading from images
+//! - [`crate::simulation::agent`]: Individual agent behavior (sense, rotate, move)
+//! - [`crate::simulation::config`]: Configuration and presets
+//! - [`crate::simulation::trail_map`]: Pheromone trail grid and diffusion
+//! - [`crate::simulation::food`]: Food source loading from images
 
 // These methods are part of the public library API even if unused by the CLI binary
 #![allow(dead_code)]
@@ -36,6 +36,7 @@ pub struct TrailHistory {
 }
 
 impl TrailHistory {
+    /// Create a new trail history buffer with the given capacity.
     pub fn new(capacity: usize) -> Self {
         Self {
             history: Vec::with_capacity(capacity),
@@ -45,6 +46,9 @@ impl TrailHistory {
         }
     }
 
+    /// Push a new trail map frame into the history buffer.
+    ///
+    /// If the buffer is full, overwrites the oldest frame.
     pub fn push(&mut self, trail_map: &[f32]) {
         if self.capacity == 0 {
             return;
@@ -60,6 +64,9 @@ impl TrailHistory {
         self.current_index = (self.current_index + 1) % self.capacity;
     }
 
+    /// Calculate the average of all frames in the history buffer.
+    ///
+    /// Returns `None` if the history is empty.
     pub fn blended(&self) -> Option<Vec<f32>> {
         if self.count == 0 {
             return None;
@@ -90,6 +97,7 @@ impl TrailHistory {
         self.capacity
     }
 
+    /// Clear all history frames.
     pub fn clear(&mut self) {
         self.history.clear();
         self.current_index = 0;
@@ -128,6 +136,7 @@ pub struct Simulation {
 }
 
 impl Simulation {
+    /// Create a new simulation with the given dimensions and configuration.
     pub fn new(
         width: usize,
         height: usize,
@@ -482,40 +491,52 @@ impl Simulation {
         }
     }
 
+    /// Get the width of the simulation grid.
     pub fn width(&self) -> usize {
         self.trail_maps.first().map(|tm| tm.width()).unwrap_or(0)
     }
 
+    /// Get the height of the simulation grid.
     pub fn height(&self) -> usize {
         self.trail_maps.first().map(|tm| tm.height()).unwrap_or(0)
     }
 
+    /// Get the total number of agents.
     pub fn agent_count(&self) -> usize {
         self.agents.len()
     }
 
+    /// Get the total number of active attractors.
     pub fn attractor_count(&self) -> usize {
         self.config.attractors.len() + self.config.mouse_attractors.len()
     }
 
+    /// Get the number of obstacles.
     pub fn obstacle_count(&self) -> usize {
         self.config.obstacles.len()
     }
 
+    /// Get the number of agent species.
     pub fn species_count(&self) -> usize {
         self.config.species_configs.len()
     }
 
     #[allow(dead_code)]
+    /// Get references to all trail maps.
     pub fn trail_maps(&self) -> &[TrailMap] {
         &self.trail_maps
     }
 
     #[allow(dead_code)]
+    /// Get a reference to the primary trail map.
     pub fn trail_map(&self) -> &TrailMap {
         &self.trail_maps[0]
     }
 
+    /// Get the combined trail map for rendering.
+    ///
+    /// Applies motion blur if enabled (via history blending) or combines
+    /// multiple species trails if separate trails are enabled.
     pub fn trail_map_blended(&self) -> Vec<f32> {
         if let Some(ref history) = self.trail_history {
             if let Some(blended) = history.blended() {
@@ -537,20 +558,27 @@ impl Simulation {
         }
     }
 
+    /// Get trail maps for each species as separate slices.
     pub fn trail_maps_for_species_colors(&self) -> Vec<&[f32]> {
         self.trail_maps.iter().map(|tm| tm.current()).collect()
     }
 
     #[allow(dead_code)]
+    /// Get a mutable reference to the primary trail map.
     pub fn trail_map_mut(&mut self) -> &mut TrailMap {
         &mut self.trail_maps[0]
     }
 
     #[allow(dead_code)]
+    /// Get the current simulation configuration.
     pub fn config(&self) -> &SimConfig {
         &self.config
     }
 
+    /// Advance the simulation by one time step `dt`.
+    ///
+    /// This performs the sense-rotate-move-deposit cycle for all agents,
+    /// and then diffuses and decays the trail map.
     pub fn update(&mut self, dt: f32) {
         let width = self.width();
         let height = self.height();
@@ -706,10 +734,14 @@ impl Simulation {
     }
 
     #[allow(dead_code)]
+    /// Get a reference to the agent list.
     pub fn agents(&self) -> &[Agent] {
         &self.agents
     }
 
+    /// Reset the simulation with a new seed and initialization mode.
+    ///
+    /// Clears trails, re-initializes agents, and resets random state.
     pub fn reset(&mut self, seed: u64, init_mode: InitMode) {
         self.rng = Rng::seed_from_u64(seed);
         self.agents.clear();
@@ -751,6 +783,9 @@ impl Simulation {
         self.noise = NoiseWrapper::new(noise_seed);
     }
 
+    /// Update the simulation configuration at runtime.
+    ///
+    /// Adjusts trail map buffers if the number of species trails changes.
     pub fn update_config(&mut self, config: SimConfig) {
         self.config = config;
         let num_trails = if self.config.separate_species_trails {
@@ -767,10 +802,14 @@ impl Simulation {
         }
     }
 
+    /// Add a temporary attractor at the given coordinates.
     pub fn add_mouse_attractor(&mut self, x: f32, y: f32, strength: f32) {
         self.config.add_mouse_attractor(x, y, strength);
     }
 
+    /// Generate attractors based on a food image.
+    ///
+    /// Creates point attractors at bright locations in the image.
     pub fn create_food_attractors(
         width: usize,
         height: usize,

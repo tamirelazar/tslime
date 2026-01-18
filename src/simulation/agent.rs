@@ -43,13 +43,18 @@ impl NoiseWrapper {
 /// when processing 50,000+ agents per frame.
 #[derive(Clone, Copy)]
 pub struct Agent {
+    /// X position in the simulation grid.
     pub x: f32,
+    /// Y position in the simulation grid.
     pub y: f32,
+    /// Movement direction in radians.
     pub heading: f32,
+    /// Identifier for the agent's species (used for color/config).
     pub species_id: u8,
 }
 
 impl Agent {
+    /// Create a new agent at (x, y) with the given heading and species.
     pub fn new(x: f32, y: f32, heading: f32, species_id: u8) -> Self {
         Self {
             x,
@@ -59,6 +64,9 @@ impl Agent {
         }
     }
 
+    /// Sense the pheromone trail at left, center, and right sensors.
+    ///
+    /// Returns a tuple of (left, center, right) sensed values.
     pub fn sense(
         &self,
         trail: &[f32],
@@ -89,6 +97,9 @@ impl Agent {
         (left, center, right)
     }
 
+    /// Update heading based on sensed values.
+    ///
+    /// Turns towards the strongest signal, or randomly if forward blocked.
     pub fn rotate(
         &mut self,
         left: f32,
@@ -113,6 +124,7 @@ impl Agent {
         }
     }
 
+    /// Apply steering forces from attractors (or repellers).
     pub fn apply_attractor_forces(
         &mut self,
         attractors: &[Attractor],
@@ -158,6 +170,7 @@ impl Agent {
         }
     }
 
+    /// Apply constant wind force to heading.
     pub fn apply_wind_force(&mut self, wind: Option<Wind>, strength_multiplier: f32) {
         if let Some(w) = wind {
             let wind_strength = 0.05 * w.dx * strength_multiplier;
@@ -181,6 +194,7 @@ impl Agent {
         }
     }
 
+    /// Apply terrain-based steering bias using Perlin noise.
     pub fn apply_terrain_bias(
         &mut self,
         terrain: TerrainType,
@@ -262,6 +276,7 @@ impl Agent {
         }
     }
 
+    /// Move agent forward and handle collisions with boundaries and obstacles.
     pub fn move_forward(
         &mut self,
         step_size: f32,
@@ -299,6 +314,7 @@ impl Agent {
         }
     }
 
+    /// Deposit pheromone at the current position.
     pub fn deposit(&self, trail: &mut [f32], width: usize, height: usize, deposit_amount: f32) {
         let x = self.x as usize;
         let y = self.y as usize;
