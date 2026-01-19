@@ -1269,6 +1269,12 @@ pub fn preset_name(preset: Preset) -> &'static str {
         Preset::River => "River",
         Preset::Ethereal => "Ethereal",
         Preset::PetriDish => "PetriDish",
+        Preset::Vortex => "Vortex",
+        Preset::Lightning => "Lightning",
+        Preset::Crystal => "Crystal",
+        Preset::ChaosEdge => "ChaosEdge",
+        Preset::Blob => "Blob",
+        Preset::Worm => "Worm",
     }
 }
 

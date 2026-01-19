@@ -288,8 +288,14 @@ impl FromStr for Preset {
             "river" => Ok(Preset::River),
             "ethereal" => Ok(Preset::Ethereal),
             "petri" | "petridish" => Ok(Preset::PetriDish),
+            "vortex" => Ok(Preset::Vortex),
+            "lightning" => Ok(Preset::Lightning),
+            "crystal" => Ok(Preset::Crystal),
+            "chaosedge" | "chaos-edge" | "chaos_edge" => Ok(Preset::ChaosEdge),
+            "blob" => Ok(Preset::Blob),
+            "worm" => Ok(Preset::Worm),
             _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri",
+                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm",
                 s
             )),
         }
@@ -677,7 +683,7 @@ pub struct Args {
     #[arg(
         long = "preset",
         value_name = "NAME",
-        help = "Use named preset (network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river)"
+        help = "Use named preset (network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, vortex, lightning, crystal, chaosedge, blob, worm)"
     )]
     /// Named parameter preset.
     pub preset: Option<Preset>,
