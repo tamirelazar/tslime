@@ -1204,6 +1204,15 @@ pub struct Args {
     /// Custom ASCII character set.
     pub ascii_chars: Option<String>,
 
+    #[arg(
+        long = "bg-color",
+        alias = "bg",
+        value_name = "HEX",
+        help = "Background color as hex (e.g., '000000' or '#1a1a1a')"
+    )]
+    /// Background color hex code.
+    pub bg_color: Option<String>,
+
     #[arg(long = "random", help = "Start with randomized parameters")]
     /// Start with randomized parameters.
     pub random: bool,
@@ -1386,6 +1395,7 @@ impl Args {
             .parse::<TerrainType>()
             .unwrap_or(TerrainType::None);
         config.terrain_strength = self.terrain_strength;
+        config.background_color = self.bg_color.clone();
 
         config
     }
@@ -1639,6 +1649,7 @@ impl Default for Args {
             random: false,
             explain: false,
             completions: None,
+            bg_color: None,
         }
     }
 }

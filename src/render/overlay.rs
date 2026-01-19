@@ -809,7 +809,7 @@ mod tests {
     fn test_config_browser_overlay_empty() {
         let lines = ConfigBrowserOverlay::build_overlay(&[], 0);
         assert!(lines.iter().any(|l| l.contains("No saved configurations")));
-        let (x, y) = ConfigBrowserOverlay::calculate_position(100, 100);
+        let (x, _y) = ConfigBrowserOverlay::calculate_position(100, 100);
         assert_eq!(x, 22);
     }
 
@@ -817,7 +817,7 @@ mod tests {
     fn test_config_save_overlay() {
         let lines = ConfigSaveOverlay::build_overlay("test");
         assert!(lines.iter().any(|l| l.contains("test")));
-        let (x, y) = ConfigSaveOverlay::calculate_position(100, 100);
+        let (x, _y) = ConfigSaveOverlay::calculate_position(100, 100);
         assert_eq!(x, 31);
     }
 
@@ -1490,6 +1490,7 @@ mod status_line_tests {
             grid_style: None,
             init_mode: "random".to_string(),
             food_path: None,
+            background_color: None,
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);

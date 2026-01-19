@@ -524,6 +524,8 @@ pub struct SimConfig {
     pub terrain: TerrainType,
     /// Strength of terrain effect.
     pub terrain_strength: f32,
+    /// Background color hex code.
+    pub background_color: Option<String>,
 }
 
 impl Default for SimConfig {
@@ -553,6 +555,7 @@ impl Default for SimConfig {
             wind: None,
             terrain: TerrainType::None,
             terrain_strength: 1.0,
+            background_color: None,
         }
     }
 }
@@ -733,6 +736,7 @@ impl From<Preset> for SimConfig {
                 wind: None,
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
+                background_color: None,
             },
             Preset::Exploratory => Self {
                 sensor_angle: 45.0,
@@ -767,6 +771,7 @@ impl From<Preset> for SimConfig {
                 wind: None,
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
+                background_color: None,
             },
             Preset::Tendrils => Self {
                 sensor_angle: 30.0,
@@ -801,6 +806,7 @@ impl From<Preset> for SimConfig {
                 wind: None,
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
+                background_color: None,
             },
             Preset::Organic => Self {
                 sensor_angle: 22.5,
@@ -827,6 +833,7 @@ impl From<Preset> for SimConfig {
                 wind: None,
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
+                background_color: None,
             },
             Preset::Minimal => Self {
                 sensor_angle: 30.0,
@@ -861,6 +868,7 @@ impl From<Preset> for SimConfig {
                 wind: None,
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
+                background_color: None,
             },
             Preset::Moss => Self {
                 sensor_angle: 22.0,
@@ -895,6 +903,7 @@ impl From<Preset> for SimConfig {
                 wind: None,
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
+                background_color: None,
             },
             Preset::Cosmic => Self {
                 sensor_angle: 55.0,
@@ -929,6 +938,7 @@ impl From<Preset> for SimConfig {
                 wind: None,
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
+                background_color: None,
             },
             Preset::Fire => Self {
                 sensor_angle: 15.0,
@@ -963,6 +973,7 @@ impl From<Preset> for SimConfig {
                 wind: None,
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
+                background_color: None,
             },
             Preset::Zen => Self {
                 sensor_angle: 25.0,
@@ -997,6 +1008,7 @@ impl From<Preset> for SimConfig {
                 wind: None,
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
+                background_color: None,
             },
             Preset::Storm => Self {
                 sensor_angle: 20.0,
@@ -1031,6 +1043,7 @@ impl From<Preset> for SimConfig {
                 wind: Some(Wind::new(0.1, 0.05)),
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
+                background_color: None,
             },
             Preset::River => Self {
                 sensor_angle: 25.0,
@@ -1065,6 +1078,7 @@ impl From<Preset> for SimConfig {
                 wind: Some(Wind::new(0.3, 0.0)),
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
+                background_color: None,
             },
             Preset::Ethereal => Self {
                 sensor_angle: 40.0,
@@ -1099,6 +1113,7 @@ impl From<Preset> for SimConfig {
                 wind: None,
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
+                background_color: None,
             },
         }
     }
@@ -1518,7 +1533,7 @@ mod tests {
 
     #[test]
     fn test_mouse_attractor_expiry() {
-        let mut ma = MouseAttractor::new(10.0, 10.0, 1.0, 0.01);
+        let ma = MouseAttractor::new(10.0, 10.0, 1.0, 0.01);
         assert!(!ma.is_expired());
         std::thread::sleep(std::time::Duration::from_millis(20));
         assert!(ma.is_expired());

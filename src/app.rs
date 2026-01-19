@@ -515,6 +515,8 @@ pub fn print_mode(
         None
     };
 
+    let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
 
     let mut buffer = FrameBuffer::from_downsampled(
@@ -532,6 +534,7 @@ pub fn print_mode(
         &mut None,
         args.species_colors,
         species_rgb_colors,
+        background_color,
     );
 
     // Apply grid rendering if enabled
@@ -649,6 +652,8 @@ pub fn capture_frames_mode(
             None
         };
 
+        let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+
         let mut buffer = FrameBuffer::from_downsampled(
             downsampled.cells(),
             term_width,
@@ -664,6 +669,7 @@ pub fn capture_frames_mode(
             &mut None,
             args.species_colors,
             species_rgb_colors,
+            background_color,
         );
 
         // Apply grid rendering if enabled
@@ -816,6 +822,8 @@ pub fn export_gif_mode(
             None
         };
 
+        let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+
         let buffer = FrameBuffer::from_downsampled(
             downsampled.cells(),
             term_width,
@@ -831,6 +839,7 @@ pub fn export_gif_mode(
             &mut None,
             args.species_colors,
             species_rgb_colors,
+            background_color,
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -917,6 +926,8 @@ pub fn export_webm_mode(
             None
         };
 
+        let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+
         let buffer = FrameBuffer::from_downsampled(
             downsampled.cells(),
             term_width,
@@ -932,6 +943,7 @@ pub fn export_webm_mode(
             &mut None,
             args.species_colors,
             species_rgb_colors,
+            background_color,
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -998,6 +1010,9 @@ pub fn run_simulation(
 
     let color_mode = capabilities.auto_select_color_mode(args.color_mode().ok());
 
+    let config = args.to_sim_config();
+    let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+
     let mut renderer = TerminalRenderer::new(
         0,
         0,
@@ -1006,6 +1021,7 @@ pub fn run_simulation(
         args.reverse_palette,
         args.invert_palette,
         color_mode,
+        background_color,
     );
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
     renderer.set_dither_mode(dither_mode);
@@ -1085,7 +1101,7 @@ pub fn run_simulation(
         sim.update_config(new_config);
     }
 
-    let config = args.to_sim_config();
+    // let config = args.to_sim_config(); // Already parsed above
     if args.species_colors {
         let species_rgb_colors = extract_species_rgb_colors(&config);
         renderer.set_species_colors(true, species_rgb_colors);

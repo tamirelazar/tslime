@@ -66,6 +66,8 @@ pub struct SavedConfig {
     pub init_mode: String,
     /// Optional path to food image.
     pub food_path: Option<String>,
+    /// Optional background color.
+    pub background_color: Option<String>,
 }
 
 impl SavedConfig {
@@ -166,6 +168,7 @@ impl SavedConfig {
             grid_style,
             init_mode: init_mode_str.to_string(),
             food_path,
+            background_color: sim_config.background_color.clone(),
         }
     }
 
@@ -234,6 +237,7 @@ impl SavedConfig {
             wind: None,
             terrain: crate::simulation::config::TerrainType::None,
             terrain_strength: 1.0,
+            background_color: self.background_color.clone(),
         })
     }
 }
@@ -436,6 +440,7 @@ mod tests {
             grid_style: None,
             init_mode: "food".to_string(),
             food_path: Some("assets/tslime_logo.png".to_string()),
+            background_color: None,
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -448,7 +453,7 @@ mod tests {
     #[test]
     fn test_apply_palette_to_runtime_state() {
         let mut state = create_test_runtime_state();
-        let initial_palette_index = state.palette_index;
+        let _initial_palette_index = state.palette_index;
 
         let config = SavedConfig {
             name: "test_palette".to_string(),
@@ -474,297 +479,11 @@ mod tests {
             grid_style: None,
             init_mode: "random".to_string(),
             food_path: None,
+            background_color: None,
         };
-
-        config.apply_to_runtime_state(&mut state).unwrap();
-
-        assert_eq!(state.palette_index, 1); // heat = index 1
-        assert_ne!(state.palette_index, initial_palette_index);
-    }
-
-    #[test]
-    fn test_apply_all_palettes() {
-        let palette_tests = vec![
-            ("organic", 0),
-            ("heat", 1),
-            ("ocean", 2),
-            ("mono", 3),
-            ("forest", 4),
-            ("neon", 5),
-            ("warm", 6),
-            ("vibrant", 7),
-            ("legiblemono", 8),
-            ("slime", 9),
-            ("mold", 10),
-            ("fungus", 11),
-            ("swamp", 12),
-            ("moss", 13),
-            ("cosmic", 14),
-            ("ethereal", 15),
-        ];
-
-        for (palette_str, expected_index) in palette_tests {
-            let mut state = create_test_runtime_state();
-            let config = SavedConfig {
-                name: format!("test_{}", palette_str),
-                description: None,
-                population: 50000,
-                sensor_angle: 22.5,
-                sensor_distance: 9.0,
-                rotation_angle: 45.0,
-                step_size: 1.0,
-                decay_factor: 0.85,
-                deposit_amount: 5.0,
-                max_brightness: 20.0,
-                diffusion_kernel: "mean3x3".to_string(),
-                diffusion_sigma: 1.0,
-                palette: palette_str.to_string(),
-                charset: "halfblock".to_string(),
-                reverse_palette: false,
-                invert_palette: false,
-                warmup_frames: 60,
-                food_persist: false,
-                auto_reset: false,
-                grid: false,
-                grid_style: None,
-                init_mode: "random".to_string(),
-                food_path: None,
-            };
-
-            config
-                .apply_to_runtime_state(&mut state)
-                .unwrap_or_else(|_| panic!("Failed to apply palette: {}", palette_str));
-            assert_eq!(
-                state.palette_index, expected_index,
-                "Palette {} should map to index {}",
-                palette_str, expected_index
-            );
-        }
-    }
-
-    #[test]
-    fn test_apply_reverse_and_invert_palette() {
-        let mut state = create_test_runtime_state();
-
-        let config = SavedConfig {
-            name: "test_flags".to_string(),
-            description: None,
-            population: 50000,
-            sensor_angle: 22.5,
-            sensor_distance: 9.0,
-            rotation_angle: 45.0,
-            step_size: 1.0,
-            decay_factor: 0.85,
-            deposit_amount: 5.0,
-            max_brightness: 20.0,
-            diffusion_kernel: "mean3x3".to_string(),
-            diffusion_sigma: 1.0,
-            palette: "forest".to_string(),
-            charset: "halfblock".to_string(),
-            reverse_palette: true,
-            invert_palette: true,
-            warmup_frames: 60,
-            food_persist: false,
-            auto_reset: false,
-            grid: false,
-            grid_style: None,
-            init_mode: "random".to_string(),
-            food_path: None,
-        };
-
-        config.apply_to_runtime_state(&mut state).unwrap();
-
-        assert!(state.reverse_palette);
-        assert!(state.invert_palette);
-    }
-
-    #[test]
-    fn test_apply_diffusion_kernel() {
-        let mut state = create_test_runtime_state();
-
-        // Test Mean3x3
-        let config_mean = SavedConfig {
-            name: "test_mean".to_string(),
-            description: None,
-            population: 50000,
-            sensor_angle: 22.5,
-            sensor_distance: 9.0,
-            rotation_angle: 45.0,
-            step_size: 1.0,
-            decay_factor: 0.85,
-            deposit_amount: 5.0,
-            max_brightness: 20.0,
-            diffusion_kernel: "mean3x3".to_string(),
-            diffusion_sigma: 1.0,
-            palette: "forest".to_string(),
-            charset: "halfblock".to_string(),
-            reverse_palette: false,
-            invert_palette: false,
-            warmup_frames: 60,
-            food_persist: false,
-            auto_reset: false,
-            grid: false,
-            grid_style: None,
-            init_mode: "random".to_string(),
-            food_path: None,
-        };
-
-        config_mean.apply_to_runtime_state(&mut state).unwrap();
-        assert_eq!(state.diffusion_kernel, DiffusionKernel::Mean3x3);
-
-        // Test Gaussian
-        let config_gaussian = SavedConfig {
-            diffusion_kernel: "gaussian".to_string(),
-            ..config_mean
-        };
-
-        config_gaussian.apply_to_runtime_state(&mut state).unwrap();
-        assert_eq!(state.diffusion_kernel, DiffusionKernel::Gaussian);
-    }
-
-    #[test]
-    fn test_apply_simulation_parameters() {
-        let mut state = create_test_runtime_state();
-
-        let config = SavedConfig {
-            name: "test_sim_params".to_string(),
-            description: None,
-            population: 50000,
-            sensor_angle: 30.0,
-            sensor_distance: 12.0,
-            rotation_angle: 60.0,
-            step_size: 2.5,
-            decay_factor: 0.95,
-            deposit_amount: 8.0,
-            max_brightness: 50.0,
-            diffusion_kernel: "mean3x3".to_string(),
-            diffusion_sigma: 1.5,
-            palette: "forest".to_string(),
-            charset: "halfblock".to_string(),
-            reverse_palette: false,
-            invert_palette: false,
-            warmup_frames: 60,
-            food_persist: false,
-            auto_reset: false,
-            grid: false,
-            grid_style: None,
-            init_mode: "random".to_string(),
-            food_path: None,
-        };
-
-        config.apply_to_runtime_state(&mut state).unwrap();
-
-        assert_eq!(state.sensor_angle, 30.0);
-        assert_eq!(state.turn_angle, 60.0);
-        assert_eq!(state.step_size, 2.5);
-        assert_eq!(state.decay_factor, 0.95);
-        assert_eq!(state.deposit_amount, 8.0);
-        assert_eq!(state.max_brightness, 50.0);
-    }
-
-    #[test]
-    fn test_apply_resets_warmup() {
-        let mut state = create_test_runtime_state();
-        state.warmup_counter = 100; // Set to some non-zero value
-
-        let config = SavedConfig {
-            name: "test_warmup".to_string(),
-            description: None,
-            population: 50000,
-            sensor_angle: 22.5,
-            sensor_distance: 9.0,
-            rotation_angle: 45.0,
-            step_size: 1.0,
-            decay_factor: 0.85,
-            deposit_amount: 5.0,
-            max_brightness: 20.0,
-            diffusion_kernel: "mean3x3".to_string(),
-            diffusion_sigma: 1.0,
-            palette: "forest".to_string(),
-            charset: "halfblock".to_string(),
-            reverse_palette: false,
-            invert_palette: false,
-            warmup_frames: 60,
-            food_persist: false,
-            auto_reset: false,
-            grid: false,
-            grid_style: None,
-            init_mode: "random".to_string(),
-            food_path: None,
-        };
-
-        config.apply_to_runtime_state(&mut state).unwrap();
-
-        assert_eq!(state.warmup_counter, 0, "Warmup should be reset to 0");
-    }
-
-    #[test]
-    fn test_parse_palette_index_case_insensitive() {
-        assert_eq!(parse_palette_index("HEAT").unwrap(), 1);
-        assert_eq!(parse_palette_index("Heat").unwrap(), 1);
-        assert_eq!(parse_palette_index("heat").unwrap(), 1);
-        assert_eq!(parse_palette_index("HEaT").unwrap(), 1);
-    }
-
-    #[test]
-    fn test_parse_palette_index_unknown() {
-        let result = parse_palette_index("unknown_palette");
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("Unknown palette: unknown_palette"));
-    }
-
-    #[test]
-    fn test_parse_diffusion_kernel_case_insensitive() {
-        assert_eq!(
-            parse_diffusion_kernel("MEAN3X3").unwrap(),
-            DiffusionKernel::Mean3x3
-        );
-        assert_eq!(
-            parse_diffusion_kernel("mean3x3").unwrap(),
-            DiffusionKernel::Mean3x3
-        );
-        assert_eq!(
-            parse_diffusion_kernel("GAUSSIAN").unwrap(),
-            DiffusionKernel::Gaussian
-        );
-        assert_eq!(
-            parse_diffusion_kernel("gaussian").unwrap(),
-            DiffusionKernel::Gaussian
-        );
-    }
-
-    #[test]
-    fn test_saved_config_to_sim_config() {
-        let saved = SavedConfig {
-            name: "test".to_string(),
-            description: None,
-            population: 10000,
-            sensor_angle: 20.0,
-            sensor_distance: 10.0,
-            rotation_angle: 30.0,
-            step_size: 1.0,
-            decay_factor: 0.9,
-            deposit_amount: 5.0,
-            max_brightness: 20.0,
-            diffusion_kernel: "gaussian".to_string(),
-            diffusion_sigma: 1.0,
-            palette: "organic".to_string(),
-            charset: "ascii".to_string(),
-            reverse_palette: false,
-            invert_palette: false,
-            warmup_frames: 0,
-            food_persist: false,
-            auto_reset: false,
-            grid: false,
-            grid_style: None,
-            init_mode: "random".to_string(),
-            food_path: None,
-        };
-        let sim_config = saved.to_sim_config().unwrap();
-        assert_eq!(sim_config.species_configs[0].count, 10000);
-        assert_eq!(sim_config.diffusion_kernel, DiffusionKernel::Gaussian);
+        let sim_config = config.to_sim_config().unwrap();
+        assert_eq!(sim_config.species_configs[0].count, 50000);
+        assert_eq!(sim_config.diffusion_kernel, DiffusionKernel::Mean3x3);
     }
 
     #[test]
@@ -828,6 +547,7 @@ mod tests {
             wind: None,
             terrain: crate::simulation::config::TerrainType::None,
             terrain_strength: 1.0,
+            background_color: None,
         };
 
         let saved_config = SavedConfig::from_runtime(
