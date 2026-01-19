@@ -1165,7 +1165,6 @@ mod stats_tests {
     fn test_entropy_calculation() {
         let uniform = vec![1.0; 40000];
         let entropy_uniform = StatsOverlay::calculate_entropy(&uniform, 100);
-        eprintln!("uniform entropy: {}", entropy_uniform);
         assert!(
             entropy_uniform < 2.0,
             "uniform should have low entropy, got {}",
@@ -1174,7 +1173,6 @@ mod stats_tests {
 
         let varied: Vec<f32> = (0..40000).map(|i| i as f32 / 400.0).collect();
         let entropy_varied = StatsOverlay::calculate_entropy(&varied, 100);
-        eprintln!("varied entropy: {}", entropy_varied);
         assert!(
             entropy_varied > entropy_uniform,
             "varied ({}) should have higher entropy than uniform ({})",
