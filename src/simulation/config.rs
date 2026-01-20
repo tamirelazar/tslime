@@ -1229,9 +1229,9 @@ impl From<Preset> for SimConfig {
                 sensor_angle: 31.9,
                 sensor_distance: 23.2, // Long-range sensing for coherent branches
                 rotation_angle: 39.3,
-                step_size: 2.48,       // Fast movement
-                decay_factor: 0.82,    // Medium decay for visible branches
-                deposit_amount: 20.0,  // Max intensity trails
+                step_size: 2.48,      // Fast movement
+                decay_factor: 0.82,   // Medium decay for visible branches
+                deposit_amount: 20.0, // Max intensity trails
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
                 max_brightness: 40.0,
@@ -1267,7 +1267,7 @@ impl From<Preset> for SimConfig {
                 sensor_distance: 30.6, // Long-range sensing for coherent growth
                 rotation_angle: 21.5,  // Smaller than sensor for smooth turns
                 step_size: 1.47,
-                decay_factor: 0.50,    // Fast decay creates sharp edges
+                decay_factor: 0.50, // Fast decay creates sharp edges
                 deposit_amount: 2.1,
                 diffusion_kernel: DiffusionKernel::Gaussian,
                 diffusion_sigma: 1.2,
@@ -1300,11 +1300,11 @@ impl From<Preset> for SimConfig {
             Preset::ChaosEdge => Self {
                 // Optimized for high heading variance × density variance (chaotic dynamics)
                 // Very narrow sensor + large rotation creates unpredictable behavior
-                sensor_angle: 5.0,     // Minimum - very narrow field of view
+                sensor_angle: 5.0, // Minimum - very narrow field of view
                 sensor_distance: 26.4,
-                rotation_angle: 56.2,  // Large turns amplify chaos
-                step_size: 0.58,       // Slow movement for intricate patterns
-                decay_factor: 0.99,    // Max persistence preserves chaotic trails
+                rotation_angle: 56.2, // Large turns amplify chaos
+                step_size: 0.58,      // Slow movement for intricate patterns
+                decay_factor: 0.99,   // Max persistence preserves chaotic trails
                 deposit_amount: 15.8,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
@@ -1378,7 +1378,7 @@ impl From<Preset> for SimConfig {
                 sensor_distance: 50.0, // Maximum long-range sensing
                 rotation_angle: 13.4,  // Very gradual turns
                 step_size: 1.96,
-                decay_factor: 0.65,    // Medium decay for visible trails
+                decay_factor: 0.65, // Medium decay for visible trails
                 deposit_amount: 6.3,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,

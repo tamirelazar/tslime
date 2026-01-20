@@ -456,17 +456,22 @@ fn run_exploration(args: &Args) -> io::Result<()> {
     println!("Iterations per behavior: {}", args.explore_iterations);
     println!();
 
+    // Use hybrid search: 50% random exploration, 50% hill-climb refinement
+    let random_iters = args.explore_iterations / 2;
+    let hill_climb_iters = args.explore_iterations / 2;
+    let top_k = 3; // Refine top 3 candidates
+
     if let Some(behavior) = target_behavior {
-        // Optimize for single behavior
-        println!("Optimizing for: {:?}", behavior);
+        // Optimize for single behavior using hybrid search
+        println!("Optimizing for: {:?} (hybrid search)", behavior);
+        println!("  Random exploration: {} iterations", random_iters);
+        println!(
+            "  Hill-climb refinement: {} iterations x {} candidates",
+            hill_climb_iters, top_k
+        );
         println!();
 
-        let result = explorer.hill_climb(
-            behavior,
-            None,
-            args.explore_iterations,
-            3, // restarts
-        );
+        let result = explorer.hybrid_search(behavior, random_iters, hill_climb_iters, top_k);
 
         println!();
         println!("=== Best Result for {:?} ===", behavior);
@@ -475,13 +480,25 @@ fn run_exploration(args: &Args) -> io::Result<()> {
         println!("Metrics:");
         println!("  Angular momentum: {:.4}", result.metrics.angular_momentum);
         println!("  Heading variance: {:.4}", result.metrics.heading_variance);
-        println!("  Trail fragmentation: {}", result.metrics.trail_fragmentation);
+        println!(
+            "  Trail fragmentation: {}",
+            result.metrics.trail_fragmentation
+        );
         println!("  Trail elongation: {:.4}", result.metrics.trail_elongation);
         println!("  Spatial entropy: {:.4}", result.metrics.spatial_entropy);
-        println!("  Temporal stability: {:.4}", result.metrics.temporal_stability);
+        println!(
+            "  Temporal stability: {:.4}",
+            result.metrics.temporal_stability
+        );
         println!("  Density variance: {:.4}", result.metrics.density_variance);
         println!("  Coverage: {:.4}", result.metrics.coverage);
         println!("  Branching factor: {:.4}", result.metrics.branching_factor);
+        println!("  Flow coherence: {:.4}", result.metrics.flow_coherence);
+        println!(
+            "  Spatial concentration: {:.4}",
+            result.metrics.spatial_concentration
+        );
+        println!("  Path continuity: {:.4}", result.metrics.path_continuity);
         println!();
         println!("Optimal Parameters:");
         println!("  sensor_angle: {:.1}", result.params.sensor_angle);
@@ -491,19 +508,39 @@ fn run_exploration(args: &Args) -> io::Result<()> {
         println!("  decay_factor: {:.3}", result.params.decay_factor);
         println!("  deposit_amount: {:.1}", result.params.deposit_amount);
         println!("  population: {}", result.params.population);
+        println!("  diffusion_kernel: {:?}", result.params.diffusion_kernel);
+        println!(
+            "  wind: {:?}",
+            result.params.wind_dx.zip(result.params.wind_dy)
+        );
+        println!("  terrain: {:?}", result.params.terrain);
+        println!("  terrain_strength: {:.2}", result.params.terrain_strength);
+        println!("  init_mode: {:?}", result.params.init_mode);
         println!();
         println!("Rust code:");
         println!("{}", result.params.to_rust_code(&format!("{:?}", behavior)));
     } else {
-        // Optimize for all behaviors
-        let results = explorer.optimize_all(args.explore_iterations);
+        // Optimize for all behaviors using hybrid search
+        println!("Optimizing all behaviors using hybrid search:");
+        println!("  Random exploration: {} iterations", random_iters);
+        println!(
+            "  Hill-climb refinement: {} iterations x {} candidates",
+            hill_climb_iters, top_k
+        );
+        println!();
+
+        let results = explorer.optimize_all_hybrid(random_iters, hill_climb_iters, top_k);
 
         println!();
         println!("=== Summary of All Optimized Presets ===");
         println!();
 
         for (behavior, result) in results {
-            println!("--- {:?} (score: {:.4}) ---", behavior, behavior.score(&result.metrics));
+            println!(
+                "--- {:?} (score: {:.4}) ---",
+                behavior,
+                behavior.score(&result.metrics)
+            );
             println!("  sensor_angle: {:.1}", result.params.sensor_angle);
             println!("  sensor_distance: {:.1}", result.params.sensor_distance);
             println!("  rotation_angle: {:.1}", result.params.rotation_angle);
@@ -511,6 +548,19 @@ fn run_exploration(args: &Args) -> io::Result<()> {
             println!("  decay_factor: {:.3}", result.params.decay_factor);
             println!("  deposit_amount: {:.1}", result.params.deposit_amount);
             println!("  population: {}", result.params.population);
+            println!("  diffusion_kernel: {:?}", result.params.diffusion_kernel);
+            println!(
+                "  wind: {:?}",
+                result.params.wind_dx.zip(result.params.wind_dy)
+            );
+            println!("  terrain: {:?}", result.params.terrain);
+            println!("  init_mode: {:?}", result.params.init_mode);
+            println!("  flow_coherence: {:.4}", result.metrics.flow_coherence);
+            println!(
+                "  spatial_concentration: {:.4}",
+                result.metrics.spatial_concentration
+            );
+            println!("  path_continuity: {:.4}", result.metrics.path_continuity);
             println!();
         }
     }

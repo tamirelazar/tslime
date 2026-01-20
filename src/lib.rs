@@ -43,10 +43,10 @@ pub mod app;
 pub mod cli;
 /// Configuration management (load/save/delete).
 pub mod config_manager;
-/// Export functionality (GIF, WebM, PNG).
-pub mod export;
 /// Parameter space exploration for preset discovery.
 pub mod exploration;
+/// Export functionality (GIF, WebM, PNG).
+pub mod export;
 /// Rendering logic (ASCII/Unicode, color palettes, dithering).
 pub mod render;
 /// Core simulation logic (agents, trail map).

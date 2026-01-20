@@ -39,6 +39,19 @@ pub struct PatternMetrics {
 
     /// Estimated branching factor of trail network.
     pub branching_factor: f32,
+
+    // === NEW METRICS ===
+    /// Local flow coherence - how aligned are nearby agents?
+    /// High = locally coherent movement (worm-like), Low = chaotic/turbulent.
+    pub flow_coherence: f32,
+
+    /// Spatial concentration - how clustered is the trail distribution?
+    /// High = concentrated (blob-like), Low = spread out.
+    pub spatial_concentration: f32,
+
+    /// Path continuity - average length of unbroken trail paths.
+    /// High = long continuous trails (worm), Low = fragmented/scattered.
+    pub path_continuity: f32,
 }
 
 impl PatternMetrics {
@@ -63,6 +76,11 @@ impl PatternMetrics {
         let coverage = compute_coverage(trail_map);
         let branching_factor = compute_branching_factor(trail_map, width, height);
 
+        // New metrics
+        let flow_coherence = compute_flow_coherence(agents, width, height);
+        let spatial_concentration = compute_spatial_concentration(trail_map, width, height);
+        let path_continuity = compute_path_continuity(trail_map, width, height);
+
         Self {
             angular_momentum,
             heading_variance,
@@ -74,45 +92,97 @@ impl PatternMetrics {
             mean_intensity,
             coverage,
             branching_factor,
+            flow_coherence,
+            spatial_concentration,
+            path_continuity,
         }
     }
 
     /// Score for vortex-like behavior (swirling).
+    /// Fixed: rotation should ALLOW heading variance (agents at different positions rotate)
     pub fn vortex_score(&self) -> f32 {
-        // Want high angular momentum, low heading variance (coherent rotation)
-        self.angular_momentum.abs() * (1.0 / (1.0 + self.heading_variance))
+        // High angular momentum is key; heading variance is actually expected in vortices
+        // since agents at different radial positions face different directions
+        let am = self.angular_momentum.abs();
+        // Boost score when there's moderate heading variance (0.3-0.7 is ideal for vortex)
+        let variance_factor = 0.5 + self.heading_variance * 0.5;
+        // Prefer moderate coverage (not too sparse, not too full)
+        let coverage_factor = 1.0 - (self.coverage - 0.4).abs();
+        am * variance_factor * coverage_factor.max(0.3)
     }
 
     /// Score for lightning-like behavior (branching dendrites).
     pub fn lightning_score(&self) -> f32 {
         // Want high branching, low coverage (sparse), high contrast
-        self.branching_factor * (1.0 - self.coverage) * self.density_variance.sqrt()
+        let branching = self.branching_factor;
+        let sparsity = (1.0 - self.coverage).powf(0.7); // Not too aggressive on sparsity
+        let contrast = self.density_variance.sqrt();
+        // Add elongation factor - lightning should have elongated structures
+        let elongation_bonus = self.trail_elongation.sqrt().min(2.0);
+        branching * sparsity * contrast * (0.5 + elongation_bonus * 0.25)
     }
 
     /// Score for crystal-like behavior (stable structures).
+    /// Fixed: removed arbitrary 0.3 target, use stability + structure
     pub fn crystal_score(&self) -> f32 {
-        // Want high temporal stability, moderate coverage
-        self.temporal_stability * (1.0 - (self.coverage - 0.3).abs())
+        let stability = self.temporal_stability.max(0.0);
+        // Accept wider coverage range (0.1-0.6)
+        let coverage_ok = if self.coverage > 0.1 && self.coverage < 0.6 {
+            1.0
+        } else {
+            0.5
+        };
+        // Reward high density variance (structured patterns, not uniform)
+        let structure = 1.0 + self.density_variance.sqrt();
+        // Low fragmentation preferred (cohesive structure)
+        let cohesion = 1.0 / (1.0 + (self.trail_fragmentation as f32) * 0.1);
+        stability * coverage_ok * structure * cohesion
     }
 
     /// Score for blob-like behavior (isolated clusters).
+    /// Fixed: stronger fragmentation weight, proper coverage term, uses new metrics
     pub fn blob_score(&self) -> f32 {
-        // Want high fragmentation, low elongation, moderate coverage
-        (self.trail_fragmentation as f32).sqrt() * (1.0 / (1.0 + self.trail_elongation))
+        // Key: multiple disconnected regions (high fragmentation)
+        let frag = (self.trail_fragmentation as f32).powf(0.7);
+        // Blobs should be round-ish, not elongated
+        let anti_elongation = 1.0 / (1.0 + self.trail_elongation * 0.5);
+        // Prefer moderate coverage (0.15-0.35) - enough to see blobs but not merged
+        let coverage_deviation = (self.coverage - 0.25).abs();
+        let coverage_term = (1.0 - coverage_deviation * 2.5).max(0.1);
+        // High spatial concentration indicates clustered (blob) behavior
+        let concentration_bonus = 0.5 + self.spatial_concentration * 0.5;
+        // Low flow coherence is expected (agents in different blobs don't coordinate)
+        let coherence_penalty = 1.0 - self.flow_coherence * 0.3;
+        frag * anti_elongation * coverage_term * concentration_bonus * coherence_penalty.max(0.5)
     }
 
     /// Score for worm-like behavior (long snaking trails).
+    /// Fixed: focus on elongation + low fragmentation + sparse, uses new metrics
     pub fn worm_score(&self) -> f32 {
-        // Want high elongation, low fragmentation, low coverage
-        self.trail_elongation * (1.0 / (1.0 + self.trail_fragmentation as f32)) * (1.0 - self.coverage)
+        // Key: highly elongated structures
+        let elongation_boost = self.trail_elongation.powf(1.3);
+        // Few fragments (ideally 1-5 long worms, not many pieces)
+        let anti_frag = 1.0 / (1.0 + self.trail_fragmentation as f32 * 0.3);
+        // Should be sparse - worms are thin trails
+        let sparse = (1.0 - self.coverage).powf(0.5);
+        // High flow coherence - agents follow each other along trails
+        let coherence_bonus = 0.7 + self.flow_coherence * 0.5;
+        // High path continuity - long unbroken trails
+        let continuity_bonus = 0.5 + self.path_continuity * 1.5;
+        elongation_boost * anti_frag * sparse * coherence_bonus * continuity_bonus
     }
 
-    /// Score for chaos-edge behavior (high sensitivity).
+    /// Score for chaos-edge behavior (high sensitivity, dynamic patterns).
     pub fn chaos_score(&self) -> f32 {
-        // Want moderate values of everything with high variance
-        // This is tricky - we'd need multiple runs to measure sensitivity
-        // For now, use heading variance as proxy
-        self.heading_variance * self.density_variance
+        // High heading variance indicates chaotic/turbulent behavior
+        let variance_term = self.heading_variance;
+        // High density variance means interesting contrast/structure
+        let contrast = self.density_variance;
+        // Moderate temporal stability (not frozen, not completely random)
+        let dynamism = 1.0 - (self.temporal_stability - 0.5).abs();
+        // Moderate coverage
+        let coverage_factor = 1.0 - (self.coverage - 0.4).abs();
+        variance_term * contrast * dynamism.max(0.3) * coverage_factor.max(0.3)
     }
 }
 
@@ -400,6 +470,237 @@ fn compute_branching_factor(trail_map: &[f32], width: usize, height: usize) -> f
     } else {
         junction_count as f32 / trail_count as f32 * 100.0
     }
+}
+
+/// Compute local flow coherence - how aligned are nearby agents?
+/// Uses grid-based spatial binning to find local neighborhoods.
+fn compute_flow_coherence(agents: &[Agent], width: usize, height: usize) -> f32 {
+    if agents.len() < 10 {
+        return 0.0;
+    }
+
+    // Divide grid into cells for local neighborhood detection
+    let cell_size = 20.0f32; // 20x20 pixel cells
+    let cells_x = (width as f32 / cell_size).ceil() as usize;
+    let cells_y = (height as f32 / cell_size).ceil() as usize;
+
+    // Build spatial hash map: cell -> list of agent indices
+    let mut cell_agents: Vec<Vec<usize>> = vec![Vec::new(); cells_x * cells_y];
+    for (i, agent) in agents.iter().enumerate() {
+        let cx = ((agent.x / cell_size) as usize).min(cells_x - 1);
+        let cy = ((agent.y / cell_size) as usize).min(cells_y - 1);
+        cell_agents[cy * cells_x + cx].push(i);
+    }
+
+    // Compute local coherence for each cell with agents
+    let mut total_coherence = 0.0f64;
+    let mut cell_count = 0u32;
+
+    for cell in &cell_agents {
+        if cell.len() < 3 {
+            continue; // Need at least 3 agents for meaningful coherence
+        }
+
+        // Compute mean direction vector for this cell
+        let mut sum_cos = 0.0f64;
+        let mut sum_sin = 0.0f64;
+        for &agent_idx in cell {
+            let h = agents[agent_idx].heading;
+            sum_cos += h.cos() as f64;
+            sum_sin += h.sin() as f64;
+        }
+
+        let n = cell.len() as f64;
+        let r = ((sum_cos / n).powi(2) + (sum_sin / n).powi(2)).sqrt();
+
+        // r is in [0, 1]: 0 = random directions, 1 = all same direction
+        total_coherence += r;
+        cell_count += 1;
+    }
+
+    if cell_count == 0 {
+        0.0
+    } else {
+        (total_coherence / cell_count as f64) as f32
+    }
+}
+
+/// Compute spatial concentration - how clustered is the trail distribution?
+/// Uses variance of distance from center of mass.
+fn compute_spatial_concentration(trail_map: &[f32], width: usize, height: usize) -> f32 {
+    let threshold = 0.05;
+
+    // Compute center of mass of trail
+    let mut sum_x = 0.0f64;
+    let mut sum_y = 0.0f64;
+    let mut total_weight = 0.0f64;
+
+    for y in 0..height {
+        for x in 0..width {
+            let val = trail_map[y * width + x];
+            if val > threshold {
+                sum_x += x as f64 * val as f64;
+                sum_y += y as f64 * val as f64;
+                total_weight += val as f64;
+            }
+        }
+    }
+
+    if total_weight < 1e-10 {
+        return 0.0;
+    }
+
+    let cx = sum_x / total_weight;
+    let cy = sum_y / total_weight;
+
+    // Compute variance of weighted distances from center
+    let mut variance_sum = 0.0f64;
+    for y in 0..height {
+        for x in 0..width {
+            let val = trail_map[y * width + x];
+            if val > threshold {
+                let dx = x as f64 - cx;
+                let dy = y as f64 - cy;
+                let dist_sq = dx * dx + dy * dy;
+                variance_sum += dist_sq * val as f64;
+            }
+        }
+    }
+
+    // Normalize by grid diagonal squared to get [0, 1] range
+    let max_dist_sq = (width * width + height * height) as f64;
+    let concentration = 1.0 - (variance_sum / total_weight / max_dist_sq).sqrt().min(1.0);
+
+    concentration as f32
+}
+
+/// Compute path continuity - average length of unbroken trail paths.
+/// Traces paths through the trail map.
+fn compute_path_continuity(trail_map: &[f32], width: usize, height: usize) -> f32 {
+    let threshold = 0.1;
+    let mut visited = vec![false; trail_map.len()];
+    let mut total_length = 0u32;
+    let mut path_count = 0u32;
+
+    // Find endpoints (cells with exactly 1 neighbor) and trace paths from them
+    for start in 0..trail_map.len() {
+        if visited[start] || trail_map[start] < threshold {
+            continue;
+        }
+
+        let x = start % width;
+        let y = start / width;
+
+        // Count neighbors
+        let neighbors = count_neighbors(trail_map, x, y, width, height, threshold);
+
+        // Start from endpoints (1 neighbor) or junction points (3+ neighbors)
+        // to trace distinct paths
+        if neighbors != 2 && neighbors > 0 {
+            // Trace path from this point
+            let length = trace_path_length(trail_map, &mut visited, x, y, width, height, threshold);
+            if length > 1 {
+                total_length += length;
+                path_count += 1;
+            }
+        }
+    }
+
+    // Also count isolated cells that weren't visited (single points or small clusters)
+    for start in 0..trail_map.len() {
+        if !visited[start] && trail_map[start] >= threshold {
+            // Trace this remaining component
+            let x = start % width;
+            let y = start / width;
+            let length = trace_path_length(trail_map, &mut visited, x, y, width, height, threshold);
+            if length > 0 {
+                total_length += length;
+                path_count += 1;
+            }
+        }
+    }
+
+    if path_count == 0 {
+        0.0
+    } else {
+        (total_length as f32 / path_count as f32).min(100.0) / 100.0
+    }
+}
+
+/// Count 4-neighbors above threshold.
+fn count_neighbors(
+    trail_map: &[f32],
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    threshold: f32,
+) -> u8 {
+    let mut count = 0u8;
+    if x > 0 && trail_map[y * width + (x - 1)] >= threshold {
+        count += 1;
+    }
+    if x < width - 1 && trail_map[y * width + (x + 1)] >= threshold {
+        count += 1;
+    }
+    if y > 0 && trail_map[(y - 1) * width + x] >= threshold {
+        count += 1;
+    }
+    if y < height - 1 && trail_map[(y + 1) * width + x] >= threshold {
+        count += 1;
+    }
+    count
+}
+
+/// Trace path length from a starting point using DFS.
+fn trace_path_length(
+    trail_map: &[f32],
+    visited: &mut [bool],
+    start_x: usize,
+    start_y: usize,
+    width: usize,
+    height: usize,
+    threshold: f32,
+) -> u32 {
+    let mut stack = vec![(start_x, start_y)];
+    let mut length = 0u32;
+
+    while let Some((x, y)) = stack.pop() {
+        let idx = y * width + x;
+        if visited[idx] || trail_map[idx] < threshold {
+            continue;
+        }
+        visited[idx] = true;
+        length += 1;
+
+        // Push unvisited neighbors
+        if x > 0 {
+            let neighbor_idx = y * width + (x - 1);
+            if !visited[neighbor_idx] && trail_map[neighbor_idx] >= threshold {
+                stack.push((x - 1, y));
+            }
+        }
+        if x < width - 1 {
+            let neighbor_idx = y * width + (x + 1);
+            if !visited[neighbor_idx] && trail_map[neighbor_idx] >= threshold {
+                stack.push((x + 1, y));
+            }
+        }
+        if y > 0 {
+            let neighbor_idx = (y - 1) * width + x;
+            if !visited[neighbor_idx] && trail_map[neighbor_idx] >= threshold {
+                stack.push((x, y - 1));
+            }
+        }
+        if y < height - 1 {
+            let neighbor_idx = (y + 1) * width + x;
+            if !visited[neighbor_idx] && trail_map[neighbor_idx] >= threshold {
+                stack.push((x, y + 1));
+            }
+        }
+    }
+
+    length
 }
 
 #[cfg(test)]
