@@ -1185,16 +1185,16 @@ impl From<Preset> for SimConfig {
                 background_color: Some("000000".to_string()),
                 preferred_init_mode: Some(InitMode::Petri),
             },
-            // Mathematically-derived presets for interesting emergent behaviors
+            // Empirically-derived presets from parameter space optimization
             Preset::Vortex => Self {
+                // Optimized for high angular momentum (swirling patterns)
                 // rotation_angle > sensor_angle causes oscillation/spiraling
-                // Agents overshoot their target, creating spinning vortex patterns
-                sensor_angle: 15.0,
-                sensor_distance: 12.0,
-                rotation_angle: 60.0, // 4x sensor_angle for strong spiraling
-                step_size: 1.2,
-                decay_factor: 0.88,
-                deposit_amount: 4.0,
+                sensor_angle: 25.2,
+                sensor_distance: 3.9, // Short-sighted creates local vortices
+                rotation_angle: 46.4, // ~2x sensor_angle for strong spiraling
+                step_size: 1.92,
+                decay_factor: 0.96, // High persistence keeps vortices visible
+                deposit_amount: 4.3,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
                 max_brightness: 16.0,
@@ -1204,11 +1204,11 @@ impl From<Preset> for SimConfig {
                 mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
-                    count: 60_000,
-                    sensor_angle: 15.0,
-                    rotation_angle: 60.0,
-                    step_size: 1.2,
-                    deposit_amount: 4.0,
+                    count: 32_000,
+                    sensor_angle: 25.2,
+                    rotation_angle: 46.4,
+                    step_size: 1.92,
+                    deposit_amount: 4.3,
                     color: "9370db".to_string(), // Medium purple
                 }],
                 separate_species_trails: false,
@@ -1224,28 +1224,28 @@ impl From<Preset> for SimConfig {
                 background_color: None,
             },
             Preset::Lightning => Self {
-                // Fast movement + high deposit + low decay = branching dendrites
-                // Low population creates distinct, visible branches
-                sensor_angle: 10.0,
-                sensor_distance: 15.0,
-                rotation_angle: 15.0,
-                step_size: 3.0,       // Fast movement
-                decay_factor: 0.70,   // Quick fade for sharp branches
-                deposit_amount: 15.0, // High intensity trails
+                // Optimized for high branching factor with sparse coverage
+                // Fast movement + high deposit + medium decay = branching dendrites
+                sensor_angle: 31.9,
+                sensor_distance: 23.2, // Long-range sensing for coherent branches
+                rotation_angle: 39.3,
+                step_size: 2.48,       // Fast movement
+                decay_factor: 0.82,    // Medium decay for visible branches
+                deposit_amount: 20.0,  // Max intensity trails
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
-                max_brightness: 30.0,
+                max_brightness: 40.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
                 mouse_attractors: Vec::new(),
                 mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
-                    count: 15_000, // Low population for distinct branches
-                    sensor_angle: 10.0,
-                    rotation_angle: 15.0,
-                    step_size: 3.0,
-                    deposit_amount: 15.0,
+                    count: 7_000, // Very low population for distinct branches
+                    sensor_angle: 31.9,
+                    rotation_angle: 39.3,
+                    step_size: 2.48,
+                    deposit_amount: 20.0,
                     color: "00ffff".to_string(), // Cyan/electric blue
                 }],
                 separate_species_trails: false,
@@ -1261,14 +1261,14 @@ impl From<Preset> for SimConfig {
                 background_color: None,
             },
             Preset::Crystal => Self {
-                // Slow movement + high persistence = stable geometric growth
-                // High decay factor means patterns persist and slowly accrete
-                sensor_angle: 30.0,
-                sensor_distance: 20.0,
-                rotation_angle: 20.0, // Smaller than sensor for smooth turns
-                step_size: 0.5,       // Very slow movement
-                decay_factor: 0.98,   // High persistence
-                deposit_amount: 3.0,
+                // Optimized for high temporal stability (persistent structures)
+                // rotation_angle < sensor_angle for smooth, stable turns
+                sensor_angle: 38.9,
+                sensor_distance: 30.6, // Long-range sensing for coherent growth
+                rotation_angle: 21.5,  // Smaller than sensor for smooth turns
+                step_size: 1.47,
+                decay_factor: 0.50,    // Fast decay creates sharp edges
+                deposit_amount: 2.1,
                 diffusion_kernel: DiffusionKernel::Gaussian,
                 diffusion_sigma: 1.2,
                 max_brightness: 15.0,
@@ -1278,11 +1278,11 @@ impl From<Preset> for SimConfig {
                 mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
-                    count: 20_000,
-                    sensor_angle: 30.0,
-                    rotation_angle: 20.0,
-                    step_size: 0.5,
-                    deposit_amount: 3.0,
+                    count: 38_000,
+                    sensor_angle: 38.9,
+                    rotation_angle: 21.5,
+                    step_size: 1.47,
+                    deposit_amount: 2.1,
                     color: "b0e0e6".to_string(), // Powder blue/ice
                 }],
                 separate_species_trails: false,
@@ -1298,28 +1298,28 @@ impl From<Preset> for SimConfig {
                 background_color: None,
             },
             Preset::ChaosEdge => Self {
-                // sensor_angle ≈ rotation_angle creates edge-of-chaos dynamics
-                // Small perturbations cause large qualitative changes
-                sensor_angle: 22.5,
-                sensor_distance: 9.0,
-                rotation_angle: 22.5, // Equal to sensor_angle - critical point
-                step_size: 1.0,
-                decay_factor: 0.85,
-                deposit_amount: 5.0,
+                // Optimized for high heading variance × density variance (chaotic dynamics)
+                // Very narrow sensor + large rotation creates unpredictable behavior
+                sensor_angle: 5.0,     // Minimum - very narrow field of view
+                sensor_distance: 26.4,
+                rotation_angle: 56.2,  // Large turns amplify chaos
+                step_size: 0.58,       // Slow movement for intricate patterns
+                decay_factor: 0.99,    // Max persistence preserves chaotic trails
+                deposit_amount: 15.8,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
-                max_brightness: 20.0,
+                max_brightness: 25.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
                 mouse_attractors: Vec::new(),
                 mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
-                    count: 50_000,
-                    sensor_angle: 22.5,
-                    rotation_angle: 22.5,
-                    step_size: 1.0,
-                    deposit_amount: 5.0,
+                    count: 52_000,
+                    sensor_angle: 5.0,
+                    rotation_angle: 56.2,
+                    step_size: 0.58,
+                    deposit_amount: 15.8,
                     color: "ff6347".to_string(), // Tomato red
                 }],
                 separate_species_trails: false,
@@ -1335,14 +1335,14 @@ impl From<Preset> for SimConfig {
                 background_color: None,
             },
             Preset::Blob => Self {
-                // Small sensor distance + large rotation + fast decay = clumping
-                // Agents can't see far, turn sharply, trails fade quickly
-                sensor_angle: 45.0,
-                sensor_distance: 3.0, // Very short-sighted
-                rotation_angle: 80.0, // Sharp turns
-                step_size: 0.8,
-                decay_factor: 0.60, // Fast decay isolates clusters
-                deposit_amount: 8.0,
+                // Optimized for high fragmentation (isolated clusters)
+                // Very short sensor + max rotation + fast decay = clumping
+                sensor_angle: 72.1,
+                sensor_distance: 2.1, // Extremely short-sighted
+                rotation_angle: 90.0, // Maximum sharp turns
+                step_size: 0.92,
+                decay_factor: 0.50, // Fast decay isolates clusters
+                deposit_amount: 9.3,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
                 max_brightness: 25.0,
@@ -1352,11 +1352,11 @@ impl From<Preset> for SimConfig {
                 mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
-                    count: 40_000,
-                    sensor_angle: 45.0,
-                    rotation_angle: 80.0,
-                    step_size: 0.8,
-                    deposit_amount: 8.0,
+                    count: 21_000,
+                    sensor_angle: 72.1,
+                    rotation_angle: 90.0,
+                    step_size: 0.92,
+                    deposit_amount: 9.3,
                     color: "32cd32".to_string(), // Lime green
                 }],
                 separate_species_trails: false,
@@ -1372,14 +1372,14 @@ impl From<Preset> for SimConfig {
                 background_color: None,
             },
             Preset::Worm => Self {
-                // Low population + high sensor distance + medium step = snaking
-                // Agents follow established trails for long distances
-                sensor_angle: 15.0,
-                sensor_distance: 25.0, // Long-range sensing
-                rotation_angle: 30.0,
-                step_size: 1.5,
-                decay_factor: 0.92,
-                deposit_amount: 6.0,
+                // Optimized for high elongation (long snaking trails)
+                // Max sensor distance + low rotation + low population
+                sensor_angle: 38.8,
+                sensor_distance: 50.0, // Maximum long-range sensing
+                rotation_angle: 13.4,  // Very gradual turns
+                step_size: 1.96,
+                decay_factor: 0.65,    // Medium decay for visible trails
+                deposit_amount: 6.3,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
                 max_brightness: 18.0,
@@ -1389,11 +1389,11 @@ impl From<Preset> for SimConfig {
                 mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
-                    count: 8_000, // Very low population
-                    sensor_angle: 15.0,
-                    rotation_angle: 30.0,
-                    step_size: 1.5,
-                    deposit_amount: 6.0,
+                    count: 6_000, // Very low population for distinct worms
+                    sensor_angle: 38.8,
+                    rotation_angle: 13.4,
+                    step_size: 1.96,
+                    deposit_amount: 6.3,
                     color: "daa520".to_string(), // Goldenrod
                 }],
                 separate_species_trails: false,
