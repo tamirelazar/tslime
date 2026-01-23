@@ -287,8 +287,9 @@ impl FromStr for Preset {
             "storm" => Ok(Preset::Storm),
             "river" => Ok(Preset::River),
             "ethereal" => Ok(Preset::Ethereal),
+            "petri" | "petridish" => Ok(Preset::PetriDish),
             _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal",
+                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri",
                 s
             )),
         }
@@ -307,9 +308,10 @@ impl FromStr for InitMode {
             "wave" => Ok(InitMode::WaveFront),
             "spiral" => Ok(InitMode::Spiral),
             "clusters" => Ok(InitMode::RandomClusters),
+            "petri" => Ok(InitMode::Petri),
             "food" => Ok(InitMode::Food),
             _ => Err(format!(
-                "Invalid init mode: {}. Must be one of: random, central, circle, gradient, wave, spiral, clusters, food",
+                "Invalid init mode: {}. Must be one of: random, central, circle, gradient, wave, spiral, clusters, petri, food",
                 s
             )),
         }
@@ -595,74 +597,66 @@ pub struct Args {
         short = 'n',
         long = "population",
         value_name = "INT",
-        default_value = "50000",
-        help = "Number of agents"
+        help = "Number of agents [default: 50000]"
     )]
     /// Number of agents in the simulation.
-    pub population: usize,
+    pub population: Option<usize>,
 
     #[arg(
         long = "sensor-angle",
         value_name = "DEG",
-        default_value = "22.5",
-        help = "Sensor spread angle"
+        help = "Sensor spread angle [default: 22.5]"
     )]
     /// Angle between sensors (in degrees).
-    pub sensor_angle: f32,
+    pub sensor_angle: Option<f32>,
 
     #[arg(
         long = "sensor-distance",
         value_name = "FLOAT",
-        default_value = "9.0",
-        help = "Sensor range"
+        help = "Sensor range [default: 9.0]"
     )]
     /// Distance to sensors.
-    pub sensor_distance: f32,
+    pub sensor_distance: Option<f32>,
 
     #[arg(
         long = "rotation-angle",
         value_name = "DEG",
-        default_value = "45.0",
-        help = "Turn amount per step"
+        help = "Turn amount per step [default: 45.0]"
     )]
     /// Maximum rotation angle per step (in degrees).
-    pub rotation_angle: f32,
+    pub rotation_angle: Option<f32>,
 
     #[arg(
         long = "step-size",
         value_name = "FLOAT",
-        default_value = "1.0",
-        help = "Movement speed"
+        help = "Movement speed [default: 1.0]"
     )]
     /// Distance moved per step.
-    pub step_size: f32,
+    pub step_size: Option<f32>,
 
     #[arg(
         long = "decay",
         value_name = "FLOAT",
-        default_value = "0.5",
-        help = "Trail decay factor"
+        help = "Trail decay factor [default: 0.5]"
     )]
     /// Trail decay factor (0.0-1.0).
-    pub decay_factor: f32,
+    pub decay_factor: Option<f32>,
 
     #[arg(
         long = "deposit",
         value_name = "FLOAT",
-        default_value = "5.0",
-        help = "Amount of pheromone deposited by agents per step"
+        help = "Amount of pheromone deposited by agents per step [default: 5.0]"
     )]
     /// Amount of pheromone deposited per step.
-    pub deposit_amount: f32,
+    pub deposit_amount: Option<f32>,
 
     #[arg(
         long = "max-brightness",
         value_name = "FLOAT",
-        default_value = "100.0",
-        help = "Fixed maximum brightness for normalization (prevents flickering)"
+        help = "Fixed maximum brightness for normalization (prevents flickering) [default: 100.0]"
     )]
     /// Maximum brightness for normalization.
-    pub max_brightness: f32,
+    pub max_brightness: Option<f32>,
 
     #[arg(
         long = "diffusion-kernel",
@@ -691,11 +685,10 @@ pub struct Args {
     #[arg(
         long = "init",
         value_name = "MODE",
-        default_value = "food",
-        help = "Initialization mode (random, central, circle, gradient, wave, spiral, clusters, food)"
+        help = "Initialization mode (random, central, circle, gradient, wave, spiral, clusters, petri, food)"
     )]
     /// Agent initialization pattern.
-    pub init: InitMode,
+    pub init: Option<InitMode>,
 
     #[arg(
         long = "food",
@@ -1326,12 +1319,28 @@ impl Args {
             SimConfig::default()
         };
 
-        config.sensor_angle = self.sensor_angle;
-        config.sensor_distance = self.sensor_distance;
-        config.rotation_angle = self.rotation_angle;
-        config.step_size = self.step_size;
-        config.decay_factor = self.decay_factor;
-        config.max_brightness = self.max_brightness;
+        if let Some(v) = self.sensor_angle {
+            config.sensor_angle = v;
+        }
+        if let Some(v) = self.sensor_distance {
+            config.sensor_distance = v;
+        }
+        if let Some(v) = self.rotation_angle {
+            config.rotation_angle = v;
+        }
+        if let Some(v) = self.step_size {
+            config.step_size = v;
+        }
+        if let Some(v) = self.decay_factor {
+            config.decay_factor = v;
+        }
+        if let Some(v) = self.max_brightness {
+            config.max_brightness = v;
+        }
+        if let Some(v) = self.deposit_amount {
+            config.deposit_amount = v;
+        }
+
         config.food_image_path = Some(self.food.clone());
         config.food_image_invert = self.food_invert;
         config.food_image_scale = self.food_scale;
@@ -1364,6 +1373,7 @@ impl Args {
         config.use_simd = !self.simd_off;
 
         if !self.species.is_empty() {
+            // User explicitly provided species
             config.species_configs = self
                 .species
                 .iter()
@@ -1377,16 +1387,35 @@ impl Args {
                     color: s.color.clone(),
                 })
                 .collect();
-        } else {
+        } else if self.preset.is_none() {
+            // Only use default/CLI-overridden single species if NOT using a preset
+            // (Presets come with their own species configs)
             config.species_configs = vec![SpeciesConfig {
                 name: "default".to_string(),
-                count: self.population,
-                sensor_angle: self.sensor_angle,
-                rotation_angle: self.rotation_angle,
-                step_size: self.step_size,
-                deposit_amount: self.deposit_amount,
+                count: self.population.unwrap_or(50_000),
+                sensor_angle: self.sensor_angle.unwrap_or(config.sensor_angle),
+                rotation_angle: self.rotation_angle.unwrap_or(config.rotation_angle),
+                step_size: self.step_size.unwrap_or(config.step_size),
+                deposit_amount: self.deposit_amount.unwrap_or(config.deposit_amount),
                 color: "228b22".to_string(),
             }];
+        } else if let Some(preset_species) = config.species_configs.first_mut() {
+            // If using a preset, allow overriding the FIRST species' properties with CLI args if provided
+            if let Some(pop) = self.population {
+                preset_species.count = pop;
+            }
+            if let Some(sa) = self.sensor_angle {
+                preset_species.sensor_angle = sa;
+            }
+            if let Some(ra) = self.rotation_angle {
+                preset_species.rotation_angle = ra;
+            }
+            if let Some(ss) = self.step_size {
+                preset_species.step_size = ss;
+            }
+            if let Some(da) = self.deposit_amount {
+                preset_species.deposit_amount = da;
+            }
         }
 
         config.wind = self.wind.as_ref().map(|w| Wind::new(w.dx, w.dy));
@@ -1420,54 +1449,64 @@ impl Args {
             return Err(format!("fps must be between 1 and 144, got {}", self.fps));
         }
         // Population bounds - prevent memory explosion
-        if self.population < 100 || self.population > 500_000 {
-            return Err(format!(
-                "population must be between 100 and 500,000, got {}",
-                self.population
-            ));
+        if let Some(pop) = self.population {
+            if pop < 100 || pop > 500_000 {
+                return Err(format!(
+                    "population must be between 100 and 500,000, got {}",
+                    pop
+                ));
+            }
         }
         // Simulation parameter bounds
-        if self.sensor_angle < 1.0 || self.sensor_angle > 180.0 {
-            return Err(format!(
-                "sensor_angle must be between 1.0 and 180.0 degrees, got {}",
-                self.sensor_angle
-            ));
+        if let Some(sa) = self.sensor_angle {
+            if sa < 1.0 || sa > 180.0 {
+                return Err(format!(
+                    "sensor_angle must be between 1.0 and 180.0 degrees, got {}",
+                    sa
+                ));
+            }
         }
-        if self.sensor_distance < 0.5 || self.sensor_distance > 100.0 {
-            return Err(format!(
-                "sensor_distance must be between 0.5 and 100.0, got {}",
-                self.sensor_distance
-            ));
+        if let Some(sd) = self.sensor_distance {
+            if sd < 0.5 || sd > 100.0 {
+                return Err(format!(
+                    "sensor_distance must be between 0.5 and 100.0, got {}",
+                    sd
+                ));
+            }
         }
-        if self.rotation_angle < 1.0 || self.rotation_angle > 180.0 {
-            return Err(format!(
-                "rotation_angle must be between 1.0 and 180.0 degrees, got {}",
-                self.rotation_angle
-            ));
+        if let Some(ra) = self.rotation_angle {
+            if ra < 1.0 || ra > 180.0 {
+                return Err(format!(
+                    "rotation_angle must be between 1.0 and 180.0 degrees, got {}",
+                    ra
+                ));
+            }
         }
-        if self.step_size < 0.1 || self.step_size > 10.0 {
-            return Err(format!(
-                "step_size must be between 0.1 and 10.0, got {}",
-                self.step_size
-            ));
+        if let Some(ss) = self.step_size {
+            if ss < 0.01 || ss > 10.0 {
+                return Err(format!(
+                    "step_size must be between 0.01 and 10.0, got {}",
+                    ss
+                ));
+            }
         }
-        if self.decay_factor < 0.01 || self.decay_factor > 0.999 {
-            return Err(format!(
-                "decay must be between 0.01 and 0.999, got {}",
-                self.decay_factor
-            ));
+        if let Some(df) = self.decay_factor {
+            if df < 0.01 || df > 0.9999 {
+                return Err(format!("decay must be between 0.01 and 0.9999, got {}", df));
+            }
         }
-        if self.deposit_amount < 0.1 || self.deposit_amount > 100.0 {
-            return Err(format!(
-                "deposit must be between 0.1 and 100.0, got {}",
-                self.deposit_amount
-            ));
+        if let Some(da) = self.deposit_amount {
+            if da < 0.1 || da > 100.0 {
+                return Err(format!("deposit must be between 0.1 and 100.0, got {}", da));
+            }
         }
-        if self.max_brightness < 1.0 || self.max_brightness > 1000.0 {
-            return Err(format!(
-                "max_brightness must be between 1.0 and 1000.0, got {}",
-                self.max_brightness
-            ));
+        if let Some(mb) = self.max_brightness {
+            if mb < 1.0 || mb > 1000.0 {
+                return Err(format!(
+                    "max_brightness must be between 1.0 and 1000.0, got {}",
+                    mb
+                ));
+            }
         }
         if self.time_scale < 0.1 || self.time_scale > 10.0 {
             return Err(format!(
@@ -1564,18 +1603,18 @@ impl Default for Args {
             screensaver: false,
             print: false,
             seed: None,
-            population: 50000,
-            sensor_angle: 22.5,
-            sensor_distance: 9.0,
-            rotation_angle: 45.0,
-            step_size: 1.0,
-            decay_factor: 0.5,
-            deposit_amount: 5.0,
-            max_brightness: 100.0,
+            population: Some(50000),
+            sensor_angle: Some(22.5),
+            sensor_distance: Some(9.0),
+            rotation_angle: Some(45.0),
+            step_size: Some(1.0),
+            decay_factor: Some(0.5),
+            deposit_amount: Some(5.0),
+            max_brightness: Some(100.0),
             diffusion_kernel: None,
             diffusion_sigma: None,
             preset: Option::<Preset>::None,
-            init: InitMode::Food,
+            init: Some(InitMode::Food),
             food: "assets/tslime_logo.png".to_string(),
             food_invert: true,
             food_scale: 1.5,

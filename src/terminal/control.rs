@@ -1268,6 +1268,7 @@ pub fn preset_name(preset: Preset) -> &'static str {
         Preset::Storm => "Storm",
         Preset::River => "River",
         Preset::Ethereal => "Ethereal",
+        Preset::PetriDish => "PetriDish",
     }
 }
 

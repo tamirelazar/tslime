@@ -234,6 +234,9 @@ impl Simulation {
             InitMode::RandomClusters => {
                 Self::init_random_clusters(rng, width, height, agents, population, species_id);
             }
+            InitMode::Petri => {
+                Self::init_petri(rng, width, height, agents, population, species_id);
+            }
             InitMode::Food => {
                 if let Some(path) = food_image_path {
                     Self::init_from_food(
@@ -418,6 +421,37 @@ impl Simulation {
                 let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
                 agents.push(Agent::new(x, y, heading, species_id));
             }
+        }
+    }
+
+    fn init_petri(
+        rng: &mut Rng,
+        width: usize,
+        height: usize,
+        agents: &mut Vec<Agent>,
+        population: usize,
+        species_id: u8,
+    ) {
+        let center_x = width as f32 / 2.0;
+        let center_y = height as f32 / 2.0;
+        // Standard deviation for Gaussian distribution (pixels)
+        let sigma = 5.0;
+
+        for _ in 0..population {
+            // Use Box-Muller transform for Gaussian distribution
+            let u1: f32 = rng.gen();
+            let u2: f32 = rng.gen();
+            let r = (-2.0 * u1.ln()).sqrt();
+            let theta = 2.0 * std::f32::consts::PI * u2;
+
+            let dx = r * theta.cos() * sigma;
+            let dy = r * theta.sin() * sigma;
+
+            let x = center_x + dx;
+            let y = center_y + dy;
+            let heading = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
+
+            agents.push(Agent::new(x, y, heading, species_id));
         }
     }
 

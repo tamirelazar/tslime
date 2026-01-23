@@ -44,6 +44,8 @@ pub enum Preset {
     River,
     /// Ethereal, ghost-like patterns.
     Ethereal,
+    /// Petri dish simulation: starts center, slow growth, persistent trails.
+    PetriDish,
 }
 
 /// How agents are initially distributed in the simulation.
@@ -65,6 +67,8 @@ pub enum InitMode {
     RandomClusters,
     /// Agents distributed based on a loaded image (food source).
     Food,
+    /// Agents distributed in a Gaussian blob at the center (Petri dish style).
+    Petri,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -457,15 +461,15 @@ impl SpeciesConfig {
                 self.name, self.rotation_angle
             ));
         }
-        if self.step_size < 0.5 || self.step_size > 5.0 {
+        if self.step_size < 0.01 || self.step_size > 5.0 {
             return Err(format!(
-                "species '{}' step_size must be between 0.5 and 5.0, got {}",
+                "species '{}' step_size must be between 0.01 and 5.0, got {}",
                 self.name, self.step_size
             ));
         }
-        if self.deposit_amount < 1.0 || self.deposit_amount > 20.0 {
+        if self.deposit_amount < 0.1 || self.deposit_amount > 20.0 {
             return Err(format!(
-                "species '{}' deposit_amount must be between 1.0 and 20.0, got {}",
+                "species '{}' deposit_amount must be between 0.1 and 20.0, got {}",
                 self.name, self.deposit_amount
             ));
         }
@@ -526,38 +530,8 @@ pub struct SimConfig {
     pub terrain_strength: f32,
     /// Background color hex code.
     pub background_color: Option<String>,
-}
-
-impl Default for SimConfig {
-    fn default() -> Self {
-        Self {
-            sensor_angle: 22.5,
-            sensor_distance: 9.0,
-            rotation_angle: 45.0,
-            step_size: 1.0,
-            decay_factor: 0.5,
-            deposit_amount: 5.0,
-            diffusion_kernel: DiffusionKernel::Gaussian,
-            diffusion_sigma: 1.0,
-            max_brightness: 100.0,
-            attractors: Vec::new(),
-            attractor_strength: 1.0,
-            mouse_attractors: Vec::new(),
-            mouse_timeout: 3.0,
-            species_configs: vec![SpeciesConfig::default()],
-            separate_species_trails: false,
-            use_simd: true,
-            food_image_path: None,
-            food_image_invert: false,
-            food_image_scale: 1.0,
-            obstacles: Vec::new(),
-            obstacle_masks: Vec::new(),
-            wind: None,
-            terrain: TerrainType::None,
-            terrain_strength: 1.0,
-            background_color: None,
-        }
-    }
+    /// Preferred initialization mode for this config (if any).
+    pub preferred_init_mode: Option<InitMode>,
 }
 
 impl SimConfig {
@@ -592,27 +566,27 @@ impl SimConfig {
                 self.rotation_angle
             ));
         }
-        if self.step_size < 0.5 || self.step_size > 5.0 {
+        if self.step_size < 0.01 || self.step_size > 10.0 {
             return Err(format!(
-                "step_size must be between 0.5 and 5.0, got {}",
+                "step_size must be between 0.01 and 10.0, got {}",
                 self.step_size
             ));
         }
-        if self.decay_factor < 0.5 || self.decay_factor > 0.99 {
+        if self.decay_factor < 0.5 || self.decay_factor > 0.9999 {
             return Err(format!(
-                "decay_factor must be between 0.5 and 0.99, got {}",
+                "decay_factor must be between 0.5 and 0.9999, got {}",
                 self.decay_factor
             ));
         }
-        if self.deposit_amount < 1.0 || self.deposit_amount > 20.0 {
+        if self.deposit_amount < 0.1 || self.deposit_amount > 20.0 {
             return Err(format!(
-                "deposit_amount must be between 1.0 and 20.0, got {}",
+                "deposit_amount must be between 0.1 and 20.0, got {}",
                 self.deposit_amount
             ));
         }
-        if self.max_brightness < 1.0 || self.max_brightness > 100.0 {
+        if self.max_brightness < 1.0 || self.max_brightness > 1000.0 {
             return Err(format!(
-                "max_brightness must be between 1.0 and 100.0, got {}",
+                "max_brightness must be between 1.0 and 1000.0, got {}",
                 self.max_brightness
             ));
         }
@@ -700,6 +674,39 @@ impl SimConfig {
     }
 }
 
+impl Default for SimConfig {
+    fn default() -> Self {
+        Self {
+            sensor_angle: 22.5,
+            sensor_distance: 9.0,
+            rotation_angle: 45.0,
+            step_size: 1.0,
+            decay_factor: 0.5,
+            deposit_amount: 5.0,
+            diffusion_kernel: DiffusionKernel::Gaussian,
+            diffusion_sigma: 1.0,
+            max_brightness: 100.0,
+            attractors: Vec::new(),
+            attractor_strength: 1.0,
+            mouse_attractors: Vec::new(),
+            mouse_timeout: 3.0,
+            species_configs: vec![SpeciesConfig::default()],
+            separate_species_trails: false,
+            use_simd: true,
+            food_image_path: None,
+            food_image_invert: false,
+            food_image_scale: 1.0,
+            obstacles: Vec::new(),
+            obstacle_masks: Vec::new(),
+            wind: None,
+            terrain: TerrainType::None,
+            terrain_strength: 1.0,
+            background_color: None,
+            preferred_init_mode: None,
+        }
+    }
+}
+
 impl From<Preset> for SimConfig {
     fn from(preset: Preset) -> Self {
         match preset {
@@ -737,6 +744,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Exploratory => Self {
                 sensor_angle: 45.0,
@@ -772,6 +780,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Tendrils => Self {
                 sensor_angle: 30.0,
@@ -807,6 +816,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Organic => Self {
                 sensor_angle: 22.5,
@@ -834,6 +844,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Minimal => Self {
                 sensor_angle: 30.0,
@@ -869,6 +880,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Moss => Self {
                 sensor_angle: 22.0,
@@ -904,6 +916,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Cosmic => Self {
                 sensor_angle: 55.0,
@@ -939,6 +952,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Fire => Self {
                 sensor_angle: 15.0,
@@ -974,6 +988,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Zen => Self {
                 sensor_angle: 25.0,
@@ -1009,6 +1024,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Storm => Self {
                 sensor_angle: 20.0,
@@ -1044,6 +1060,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::River => Self {
                 sensor_angle: 25.0,
@@ -1079,6 +1096,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Ethereal => Self {
                 sensor_angle: 40.0,
@@ -1114,6 +1132,47 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
+            },
+            Preset::PetriDish => Self {
+                sensor_angle: 45.0,
+                sensor_distance: 9.0,
+                rotation_angle: 20.0,
+                step_size: 0.05,
+                decay_factor: 0.999,
+                deposit_amount: 0.2,
+                diffusion_kernel: DiffusionKernel::Gaussian,
+                diffusion_sigma: 1.0,
+                max_brightness: 50.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "mold".to_string(),
+                    count: 20_000,
+                    sensor_angle: 45.0,
+                    rotation_angle: 20.0,
+                    step_size: 0.05,
+                    deposit_amount: 0.2,
+                    color: "d4ff00".to_string(), // Yellowish mold color
+                }],
+                separate_species_trails: false,
+                use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
+                food_image_scale: 1.0,
+                obstacles: vec![Obstacle::Circle {
+                    x: 200.0,
+                    y: 100.0,
+                    radius: 90.0,
+                }],
+                obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
+                background_color: Some("000000".to_string()),
+                preferred_init_mode: Some(InitMode::Petri),
             },
         }
     }
@@ -1567,13 +1626,15 @@ mod tests {
             Preset::Storm,
             Preset::River,
             Preset::Ethereal,
+            Preset::PetriDish,
         ];
         for preset in presets {
             let config: SimConfig = preset.into();
             assert!(
                 config.validate().is_ok(),
-                "Preset {:?} failed validation",
-                preset
+                "Preset {:?} failed validation: {:?}",
+                preset,
+                config.validate()
             );
         }
     }

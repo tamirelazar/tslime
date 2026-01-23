@@ -136,6 +136,7 @@ impl SavedConfig {
             InitMode::Spiral => "spiral",
             InitMode::RandomClusters => "clusters",
             InitMode::Food => "food",
+            InitMode::Petri => "petri",
         };
 
         // Get first species config for population and parameters
@@ -238,6 +239,7 @@ impl SavedConfig {
             terrain: crate::simulation::config::TerrainType::None,
             terrain_strength: 1.0,
             background_color: self.background_color.clone(),
+            preferred_init_mode: None,
         })
     }
 }
@@ -548,6 +550,7 @@ mod tests {
             terrain: crate::simulation::config::TerrainType::None,
             terrain_strength: 1.0,
             background_color: None,
+            preferred_init_mode: None,
         };
 
         let saved_config = SavedConfig::from_runtime(

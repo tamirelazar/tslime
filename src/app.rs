@@ -444,12 +444,21 @@ pub fn run() -> io::Result<()> {
             .as_secs()
     });
 
+    let mut init_mode = args.init.unwrap_or(InitMode::Food);
+
+    // If user didn't specify init mode, check if the config has a preference
+    if args.init.is_none() {
+        if let Some(preferred) = config.preferred_init_mode {
+            init_mode = preferred;
+        }
+    }
+
     let mut sim = Simulation::new(
         args.resolution.width,
         args.resolution.height,
         config,
         seed,
-        args.init,
+        init_mode,
         args.effective_trail_history(),
     );
 
@@ -1013,6 +1022,11 @@ pub fn run_simulation(
     let config = args.to_sim_config();
     let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
 
+    let init_mode = args
+        .init
+        .or(config.preferred_init_mode)
+        .unwrap_or(InitMode::Food);
+
     let mut renderer = TerminalRenderer::new(
         0,
         0,
@@ -1070,7 +1084,7 @@ pub fn run_simulation(
 
     let mut runtime_state = RuntimeState::new(
         seed,
-        args.init,
+        init_mode,
         initial_preset,
         initial_palette_index,
         mouse_mode,
@@ -1081,7 +1095,7 @@ pub fn run_simulation(
     renderer.set_dither_mode(dither_mode);
 
     // Initialize food persistence
-    if args.food_persist && args.init == InitMode::Food {
+    if args.food_persist && init_mode == InitMode::Food {
         runtime_state.food_persist_enabled = true;
         runtime_state.initial_food_attractors = Simulation::create_food_attractors(
             args.resolution.width,
@@ -1112,7 +1126,7 @@ pub fn run_simulation(
     let mut hue_offset: f32 = 0.0;
 
     let mut current_auto_normalize = args.auto_normalize;
-    let mut _current_max_brightness = args.max_brightness;
+    let mut _current_max_brightness = args.max_brightness.unwrap_or(100.0);
 
     // Apply initial randomization if requested
     if args.random {
@@ -1441,7 +1455,7 @@ pub fn run_simulation(
 
         // Info overlay (below stats)
         let info_lines: Option<Vec<String>> = if runtime_state.show_info {
-            let init_mode_name = match args.init {
+            let init_mode_name = match init_mode {
                 InitMode::Random => "Random",
                 InitMode::CentralBurst => "Central",
                 InitMode::Circle => "Circle",
@@ -1450,6 +1464,7 @@ pub fn run_simulation(
                 InitMode::Spiral => "Spiral",
                 InitMode::RandomClusters => "Clusters",
                 InitMode::Food => "Food",
+                InitMode::Petri => "Petri",
             };
 
             let color_mode_name = match color_mode {
@@ -1467,7 +1482,7 @@ pub fn run_simulation(
                 Charset::CustomAscii(_) => "Custom",
             };
 
-            let food_source = if args.init == InitMode::Food {
+            let food_source = if init_mode == InitMode::Food {
                 Some(args.food.clone())
             } else {
                 None
@@ -1592,7 +1607,7 @@ pub fn run_simulation(
                     .as_secs();
 
                 // Reset simulation
-                sim.reset(new_seed, args.init);
+                sim.reset(new_seed, init_mode);
                 runtime_state.reset_collapse_counter();
                 runtime_state.reset_warmup();
                 runtime_state.food_persist_counter = 0; // Reset food persistence counter
@@ -1720,8 +1735,8 @@ pub fn run_simulation(
                                         } else {
                                             None
                                         },
-                                        args.init,
-                                        if args.init == InitMode::Food {
+                                        init_mode,
+                                        if init_mode == InitMode::Food {
                                             Some(args.food.clone())
                                         } else {
                                             None
