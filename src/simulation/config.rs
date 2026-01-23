@@ -1222,6 +1222,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Lightning => Self {
                 // Optimized for high branching factor with sparse coverage
@@ -1259,6 +1260,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Crystal => Self {
                 // Optimized for high temporal stability (persistent structures)
@@ -1296,6 +1298,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::ChaosEdge => Self {
                 // Optimized for high heading variance × density variance (chaotic dynamics)
@@ -1333,6 +1336,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Blob => Self {
                 // Optimized for high fragmentation (isolated clusters)
@@ -1370,6 +1374,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
             Preset::Worm => Self {
                 // Optimized for high elongation (long snaking trails)
@@ -1407,6 +1412,7 @@ impl From<Preset> for SimConfig {
                 terrain: TerrainType::None,
                 terrain_strength: 1.0,
                 background_color: None,
+                preferred_init_mode: None,
             },
         }
     }

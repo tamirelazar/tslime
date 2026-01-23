@@ -421,6 +421,7 @@ impl ExplorationParams {
             InitMode::Spiral => "InitMode::Spiral",
             InitMode::RandomClusters => "InitMode::RandomClusters",
             InitMode::Food => "InitMode::Food",
+            InitMode::Petri => "InitMode::Petri",
         };
 
         format!(
