@@ -288,8 +288,14 @@ impl FromStr for Preset {
             "river" => Ok(Preset::River),
             "ethereal" => Ok(Preset::Ethereal),
             "petri" | "petridish" => Ok(Preset::PetriDish),
+            "vortex" => Ok(Preset::Vortex),
+            "lightning" => Ok(Preset::Lightning),
+            "crystal" => Ok(Preset::Crystal),
+            "chaosedge" | "chaos-edge" | "chaos_edge" => Ok(Preset::ChaosEdge),
+            "blob" => Ok(Preset::Blob),
+            "worm" => Ok(Preset::Worm),
             _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri",
+                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm",
                 s
             )),
         }
@@ -551,6 +557,30 @@ pub struct Args {
     pub print: bool,
 
     #[arg(
+        long = "explore",
+        help = "Run parameter space exploration to find optimal presets"
+    )]
+    /// Run parameter space exploration mode.
+    pub explore: bool,
+
+    #[arg(
+        long = "explore-behavior",
+        value_name = "BEHAVIOR",
+        help = "Target behavior for exploration (vortex, lightning, crystal, blob, worm, chaosedge, all)"
+    )]
+    /// Target behavior to optimize for during exploration.
+    pub explore_behavior: Option<String>,
+
+    #[arg(
+        long = "explore-iterations",
+        value_name = "INT",
+        default_value = "100",
+        help = "Number of iterations for parameter exploration"
+    )]
+    /// Number of iterations for parameter exploration.
+    pub explore_iterations: usize,
+
+    #[arg(
         long = "capture-frames",
         help = "Capture simulation frames for GIF generation"
     )]
@@ -677,7 +707,7 @@ pub struct Args {
     #[arg(
         long = "preset",
         value_name = "NAME",
-        help = "Use named preset (network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river)"
+        help = "Use named preset (network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, vortex, lightning, crystal, chaosedge, blob, worm)"
     )]
     /// Named parameter preset.
     pub preset: Option<Preset>,
@@ -1602,6 +1632,9 @@ impl Default for Args {
             live: false,
             screensaver: false,
             print: false,
+            explore: false,
+            explore_behavior: None,
+            explore_iterations: 100,
             seed: None,
             population: Some(50000),
             sensor_angle: Some(22.5),

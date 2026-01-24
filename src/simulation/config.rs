@@ -46,8 +46,19 @@ pub enum Preset {
     Ethereal,
     /// Petri dish simulation: starts center, slow growth, persistent trails.
     PetriDish,
+    /// Spinning vortex patterns (rotation_angle > sensor_angle).
+    Vortex,
+    /// Fast dendritic branching like lightning.
+    Lightning,
+    /// Slow, stable geometric crystal growth.
+    Crystal,
+    /// Edge-of-chaos sensitive patterns (sensor_angle ≈ rotation_angle).
+    ChaosEdge,
+    /// Aggregating blob clusters.
+    Blob,
+    /// Long snaking worm-like trails.
+    Worm,
 }
-
 /// How agents are initially distributed in the simulation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InitMode {
@@ -1174,6 +1185,235 @@ impl From<Preset> for SimConfig {
                 background_color: Some("000000".to_string()),
                 preferred_init_mode: Some(InitMode::Petri),
             },
+            // Empirically-derived presets from parameter space optimization
+            Preset::Vortex => Self {
+                // Optimized for high angular momentum (swirling patterns)
+                // rotation_angle > sensor_angle causes oscillation/spiraling
+                sensor_angle: 25.2,
+                sensor_distance: 3.9, // Short-sighted creates local vortices
+                rotation_angle: 46.4, // ~2x sensor_angle for strong spiraling
+                step_size: 1.92,
+                decay_factor: 0.96, // High persistence keeps vortices visible
+                deposit_amount: 4.3,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+                diffusion_sigma: 1.0,
+                max_brightness: 16.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 32_000,
+                    sensor_angle: 25.2,
+                    rotation_angle: 46.4,
+                    step_size: 1.92,
+                    deposit_amount: 4.3,
+                    color: "9370db".to_string(), // Medium purple
+                }],
+                separate_species_trails: false,
+                use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
+                food_image_scale: 1.0,
+                obstacles: Vec::new(),
+                obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
+                background_color: None,
+                preferred_init_mode: None,
+            },
+            Preset::Lightning => Self {
+                // Optimized for high branching factor with sparse coverage
+                // Fast movement + high deposit + medium decay = branching dendrites
+                sensor_angle: 31.9,
+                sensor_distance: 23.2, // Long-range sensing for coherent branches
+                rotation_angle: 39.3,
+                step_size: 2.48,      // Fast movement
+                decay_factor: 0.82,   // Medium decay for visible branches
+                deposit_amount: 20.0, // Max intensity trails
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+                diffusion_sigma: 1.0,
+                max_brightness: 40.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 7_000, // Very low population for distinct branches
+                    sensor_angle: 31.9,
+                    rotation_angle: 39.3,
+                    step_size: 2.48,
+                    deposit_amount: 20.0,
+                    color: "00ffff".to_string(), // Cyan/electric blue
+                }],
+                separate_species_trails: false,
+                use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
+                food_image_scale: 1.0,
+                obstacles: Vec::new(),
+                obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
+                background_color: None,
+                preferred_init_mode: None,
+            },
+            Preset::Crystal => Self {
+                // Optimized for high temporal stability (persistent structures)
+                // rotation_angle < sensor_angle for smooth, stable turns
+                sensor_angle: 38.9,
+                sensor_distance: 30.6, // Long-range sensing for coherent growth
+                rotation_angle: 21.5,  // Smaller than sensor for smooth turns
+                step_size: 1.47,
+                decay_factor: 0.50, // Fast decay creates sharp edges
+                deposit_amount: 2.1,
+                diffusion_kernel: DiffusionKernel::Gaussian,
+                diffusion_sigma: 1.2,
+                max_brightness: 15.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 38_000,
+                    sensor_angle: 38.9,
+                    rotation_angle: 21.5,
+                    step_size: 1.47,
+                    deposit_amount: 2.1,
+                    color: "b0e0e6".to_string(), // Powder blue/ice
+                }],
+                separate_species_trails: false,
+                use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
+                food_image_scale: 1.0,
+                obstacles: Vec::new(),
+                obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
+                background_color: None,
+                preferred_init_mode: None,
+            },
+            Preset::ChaosEdge => Self {
+                // Optimized for high heading variance × density variance (chaotic dynamics)
+                // Very narrow sensor + large rotation creates unpredictable behavior
+                sensor_angle: 5.0, // Minimum - very narrow field of view
+                sensor_distance: 26.4,
+                rotation_angle: 56.2, // Large turns amplify chaos
+                step_size: 0.58,      // Slow movement for intricate patterns
+                decay_factor: 0.99,   // Max persistence preserves chaotic trails
+                deposit_amount: 15.8,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+                diffusion_sigma: 1.0,
+                max_brightness: 25.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 52_000,
+                    sensor_angle: 5.0,
+                    rotation_angle: 56.2,
+                    step_size: 0.58,
+                    deposit_amount: 15.8,
+                    color: "ff6347".to_string(), // Tomato red
+                }],
+                separate_species_trails: false,
+                use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
+                food_image_scale: 1.0,
+                obstacles: Vec::new(),
+                obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
+                background_color: None,
+                preferred_init_mode: None,
+            },
+            Preset::Blob => Self {
+                // Optimized for high fragmentation (isolated clusters)
+                // Very short sensor + max rotation + fast decay = clumping
+                sensor_angle: 72.1,
+                sensor_distance: 2.1, // Extremely short-sighted
+                rotation_angle: 90.0, // Maximum sharp turns
+                step_size: 0.92,
+                decay_factor: 0.50, // Fast decay isolates clusters
+                deposit_amount: 9.3,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+                diffusion_sigma: 1.0,
+                max_brightness: 25.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 21_000,
+                    sensor_angle: 72.1,
+                    rotation_angle: 90.0,
+                    step_size: 0.92,
+                    deposit_amount: 9.3,
+                    color: "32cd32".to_string(), // Lime green
+                }],
+                separate_species_trails: false,
+                use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
+                food_image_scale: 1.0,
+                obstacles: Vec::new(),
+                obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
+                background_color: None,
+                preferred_init_mode: None,
+            },
+            Preset::Worm => Self {
+                // Optimized for high elongation (long snaking trails)
+                // Max sensor distance + low rotation + low population
+                sensor_angle: 38.8,
+                sensor_distance: 50.0, // Maximum long-range sensing
+                rotation_angle: 13.4,  // Very gradual turns
+                step_size: 1.96,
+                decay_factor: 0.65, // Medium decay for visible trails
+                deposit_amount: 6.3,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+                diffusion_sigma: 1.0,
+                max_brightness: 18.0,
+                attractors: Vec::new(),
+                attractor_strength: 1.0,
+                mouse_attractors: Vec::new(),
+                mouse_timeout: 3.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 6_000, // Very low population for distinct worms
+                    sensor_angle: 38.8,
+                    rotation_angle: 13.4,
+                    step_size: 1.96,
+                    deposit_amount: 6.3,
+                    color: "daa520".to_string(), // Goldenrod
+                }],
+                separate_species_trails: false,
+                use_simd: true,
+                food_image_path: None,
+                food_image_invert: false,
+                food_image_scale: 1.0,
+                obstacles: Vec::new(),
+                obstacle_masks: Vec::new(),
+                wind: None,
+                terrain: TerrainType::None,
+                terrain_strength: 1.0,
+                background_color: None,
+                preferred_init_mode: None,
+            },
         }
     }
 }
@@ -1627,6 +1867,12 @@ mod tests {
             Preset::River,
             Preset::Ethereal,
             Preset::PetriDish,
+            Preset::Vortex,
+            Preset::Lightning,
+            Preset::Crystal,
+            Preset::ChaosEdge,
+            Preset::Blob,
+            Preset::Worm,
         ];
         for preset in presets {
             let config: SimConfig = preset.into();

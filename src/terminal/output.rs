@@ -788,6 +788,7 @@ pub struct TerminalRenderer {
 
 impl TerminalRenderer {
     /// Create a new terminal renderer.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         width: usize,
         height: usize,

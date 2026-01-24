@@ -6,6 +6,7 @@ use std::io::{self, Write};
 
 use crate::cli;
 use crate::config_manager;
+use crate::exploration::{Explorer, ExplorerConfig, PresetBehavior};
 use crate::render;
 use crate::simulation;
 use crate::terminal;
@@ -409,6 +410,164 @@ pub fn generate_completions(shell: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// Run parameter space exploration to find optimal presets.
+fn run_exploration(args: &Args) -> io::Result<()> {
+    let seed = args.seed.unwrap_or(42);
+
+    let width = 200;
+    let height = 200;
+    let warmup_frames = 100;
+    let measurement_frames = 50;
+
+    let config = ExplorerConfig {
+        width,
+        height,
+        warmup_frames,
+        measurement_frames,
+        seed,
+    };
+
+    let mut explorer = Explorer::new(config);
+
+    // Parse target behavior
+    let target_behavior = match args.explore_behavior.as_deref() {
+        Some("vortex") => Some(PresetBehavior::Vortex),
+        Some("lightning") => Some(PresetBehavior::Lightning),
+        Some("crystal") => Some(PresetBehavior::Crystal),
+        Some("blob") => Some(PresetBehavior::Blob),
+        Some("worm") => Some(PresetBehavior::Worm),
+        Some("chaosedge") | Some("chaos") => Some(PresetBehavior::ChaosEdge),
+        Some("all") | None => None,
+        Some(other) => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Unknown behavior: {}. Use: vortex, lightning, crystal, blob, worm, chaosedge, all",
+                    other
+                ),
+            ));
+        }
+    };
+
+    println!("=== Parameter Space Exploration ===");
+    println!("Grid size: {}x{}", width, height);
+    println!("Warmup frames: {}", warmup_frames);
+    println!("Measurement frames: {}", measurement_frames);
+    println!("Iterations per behavior: {}", args.explore_iterations);
+    println!();
+
+    // Use hybrid search: 50% random exploration, 50% hill-climb refinement
+    let random_iters = args.explore_iterations / 2;
+    let hill_climb_iters = args.explore_iterations / 2;
+    let top_k = 3; // Refine top 3 candidates
+
+    if let Some(behavior) = target_behavior {
+        // Optimize for single behavior using hybrid search
+        println!("Optimizing for: {:?} (hybrid search)", behavior);
+        println!("  Random exploration: {} iterations", random_iters);
+        println!(
+            "  Hill-climb refinement: {} iterations x {} candidates",
+            hill_climb_iters, top_k
+        );
+        println!();
+
+        let result = explorer.hybrid_search(behavior, random_iters, hill_climb_iters, top_k);
+
+        println!();
+        println!("=== Best Result for {:?} ===", behavior);
+        println!("Score: {:.4}", behavior.score(&result.metrics));
+        println!();
+        println!("Metrics:");
+        println!("  Angular momentum: {:.4}", result.metrics.angular_momentum);
+        println!("  Heading variance: {:.4}", result.metrics.heading_variance);
+        println!(
+            "  Trail fragmentation: {}",
+            result.metrics.trail_fragmentation
+        );
+        println!("  Trail elongation: {:.4}", result.metrics.trail_elongation);
+        println!("  Spatial entropy: {:.4}", result.metrics.spatial_entropy);
+        println!(
+            "  Temporal stability: {:.4}",
+            result.metrics.temporal_stability
+        );
+        println!("  Density variance: {:.4}", result.metrics.density_variance);
+        println!("  Coverage: {:.4}", result.metrics.coverage);
+        println!("  Branching factor: {:.4}", result.metrics.branching_factor);
+        println!("  Flow coherence: {:.4}", result.metrics.flow_coherence);
+        println!(
+            "  Spatial concentration: {:.4}",
+            result.metrics.spatial_concentration
+        );
+        println!("  Path continuity: {:.4}", result.metrics.path_continuity);
+        println!();
+        println!("Optimal Parameters:");
+        println!("  sensor_angle: {:.1}", result.params.sensor_angle);
+        println!("  sensor_distance: {:.1}", result.params.sensor_distance);
+        println!("  rotation_angle: {:.1}", result.params.rotation_angle);
+        println!("  step_size: {:.2}", result.params.step_size);
+        println!("  decay_factor: {:.3}", result.params.decay_factor);
+        println!("  deposit_amount: {:.1}", result.params.deposit_amount);
+        println!("  population: {}", result.params.population);
+        println!("  diffusion_kernel: {:?}", result.params.diffusion_kernel);
+        println!(
+            "  wind: {:?}",
+            result.params.wind_dx.zip(result.params.wind_dy)
+        );
+        println!("  terrain: {:?}", result.params.terrain);
+        println!("  terrain_strength: {:.2}", result.params.terrain_strength);
+        println!("  init_mode: {:?}", result.params.init_mode);
+        println!();
+        println!("Rust code:");
+        println!("{}", result.params.to_rust_code(&format!("{:?}", behavior)));
+    } else {
+        // Optimize for all behaviors using hybrid search
+        println!("Optimizing all behaviors using hybrid search:");
+        println!("  Random exploration: {} iterations", random_iters);
+        println!(
+            "  Hill-climb refinement: {} iterations x {} candidates",
+            hill_climb_iters, top_k
+        );
+        println!();
+
+        let results = explorer.optimize_all_hybrid(random_iters, hill_climb_iters, top_k);
+
+        println!();
+        println!("=== Summary of All Optimized Presets ===");
+        println!();
+
+        for (behavior, result) in results {
+            println!(
+                "--- {:?} (score: {:.4}) ---",
+                behavior,
+                behavior.score(&result.metrics)
+            );
+            println!("  sensor_angle: {:.1}", result.params.sensor_angle);
+            println!("  sensor_distance: {:.1}", result.params.sensor_distance);
+            println!("  rotation_angle: {:.1}", result.params.rotation_angle);
+            println!("  step_size: {:.2}", result.params.step_size);
+            println!("  decay_factor: {:.3}", result.params.decay_factor);
+            println!("  deposit_amount: {:.1}", result.params.deposit_amount);
+            println!("  population: {}", result.params.population);
+            println!("  diffusion_kernel: {:?}", result.params.diffusion_kernel);
+            println!(
+                "  wind: {:?}",
+                result.params.wind_dx.zip(result.params.wind_dy)
+            );
+            println!("  terrain: {:?}", result.params.terrain);
+            println!("  init_mode: {:?}", result.params.init_mode);
+            println!("  flow_coherence: {:.4}", result.metrics.flow_coherence);
+            println!(
+                "  spatial_concentration: {:.4}",
+                result.metrics.spatial_concentration
+            );
+            println!("  path_continuity: {:.4}", result.metrics.path_continuity);
+            println!();
+        }
+    }
+
+    Ok(())
+}
+
 /// Main entry point for the application logic.
 ///
 /// Parses command-line arguments, validates them, and dispatches to the
@@ -425,6 +584,12 @@ pub fn run() -> io::Result<()> {
     // Handle --explain flag early, before any other processing
     if args.explain {
         print_parameter_explanations();
+        return Ok(());
+    }
+
+    // Handle --explore flag for parameter space exploration
+    if args.explore {
+        run_exploration(&args)?;
         return Ok(());
     }
 
