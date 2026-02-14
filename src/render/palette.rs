@@ -31,6 +31,505 @@ pub struct GradientStop {
     pub color: RgbColor,
 }
 
+//==============================================================================
+// Intensity Mapping - Non-linear transformation of intensity values
+//==============================================================================
+
+/// Mapping function that transforms intensity values before palette lookup.
+/// All functions guarantee: f(0) = 0, f(1) = 1, and monotonically increasing output.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub enum MappingFunction {
+    /// Linear: f(x) = x (current behavior)
+    #[default]
+    Linear,
+
+    /// Logarithmic: compresses high values, expands low values.
+    /// f(x) = log(1 + x * base) / log(1 + base)
+    Logarithmic {
+        /// Base of the logarithm. Higher values = stronger compression of brights.
+        base: f32,
+    },
+
+    /// Exponential: expands high values, compresses low values.
+    /// f(x) = (base^x - 1) / (base - 1)
+    Exponential {
+        /// Base of the exponential. Higher values = stronger expansion of brights.
+        base: f32,
+    },
+
+    /// Power/Gamma: f(x) = x^gamma.
+    /// gamma < 1: more darks visible, gamma > 1: more brights visible
+    Power {
+        /// Gamma exponent. Values < 1 expand darks, > 1 expand brights.
+        gamma: f32,
+    },
+
+    /// Square root: f(x) = sqrt(x) - gentler than log
+    SquareRoot,
+
+    /// Square: f(x) = x² - gentler than exponential
+    Square,
+
+    /// Sigmoid/S-curve: smooth compression at extremes, expansion in middle.
+    /// Normalized to guarantee f(0)=0, f(1)=1
+    Sigmoid {
+        /// Steepness of the curve. Higher values = sharper transition.
+        steepness: f32,
+    },
+
+    /// Smoothstep: cubic Hermite interpolation (common in graphics).
+    /// f(x) = 3x² - 2x³
+    Smoothstep,
+
+    /// Quantize: discrete steps (posterization effect).
+    Quantize {
+        /// Number of discrete levels (2-255).
+        levels: u8,
+    },
+
+    /// Perlin distortion: adds organic noise-based variation.
+    /// Uses endpoint anchoring to ensure f(0)≈0, f(1)≈1
+    Perlin {
+        /// Strength of distortion (0.0-0.3 recommended).
+        amplitude: f32,
+        /// How "fast" the noise changes (1.0-10.0 recommended).
+        frequency: f32,
+        /// Seed for reproducible noise.
+        seed: u64,
+    },
+}
+
+impl MappingFunction {
+    /// Applies the mapping function to a value in [0, 1].
+    ///
+    /// # Guarantees
+    /// - Output is always in [0, 1]
+    /// - For non-Perlin functions: f(0)=0 and f(1)=1 exactly
+    /// - For Perlin: f(0)≈0 and f(1)≈1 with organic variation in between
+    #[inline]
+    pub fn apply(&self, x: f32) -> f32 {
+        let x = x.clamp(0.0, 1.0);
+
+        match self {
+            MappingFunction::Linear => x,
+
+            MappingFunction::Logarithmic { base } => {
+                // f(x) = log(1 + x*base) / log(1 + base)
+                // f(0) = log(1)/log(1+base) = 0 ✓
+                // f(1) = log(1+base)/log(1+base) = 1 ✓
+                let base = base.max(0.001);
+                (1.0 + x * base).ln() / (1.0 + base).ln()
+            }
+
+            MappingFunction::Exponential { base } => {
+                // f(x) = (base^x - 1) / (base - 1)
+                // f(0) = (1 - 1)/(base - 1) = 0 ✓
+                // f(1) = (base - 1)/(base - 1) = 1 ✓
+                let base = base.max(1.001);
+                (base.powf(x) - 1.0) / (base - 1.0)
+            }
+
+            MappingFunction::Power { gamma } => {
+                // f(x) = x^gamma
+                // f(0) = 0 ✓, f(1) = 1 ✓
+                let gamma = gamma.max(0.001);
+                x.powf(gamma)
+            }
+
+            MappingFunction::SquareRoot => x.sqrt(), // 0→0, 1→1 ✓
+
+            MappingFunction::Square => x * x, // 0→0, 1→1 ✓
+
+            MappingFunction::Sigmoid { steepness } => {
+                // Normalized sigmoid to ensure f(0)=0, f(1)=1
+                let k = steepness.max(0.1);
+                let sigmoid = |t: f32| 1.0 / (1.0 + (-t).exp());
+                let s_min = sigmoid(-k * 0.5);
+                let s_max = sigmoid(k * 0.5);
+                let raw = sigmoid(k * (x - 0.5));
+                (raw - s_min) / (s_max - s_min)
+            }
+
+            MappingFunction::Smoothstep => {
+                // f(x) = 3x² - 2x³
+                // f(0) = 0 ✓, f(1) = 3 - 2 = 1 ✓
+                x * x * (3.0 - 2.0 * x)
+            }
+
+            MappingFunction::Quantize { levels } => {
+                let levels = (*levels).max(2) as f32;
+                let quantized = (x * levels).floor() / (levels - 1.0);
+                quantized.clamp(0.0, 1.0)
+            }
+
+            MappingFunction::Perlin {
+                amplitude,
+                frequency,
+                seed,
+            } => Self::apply_perlin(x, *amplitude, *frequency, *seed),
+        }
+    }
+
+    /// Applies Perlin-based distortion while maintaining endpoint anchoring.
+    fn apply_perlin(x: f32, amplitude: f32, frequency: f32, seed: u64) -> f32 {
+        // Generate deterministic noise value for this x position
+        let noise_val = Self::perlin_1d(x * frequency, seed);
+
+        // Endpoint anchoring: reduce distortion near 0 and 1
+        // w(x) = 4x(1-x), which is 0 at endpoints, 1 at x=0.5
+        let endpoint_weight = 4.0 * x * (1.0 - x);
+
+        // Apply weighted distortion
+        let distorted = x + noise_val * amplitude * endpoint_weight;
+
+        distorted.clamp(0.0, 1.0)
+    }
+
+    /// Simple 1D Perlin-like noise using hash function.
+    /// Returns value in [-1, 1].
+    fn perlin_1d(x: f32, seed: u64) -> f32 {
+        let x0 = x.floor() as i32;
+        let x1 = x0 + 1;
+
+        // Fractional part with smoothstep interpolation
+        let t = x - x.floor();
+        let t_smooth = t * t * (3.0 - 2.0 * t);
+
+        // Hash-based gradient at each integer point
+        let g0 = Self::hash_gradient(x0, seed);
+        let g1 = Self::hash_gradient(x1, seed);
+
+        // Dot product with distance vectors and interpolate
+        let d0 = t * g0;
+        let d1 = (t - 1.0) * g1;
+
+        d0 + t_smooth * (d1 - d0)
+    }
+
+    /// Hash function to generate pseudo-random gradient at integer position.
+    fn hash_gradient(x: i32, seed: u64) -> f32 {
+        let mut h = (x as u64).wrapping_mul(0x9E3779B97F4A7C15);
+        h ^= seed;
+        h = h.wrapping_mul(0x517CC1B727220A95);
+        h ^= h >> 32;
+
+        // Convert to [-1, 1]
+        (h as f32 / u64::MAX as f32) * 2.0 - 1.0
+    }
+}
+
+/// A segment of the intensity domain with its own mapping function.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MappingSegment {
+    /// Start of this segment in input domain [0, 1]
+    pub start: f32,
+    /// End of this segment in input domain [0, 1]
+    pub end: f32,
+    /// Mapping function applied within this segment
+    pub function: MappingFunction,
+}
+
+/// Error type for invalid mapping configurations.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MappingError {
+    /// No segments provided.
+    NoSegments,
+    /// Domain [0, 1] not fully covered.
+    DomainNotCovered {
+        /// Description of why the domain is not covered.
+        reason: String,
+    },
+    /// Gap between segments.
+    SegmentGap {
+        /// Index of the segment before the gap.
+        segment_index: usize,
+        /// End of the previous segment.
+        gap_start: f32,
+        /// Start of the next segment.
+        gap_end: f32,
+    },
+    /// Invalid segment definition.
+    InvalidSegment {
+        /// Index of the invalid segment.
+        segment_index: usize,
+        /// Description of why the segment is invalid.
+        reason: String,
+    },
+}
+
+impl std::fmt::Display for MappingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MappingError::NoSegments => write!(f, "No mapping segments provided"),
+            MappingError::DomainNotCovered { reason } => {
+                write!(f, "Domain [0,1] not fully covered: {}", reason)
+            }
+            MappingError::SegmentGap {
+                segment_index,
+                gap_start,
+                gap_end,
+            } => write!(
+                f,
+                "Gap between segments {} and {}: [{}, {}]",
+                segment_index,
+                segment_index + 1,
+                gap_start,
+                gap_end
+            ),
+            MappingError::InvalidSegment {
+                segment_index,
+                reason,
+            } => write!(f, "Invalid segment {}: {}", segment_index, reason),
+        }
+    }
+}
+
+impl std::error::Error for MappingError {}
+
+/// Complete intensity mapping configuration.
+///
+/// Maps intensity values [0, 1] through one or more segments, each with its own
+/// mapping function. Segments must be contiguous and cover the entire domain.
+///
+/// # Guarantees
+/// - Input 0.0 maps to output 0.0 (first palette color)
+/// - Input 1.0 maps to output 1.0 (last palette color)
+/// - All intermediate palette colors are reachable (monotonic functions)
+#[derive(Clone, Debug, PartialEq)]
+pub struct IntensityMapping {
+    segments: Vec<MappingSegment>,
+}
+
+impl IntensityMapping {
+    /// Creates a new IntensityMapping with validation.
+    ///
+    /// # Errors
+    /// Returns `MappingError` if segments don't fully cover [0, 1].
+    pub fn new(segments: Vec<MappingSegment>) -> Result<Self, MappingError> {
+        Self::validate_segments(&segments)?;
+        Ok(Self { segments })
+    }
+
+    /// Validates that segments form a valid partition of [0, 1].
+    fn validate_segments(segments: &[MappingSegment]) -> Result<(), MappingError> {
+        if segments.is_empty() {
+            return Err(MappingError::NoSegments);
+        }
+
+        const EPSILON: f32 = 1e-6;
+
+        // Check first segment starts at 0
+        if (segments[0].start - 0.0).abs() > EPSILON {
+            return Err(MappingError::DomainNotCovered {
+                reason: format!("First segment starts at {}, not 0.0", segments[0].start),
+            });
+        }
+
+        // Check last segment ends at 1
+        let last = segments.last().unwrap();
+        if (last.end - 1.0).abs() > EPSILON {
+            return Err(MappingError::DomainNotCovered {
+                reason: format!("Last segment ends at {}, not 1.0", last.end),
+            });
+        }
+
+        // Check segments are contiguous (no gaps or overlaps)
+        for i in 0..segments.len() - 1 {
+            let current_end = segments[i].end;
+            let next_start = segments[i + 1].start;
+
+            if (current_end - next_start).abs() > EPSILON {
+                return Err(MappingError::SegmentGap {
+                    segment_index: i,
+                    gap_start: current_end,
+                    gap_end: next_start,
+                });
+            }
+        }
+
+        // Check each segment has positive width
+        for (i, seg) in segments.iter().enumerate() {
+            if seg.end <= seg.start {
+                return Err(MappingError::InvalidSegment {
+                    segment_index: i,
+                    reason: format!("Segment end ({}) <= start ({})", seg.end, seg.start),
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Applies the mapping to an intensity value.
+    ///
+    /// # Guarantees
+    /// - Input 0.0 maps to output 0.0
+    /// - Input 1.0 maps to output 1.0
+    /// - Output is always in [0, 1]
+    #[inline]
+    pub fn apply(&self, intensity: f32) -> f32 {
+        let intensity = intensity.clamp(0.0, 1.0);
+
+        for segment in &self.segments {
+            if intensity >= segment.start && intensity <= segment.end {
+                let segment_width = segment.end - segment.start;
+
+                // Normalize to [0, 1] within this segment
+                let local_t = if segment_width > 0.0 {
+                    (intensity - segment.start) / segment_width
+                } else {
+                    0.0
+                };
+
+                // Apply the mapping function (guarantees [0,1] → [0,1])
+                let mapped_local = segment.function.apply(local_t);
+
+                // Scale back to segment's output range
+                return segment.start + mapped_local * segment_width;
+            }
+        }
+
+        // Fallback (should never reach due to validation)
+        intensity
+    }
+
+    /// Returns the segments for inspection.
+    pub fn segments(&self) -> &[MappingSegment] {
+        &self.segments
+    }
+}
+
+// Convenience constructors (pre-validated, cannot fail)
+impl IntensityMapping {
+    /// Linear mapping (current behavior).
+    pub fn linear() -> Self {
+        Self {
+            segments: vec![MappingSegment {
+                start: 0.0,
+                end: 1.0,
+                function: MappingFunction::Linear,
+            }],
+        }
+    }
+
+    /// Uniform logarithmic mapping across entire range.
+    pub fn logarithmic(base: f32) -> Self {
+        Self {
+            segments: vec![MappingSegment {
+                start: 0.0,
+                end: 1.0,
+                function: MappingFunction::Logarithmic { base },
+            }],
+        }
+    }
+
+    /// Uniform exponential mapping across entire range.
+    pub fn exponential(base: f32) -> Self {
+        Self {
+            segments: vec![MappingSegment {
+                start: 0.0,
+                end: 1.0,
+                function: MappingFunction::Exponential { base },
+            }],
+        }
+    }
+
+    /// Uniform power/gamma mapping across entire range.
+    pub fn power(gamma: f32) -> Self {
+        Self {
+            segments: vec![MappingSegment {
+                start: 0.0,
+                end: 1.0,
+                function: MappingFunction::Power { gamma },
+            }],
+        }
+    }
+
+    /// Lower colors mapped linearly, upper colors mapped logarithmically.
+    /// For an 11-color palette: [0, 6/11] linear, [6/11, 1] logarithmic.
+    pub fn linear_log_split(log_base: f32) -> Self {
+        let split_point = 6.0 / 11.0; // ≈ 0.545454...
+        Self {
+            segments: vec![
+                MappingSegment {
+                    start: 0.0,
+                    end: split_point,
+                    function: MappingFunction::Linear,
+                },
+                MappingSegment {
+                    start: split_point,
+                    end: 1.0,
+                    function: MappingFunction::Logarithmic { base: log_base },
+                },
+            ],
+        }
+    }
+
+    /// Split at arbitrary point with configurable functions.
+    pub fn split_at(
+        split_point: f32,
+        lower_fn: MappingFunction,
+        upper_fn: MappingFunction,
+    ) -> Result<Self, MappingError> {
+        let split_point = split_point.clamp(0.001, 0.999);
+        Self::new(vec![
+            MappingSegment {
+                start: 0.0,
+                end: split_point,
+                function: lower_fn,
+            },
+            MappingSegment {
+                start: split_point,
+                end: 1.0,
+                function: upper_fn,
+            },
+        ])
+    }
+
+    /// Perlin distortion across entire range.
+    pub fn perlin(amplitude: f32, frequency: f32, seed: u64) -> Self {
+        Self {
+            segments: vec![MappingSegment {
+                start: 0.0,
+                end: 1.0,
+                function: MappingFunction::Perlin {
+                    amplitude,
+                    frequency,
+                    seed,
+                },
+            }],
+        }
+    }
+
+    /// Smoothstep mapping for natural-looking gradients.
+    pub fn smoothstep() -> Self {
+        Self {
+            segments: vec![MappingSegment {
+                start: 0.0,
+                end: 1.0,
+                function: MappingFunction::Smoothstep,
+            }],
+        }
+    }
+
+    /// Quantized mapping for posterization effect.
+    pub fn quantize(levels: u8) -> Self {
+        Self {
+            segments: vec![MappingSegment {
+                start: 0.0,
+                end: 1.0,
+                function: MappingFunction::Quantize { levels },
+            }],
+        }
+    }
+}
+
+impl Default for IntensityMapping {
+    fn default() -> Self {
+        Self::linear()
+    }
+}
+
 /// Interpolates smoothly between gradient stops
 /// Supports any number of control points for continuous color mapping
 pub fn interpolate_gradient(stops: &[GradientStop], t: f32) -> RgbColor {
@@ -2529,7 +3028,20 @@ fn invert_color(color_code: u8) -> u8 {
 }
 
 /// Maps brightness to an ANSI 256 color based on the selected palette.
-pub fn map_brightness(brightness: f32, palette: Palette, reverse: bool, invert: bool) -> u8 {
+///
+/// # Parameters
+/// - `brightness`: Input intensity value (0.0 to 1.0)
+/// - `palette`: Color palette to use
+/// - `reverse`: If true, inverts the intensity (dark becomes bright)
+/// - `invert`: If true, inverts the final color
+/// - `mapping`: Optional non-linear intensity mapping
+pub fn map_brightness(
+    brightness: f32,
+    palette: Palette,
+    reverse: bool,
+    invert: bool,
+    mapping: Option<&IntensityMapping>,
+) -> u8 {
     let mut brightness = brightness.clamp(0.0, 1.0);
 
     let gradient: &[u8] = match &palette {
@@ -2544,6 +3056,11 @@ pub fn map_brightness(brightness: f32, palette: Palette, reverse: bool, invert: 
 
     if reverse {
         brightness = 1.0 - brightness;
+    }
+
+    // Apply non-linear intensity mapping if provided
+    if let Some(mapping) = mapping {
+        brightness = mapping.apply(brightness);
     }
 
     let position = brightness * (gradient.len() - 1) as f32;
@@ -2576,18 +3093,32 @@ fn invert_rgb(rgb: RgbColor) -> RgbColor {
 
 /// Maps brightness to an RGB color based on the selected palette.
 ///
-/// Supports smooth gradients, reversing, inverting, and hue shifting.
+/// Supports smooth gradients, reversing, inverting, hue shifting, and non-linear mapping.
+///
+/// # Parameters
+/// - `brightness`: Input intensity value (0.0 to 1.0)
+/// - `palette`: Color palette to use
+/// - `reverse`: If true, inverts the intensity (dark becomes bright)
+/// - `invert`: If true, inverts the final color
+/// - `hue_shift`: Rotate the hue by this many degrees
+/// - `mapping`: Optional non-linear intensity mapping
 pub fn map_brightness_rgb(
     brightness: f32,
     palette: Palette,
     reverse: bool,
     invert: bool,
     hue_shift: f32,
+    mapping: Option<&IntensityMapping>,
 ) -> RgbColor {
     let mut brightness = brightness.clamp(0.0, 1.0);
 
     if reverse {
         brightness = 1.0 - brightness;
+    }
+
+    // Apply non-linear intensity mapping if provided
+    if let Some(mapping) = mapping {
+        brightness = mapping.apply(brightness);
     }
 
     // Use the new gradient interpolation system
@@ -2629,114 +3160,147 @@ mod tests {
 
     #[test]
     fn test_map_brightness_min() {
-        assert_eq!(map_brightness(0.0, Palette::Organic, false, false), 232);
-        assert_eq!(map_brightness(0.0, Palette::Heat, false, false), 232);
-        assert_eq!(map_brightness(0.0, Palette::Ocean, false, false), 232);
-        assert_eq!(map_brightness(0.0, Palette::Mono, false, false), 232);
-        assert_eq!(map_brightness(0.0, Palette::Forest, false, false), 22);
-        assert_eq!(map_brightness(0.0, Palette::Neon, false, false), 17);
-        assert_eq!(map_brightness(0.0, Palette::Warm, false, false), 52);
-        assert_eq!(map_brightness(0.0, Palette::Vibrant, false, false), 197);
-        assert_eq!(map_brightness(0.0, Palette::LegibleMono, false, false), 236);
+        assert_eq!(
+            map_brightness(0.0, Palette::Organic, false, false, None),
+            232
+        );
+        assert_eq!(map_brightness(0.0, Palette::Heat, false, false, None), 232);
+        assert_eq!(map_brightness(0.0, Palette::Ocean, false, false, None), 232);
+        assert_eq!(map_brightness(0.0, Palette::Mono, false, false, None), 232);
+        assert_eq!(map_brightness(0.0, Palette::Forest, false, false, None), 22);
+        assert_eq!(map_brightness(0.0, Palette::Neon, false, false, None), 17);
+        assert_eq!(map_brightness(0.0, Palette::Warm, false, false, None), 52);
+        assert_eq!(
+            map_brightness(0.0, Palette::Vibrant, false, false, None),
+            197
+        );
+        assert_eq!(
+            map_brightness(0.0, Palette::LegibleMono, false, false, None),
+            236
+        );
     }
 
     #[test]
     fn test_map_brightness_max() {
-        assert_eq!(map_brightness(1.0, Palette::Organic, false, false), 226);
-        assert_eq!(map_brightness(1.0, Palette::Heat, false, false), 226);
-        assert_eq!(map_brightness(1.0, Palette::Ocean, false, false), 51);
-        assert_eq!(map_brightness(1.0, Palette::Mono, false, false), 252);
-        assert_eq!(map_brightness(1.0, Palette::Forest, false, false), 40);
-        assert_eq!(map_brightness(1.0, Palette::Neon, false, false), 195);
-        assert_eq!(map_brightness(1.0, Palette::Warm, false, false), 226);
-        assert_eq!(map_brightness(1.0, Palette::Vibrant, false, false), 231);
-        assert_eq!(map_brightness(1.0, Palette::LegibleMono, false, false), 255);
+        assert_eq!(
+            map_brightness(1.0, Palette::Organic, false, false, None),
+            226
+        );
+        assert_eq!(map_brightness(1.0, Palette::Heat, false, false, None), 226);
+        assert_eq!(map_brightness(1.0, Palette::Ocean, false, false, None), 51);
+        assert_eq!(map_brightness(1.0, Palette::Mono, false, false, None), 252);
+        assert_eq!(map_brightness(1.0, Palette::Forest, false, false, None), 40);
+        assert_eq!(map_brightness(1.0, Palette::Neon, false, false, None), 195);
+        assert_eq!(map_brightness(1.0, Palette::Warm, false, false, None), 226);
+        assert_eq!(
+            map_brightness(1.0, Palette::Vibrant, false, false, None),
+            231
+        );
+        assert_eq!(
+            map_brightness(1.0, Palette::LegibleMono, false, false, None),
+            255
+        );
     }
 
     #[test]
     fn test_map_brightness_mid() {
-        let color = map_brightness(0.5, Palette::Organic, false, false);
+        let color = map_brightness(0.5, Palette::Organic, false, false, None);
         assert_eq!(color, 46);
 
-        let color = map_brightness(0.5, Palette::Heat, false, false);
+        let color = map_brightness(0.5, Palette::Heat, false, false, None);
         assert_eq!(color, 196);
 
-        let color = map_brightness(0.5, Palette::Ocean, false, false);
+        let color = map_brightness(0.5, Palette::Ocean, false, false, None);
         assert_eq!(color, 21);
 
-        let color = map_brightness(0.5, Palette::Mono, false, false);
+        let color = map_brightness(0.5, Palette::Mono, false, false, None);
         assert_eq!(color, 242);
 
-        let color = map_brightness(0.5, Palette::Forest, false, false);
+        let color = map_brightness(0.5, Palette::Forest, false, false, None);
         assert_eq!(color, 40);
 
-        let color = map_brightness(0.5, Palette::Neon, false, false);
+        let color = map_brightness(0.5, Palette::Neon, false, false, None);
         assert_eq!(color, 123);
 
-        let color = map_brightness(0.5, Palette::Warm, false, false);
+        let color = map_brightness(0.5, Palette::Warm, false, false, None);
         assert_eq!(color, 208);
 
-        let color = map_brightness(0.5, Palette::Vibrant, false, false);
+        let color = map_brightness(0.5, Palette::Vibrant, false, false, None);
         assert_eq!(color, 121);
 
-        let color = map_brightness(0.5, Palette::LegibleMono, false, false);
+        let color = map_brightness(0.5, Palette::LegibleMono, false, false, None);
         assert_eq!(color, 251);
     }
 
     #[test]
     fn test_map_brightness_clamped() {
-        assert_eq!(map_brightness(-0.5, Palette::Organic, false, false), 232);
-        assert_eq!(map_brightness(1.5, Palette::Organic, false, false), 226);
-        assert_eq!(map_brightness(-0.5, Palette::Forest, false, false), 22);
-        assert_eq!(map_brightness(1.5, Palette::Forest, false, false), 40);
+        assert_eq!(
+            map_brightness(-0.5, Palette::Organic, false, false, None),
+            232
+        );
+        assert_eq!(
+            map_brightness(1.5, Palette::Organic, false, false, None),
+            226
+        );
+        assert_eq!(
+            map_brightness(-0.5, Palette::Forest, false, false, None),
+            22
+        );
+        assert_eq!(map_brightness(1.5, Palette::Forest, false, false, None), 40);
     }
 
     #[test]
     fn test_map_brightness_quarter() {
-        let color = map_brightness(0.25, Palette::Organic, false, false);
+        let color = map_brightness(0.25, Palette::Organic, false, false, None);
         assert_eq!(color, 34);
 
-        let color = map_brightness(0.25, Palette::Heat, false, false);
+        let color = map_brightness(0.25, Palette::Heat, false, false, None);
         assert_eq!(color, 124);
 
-        let color = map_brightness(0.25, Palette::Forest, false, false);
+        let color = map_brightness(0.25, Palette::Forest, false, false, None);
         assert_eq!(color, 34);
 
-        let color = map_brightness(0.25, Palette::Neon, false, false);
+        let color = map_brightness(0.25, Palette::Neon, false, false, None);
         assert_eq!(color, 51);
 
-        let color = map_brightness(0.25, Palette::Warm, false, false);
+        let color = map_brightness(0.25, Palette::Warm, false, false, None);
         assert_eq!(color, 166);
     }
 
     #[test]
     fn test_map_brightness_three_quarter() {
-        let color = map_brightness(0.75, Palette::Organic, false, false);
+        let color = map_brightness(0.75, Palette::Organic, false, false, None);
         assert_eq!(color, 154);
 
-        let color = map_brightness(0.75, Palette::Heat, false, false);
+        let color = map_brightness(0.75, Palette::Heat, false, false, None);
         assert_eq!(color, 214);
 
-        let color = map_brightness(0.75, Palette::Forest, false, false);
+        let color = map_brightness(0.75, Palette::Forest, false, false, None);
         assert_eq!(color, 154);
 
-        let color = map_brightness(0.75, Palette::Neon, false, false);
+        let color = map_brightness(0.75, Palette::Neon, false, false, None);
         assert_eq!(color, 201);
 
-        let color = map_brightness(0.75, Palette::Warm, false, false);
+        let color = map_brightness(0.75, Palette::Warm, false, false, None);
         assert_eq!(color, 226);
     }
 
     #[test]
     fn test_reverse_palette() {
-        assert_eq!(map_brightness(0.0, Palette::Organic, true, false), 226);
-        assert_eq!(map_brightness(1.0, Palette::Organic, true, false), 232);
+        assert_eq!(
+            map_brightness(0.0, Palette::Organic, true, false, None),
+            226
+        );
+        assert_eq!(
+            map_brightness(1.0, Palette::Organic, true, false, None),
+            232
+        );
     }
 
     #[test]
     fn test_invert_palette() {
-        let normal = map_brightness(0.5, Palette::Organic, false, false);
-        let inverted = map_brightness(0.5, Palette::Organic, false, true);
+        let normal = map_brightness(0.5, Palette::Organic, false, false, None);
+        let inverted = map_brightness(0.5, Palette::Organic, false, true, None);
         let normal_rgb = ANSI_256_TO_RGB[normal as usize];
         let inverted_rgb = ANSI_256_TO_RGB[inverted as usize];
         assert_ne!(inverted, normal);
@@ -2749,15 +3313,15 @@ mod tests {
 
     #[test]
     fn test_reverse_and_invert_palette() {
-        let reversed = map_brightness(0.0, Palette::Organic, true, false);
-        let reversed_and_inverted = map_brightness(0.0, Palette::Organic, true, true);
+        let reversed = map_brightness(0.0, Palette::Organic, true, false, None);
+        let reversed_and_inverted = map_brightness(0.0, Palette::Organic, true, true, None);
         let inverted = invert_256_color(reversed);
         assert_eq!(reversed_and_inverted, inverted);
     }
 
     #[test]
     fn test_map_brightness_rgb_min() {
-        let color = map_brightness_rgb(0.0, Palette::Organic, false, false, 0.0);
+        let color = map_brightness_rgb(0.0, Palette::Organic, false, false, 0.0, None);
         assert_eq!(color.r, 18);
         assert_eq!(color.g, 18);
         assert_eq!(color.b, 18);
@@ -2765,7 +3329,7 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_max() {
-        let color = map_brightness_rgb(1.0, Palette::Organic, false, false, 0.0);
+        let color = map_brightness_rgb(1.0, Palette::Organic, false, false, 0.0, None);
         assert_eq!(color.r, 150);
         assert_eq!(color.g, 220);
         assert_eq!(color.b, 200);
@@ -2773,12 +3337,12 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_interpolation() {
-        let color = map_brightness_rgb(0.5, Palette::Organic, false, false, 0.0);
+        let color = map_brightness_rgb(0.5, Palette::Organic, false, false, 0.0, None);
         assert!(color.r >= 18 && color.r <= 160);
         assert!(color.g >= 18 && color.g <= 220);
         assert!(color.b >= 18 && color.b <= 200);
 
-        let color = map_brightness_rgb(0.5, Palette::Ocean, false, false, 0.0);
+        let color = map_brightness_rgb(0.5, Palette::Ocean, false, false, 0.0, None);
         assert!(color.r >= 18 && color.r <= 80);
         assert!(color.g >= 18 && color.g <= 170);
         assert!(color.b >= 18 && color.b <= 240);
@@ -2786,8 +3350,8 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_heat() {
-        let min_color = map_brightness_rgb(0.0, Palette::Heat, false, false, 0.0);
-        let max_color = map_brightness_rgb(1.0, Palette::Heat, false, false, 0.0);
+        let min_color = map_brightness_rgb(0.0, Palette::Heat, false, false, 0.0, None);
+        let max_color = map_brightness_rgb(1.0, Palette::Heat, false, false, 0.0, None);
         assert_eq!(min_color.r, 40);
         assert_eq!(min_color.g, 20);
         assert_eq!(min_color.b, 20);
@@ -2798,8 +3362,8 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_ocean() {
-        let min_color = map_brightness_rgb(0.0, Palette::Ocean, false, false, 0.0);
-        let max_color = map_brightness_rgb(1.0, Palette::Ocean, false, false, 0.0);
+        let min_color = map_brightness_rgb(0.0, Palette::Ocean, false, false, 0.0, None);
+        let max_color = map_brightness_rgb(1.0, Palette::Ocean, false, false, 0.0, None);
         assert_eq!(min_color.r, 18);
         assert_eq!(min_color.g, 18);
         assert_eq!(min_color.b, 18);
@@ -2810,8 +3374,8 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_forest() {
-        let min_color = map_brightness_rgb(0.0, Palette::Forest, false, false, 0.0);
-        let max_color = map_brightness_rgb(1.0, Palette::Forest, false, false, 0.0);
+        let min_color = map_brightness_rgb(0.0, Palette::Forest, false, false, 0.0, None);
+        let max_color = map_brightness_rgb(1.0, Palette::Forest, false, false, 0.0, None);
         assert_eq!(min_color.r, 20);
         assert_eq!(min_color.g, 40);
         assert_eq!(min_color.b, 20);
@@ -2822,8 +3386,8 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_reverse() {
-        let normal = map_brightness_rgb(0.0, Palette::Organic, false, false, 0.0);
-        let reversed = map_brightness_rgb(1.0, Palette::Organic, true, false, 0.0);
+        let normal = map_brightness_rgb(0.0, Palette::Organic, false, false, 0.0, None);
+        let reversed = map_brightness_rgb(1.0, Palette::Organic, true, false, 0.0, None);
         assert_eq!(normal.r, reversed.r);
         assert_eq!(normal.g, reversed.g);
         assert_eq!(normal.b, reversed.b);
@@ -2831,8 +3395,8 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_invert() {
-        let normal = map_brightness_rgb(0.5, Palette::Organic, false, false, 0.0);
-        let inverted = map_brightness_rgb(0.5, Palette::Organic, false, true, 0.0);
+        let normal = map_brightness_rgb(0.5, Palette::Organic, false, false, 0.0, None);
+        let inverted = map_brightness_rgb(0.5, Palette::Organic, false, true, 0.0, None);
         assert_eq!(inverted.r, 255 - normal.r);
         assert_eq!(inverted.g, 255 - normal.g);
         assert_eq!(inverted.b, 255 - normal.b);
@@ -2858,15 +3422,15 @@ mod tests {
         ];
 
         for palette in palettes {
-            let _color = map_brightness_rgb(0.5, palette, false, false, 0.0);
+            let _color = map_brightness_rgb(0.5, palette, false, false, 0.0, None);
         }
     }
 
     #[test]
     fn test_map_brightness_rgb_clamped() {
-        let min = map_brightness_rgb(-0.5, Palette::Heat, false, false, 0.0);
-        let max = map_brightness_rgb(1.5, Palette::Heat, false, false, 0.0);
-        let normal = map_brightness_rgb(0.5, Palette::Heat, false, false, 0.0);
+        let min = map_brightness_rgb(-0.5, Palette::Heat, false, false, 0.0, None);
+        let max = map_brightness_rgb(1.5, Palette::Heat, false, false, 0.0, None);
+        let normal = map_brightness_rgb(0.5, Palette::Heat, false, false, 0.0, None);
         assert_eq!(min.r, 40);
         assert_eq!(max.r, 240);
         assert!(min.r <= normal.r && normal.r <= max.r);
@@ -3044,53 +3608,53 @@ mod tests {
 
     #[test]
     fn test_slime_palette_gradient() {
-        let min_color = map_brightness(0.0, Palette::Slime, false, false);
-        let max_color = map_brightness(1.0, Palette::Slime, false, false);
+        let min_color = map_brightness(0.0, Palette::Slime, false, false, None);
+        let max_color = map_brightness(1.0, Palette::Slime, false, false, None);
         assert_eq!(min_color, 22);
         assert_eq!(max_color, 231);
     }
 
     #[test]
     fn test_mold_palette_gradient() {
-        let min_color = map_brightness(0.0, Palette::Mold, false, false);
-        let max_color = map_brightness(1.0, Palette::Mold, false, false);
+        let min_color = map_brightness(0.0, Palette::Mold, false, false, None);
+        let max_color = map_brightness(1.0, Palette::Mold, false, false, None);
         assert_eq!(min_color, 236);
         assert_eq!(max_color, 193);
     }
 
     #[test]
     fn test_fungus_palette_gradient() {
-        let min_color = map_brightness(0.0, Palette::Fungus, false, false);
-        let max_color = map_brightness(1.0, Palette::Fungus, false, false);
+        let min_color = map_brightness(0.0, Palette::Fungus, false, false, None);
+        let max_color = map_brightness(1.0, Palette::Fungus, false, false, None);
         assert_eq!(min_color, 232);
         assert_eq!(max_color, 223);
     }
 
     #[test]
     fn test_swamp_palette_gradient() {
-        let min_color = map_brightness(0.0, Palette::Swamp, false, false);
-        let max_color = map_brightness(1.0, Palette::Swamp, false, false);
+        let min_color = map_brightness(0.0, Palette::Swamp, false, false, None);
+        let max_color = map_brightness(1.0, Palette::Swamp, false, false, None);
         assert_eq!(min_color, 232);
         assert_eq!(max_color, 79);
     }
 
     #[test]
     fn test_moss_palette_gradient() {
-        let min_color = map_brightness(0.0, Palette::Moss, false, false);
-        let max_color = map_brightness(1.0, Palette::Moss, false, false);
+        let min_color = map_brightness(0.0, Palette::Moss, false, false, None);
+        let max_color = map_brightness(1.0, Palette::Moss, false, false, None);
         assert_eq!(min_color, 22);
         assert_eq!(max_color, 220);
     }
 
     #[test]
     fn test_slime_palette_rgb_values() {
-        let color = map_brightness_rgb(0.5, Palette::Slime, false, false, 0.0);
+        let color = map_brightness_rgb(0.5, Palette::Slime, false, false, 0.0, None);
         assert!(color.g > color.r && color.g > color.b);
     }
 
     #[test]
     fn test_fungus_palette_has_purple_tones() {
-        let color = map_brightness_rgb(0.3, Palette::Fungus, false, false, 0.0);
+        let color = map_brightness_rgb(0.3, Palette::Fungus, false, false, 0.0, None);
         assert!(color.r > 50 && color.b > 50);
     }
 
@@ -3104,24 +3668,24 @@ mod tests {
             Palette::Moss,
         ];
         for _ in palettes {
-            let _color = map_brightness_rgb(0.5, Palette::Slime, false, false, 0.0);
+            let _color = map_brightness_rgb(0.5, Palette::Slime, false, false, 0.0, None);
         }
     }
 
     #[test]
     fn test_moss_palette_has_green_tones() {
-        let color = map_brightness_rgb(0.5, Palette::Moss, false, false, 0.0);
+        let color = map_brightness_rgb(0.5, Palette::Moss, false, false, 0.0, None);
         assert!(color.g > color.r && color.g > color.b);
     }
 
     #[test]
     fn test_map_brightness_rgb_hue_shift_with_invert() {
-        let _color_shifted = map_brightness_rgb(0.5, Palette::Organic, false, true, 90.0);
+        let _color_shifted = map_brightness_rgb(0.5, Palette::Organic, false, true, 90.0, None);
     }
 
     #[test]
     fn test_map_brightness_rgb_hue_shift_with_reverse() {
-        let _color_shifted = map_brightness_rgb(0.5, Palette::Organic, true, false, 90.0);
+        let _color_shifted = map_brightness_rgb(0.5, Palette::Organic, true, false, 90.0, None);
     }
 
     #[test]
@@ -3280,9 +3844,9 @@ mod tests {
     fn test_continuous_interpolation_vs_old_system() {
         // Verify that the new system produces smooth gradients
         // by checking that intermediate values between control points are different
-        let color1 = map_brightness_rgb(0.45, Palette::Heat, false, false, 0.0);
-        let color2 = map_brightness_rgb(0.50, Palette::Heat, false, false, 0.0);
-        let color3 = map_brightness_rgb(0.55, Palette::Heat, false, false, 0.0);
+        let color1 = map_brightness_rgb(0.45, Palette::Heat, false, false, 0.0, None);
+        let color2 = map_brightness_rgb(0.50, Palette::Heat, false, false, 0.0, None);
+        let color3 = map_brightness_rgb(0.55, Palette::Heat, false, false, 0.0, None);
 
         // These should all be different (continuous gradient)
         assert!(
@@ -3292,6 +3856,182 @@ mod tests {
         assert!(
             color2.r != color3.r || color2.g != color3.g || color2.b != color3.b,
             "Colors at 0.50 and 0.55 should differ"
+        );
+    }
+
+    // =========================================================================
+    // Intensity Mapping Tests
+    // =========================================================================
+
+    #[test]
+    fn test_mapping_function_linear() {
+        let f = MappingFunction::Linear;
+        assert!((f.apply(0.0) - 0.0).abs() < f32::EPSILON);
+        assert!((f.apply(0.5) - 0.5).abs() < f32::EPSILON);
+        assert!((f.apply(1.0) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_mapping_function_logarithmic() {
+        let f = MappingFunction::Logarithmic { base: 10.0 };
+        // f(0) = 0, f(1) = 1
+        assert!((f.apply(0.0) - 0.0).abs() < 0.001);
+        assert!((f.apply(1.0) - 1.0).abs() < 0.001);
+        // Log should compress high values: f(0.5) > 0.5
+        assert!(f.apply(0.5) > 0.5);
+    }
+
+    #[test]
+    fn test_mapping_function_exponential() {
+        let f = MappingFunction::Exponential { base: 10.0 };
+        // f(0) = 0, f(1) = 1
+        assert!((f.apply(0.0) - 0.0).abs() < 0.001);
+        assert!((f.apply(1.0) - 1.0).abs() < 0.001);
+        // Exp should expand high values: f(0.5) < 0.5
+        assert!(f.apply(0.5) < 0.5);
+    }
+
+    #[test]
+    fn test_mapping_function_power() {
+        let f_dark = MappingFunction::Power { gamma: 0.5 };
+        let f_bright = MappingFunction::Power { gamma: 2.0 };
+
+        // Both should preserve endpoints
+        assert!((f_dark.apply(0.0) - 0.0).abs() < 0.001);
+        assert!((f_dark.apply(1.0) - 1.0).abs() < 0.001);
+        assert!((f_bright.apply(0.0) - 0.0).abs() < 0.001);
+        assert!((f_bright.apply(1.0) - 1.0).abs() < 0.001);
+
+        // gamma < 1 expands darks: f(0.5) > 0.5
+        assert!(f_dark.apply(0.5) > 0.5);
+        // gamma > 1 compresses darks: f(0.5) < 0.5
+        assert!(f_bright.apply(0.5) < 0.5);
+    }
+
+    #[test]
+    fn test_mapping_function_smoothstep() {
+        let f = MappingFunction::Smoothstep;
+        // f(0) = 0, f(1) = 1
+        assert!((f.apply(0.0) - 0.0).abs() < 0.001);
+        assert!((f.apply(1.0) - 1.0).abs() < 0.001);
+        // f(0.5) = 0.5 for smoothstep
+        assert!((f.apply(0.5) - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_mapping_function_quantize() {
+        let f = MappingFunction::Quantize { levels: 4 };
+        // Should produce discrete steps
+        assert!((f.apply(0.0) - 0.0).abs() < 0.001);
+        assert!((f.apply(0.33) - 0.333).abs() < 0.1);
+        assert!((f.apply(1.0) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_mapping_function_perlin() {
+        let f = MappingFunction::Perlin {
+            amplitude: 0.2,
+            frequency: 5.0,
+            seed: 42,
+        };
+        // Endpoints should be close to 0 and 1 due to anchoring
+        assert!(f.apply(0.0).abs() < 0.01);
+        assert!((f.apply(1.0) - 1.0).abs() < 0.01);
+        // Middle values should be distorted but bounded
+        let mid = f.apply(0.5);
+        assert!(mid >= 0.0 && mid <= 1.0);
+    }
+
+    #[test]
+    fn test_intensity_mapping_linear() {
+        let mapping = IntensityMapping::linear();
+        assert!((mapping.apply(0.0) - 0.0).abs() < f32::EPSILON);
+        assert!((mapping.apply(0.5) - 0.5).abs() < f32::EPSILON);
+        assert!((mapping.apply(1.0) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_intensity_mapping_linear_log_split() {
+        let mapping = IntensityMapping::linear_log_split(10.0);
+
+        // Endpoints preserved
+        assert!((mapping.apply(0.0) - 0.0).abs() < 0.001);
+        assert!((mapping.apply(1.0) - 1.0).abs() < 0.001);
+
+        // Split point preserved (6/11 ≈ 0.545)
+        let split = 6.0 / 11.0;
+        assert!((mapping.apply(split) - split).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_intensity_mapping_validation_empty() {
+        let result = IntensityMapping::new(vec![]);
+        assert!(matches!(result, Err(MappingError::NoSegments)));
+    }
+
+    #[test]
+    fn test_intensity_mapping_validation_gap() {
+        let result = IntensityMapping::new(vec![
+            MappingSegment {
+                start: 0.0,
+                end: 0.4,
+                function: MappingFunction::Linear,
+            },
+            MappingSegment {
+                start: 0.6, // Gap!
+                end: 1.0,
+                function: MappingFunction::Linear,
+            },
+        ]);
+        assert!(matches!(result, Err(MappingError::SegmentGap { .. })));
+    }
+
+    #[test]
+    fn test_intensity_mapping_validation_not_starting_at_zero() {
+        let result = IntensityMapping::new(vec![MappingSegment {
+            start: 0.1,
+            end: 1.0,
+            function: MappingFunction::Linear,
+        }]);
+        assert!(matches!(result, Err(MappingError::DomainNotCovered { .. })));
+    }
+
+    #[test]
+    fn test_intensity_mapping_validation_not_ending_at_one() {
+        let result = IntensityMapping::new(vec![MappingSegment {
+            start: 0.0,
+            end: 0.9,
+            function: MappingFunction::Linear,
+        }]);
+        assert!(matches!(result, Err(MappingError::DomainNotCovered { .. })));
+    }
+
+    #[test]
+    fn test_map_brightness_with_logarithmic_mapping() {
+        let mapping = IntensityMapping::logarithmic(10.0);
+
+        // With log mapping, f(0.5) > 0.5, so should get a brighter color
+        let without_mapping = map_brightness(0.5, Palette::Organic, false, false, None);
+        let with_mapping = map_brightness(0.5, Palette::Organic, false, false, Some(&mapping));
+
+        // These should be different
+        assert_ne!(without_mapping, with_mapping);
+    }
+
+    #[test]
+    fn test_map_brightness_rgb_with_linear_log_split() {
+        let mapping = IntensityMapping::linear_log_split(10.0);
+
+        // Color at 0.9 should be compressed (darker) with log mapping
+        let without_mapping = map_brightness_rgb(0.9, Palette::Heat, false, false, 0.0, None);
+        let with_mapping =
+            map_brightness_rgb(0.9, Palette::Heat, false, false, 0.0, Some(&mapping));
+
+        // These should be different
+        assert!(
+            without_mapping.r != with_mapping.r
+                || without_mapping.g != with_mapping.g
+                || without_mapping.b != with_mapping.b
         );
     }
 }

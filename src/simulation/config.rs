@@ -1496,7 +1496,7 @@ mod tests {
     #[test]
     fn test_validate_max_brightness_too_high() {
         let config = SimConfig {
-            max_brightness: 150.0,
+            max_brightness: 1500.0,
             ..Default::default()
         };
         assert!(config.validate().is_err());
@@ -1914,12 +1914,12 @@ mod tests {
         };
         assert!(s.validate().is_err());
         let s = SpeciesConfig {
-            step_size: 0.1,
+            step_size: 0.005,
             ..Default::default()
         };
         assert!(s.validate().is_err());
         let s = SpeciesConfig {
-            deposit_amount: 0.1,
+            deposit_amount: 0.05,
             ..Default::default()
         };
         assert!(s.validate().is_err());

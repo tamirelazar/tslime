@@ -871,6 +871,42 @@ pub struct Args {
     pub palette_shift: f32,
 
     #[arg(
+        long = "intensity-mapping",
+        value_name = "MODE",
+        default_value = "linear",
+        help = "Intensity-to-color mapping (linear, log, exp, sqrt, square, sigmoid, smoothstep, quantize, perlin, split)"
+    )]
+    /// Intensity mapping mode for non-linear color distribution.
+    pub intensity_mapping: String,
+
+    #[arg(
+        long = "intensity-mapping-base",
+        value_name = "FLOAT",
+        default_value = "10.0",
+        help = "Base parameter for log/exp mapping (default: 10.0)"
+    )]
+    /// Base for logarithmic/exponential intensity mapping.
+    pub intensity_mapping_base: f32,
+
+    #[arg(
+        long = "intensity-mapping-gamma",
+        value_name = "FLOAT",
+        default_value = "2.2",
+        help = "Gamma for power mapping (default: 2.2)"
+    )]
+    /// Gamma for power intensity mapping.
+    pub intensity_mapping_gamma: f32,
+
+    #[arg(
+        long = "intensity-mapping-levels",
+        value_name = "INT",
+        default_value = "8",
+        help = "Levels for quantize mapping (default: 8)"
+    )]
+    /// Quantization levels for intensity mapping.
+    pub intensity_mapping_levels: u8,
+
+    #[arg(
         long = "trail-history",
         value_name = "INT",
         default_value = "0",
@@ -1327,6 +1363,54 @@ impl Args {
         }
     }
 
+    /// Parses the intensity mapping configuration.
+    pub fn intensity_mapping(&self) -> Result<crate::render::palette::IntensityMapping, String> {
+        use crate::render::palette::{IntensityMapping, MappingFunction};
+
+        match self.intensity_mapping.to_lowercase().as_str() {
+            "linear" => Ok(IntensityMapping::linear()),
+            "log" | "logarithmic" => Ok(IntensityMapping::logarithmic(self.intensity_mapping_base)),
+            "exp" | "exponential" => Ok(IntensityMapping::exponential(self.intensity_mapping_base)),
+            "sqrt" | "squareroot" => {
+                Ok(
+                    IntensityMapping::new(vec![crate::render::palette::MappingSegment {
+                        start: 0.0,
+                        end: 1.0,
+                        function: MappingFunction::SquareRoot,
+                    }])
+                    .unwrap(),
+                )
+            }
+            "square" => Ok(
+                IntensityMapping::new(vec![crate::render::palette::MappingSegment {
+                    start: 0.0,
+                    end: 1.0,
+                    function: MappingFunction::Square,
+                }])
+                .unwrap(),
+            ),
+            "power" | "gamma" => Ok(IntensityMapping::power(self.intensity_mapping_gamma)),
+            "sigmoid" => Ok(
+                IntensityMapping::new(vec![crate::render::palette::MappingSegment {
+                    start: 0.0,
+                    end: 1.0,
+                    function: MappingFunction::Sigmoid { steepness: 6.0 },
+                }])
+                .unwrap(),
+            ),
+            "smoothstep" => Ok(IntensityMapping::smoothstep()),
+            "quantize" => Ok(IntensityMapping::quantize(self.intensity_mapping_levels)),
+            "perlin" => Ok(IntensityMapping::perlin(0.2, 5.0, 42)),
+            "split" => Ok(IntensityMapping::linear_log_split(
+                self.intensity_mapping_base,
+            )),
+            _ => Err(format!(
+                "Invalid intensity mapping: {}",
+                self.intensity_mapping
+            )),
+        }
+    }
+
     /// Parses the dither mode string.
     pub fn dither_mode(&self) -> Result<DitherMode, String> {
         match self.dither_mode.as_str() {
@@ -1684,6 +1768,10 @@ impl Default for Args {
             reverse_palette: false,
             invert_palette: false,
             palette_shift: 0.0,
+            intensity_mapping: "linear".to_string(),
+            intensity_mapping_base: 10.0,
+            intensity_mapping_gamma: 2.2,
+            intensity_mapping_levels: 8,
             trail_history: 0,
             motion_blur: false,
             auto_normalize: false,

@@ -12,6 +12,7 @@ use crate::render::dither::{self, DitherMode};
 use crate::render::downsample::{downsample_multi_species, Cell as DownsampleCell};
 use crate::render::error_diffusion::ErrorDiffusion;
 use crate::render::palette;
+use crate::render::palette::IntensityMapping;
 use crate::render::palette::RgbColor;
 use crossterm::{execute, Command};
 use std::fmt;
@@ -240,6 +241,7 @@ impl FrameBuffer {
         hue_shift: f32,
         dither_mode: DitherMode,
         error_diffusion: &mut Option<ErrorDiffusion>,
+        intensity_mapping: Option<&IntensityMapping>,
         species_colors_enabled: bool,
         species_rgb_colors: Option<Vec<RgbColor>>,
         background_color: Option<RgbColor>,
@@ -289,6 +291,7 @@ impl FrameBuffer {
                 hue_shift,
                 dither_mode,
                 error_diffusion,
+                intensity_mapping,
                 species_colors_enabled,
                 species_colors_slice,
             );
@@ -317,6 +320,7 @@ impl FrameBuffer {
         hue_shift: f32,
         dither_mode: DitherMode,
         error_diffusion: &mut Option<ErrorDiffusion>,
+        intensity_mapping: Option<&IntensityMapping>,
         species_colors_enabled: bool,
         species_rgb_colors: Option<&[RgbColor]>,
     ) -> Cell {
@@ -541,6 +545,7 @@ impl FrameBuffer {
                 invert_palette,
                 color_mode,
                 hue_shift,
+                intensity_mapping,
                 species_colors_enabled,
                 species_rgb_colors,
             )
@@ -557,6 +562,7 @@ impl FrameBuffer {
         invert_palette: bool,
         color_mode: ColorMode,
         hue_shift: f32,
+        intensity_mapping: Option<&IntensityMapping>,
         species_colors_enabled: bool,
         species_rgb_colors: Option<&[RgbColor]>,
     ) -> Cell {
@@ -579,6 +585,7 @@ impl FrameBuffer {
                         reverse_palette,
                         invert_palette,
                         hue_shift,
+                        intensity_mapping,
                     )
                 };
                 Cell {
@@ -606,6 +613,7 @@ impl FrameBuffer {
                         palette.clone(),
                         reverse_palette,
                         invert_palette,
+                        intensity_mapping,
                     )
                 };
                 Cell {
@@ -761,6 +769,7 @@ pub fn render_frame(
     color_mode: ColorMode,
     hue_shift: f32,
     dither_mode: DitherMode,
+    intensity_mapping: Option<&IntensityMapping>,
     species_colors_enabled: bool,
     species_rgb_colors: Option<Vec<RgbColor>>,
     error_diffusion: &mut Option<ErrorDiffusion>,
@@ -782,6 +791,7 @@ pub fn render_frame(
         hue_shift,
         dither_mode,
         error_diffusion,
+        intensity_mapping,
         species_colors_enabled,
         species_rgb_colors,
         background_color,
@@ -804,6 +814,7 @@ pub struct TerminalRenderer {
     color_mode: ColorMode,
     hue_shift: f32,
     dither_mode: DitherMode,
+    intensity_mapping: Option<IntensityMapping>,
     error_diffusion: Option<ErrorDiffusion>,
     species_colors_enabled: bool,
     species_rgb_colors: Vec<RgbColor>,
@@ -834,6 +845,7 @@ impl TerminalRenderer {
             color_mode,
             hue_shift: 0.0,
             dither_mode: DitherMode::None,
+            intensity_mapping: None,
             error_diffusion: None,
             species_colors_enabled: false,
             species_rgb_colors: Vec::new(),
@@ -854,6 +866,11 @@ impl TerminalRenderer {
             }
             _ => None,
         };
+    }
+
+    /// Set the intensity mapping for non-linear color distribution.
+    pub fn set_intensity_mapping(&mut self, mapping: Option<IntensityMapping>) {
+        self.intensity_mapping = mapping;
     }
 
     /// Get the current dithering mode.
@@ -949,6 +966,7 @@ impl TerminalRenderer {
             self.hue_shift,
             self.dither_mode,
             &mut self.error_diffusion,
+            self.intensity_mapping.as_ref(),
             self.species_colors_enabled,
             if self.species_colors_enabled {
                 Some(self.species_rgb_colors.clone())
@@ -997,6 +1015,7 @@ impl TerminalRenderer {
             self.hue_shift,
             self.dither_mode,
             &mut self.error_diffusion,
+            self.intensity_mapping.as_ref(),
             self.species_colors_enabled,
             if self.species_colors_enabled {
                 Some(self.species_rgb_colors.clone())
@@ -1182,6 +1201,7 @@ impl TerminalRenderer {
                 self.hue_shift,
                 self.dither_mode,
                 &mut self.error_diffusion,
+                self.intensity_mapping.as_ref(),
                 true,
                 Some(species_color_vec),
                 self.background_color,
@@ -1403,6 +1423,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1432,6 +1453,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1461,6 +1483,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1490,6 +1513,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1517,6 +1541,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1544,6 +1569,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1571,6 +1597,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1598,6 +1625,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1625,6 +1653,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1652,6 +1681,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1679,6 +1709,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1706,6 +1737,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1733,6 +1765,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1760,6 +1793,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1787,6 +1821,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
         );
@@ -1892,6 +1927,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut ed,
+            None,
             false,
             None,
             None,
@@ -1912,6 +1948,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut ed,
+            None,
             false,
             None,
             None,
@@ -2038,6 +2075,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
             None,
@@ -2078,6 +2116,7 @@ mod tests {
             0.0,
             DitherMode::None,
             &mut None,
+            None,
             false,
             None,
             None,
@@ -2153,6 +2192,7 @@ mod tests {
             false,
             ColorMode::TrueColor,
             0.0,
+            None,
             true,
             Some(&fb.species_rgb_colors),
         );
@@ -2179,6 +2219,7 @@ mod tests {
             false,
             ColorMode::Bits256,
             0.0,
+            None,
             true,
             Some(&fb.species_rgb_colors),
         );

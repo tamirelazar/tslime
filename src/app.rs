@@ -692,6 +692,7 @@ pub fn print_mode(
     let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
 
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
+    let intensity_mapping = args.intensity_mapping().ok();
 
     let mut buffer = FrameBuffer::from_downsampled(
         downsampled.cells(),
@@ -706,6 +707,7 @@ pub fn print_mode(
         0.0,
         dither_mode,
         &mut None,
+        intensity_mapping.as_ref(),
         args.species_colors,
         species_rgb_colors,
         background_color,
@@ -827,6 +829,7 @@ pub fn capture_frames_mode(
         };
 
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+        let intensity_mapping = args.intensity_mapping().ok();
 
         let mut buffer = FrameBuffer::from_downsampled(
             downsampled.cells(),
@@ -841,6 +844,7 @@ pub fn capture_frames_mode(
             0.0,
             args.dither_mode().unwrap_or(DitherMode::None),
             &mut None,
+            intensity_mapping.as_ref(),
             args.species_colors,
             species_rgb_colors,
             background_color,
@@ -997,6 +1001,7 @@ pub fn export_gif_mode(
         };
 
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+        let intensity_mapping = args.intensity_mapping().ok();
 
         let buffer = FrameBuffer::from_downsampled(
             downsampled.cells(),
@@ -1011,6 +1016,7 @@ pub fn export_gif_mode(
             0.0,
             args.dither_mode().unwrap_or(DitherMode::None),
             &mut None,
+            intensity_mapping.as_ref(),
             args.species_colors,
             species_rgb_colors,
             background_color,
@@ -1101,6 +1107,7 @@ pub fn export_webm_mode(
         };
 
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+        let intensity_mapping = args.intensity_mapping().ok();
 
         let buffer = FrameBuffer::from_downsampled(
             downsampled.cells(),
@@ -1115,6 +1122,7 @@ pub fn export_webm_mode(
             0.0,
             args.dither_mode().unwrap_or(DitherMode::None),
             &mut None,
+            intensity_mapping.as_ref(),
             args.species_colors,
             species_rgb_colors,
             background_color,
@@ -1247,6 +1255,12 @@ pub fn run_simulation(
             .unwrap_or(4)
     };
 
+    let initial_intensity_mapping = args
+        .intensity_mapping()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+
+    renderer.set_intensity_mapping(Some(initial_intensity_mapping.clone()));
+
     let mut runtime_state = RuntimeState::new(
         seed,
         init_mode,
@@ -1254,6 +1268,7 @@ pub fn run_simulation(
         initial_palette_index,
         mouse_mode,
         args.mouse_timeout,
+        initial_intensity_mapping,
     );
     runtime_state.dither_mode = dither_mode;
     runtime_state.show_stats = args.stats;
@@ -1908,6 +1923,7 @@ pub fn run_simulation(
                                         } else {
                                             None
                                         },
+                                        Some(&runtime_state.intensity_mapping),
                                     );
 
                                     match config_manager::save_config(saved_config) {
@@ -2060,6 +2076,9 @@ pub fn run_simulation(
 
                     let action = handle_key_event(&key_event);
                     match action {
+                        ControlAction::Quit => {
+                            should_exit = true;
+                        }
                         ControlAction::TogglePause => {
                             runtime_state.toggle_pause();
                         }
@@ -2386,6 +2405,26 @@ pub fn run_simulation(
                             runtime_state.toggle_reverse_palette();
                             renderer.set_reverse_palette(runtime_state.reverse_palette);
                         }
+                        ControlAction::CycleIntensityMapping => {
+                            runtime_state.cycle_intensity_mapping(false);
+                            runtime_state.show_notification(format!(
+                                "Intensity: {}",
+                                runtime_state.intensity_mapping_name()
+                            ));
+                            renderer.set_intensity_mapping(Some(
+                                runtime_state.intensity_mapping.clone(),
+                            ));
+                        }
+                        ControlAction::CycleIntensityMappingReverse => {
+                            runtime_state.cycle_intensity_mapping(true);
+                            runtime_state.show_notification(format!(
+                                "Intensity: {}",
+                                runtime_state.intensity_mapping_name()
+                            ));
+                            renderer.set_intensity_mapping(Some(
+                                runtime_state.intensity_mapping.clone(),
+                            ));
+                        }
                         ControlAction::ResetToDefaults => {
                             runtime_state.reset_to_defaults();
                             let new_config = SimConfig::from(runtime_state.current_preset);
@@ -2397,25 +2436,10 @@ pub fn run_simulation(
                         }
                         ControlAction::ToggleStats => {
                             runtime_state.toggle_stats();
-                            runtime_state.show_notification(format!(
-                                "Stats: {}",
-                                if runtime_state.show_stats {
-                                    "On"
-                                } else {
-                                    "Off"
-                                }
-                            ));
                         }
+                        ControlAction::SetIntensityMapping(_) => {}
                         ControlAction::ToggleInfo => {
                             runtime_state.toggle_info();
-                            runtime_state.show_notification(format!(
-                                "Info: {}",
-                                if runtime_state.show_info { "On" } else { "Off" }
-                            ));
-                        }
-                        ControlAction::Quit => {
-                            should_exit = true;
-                            break;
                         }
                         ControlAction::ShowConfigBrowser => {
                             runtime_state.show_config_browser = true;
