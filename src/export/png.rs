@@ -48,6 +48,7 @@ pub fn save_frame_as_png(
             reverse_palette,
             invert_palette,
             hue_shift,
+            None,
         );
         let bottom_rgb = palette::map_brightness_rgb(
             bottom_norm,
@@ -55,6 +56,7 @@ pub fn save_frame_as_png(
             reverse_palette,
             invert_palette,
             hue_shift,
+            None,
         );
 
         let top_pixel: Rgb<u8> = Rgb([top_rgb.r, top_rgb.g, top_rgb.b]);

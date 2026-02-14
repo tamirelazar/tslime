@@ -68,6 +68,16 @@ pub struct SavedConfig {
     pub food_path: Option<String>,
     /// Optional background color.
     pub background_color: Option<String>,
+
+    // Intensity mapping
+    /// Intensity mapping function name.
+    pub intensity_mapping: Option<String>,
+    /// Base for log/exp mapping.
+    pub intensity_mapping_base: Option<f32>,
+    /// Gamma for power mapping.
+    pub intensity_mapping_gamma: Option<f32>,
+    /// Levels for quantization.
+    pub intensity_mapping_levels: Option<u8>,
 }
 
 impl SavedConfig {
@@ -87,6 +97,7 @@ impl SavedConfig {
         grid_style: Option<String>,
         init_mode: InitMode,
         food_path: Option<String>,
+        intensity_mapping: Option<&crate::render::palette::IntensityMapping>,
     ) -> Self {
         let diffusion_kernel_str = match sim_config.diffusion_kernel {
             DiffusionKernel::Mean3x3 => "mean3x3",
@@ -124,6 +135,8 @@ impl SavedConfig {
             Charset::Ascii => "ascii",
             Charset::Braille => "braille",
             Charset::Quadrant => "quadrant",
+            Charset::Shade => "shade",
+            Charset::Points => "points",
             Charset::CustomAscii(_) => "ascii", // Save as "ascii" for now
         };
 
@@ -144,6 +157,38 @@ impl SavedConfig {
             .species_configs
             .first()
             .expect("At least one species config should exist");
+
+        let (mapping_name, mapping_base, mapping_gamma, mapping_levels) =
+            if let Some(mapping) = intensity_mapping {
+                match mapping.segments().first().map(|s| &s.function) {
+                    Some(crate::render::palette::MappingFunction::Linear) => {
+                        (Some("linear".to_string()), None, None, None)
+                    }
+                    Some(crate::render::palette::MappingFunction::Logarithmic { base }) => {
+                        (Some("logarithmic".to_string()), Some(*base), None, None)
+                    }
+                    Some(crate::render::palette::MappingFunction::Exponential { base }) => {
+                        (Some("exponential".to_string()), Some(*base), None, None)
+                    }
+                    Some(crate::render::palette::MappingFunction::Power { gamma }) => {
+                        (Some("power".to_string()), None, Some(*gamma), None)
+                    }
+                    Some(crate::render::palette::MappingFunction::SquareRoot) => {
+                        (Some("sqrt".to_string()), None, None, None)
+                    }
+                    Some(crate::render::palette::MappingFunction::Quantize { levels }) => {
+                        (Some("quantize".to_string()), None, None, Some(*levels))
+                    }
+                    Some(crate::render::palette::MappingFunction::Smoothstep) => {
+                        (Some("smoothstep".to_string()), None, None, None)
+                    }
+                    // For complex mappings (Perlin, Split), we default to Linear or specialized handling
+                    // Currently simplification for basic types
+                    _ => (None, None, None, None),
+                }
+            } else {
+                (None, None, None, None)
+            };
 
         Self {
             name,
@@ -170,6 +215,10 @@ impl SavedConfig {
             init_mode: init_mode_str.to_string(),
             food_path,
             background_color: sim_config.background_color.clone(),
+            intensity_mapping: mapping_name,
+            intensity_mapping_base: mapping_base,
+            intensity_mapping_gamma: mapping_gamma,
+            intensity_mapping_levels: mapping_levels,
         }
     }
 
@@ -193,6 +242,40 @@ impl SavedConfig {
 
         // Reset warmup so the changes can be seen
         runtime_state.warmup_counter = 0;
+
+        // Apply intensity mapping if present
+        if let Some(mapping_name) = &self.intensity_mapping {
+            use crate::render::palette::{IntensityMapping, MappingFunction};
+            let mapping = match mapping_name.as_str() {
+                "linear" => Some(IntensityMapping::linear()),
+                "logarithmic" => Some(IntensityMapping::logarithmic(
+                    self.intensity_mapping_base.unwrap_or(10.0),
+                )),
+                "exponential" => Some(IntensityMapping::exponential(
+                    self.intensity_mapping_base.unwrap_or(10.0),
+                )),
+                "power" => Some(IntensityMapping::power(
+                    self.intensity_mapping_gamma.unwrap_or(2.2),
+                )),
+                "sqrt" => Some(
+                    IntensityMapping::new(vec![crate::render::palette::MappingSegment {
+                        start: 0.0,
+                        end: 1.0,
+                        function: MappingFunction::SquareRoot,
+                    }])
+                    .unwrap(),
+                ),
+                "quantize" => Some(IntensityMapping::quantize(
+                    self.intensity_mapping_levels.unwrap_or(8),
+                )),
+                "smoothstep" => Some(IntensityMapping::smoothstep()),
+                _ => None,
+            };
+
+            if let Some(m) = mapping {
+                runtime_state.intensity_mapping = m;
+            }
+        }
 
         Ok(())
     }
@@ -413,6 +496,7 @@ mod tests {
             0,
             crate::terminal::control::MouseInteractionMode::Disabled,
             3.0,
+            crate::render::palette::IntensityMapping::linear(),
         )
     }
 
@@ -443,6 +527,10 @@ mod tests {
             init_mode: "food".to_string(),
             food_path: Some("assets/tslime_logo.png".to_string()),
             background_color: None,
+            intensity_mapping: None,
+            intensity_mapping_base: None,
+            intensity_mapping_gamma: None,
+            intensity_mapping_levels: None,
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -482,6 +570,10 @@ mod tests {
             init_mode: "random".to_string(),
             food_path: None,
             background_color: None,
+            intensity_mapping: None,
+            intensity_mapping_base: None,
+            intensity_mapping_gamma: None,
+            intensity_mapping_levels: None,
         };
         let sim_config = config.to_sim_config().unwrap();
         assert_eq!(sim_config.species_configs[0].count, 50000);
@@ -567,6 +659,7 @@ mod tests {
             None,
             InitMode::Random,
             None,
+            Some(&crate::render::palette::IntensityMapping::linear()),
         );
 
         // Create new state and apply config

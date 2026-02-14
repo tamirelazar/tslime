@@ -1,5 +1,6 @@
 use crate::cli::Palette;
 use crate::render::dither::{DitherMatrix, DitherMode};
+use crate::render::palette::IntensityMapping;
 use crate::simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType, Wind};
 use crossterm::event::KeyEvent;
 use rand::Rng;
@@ -198,6 +199,12 @@ pub enum ControlAction {
     ToggleInvertPalette,
     /// Toggle reversed palette.
     ToggleReversePalette,
+    /// Cycle to next intensity mapping.
+    CycleIntensityMapping,
+    /// Cycle to previous intensity mapping.
+    CycleIntensityMappingReverse,
+    /// Set specific intensity mapping.
+    SetIntensityMapping(usize),
     /// Reset parameters to defaults.
     ResetToDefaults,
     /// Cycle controls category forward.
@@ -408,6 +415,10 @@ pub struct RuntimeState {
     pub invert_palette: bool,
     /// Reverse palette.
     pub reverse_palette: bool,
+    /// Intensity mapping for non-linear color distribution.
+    pub intensity_mapping: IntensityMapping,
+    /// Index of current intensity mapping preset.
+    pub intensity_mapping_index: usize,
     /// Show stats overlay.
     pub show_stats: bool,
     /// Show info overlay.
@@ -457,6 +468,7 @@ impl RuntimeState {
         initial_palette_index: usize,
         mouse_mode: MouseInteractionMode,
         mouse_timeout: f32,
+        intensity_mapping: IntensityMapping,
     ) -> Self {
         let default_values = DefaultValues::from_preset(initial_preset);
         Self {
@@ -494,6 +506,8 @@ impl RuntimeState {
             palette_shift_speed: PaletteShiftSpeed::Off,
             invert_palette: false,
             reverse_palette: false,
+            intensity_mapping,
+            intensity_mapping_index: 0,
             show_stats: false,
             show_info: false,
             notification: None,
@@ -692,6 +706,44 @@ impl RuntimeState {
         self.checkpoint();
         let new_scale = (self.time_scale + delta).clamp(0.5, 4.0);
         self.time_scale = new_scale;
+    }
+
+    /// Available intensity mapping presets.
+    pub const INTENSITY_MAPPINGS: &'static [(&'static str, fn() -> IntensityMapping)] = &[
+        ("Linear", || IntensityMapping::linear()),
+        ("Logarithmic", || IntensityMapping::logarithmic(10.0)),
+        ("Exponential", || IntensityMapping::exponential(10.0)),
+        ("Square Root", || {
+            IntensityMapping::new(vec![crate::render::palette::MappingSegment {
+                start: 0.0,
+                end: 1.0,
+                function: crate::render::palette::MappingFunction::SquareRoot,
+            }])
+            .unwrap()
+        }),
+        ("Smoothstep", || IntensityMapping::smoothstep()),
+        ("Split (Lin/Log)", || {
+            IntensityMapping::linear_log_split(10.0)
+        }),
+        ("Quantize 6", || IntensityMapping::quantize(6)),
+        ("Perlin", || IntensityMapping::perlin(0.15, 4.0, 42)),
+    ];
+
+    /// Cycles through the available intensity mapping presets.
+    pub fn cycle_intensity_mapping(&mut self, reverse: bool) {
+        let count = Self::INTENSITY_MAPPINGS.len();
+        if reverse {
+            self.intensity_mapping_index = (self.intensity_mapping_index + count - 1) % count;
+        } else {
+            self.intensity_mapping_index = (self.intensity_mapping_index + 1) % count;
+        }
+        let (_, factory) = Self::INTENSITY_MAPPINGS[self.intensity_mapping_index];
+        self.intensity_mapping = factory();
+    }
+
+    /// Returns the name of the current intensity mapping preset.
+    pub fn intensity_mapping_name(&self) -> &'static str {
+        Self::INTENSITY_MAPPINGS[self.intensity_mapping_index].0
     }
 
     /// Cycles to the next color palette.
@@ -1158,8 +1210,10 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('?') => ControlAction::ToggleKeyboardHints,
         KeyCode::Char('h') | KeyCode::Char('H') => ControlAction::ToggleControls,
         KeyCode::Esc => ControlAction::CloseOverlays,
-        KeyCode::Char('d') | KeyCode::Char('D') => ControlAction::ToggleDither,
-        KeyCode::Char('m') | KeyCode::Char('M') => ControlAction::CycleDitherMode,
+        KeyCode::Char('d') => ControlAction::ToggleDither,
+        KeyCode::Char('D') => ControlAction::CycleDitherMode,
+        KeyCode::Char('m') => ControlAction::CycleIntensityMapping,
+        KeyCode::Char('M') => ControlAction::CycleIntensityMappingReverse,
         KeyCode::Char('[') | KeyCode::Char('{') => ControlAction::AdjustDitherIntensity(-0.1),
         KeyCode::Char(']') | KeyCode::Char('}') => ControlAction::AdjustDitherIntensity(0.1),
         KeyCode::Char('q') | KeyCode::Char('Q') => ControlAction::Quit,
@@ -1314,6 +1368,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             0.0,
+            IntensityMapping::linear(),
         );
 
         assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Off);
@@ -1340,6 +1395,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             0.0,
+            IntensityMapping::linear(),
         );
 
         assert!(!state.invert_palette);
@@ -1360,6 +1416,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             0.0,
+            IntensityMapping::linear(),
         );
 
         assert!(!state.reverse_palette);
@@ -1380,6 +1437,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             0.0,
+            IntensityMapping::linear(),
         );
 
         state.sensor_angle = 90.0;
@@ -1404,6 +1462,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             0.0,
+            IntensityMapping::linear(),
         );
 
         assert!(!state.show_controls);
@@ -1424,6 +1483,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             0.0,
+            IntensityMapping::linear(),
         );
 
         assert!(!state.any_overlay_open());
@@ -1445,6 +1505,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             0.0,
+            IntensityMapping::linear(),
         );
 
         state.show_controls = true;
@@ -1465,6 +1526,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             0.0,
+            IntensityMapping::linear(),
         );
 
         assert_eq!(state.controls_category_idx, 0);
@@ -1500,6 +1562,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             0.0,
+            IntensityMapping::linear(),
         );
 
         assert_eq!(state.wind_direction, WindDirection::None);
@@ -1548,6 +1611,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             3.0,
+            IntensityMapping::linear(),
         );
         let orig_angle = state.sensor_angle;
         state.randomize_params();
@@ -1564,6 +1628,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             3.0,
+            IntensityMapping::linear(),
         );
         state.sensor_angle = 12.3;
         let p = state.capture_parameter_state();
@@ -1587,6 +1652,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             3.0,
+            IntensityMapping::linear(),
         );
         assert_eq!(state.current_notification(), None);
         state.show_notification("test".to_string());
@@ -1604,6 +1670,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             3.0,
+            IntensityMapping::linear(),
         );
         assert!(!state.is_in_warmup(0));
         assert!(state.is_in_warmup(10));
@@ -1622,6 +1689,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             3.0,
+            IntensityMapping::linear(),
         );
         assert!(!state.track_entropy(5.0, 10.0, 5));
         assert!(state.track_entropy(15.0, 10.0, 1));
@@ -1638,6 +1706,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             3.0,
+            IntensityMapping::linear(),
         );
         state.update_history(60.0, 5.0, 0.5);
         assert_eq!(state.fps_history.len(), 1);
@@ -1656,6 +1725,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             3.0,
+            IntensityMapping::linear(),
         );
 
         state.toggle_pause();
@@ -1730,6 +1800,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             3.0,
+            IntensityMapping::linear(),
         );
         let orig_angle = state.sensor_angle;
         state.force_checkpoint();
@@ -1791,6 +1862,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             0.0,
+            IntensityMapping::linear(),
         );
 
         assert_eq!(state.motion_blur_frames, 0);
@@ -1817,6 +1889,7 @@ mod tests {
             0,
             MouseInteractionMode::Disabled,
             0.0,
+            IntensityMapping::linear(),
         );
 
         state.wind_direction = WindDirection::North;

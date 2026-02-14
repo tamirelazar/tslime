@@ -11,6 +11,10 @@ pub enum Charset {
     Braille,
     /// Unicode quadrant characters for 2×2 subpixel resolution.
     Quadrant,
+    /// Shade block characters (░▒▓█) for smooth density gradients.
+    Shade,
+    /// Point grid using ▪ for sparse particle visualization.
+    Points,
     /// User-defined ASCII character set.
     CustomAscii(Vec<char>),
 }
@@ -20,6 +24,10 @@ impl Charset {
     pub fn from_args(args: &Args) -> Self {
         if args.quadrant {
             Charset::Quadrant
+        } else if args.shade {
+            Charset::Shade
+        } else if args.points {
+            Charset::Points
         } else if args.braille {
             Charset::Braille
         } else if let Some(ref custom_chars) = args.ascii_chars {
@@ -68,6 +76,12 @@ const BRAILLE_DOT_MASKS: [u8; 5] = [
     0x07, // 3 dots
     0x07, // 3 dots (max)
 ];
+
+/// Shade block characters for smooth density gradients (░▒▓█).
+const SHADE_CHARS: [char; 5] = [' ', '░', '▒', '▓', '█'];
+
+/// Point grid character for sparse visualization (▪ Black Small Square U+25AA).
+const POINT_CHAR: char = '▪';
 
 /// Estimates the visual density/weight of a character for sorting
 /// Returns a value from 0.0 (lightest) to 1.0 (darkest)
@@ -163,6 +177,38 @@ pub fn map_braille_subpixel(top: f32, bottom: f32, threshold: f32) -> char {
     char::from_u32(0x2800 + combined_mask as u32).unwrap_or(' ')
 }
 
+/// Maps brightness to a shade character (░▒▓█).
+///
+/// Uses averaged brightness for smooth density gradients.
+/// Returns one of 5 characters based on brightness level.
+///
+/// # Arguments
+/// * `brightness` - Value from 0.0 to 1.0
+///
+/// # Returns
+/// One of: ' ' (0-20%), '░' (20-40%), '▒' (40-60%), '▓' (60-80%), '█' (80-100%)
+pub fn map_shade(brightness: f32) -> char {
+    let b = brightness.clamp(0.0, 1.0);
+    let index = (b * (SHADE_CHARS.len() - 1) as f32).round() as usize;
+    SHADE_CHARS[index]
+}
+
+/// Maps brightness to point character with threshold.
+///
+/// Returns ▪ if above threshold, space otherwise.
+/// Best for sparse particle visualization.
+///
+/// # Arguments
+/// * `brightness` - Value from 0.0 to 1.0
+/// * `threshold` - Minimum brightness to show a point (e.g., 0.15)
+pub fn map_point(brightness: f32, threshold: f32) -> char {
+    if brightness > threshold {
+        POINT_CHAR
+    } else {
+        ' '
+    }
+}
+
 /// Maps four quadrant brightness values to a Unicode quadrant character
 /// Each quadrant can be either on (bright) or off (dark) based on a threshold
 /// Returns characters from U+1FB00-U+1FB0F (Legacy Computing Symbols)
@@ -246,6 +292,23 @@ pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
                 '\u{1FB0E}' // Full block
             }
         }
+        Charset::Shade => {
+            // Average top and bottom for single-cell density
+            let avg = if let Some(bottom_val) = bottom {
+                (top + bottom_val) / 2.0
+            } else {
+                top
+            };
+            map_shade(avg)
+        }
+        Charset::Points => {
+            let avg = if let Some(bottom_val) = bottom {
+                (top + bottom_val) / 2.0
+            } else {
+                top
+            };
+            map_point(avg, 0.15) // Higher threshold for sparse dots
+        }
         Charset::CustomAscii(ref chars) => {
             if chars.is_empty() {
                 return ' ';
@@ -294,6 +357,8 @@ pub fn charset_level_count(charset: Charset) -> usize {
         Charset::Ascii => 10,
         Charset::Braille => 16,
         Charset::Quadrant => 16, // 2^4 combinations of 4 quadrants
+        Charset::Shade => 5,     // space, ░, ▒, ▓, █
+        Charset::Points => 2,    // space or ▪
         Charset::CustomAscii(ref chars) => chars.len().max(2), // At least 2 levels
     }
 }
@@ -647,5 +712,150 @@ mod tests {
     fn test_charset_level_count_extended() {
         assert_eq!(charset_level_count(Charset::Quadrant), 16);
         assert_eq!(charset_level_count(Charset::CustomAscii(vec!['a', 'b'])), 2);
+    }
+
+    // ===== Shade Mode Tests =====
+
+    #[test]
+    fn test_map_shade_levels() {
+        assert_eq!(map_shade(0.0), ' ');
+        assert_eq!(map_shade(0.25), '░');
+        assert_eq!(map_shade(0.5), '▒');
+        assert_eq!(map_shade(0.75), '▓');
+        assert_eq!(map_shade(1.0), '█');
+    }
+
+    #[test]
+    fn test_map_shade_clamping() {
+        assert_eq!(map_shade(-0.5), ' ');
+        assert_eq!(map_shade(1.5), '█');
+    }
+
+    #[test]
+    fn test_map_shade_boundaries() {
+        // Test boundary values for each shade level
+        // Formula: index = (brightness * 4).round()
+        // Space: index 0 (brightness 0.0-0.125)
+        // ░: index 1 (brightness ~0.125-0.375)
+        // ▒: index 2 (brightness ~0.375-0.625)
+        // ▓: index 3 (brightness ~0.625-0.875)
+        // █: index 4 (brightness ~0.875-1.0)
+        assert_eq!(map_shade(0.1), ' '); // 0.1 * 4 = 0.4, rounds to 0
+        assert_eq!(map_shade(0.15), '░'); // 0.15 * 4 = 0.6, rounds to 1
+        assert_eq!(map_shade(0.4), '▒'); // 0.4 * 4 = 1.6, rounds to 2
+        assert_eq!(map_shade(0.6), '▒'); // 0.6 * 4 = 2.4, rounds to 2
+        assert_eq!(map_shade(0.7), '▓'); // 0.7 * 4 = 2.8, rounds to 3
+        assert_eq!(map_shade(0.9), '█'); // 0.9 * 4 = 3.6, rounds to 4
+    }
+
+    // ===== Point Grid Tests =====
+
+    #[test]
+    fn test_map_point_threshold() {
+        assert_eq!(map_point(0.1, 0.15), ' ');
+        assert_eq!(map_point(0.2, 0.15), '▪');
+        assert_eq!(map_point(1.0, 0.15), '▪');
+    }
+
+    #[test]
+    fn test_map_point_at_threshold() {
+        // Exactly at threshold should return space (uses > not >=)
+        assert_eq!(map_point(0.15, 0.15), ' ');
+        // Just above threshold
+        assert_eq!(map_point(0.151, 0.15), '▪');
+    }
+
+    #[test]
+    fn test_map_point_zero_threshold() {
+        // With zero threshold, any positive brightness shows a point
+        assert_eq!(map_point(0.0, 0.0), ' ');
+        assert_eq!(map_point(0.001, 0.0), '▪');
+    }
+
+    // ===== Charset::from_args Tests =====
+
+    #[test]
+    fn test_charset_from_args_shade() {
+        let args = Args {
+            shade: true,
+            ..Default::default()
+        };
+        assert_eq!(Charset::from_args(&args), Charset::Shade);
+    }
+
+    #[test]
+    fn test_charset_from_args_points() {
+        let args = Args {
+            points: true,
+            ..Default::default()
+        };
+        assert_eq!(Charset::from_args(&args), Charset::Points);
+    }
+
+    #[test]
+    fn test_charset_from_args_shade_priority() {
+        // Shade should take priority over braille and ascii
+        let args = Args {
+            shade: true,
+            braille: true,
+            ascii: true,
+            ..Default::default()
+        };
+        assert_eq!(Charset::from_args(&args), Charset::Shade);
+    }
+
+    #[test]
+    fn test_charset_from_args_quadrant_priority_over_shade() {
+        // Quadrant should take priority over shade
+        let args = Args {
+            quadrant: true,
+            shade: true,
+            ..Default::default()
+        };
+        assert_eq!(Charset::from_args(&args), Charset::Quadrant);
+    }
+
+    // ===== charset_level_count Tests =====
+
+    #[test]
+    fn test_charset_level_count_shade() {
+        assert_eq!(charset_level_count(Charset::Shade), 5);
+    }
+
+    #[test]
+    fn test_charset_level_count_points() {
+        assert_eq!(charset_level_count(Charset::Points), 2);
+    }
+
+    // ===== map_brightness with Shade/Points =====
+
+    #[test]
+    fn test_map_brightness_shade() {
+        assert_eq!(map_brightness(0.0, None, Charset::Shade), ' ');
+        assert_eq!(map_brightness(0.5, None, Charset::Shade), '▒');
+        assert_eq!(map_brightness(1.0, None, Charset::Shade), '█');
+    }
+
+    #[test]
+    fn test_map_brightness_shade_with_bottom() {
+        // When bottom is provided, should average top and bottom
+        assert_eq!(map_brightness(1.0, Some(0.0), Charset::Shade), '▒'); // avg = 0.5
+        assert_eq!(map_brightness(0.5, Some(0.5), Charset::Shade), '▒'); // avg = 0.5
+        assert_eq!(map_brightness(1.0, Some(1.0), Charset::Shade), '█'); // avg = 1.0
+    }
+
+    #[test]
+    fn test_map_brightness_points() {
+        assert_eq!(map_brightness(0.0, None, Charset::Points), ' ');
+        assert_eq!(map_brightness(0.1, None, Charset::Points), ' '); // below threshold
+        assert_eq!(map_brightness(0.2, None, Charset::Points), '▪'); // above threshold
+        assert_eq!(map_brightness(1.0, None, Charset::Points), '▪');
+    }
+
+    #[test]
+    fn test_map_brightness_points_with_bottom() {
+        // When bottom is provided, should average top and bottom
+        assert_eq!(map_brightness(0.2, Some(0.1), Charset::Points), ' '); // avg = 0.15, at threshold
+        assert_eq!(map_brightness(0.3, Some(0.1), Charset::Points), '▪'); // avg = 0.2, above threshold
     }
 }

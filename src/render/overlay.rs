@@ -151,15 +151,16 @@ impl KeyboardHintsOverlay {
             "+, -     : Time Scale     z          : Reverse Palette".to_string(),
             "".to_string(),
             "PRESETS                   POST-PROCESSING".to_string(),
-            "1-7      : Presets        d, m       : Dither Mode".to_string(),
+            "1-7      : Presets        d, D       : Dither Mode".to_string(),
             "8        : Randomize      [, ]       : Dither Inten.".to_string(),
             "0        : Defaults       b          : Auto Normalize".to_string(),
             "                          v          : Motion Blur".to_string(),
             "SYSTEM                    n, Shift+N : Max Brightness".to_string(),
-            "h        : Controls       f          : Fast Mode".to_string(),
-            "?, |     : Help/Info      g          : Save PNG".to_string(),
-            "\\        : Stats          Ctrl+S     : Save Config".to_string(),
-            "Tab      : Category       Ctrl+L     : Load Config".to_string(),
+            "h        : Controls       m, M       : Intensity Map".to_string(),
+            "?, |     : Help/Info      f          : Fast Mode".to_string(),
+            "\\        : Stats          g          : Save PNG".to_string(),
+            "Tab      : Category       Ctrl+S     : Save Config".to_string(),
+            "                          Ctrl+L     : Load Config".to_string(),
             "".to_string(),
             "DETAILED CONTROLS (Use Shift to decrease values)".to_string(),
             "A: Sensor Angle   J: Sensor Dist    T: Turn Angle".to_string(),
@@ -1450,6 +1451,7 @@ mod status_line_tests {
             0,
             crate::terminal::control::MouseInteractionMode::Disabled,
             0.0,
+            crate::render::palette::IntensityMapping::linear(),
         );
         state.sensor_angle = 90.0; // Changed from default
 
@@ -1491,6 +1493,10 @@ mod status_line_tests {
             init_mode: "random".to_string(),
             food_path: None,
             background_color: None,
+            intensity_mapping: None,
+            intensity_mapping_base: None,
+            intensity_mapping_gamma: None,
+            intensity_mapping_levels: None,
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);

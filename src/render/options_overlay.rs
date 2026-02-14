@@ -469,6 +469,7 @@ fn test_options_overlay_renders_all_categories() {
         0,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
+        crate::render::palette::IntensityMapping::linear(),
     );
 
     let total = OptionsOverlay::total_categories();
@@ -601,6 +602,7 @@ fn test_options_overlay_shows_live_parameter_values() {
         0,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
+        crate::render::palette::IntensityMapping::linear(),
     );
 
     state.max_brightness = 100.0;
@@ -666,6 +668,7 @@ fn test_options_overlay_format() {
         0,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
+        crate::render::palette::IntensityMapping::linear(),
     );
 
     for idx in 0..OptionsOverlay::total_categories() {
