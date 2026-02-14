@@ -124,6 +124,8 @@ impl SavedConfig {
             Charset::Ascii => "ascii",
             Charset::Braille => "braille",
             Charset::Quadrant => "quadrant",
+            Charset::Shade => "shade",
+            Charset::Points => "points",
             Charset::CustomAscii(_) => "ascii", // Save as "ascii" for now
         };
 

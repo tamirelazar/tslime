@@ -413,6 +413,14 @@ impl FrameBuffer {
                             ' '
                         }
                     }
+                    Charset::Shade => {
+                        let avg = (top_adj + bottom_adj) / 2.0;
+                        charset::map_shade(avg)
+                    }
+                    Charset::Points => {
+                        let avg = (top_adj + bottom_adj) / 2.0;
+                        charset::map_point(avg, 0.15)
+                    }
                     Charset::Ascii | Charset::CustomAscii(_) => {
                         charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset.clone())
                     }
@@ -423,6 +431,14 @@ impl FrameBuffer {
                         charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
                     }
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
+                    Charset::Shade => {
+                        let avg = (top_adj + bottom_adj) / 2.0;
+                        charset::map_shade(avg)
+                    }
+                    Charset::Points => {
+                        let avg = (top_adj + bottom_adj) / 2.0;
+                        charset::map_point(avg, 0.15)
+                    }
                     Charset::Quadrant => {
                         // Use quadrant values from downsampled cell
                         let idx = y * self.width + x;
@@ -464,6 +480,14 @@ impl FrameBuffer {
                         charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
                     }
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
+                    Charset::Shade => {
+                        let avg = (top_adj + bottom_adj) / 2.0;
+                        charset::map_shade(avg)
+                    }
+                    Charset::Points => {
+                        let avg = (top_adj + bottom_adj) / 2.0;
+                        charset::map_point(avg, 0.15)
+                    }
                     Charset::Quadrant => {
                         // Use quadrant values from downsampled cell
                         let idx = y * self.width + x;

@@ -819,6 +819,20 @@ pub struct Args {
     pub quadrant: bool,
 
     #[arg(
+        long = "shade",
+        help = "Use shade characters (░▒▓█) for smooth density gradients"
+    )]
+    /// Force Shade character set for smooth density visualization.
+    pub shade: bool,
+
+    #[arg(
+        long = "points",
+        help = "Use point grid (▪) for sparse particle visualization"
+    )]
+    /// Force Points character set for sparse/stipple visualization.
+    pub points: bool,
+
+    #[arg(
         long = "plain-output",
         help = "Output plain text without ANSI color codes (for frame capture)"
     )]
@@ -1663,6 +1677,8 @@ impl Default for Args {
             ascii: false,
             braille: false,
             quadrant: false,
+            shade: false,
+            points: false,
             plain_output: false,
             verbose: false,
             reverse_palette: false,

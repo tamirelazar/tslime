@@ -1644,6 +1644,8 @@ pub fn run_simulation(
                 Charset::Ascii => "ASCII",
                 Charset::Braille => "Braille",
                 Charset::Quadrant => "Quadrant",
+                Charset::Shade => "Shade",
+                Charset::Points => "Points",
                 Charset::CustomAscii(_) => "Custom",
             };
 
