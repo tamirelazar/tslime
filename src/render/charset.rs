@@ -17,6 +17,9 @@ pub enum Charset {
     Shade,
     /// Point grid using ▪ for sparse particle visualization.
     Points,
+    /// Sculpted mode: solid interior blocks with shape-aware outlines using
+    /// graduated fills, triangle fills, and quadrant blocks.
+    Sculpted,
     /// User-defined ASCII character set.
     CustomAscii(Vec<char>),
 }
@@ -24,7 +27,9 @@ pub enum Charset {
 impl Charset {
     /// Selects the appropriate character set based on command-line arguments.
     pub fn from_args(args: &Args) -> Self {
-        if args.quadrant {
+        if args.sculpted {
+            Charset::Sculpted
+        } else if args.quadrant {
             Charset::Quadrant
         } else if args.shade {
             Charset::Shade
@@ -312,6 +317,12 @@ pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
                 top
             };
             map_point(avg, 0.15) // Higher threshold for sparse dots
+        }
+        Charset::Sculpted => {
+            // Fallback: same as HalfBlock when no quadrant data available
+            let brightness = top.clamp(0.0, 1.0);
+            let index = (brightness * (HALF_BLOCK_CHARS.len() - 1) as f32).round() as usize;
+            HALF_BLOCK_CHARS[index]
         }
         Charset::CustomAscii(ref chars) => {
             if chars.is_empty() {
@@ -1011,26 +1022,48 @@ const BLOCK_SHAPE_TABLE: [ShapeEntry; 23] = [
     }, // ▟ TR+BL+BR
 ];
 
-/// Maps spatial brightness distribution to a block element character.
+// ===== Sculpted Outline Rendering =====
+//
+// Used by the Sculpted charset mode for cells at the outline/edge of
+// shapes. Interior cells use solid blocks (▀▄█) while outline cells
+// use this function to select shape-aware characters.
+//
+// Higher fidelity than basic quadrant matching:
+// - Graduated bottom fills (▁▂▃▄▅▆▇) for bottom-edge feathering
+// - Graduated left fills (▏▎▍▌▋▊▉) for left-edge feathering
+// - Triangle fills (◢◣◤◥) for smooth diagonal contours
+// - Quadrant blocks for corner shapes
+
+/// Maps a brightness value to a graduated bottom fill character (▁▂▃▄▅▆▇).
+#[inline]
+fn graduated_bottom_fill(avg: f32) -> char {
+    let level = (avg * 7.0).round().clamp(1.0, 7.0) as usize;
+    const FILLS: [char; 7] = [
+        '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
+    ];
+    FILLS[level - 1]
+}
+
+/// Maps a brightness value to a graduated left fill character (▏▎▍▌▋▊▉).
+#[inline]
+fn graduated_left_fill(avg: f32) -> char {
+    let level = (avg * 7.0).round().clamp(1.0, 7.0) as usize;
+    const FILLS: [char; 7] = [
+        '\u{258F}', '\u{258E}', '\u{258D}', '\u{258C}', '\u{258B}', '\u{258A}', '\u{2589}',
+    ];
+    FILLS[level - 1]
+}
+
+/// Selects an outline character based on quadrant brightness distribution.
 ///
-/// Uses a two-tier approach:
-/// - **Edge cells** (1–3 quadrants above threshold): threshold-based quadrant
-///   matching selects from 15 partial block patterns (▘▝▀▖▌▞▛▗▚▐▜▄▙▟).
-///   This tiles consistently because adjacent cells with similar brightness
-///   values produce the same threshold decisions.
-/// - **Interior cells** (all 4 quadrants above threshold): graduated vertical
-///   fill (▁▂▃▄▅▆▇█) based on average brightness gives smooth density
-///   transitions. This is what distinguishes HalfBlock from Quadrant mode.
+/// Uses graduated fills for half-edge patterns, triangle fills (◢◣◤◥) for
+/// diagonal contours, and quadrant blocks for corner shapes. This is used
+/// by Sculpted mode for cells at the boundary of shapes.
 ///
 /// # Arguments
 /// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values (0.0–1.0)
-/// * `_contrast` - Unused (kept for API compatibility)
-pub fn map_shape_block(tl: f32, tr: f32, bl: f32, br: f32, _contrast: f32) -> char {
+pub fn map_sculpted_outline(tl: f32, tr: f32, bl: f32, br: f32) -> char {
     const THRESHOLD: f32 = 0.05;
-    const FILL_CHARS: [char; 9] = [
-        ' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
-        '\u{2588}',
-    ];
 
     let tl_on = tl > THRESHOLD;
     let tr_on = tr > THRESHOLD;
@@ -1042,28 +1075,37 @@ pub fn map_shape_block(tl: f32, tr: f32, bl: f32, br: f32, _contrast: f32) -> ch
 
     match index {
         0x0 => ' ',
-        0xF => {
-            // All quadrants active: graduated vertical fill based on
-            // average brightness for smooth density transitions.
-            let avg = (tl + tr + bl + br) / 4.0;
-            let fill = (avg * 8.0).round().clamp(1.0, 8.0) as usize;
-            FILL_CHARS[fill]
-        }
-        // Partial coverage: quadrant-based selection for clean edges
         0x1 => '\u{2598}', // ▘ TL
         0x2 => '\u{259D}', // ▝ TR
-        0x3 => '\u{2580}', // ▀ TL+TR (upper half)
+        0x3 => {
+            // Top half: ▀ or ▔ based on brightness
+            let top_avg = (tl + tr) / 2.0;
+            if top_avg > 0.25 {
+                '\u{2580}' // ▀ upper half
+            } else {
+                '\u{2594}' // ▔ upper 1/8
+            }
+        }
         0x4 => '\u{2596}', // ▖ BL
-        0x5 => '\u{258C}', // ▌ TL+BL (left half)
-        0x6 => '\u{259E}', // ▞ TR+BL
+        0x5 => {
+            // Left half: graduated left fills (▏▎▍▌▋▊▉)
+            let left_avg = (tl + bl) / 2.0;
+            graduated_left_fill(left_avg)
+        }
+        0x6 => '\u{25E3}', // ◣ lower-left triangle (TR+BL diagonal)
         0x7 => '\u{259B}', // ▛ TL+TR+BL
         0x8 => '\u{2597}', // ▗ BR
-        0x9 => '\u{259A}', // ▚ TL+BR
+        0x9 => '\u{25E2}', // ◢ lower-right triangle (TL+BR diagonal)
         0xA => '\u{2590}', // ▐ TR+BR (right half)
         0xB => '\u{259C}', // ▜ TL+TR+BR
-        0xC => '\u{2584}', // ▄ BL+BR (lower half)
+        0xC => {
+            // Bottom half: graduated bottom fills (▁▂▃▄▅▆▇)
+            let bottom_avg = (bl + br) / 2.0;
+            graduated_bottom_fill(bottom_avg)
+        }
         0xD => '\u{2599}', // ▙ TL+BL+BR
         0xE => '\u{259F}', // ▟ TR+BL+BR
+        0xF => '\u{2588}', // █ full (shouldn't normally reach here)
         _ => ' ',
     }
 }
@@ -1078,6 +1120,7 @@ pub fn charset_level_count(charset: Charset) -> usize {
         Charset::Quadrant => 16, // 2^4 combinations of 4 quadrants
         Charset::Shade => 5,     // space, ░, ▒, ▓, █
         Charset::Points => 2,    // space or ▪
+        Charset::Sculpted => 16, // 16 quadrant patterns + graduated fills
         Charset::CustomAscii(ref chars) => chars.len().max(2), // At least 2 levels
     }
 }
@@ -1895,58 +1938,75 @@ mod tests {
         );
     }
 
-    // ===== Shape Block Tests =====
+    // ===== Sculpted Outline Tests =====
 
     #[test]
-    fn test_shape_block_empty() {
-        assert_eq!(map_shape_block(0.0, 0.0, 0.0, 0.0, 1.0), ' ');
+    fn test_sculpted_outline_empty() {
+        assert_eq!(map_sculpted_outline(0.0, 0.0, 0.0, 0.0), ' ');
     }
 
     #[test]
-    fn test_shape_block_full() {
-        // Uniform high brightness → full block
-        assert_eq!(map_shape_block(1.0, 1.0, 1.0, 1.0, 1.0), '\u{2588}');
+    fn test_sculpted_outline_full() {
+        assert_eq!(map_sculpted_outline(1.0, 1.0, 1.0, 1.0), '\u{2588}');
     }
 
     #[test]
-    fn test_shape_block_top_half() {
-        // Top half bright → upper half block ▀
-        let ch = map_shape_block(0.9, 0.9, 0.0, 0.0, 1.0);
+    fn test_sculpted_outline_top_half() {
+        let ch = map_sculpted_outline(0.9, 0.9, 0.0, 0.0);
         assert_eq!(ch, '\u{2580}', "Top-heavy should produce ▀, got '{ch}'");
     }
 
     #[test]
-    fn test_shape_block_bottom_half() {
-        // Bottom half bright → lower half block ▄
-        let ch = map_shape_block(0.0, 0.0, 0.9, 0.9, 1.0);
-        assert_eq!(ch, '\u{2584}', "Bottom-heavy should produce ▄, got '{ch}'");
+    fn test_sculpted_outline_top_half_dim() {
+        // Dim top → ▔ (upper 1/8)
+        let ch = map_sculpted_outline(0.1, 0.1, 0.0, 0.0);
+        assert_eq!(ch, '\u{2594}', "Dim top should produce ▔, got '{ch}'");
     }
 
     #[test]
-    fn test_shape_block_left_half() {
-        // Left half bright → left half block ▌
-        let ch = map_shape_block(0.9, 0.0, 0.9, 0.0, 1.0);
-        assert_eq!(ch, '\u{258C}', "Left-heavy should produce ▌, got '{ch}'");
+    fn test_sculpted_outline_bottom_graduated() {
+        // Bottom half uses graduated fills
+        let ch_high = map_sculpted_outline(0.0, 0.0, 0.9, 0.9);
+        let ch_low = map_sculpted_outline(0.0, 0.0, 0.1, 0.1);
+        // High brightness → tall fill, low brightness → short fill
+        assert_ne!(
+            ch_high, ch_low,
+            "Different brightness should give different fills"
+        );
+        // Both should be valid block fill characters (▁▂▃▄▅▆▇)
+        assert!(ch_high >= '\u{2581}' && ch_high <= '\u{2587}');
+        assert!(ch_low >= '\u{2581}' && ch_low <= '\u{2587}');
     }
 
     #[test]
-    fn test_shape_block_right_half() {
-        // Right half bright → right half block ▐
-        let ch = map_shape_block(0.0, 0.9, 0.0, 0.9, 1.0);
+    fn test_sculpted_outline_left_graduated() {
+        // Left half uses graduated left fills
+        let ch_high = map_sculpted_outline(0.9, 0.0, 0.9, 0.0);
+        let ch_low = map_sculpted_outline(0.1, 0.0, 0.1, 0.0);
+        assert_ne!(
+            ch_high, ch_low,
+            "Different brightness should give different fills"
+        );
+        // Both should be valid left fill characters (▏▎▍▌▋▊▉)
+        assert!(ch_high >= '\u{258A}' && ch_high <= '\u{258F}');
+        assert!(ch_low >= '\u{258C}' && ch_low <= '\u{258F}');
+    }
+
+    #[test]
+    fn test_sculpted_outline_right_half() {
+        let ch = map_sculpted_outline(0.0, 0.9, 0.0, 0.9);
         assert_eq!(ch, '\u{2590}', "Right-heavy should produce ▐, got '{ch}'");
     }
 
     #[test]
-    fn test_shape_block_tl_quadrant() {
-        // Only top-left bright → TL quadrant ▘
-        let ch = map_shape_block(0.9, 0.0, 0.0, 0.0, 1.0);
+    fn test_sculpted_outline_tl_quadrant() {
+        let ch = map_sculpted_outline(0.9, 0.0, 0.0, 0.0);
         assert_eq!(ch, '\u{2598}', "Top-left only should produce ▘, got '{ch}'");
     }
 
     #[test]
-    fn test_shape_block_br_quadrant() {
-        // Only bottom-right bright → BR quadrant ▗
-        let ch = map_shape_block(0.0, 0.0, 0.0, 0.9, 1.0);
+    fn test_sculpted_outline_br_quadrant() {
+        let ch = map_sculpted_outline(0.0, 0.0, 0.0, 0.9);
         assert_eq!(
             ch, '\u{2597}',
             "Bottom-right only should produce ▗, got '{ch}'"
@@ -1954,44 +2014,42 @@ mod tests {
     }
 
     #[test]
-    fn test_shape_block_diagonal_backslash() {
-        // TL+BR diagonal → ▚
-        let ch = map_shape_block(0.9, 0.0, 0.0, 0.9, 1.0);
+    fn test_sculpted_outline_diagonal_backslash() {
+        // TL+BR diagonal → ◢ (lower-right triangle fill)
+        let ch = map_sculpted_outline(0.9, 0.0, 0.0, 0.9);
         assert_eq!(
-            ch, '\u{259A}',
-            "TL+BR diagonal should produce ▚, got '{ch}'"
+            ch, '\u{25E2}',
+            "TL+BR diagonal should produce ◢, got '{ch}'"
         );
     }
 
     #[test]
-    fn test_shape_block_diagonal_forwardslash() {
-        // TR+BL diagonal → ▞
-        let ch = map_shape_block(0.0, 0.9, 0.9, 0.0, 1.0);
+    fn test_sculpted_outline_diagonal_forwardslash() {
+        // TR+BL diagonal → ◣ (lower-left triangle fill)
+        let ch = map_sculpted_outline(0.0, 0.9, 0.9, 0.0);
         assert_eq!(
-            ch, '\u{259E}',
-            "TR+BL diagonal should produce ▞, got '{ch}'"
+            ch, '\u{25E3}',
+            "TR+BL diagonal should produce ◣, got '{ch}'"
         );
     }
 
     #[test]
-    fn test_shape_block_three_quarter() {
-        // Three quadrants bright → three-quarter block
-        let ch = map_shape_block(0.9, 0.9, 0.9, 0.0, 1.0);
+    fn test_sculpted_outline_three_quarter() {
+        let ch = map_sculpted_outline(0.9, 0.9, 0.9, 0.0);
         assert_eq!(ch, '\u{259B}', "TL+TR+BL should produce ▛, got '{ch}'");
     }
 
     #[test]
-    fn test_shape_block_near_zero() {
+    fn test_sculpted_outline_near_zero() {
         assert_eq!(
-            map_shape_block(0.005, 0.005, 0.005, 0.005, 1.0),
+            map_sculpted_outline(0.005, 0.005, 0.005, 0.005),
             ' ',
             "Below threshold should be space"
         );
     }
 
     #[test]
-    fn test_shape_block_produces_distinct_patterns() {
-        // Verify that different inputs produce different block characters
+    fn test_sculpted_outline_produces_distinct_patterns() {
         let patterns: std::collections::HashSet<char> = [
             (0.9, 0.0, 0.0, 0.0), // TL only
             (0.0, 0.9, 0.0, 0.0), // TR only
@@ -2006,13 +2064,35 @@ mod tests {
             (0.9, 0.9, 0.9, 0.9), // full
         ]
         .iter()
-        .map(|(tl, tr, bl, br)| map_shape_block(*tl, *tr, *bl, *br, 1.0))
+        .map(|(tl, tr, bl, br)| map_sculpted_outline(*tl, *tr, *bl, *br))
         .collect();
-        // Should produce at least 8 distinct block characters
         assert!(
             patterns.len() >= 8,
-            "Expected at least 8 distinct block patterns, got {}",
+            "Expected at least 8 distinct outline patterns, got {}",
             patterns.len()
         );
+    }
+
+    #[test]
+    fn test_graduated_bottom_fill_range() {
+        // Low brightness → short fill
+        let ch_low = graduated_bottom_fill(0.1);
+        assert_eq!(ch_low, '\u{2581}', "Low brightness → ▁");
+        // High brightness → tall fill
+        let ch_high = graduated_bottom_fill(0.9);
+        assert_eq!(ch_high, '\u{2586}', "High brightness → ▆");
+        // Full brightness → tallest fill
+        let ch_full = graduated_bottom_fill(1.0);
+        assert_eq!(ch_full, '\u{2587}', "Full brightness → ▇");
+    }
+
+    #[test]
+    fn test_graduated_left_fill_range() {
+        let ch_low = graduated_left_fill(0.1);
+        assert_eq!(ch_low, '\u{258F}', "Low brightness → ▏");
+        let ch_high = graduated_left_fill(0.9);
+        assert_eq!(ch_high, '\u{258A}', "High brightness → ▊");
+        let ch_full = graduated_left_fill(1.0);
+        assert_eq!(ch_full, '\u{2589}', "Full brightness → ▉");
     }
 }

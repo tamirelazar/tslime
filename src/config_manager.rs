@@ -138,6 +138,7 @@ impl SavedConfig {
             Charset::Quadrant => "quadrant",
             Charset::Shade => "shade",
             Charset::Points => "points",
+            Charset::Sculpted => "sculpted",
             Charset::CustomAscii(_) => "ascii", // Save as "ascii" for now
         };
 

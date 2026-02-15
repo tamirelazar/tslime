@@ -1686,6 +1686,7 @@ pub fn run_simulation(
                 Charset::Quadrant => "Quadrant",
                 Charset::Shade => "Shade",
                 Charset::Points => "Points",
+                Charset::Sculpted => "Sculpted",
                 Charset::CustomAscii(_) => "Custom",
             };
 

@@ -101,6 +101,58 @@ impl FrameBuffer {
         &self.cells[y * self.width + x]
     }
 
+    /// Checks whether a cell is at the outline/edge of a shape.
+    ///
+    /// A cell is an outline cell if any of its 4-connected neighbors (up, down,
+    /// left, right) is empty (below threshold). Interior cells are fully
+    /// surrounded by other active cells.
+    fn is_outline_cell(
+        downsampled: &[DownsampleCell],
+        width: usize,
+        x: usize,
+        y: usize,
+        max_trail_value: f32,
+    ) -> bool {
+        const EDGE_THRESHOLD: f32 = 0.05;
+        let height = if width > 0 {
+            downsampled.len() / width
+        } else {
+            return true;
+        };
+
+        // Edge of the grid is always an outline
+        if x == 0 || y == 0 || x + 1 >= width || y + 1 >= height {
+            return true;
+        }
+
+        let threshold = EDGE_THRESHOLD * max_trail_value;
+
+        // Check 4-connected neighbors
+        let neighbors = [
+            (x, y.wrapping_sub(1)), // up
+            (x, y + 1),             // down
+            (x.wrapping_sub(1), y), // left
+            (x + 1, y),             // right
+        ];
+
+        for (nx, ny) in &neighbors {
+            if *nx >= width || *ny >= height {
+                return true; // Out of bounds = empty neighbor
+            }
+            let nidx = ny * width + nx;
+            if nidx >= downsampled.len() {
+                return true;
+            }
+            let ncell = &downsampled[nidx];
+            let avg = (ncell.top + ncell.bottom) / 2.0;
+            if avg <= threshold {
+                return true; // Neighbor is empty, so we're on the outline
+            }
+        }
+
+        false
+    }
+
     /// Render a grid background pattern into the buffer.
     ///
     /// Used for overlaying a visual grid on top of empty space.
@@ -387,7 +439,8 @@ impl FrameBuffer {
         } else {
             let char = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
                 match charset {
-                    Charset::HalfBlock => {
+                    Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
+                    Charset::Sculpted => {
                         let idx = y * self.width + x;
                         if idx < downsampled.len() {
                             let dcell = &downsampled[idx];
@@ -396,13 +449,17 @@ impl FrameBuffer {
                             } else {
                                 0.0
                             };
-                            charset::map_shape_block(
-                                dcell.top_left * inv,
-                                dcell.top_right * inv,
-                                dcell.bottom_left * inv,
-                                dcell.bottom_right * inv,
-                                self.ascii_contrast,
-                            )
+                            if Self::is_outline_cell(downsampled, self.width, x, y, max_trail_value)
+                            {
+                                charset::map_sculpted_outline(
+                                    dcell.top_left * inv,
+                                    dcell.top_right * inv,
+                                    dcell.bottom_left * inv,
+                                    dcell.bottom_right * inv,
+                                )
+                            } else {
+                                charset::map_vertical_block(top_adj, bottom_adj)
+                            }
                         } else {
                             charset::map_vertical_block(top_adj, bottom_adj)
                         }
@@ -511,7 +568,8 @@ impl FrameBuffer {
                             charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
                         }
                     }
-                    Charset::HalfBlock => {
+                    Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
+                    Charset::Sculpted => {
                         let idx = y * self.width + x;
                         if idx < downsampled.len() {
                             let dcell = &downsampled[idx];
@@ -520,13 +578,17 @@ impl FrameBuffer {
                             } else {
                                 0.0
                             };
-                            charset::map_shape_block(
-                                dcell.top_left * inv,
-                                dcell.top_right * inv,
-                                dcell.bottom_left * inv,
-                                dcell.bottom_right * inv,
-                                self.ascii_contrast,
-                            )
+                            if Self::is_outline_cell(downsampled, self.width, x, y, max_trail_value)
+                            {
+                                charset::map_sculpted_outline(
+                                    dcell.top_left * inv,
+                                    dcell.top_right * inv,
+                                    dcell.bottom_left * inv,
+                                    dcell.bottom_right * inv,
+                                )
+                            } else {
+                                charset::map_vertical_block(top_adj, bottom_adj)
+                            }
                         } else {
                             charset::map_vertical_block(top_adj, bottom_adj)
                         }
@@ -615,7 +677,8 @@ impl FrameBuffer {
                             charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
                         }
                     }
-                    Charset::HalfBlock => {
+                    Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
+                    Charset::Sculpted => {
                         let idx = y * self.width + x;
                         if idx < downsampled.len() {
                             let dcell = &downsampled[idx];
@@ -624,13 +687,17 @@ impl FrameBuffer {
                             } else {
                                 0.0
                             };
-                            charset::map_shape_block(
-                                dcell.top_left * inv,
-                                dcell.top_right * inv,
-                                dcell.bottom_left * inv,
-                                dcell.bottom_right * inv,
-                                self.ascii_contrast,
-                            )
+                            if Self::is_outline_cell(downsampled, self.width, x, y, max_trail_value)
+                            {
+                                charset::map_sculpted_outline(
+                                    dcell.top_left * inv,
+                                    dcell.top_right * inv,
+                                    dcell.bottom_left * inv,
+                                    dcell.bottom_right * inv,
+                                )
+                            } else {
+                                charset::map_vertical_block(top_adj, bottom_adj)
+                            }
                         } else {
                             charset::map_vertical_block(top_adj, bottom_adj)
                         }

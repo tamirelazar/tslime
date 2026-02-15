@@ -841,6 +841,13 @@ pub struct Args {
     pub half_block_dual: bool,
 
     #[arg(
+        long = "sculpted",
+        help = "Sculpted mode: solid interior blocks with shape-aware outline characters"
+    )]
+    /// Sculpted charset mode with smooth outline rendering.
+    pub sculpted: bool,
+
+    #[arg(
         long = "plain-output",
         help = "Output plain text without ANSI color codes (for frame capture)"
     )]
@@ -1784,6 +1791,7 @@ impl Default for Args {
             shade: false,
             points: false,
             half_block_dual: false,
+            sculpted: false,
             plain_output: false,
             verbose: false,
             reverse_palette: false,
