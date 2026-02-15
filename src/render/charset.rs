@@ -906,6 +906,9 @@ pub fn map_shape_braille(tl: f32, tr: f32, bl: f32, br: f32, threshold: f32) -> 
 ///
 /// Each entry maps a block character to its 2×3 spatial fill pattern,
 /// computed from the geometric coverage of each character within the cell.
+/// Note: Currently unused since `map_shape_block` uses threshold-based
+/// quadrant matching for consistent tiling. Retained for reference.
+#[allow(dead_code)]
 const BLOCK_SHAPE_TABLE: [ShapeEntry; 23] = [
     // === Empty ===
     ShapeEntry {
@@ -1010,57 +1013,17 @@ const BLOCK_SHAPE_TABLE: [ShapeEntry; 23] = [
 
 /// Maps spatial brightness distribution to a block element character.
 ///
-/// Uses the same 6D shape vector matching as `map_shape_ascii`, but
-/// selects from Unicode block elements (quadrant blocks, half blocks,
-/// diagonals, partial fills) for pixel-art style rendering.
+/// Uses threshold-based quadrant matching to select from Unicode block
+/// elements. Each quadrant is independently thresholded to produce one of
+/// 16 possible quadrant combinations (space, ▘, ▝, ▀, ▖, ▌, ▞, ▛, ▗, ▚,
+/// ▐, ▜, ▄, ▙, ▟, █). This approach tiles consistently because adjacent
+/// cells with similar brightness values produce the same threshold decisions.
 ///
 /// # Arguments
 /// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values (0.0–1.0)
-/// * `contrast` - Contrast enhancement exponent (1.0 = none)
-pub fn map_shape_block(tl: f32, tr: f32, bl: f32, br: f32, contrast: f32) -> char {
-    let mut v = [tl, tr, (tl + bl) * 0.5, (tr + br) * 0.5, bl, br];
-
-    if contrast > 1.01 {
-        enhance_contrast(&mut v, contrast);
-    }
-
-    let max = v.iter().cloned().fold(0.0_f32, f32::max);
-    if max < 0.01 {
-        return ' ';
-    }
-    let inv_max = 1.0 / max;
-    for val in v.iter_mut() {
-        *val *= inv_max;
-    }
-
-    let mut best_char = ' ';
-    let mut best_dist = f32::MAX;
-
-    for entry in &BLOCK_SHAPE_TABLE {
-        if entry.ch == ' ' {
-            continue;
-        }
-
-        let cv = &entry.vector;
-        let c_max = cv.iter().cloned().fold(0.0_f32, f32::max);
-        if c_max < 1e-6 {
-            continue;
-        }
-        let c_inv = 1.0 / c_max;
-
-        let mut dist = 0.0_f32;
-        for i in 0..6 {
-            let diff = v[i] - cv[i] * c_inv;
-            dist += diff * diff;
-        }
-
-        if dist < best_dist {
-            best_dist = dist;
-            best_char = entry.ch;
-        }
-    }
-
-    best_char
+/// * `_contrast` - Unused (kept for API compatibility)
+pub fn map_shape_block(tl: f32, tr: f32, bl: f32, br: f32, _contrast: f32) -> char {
+    map_quadrant(tl, tr, bl, br, 0.05)
 }
 
 /// Returns the number of distinct brightness levels supported by the charset.
