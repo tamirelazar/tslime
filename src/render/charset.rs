@@ -18,7 +18,7 @@ pub enum Charset {
     /// Point grid using ▪ for sparse particle visualization.
     Points,
     /// Sculpted mode: solid interior blocks with shape-aware outlines using
-    /// graduated fills, triangle fills, and quadrant blocks.
+    /// triangle fills, quadrant blocks, and half blocks.
     Sculpted,
     /// User-defined ASCII character set.
     CustomAscii(Vec<char>),
@@ -1028,36 +1028,16 @@ const BLOCK_SHAPE_TABLE: [ShapeEntry; 23] = [
 // shapes. Interior cells use solid blocks (▀▄█) while outline cells
 // use this function to select shape-aware characters.
 //
-// Higher fidelity than basic quadrant matching:
-// - Graduated bottom fills (▁▂▃▄▅▆▇) for bottom-edge feathering
-// - Graduated left fills (▏▎▍▌▋▊▉) for left-edge feathering
-// - Triangle fills (◢◣◤◥) for smooth diagonal contours
-// - Quadrant blocks for corner shapes
-
-/// Maps a brightness value to a graduated bottom fill character (▁▂▃▄▅▆▇).
-#[inline]
-fn graduated_bottom_fill(avg: f32) -> char {
-    let level = (avg * 7.0).round().clamp(1.0, 7.0) as usize;
-    const FILLS: [char; 7] = [
-        '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
-    ];
-    FILLS[level - 1]
-}
-
-/// Maps a brightness value to a graduated left fill character (▏▎▍▌▋▊▉).
-#[inline]
-fn graduated_left_fill(avg: f32) -> char {
-    let level = (avg * 7.0).round().clamp(1.0, 7.0) as usize;
-    const FILLS: [char; 7] = [
-        '\u{258F}', '\u{258E}', '\u{258D}', '\u{258C}', '\u{258B}', '\u{258A}', '\u{2589}',
-    ];
-    FILLS[level - 1]
-}
+// Characters used:
+// - Quadrant blocks (▘▝▖▗) for single-corner shapes
+// - Half blocks (▀▄▌▐) for straight edges
+// - Triangle fills (◢◣◤◥) for diagonal contours
+// - Full block (█) for fully filled cells
 
 /// Selects an outline character based on quadrant brightness distribution.
 ///
-/// Uses graduated fills for half-edge patterns, triangle fills (◢◣◤◥) for
-/// diagonal contours, and quadrant blocks for corner shapes. This is used
+/// Uses quadrant blocks for corners, half blocks for straight edges,
+/// and triangle fills (◢◣◤◥) for diagonal contours. This is used
 /// by Sculpted mode for cells at the boundary of shapes.
 ///
 /// # Arguments
@@ -1077,35 +1057,19 @@ pub fn map_sculpted_outline(tl: f32, tr: f32, bl: f32, br: f32) -> char {
         0x0 => ' ',
         0x1 => '\u{2598}', // ▘ TL
         0x2 => '\u{259D}', // ▝ TR
-        0x3 => {
-            // Top half: ▀ or ▔ based on brightness
-            let top_avg = (tl + tr) / 2.0;
-            if top_avg > 0.25 {
-                '\u{2580}' // ▀ upper half
-            } else {
-                '\u{2594}' // ▔ upper 1/8
-            }
-        }
+        0x3 => '\u{2580}', // ▀ top half
         0x4 => '\u{2596}', // ▖ BL
-        0x5 => {
-            // Left half: graduated left fills (▏▎▍▌▋▊▉)
-            let left_avg = (tl + bl) / 2.0;
-            graduated_left_fill(left_avg)
-        }
+        0x5 => '\u{258C}', // ▌ left half
         0x6 => '\u{25E3}', // ◣ lower-left triangle (TR+BL diagonal)
-        0x7 => '\u{259B}', // ▛ TL+TR+BL
+        0x7 => '\u{25E4}', // ◤ upper-left triangle (TL+TR+BL → missing BR)
         0x8 => '\u{2597}', // ▗ BR
         0x9 => '\u{25E2}', // ◢ lower-right triangle (TL+BR diagonal)
-        0xA => '\u{2590}', // ▐ TR+BR (right half)
-        0xB => '\u{259C}', // ▜ TL+TR+BR
-        0xC => {
-            // Bottom half: graduated bottom fills (▁▂▃▄▅▆▇)
-            let bottom_avg = (bl + br) / 2.0;
-            graduated_bottom_fill(bottom_avg)
-        }
-        0xD => '\u{2599}', // ▙ TL+BL+BR
-        0xE => '\u{259F}', // ▟ TR+BL+BR
-        0xF => '\u{2588}', // █ full (shouldn't normally reach here)
+        0xA => '\u{2590}', // ▐ right half
+        0xB => '\u{25E5}', // ◥ upper-right triangle (TL+TR+BR → missing BL)
+        0xC => '\u{2584}', // ▄ bottom half
+        0xD => '\u{25E3}', // ◣ lower-left triangle (TL+BL+BR → missing TR)
+        0xE => '\u{25E2}', // ◢ lower-right triangle (TR+BL+BR → missing TL)
+        0xF => '\u{2588}', // █ full
         _ => ' ',
     }
 }
@@ -1958,38 +1922,21 @@ mod tests {
 
     #[test]
     fn test_sculpted_outline_top_half_dim() {
-        // Dim top → ▔ (upper 1/8)
+        // Dim top → still ▀ (no graduated fills)
         let ch = map_sculpted_outline(0.1, 0.1, 0.0, 0.0);
-        assert_eq!(ch, '\u{2594}', "Dim top should produce ▔, got '{ch}'");
+        assert_eq!(ch, '\u{2580}', "Dim top should produce ▀, got '{ch}'");
     }
 
     #[test]
-    fn test_sculpted_outline_bottom_graduated() {
-        // Bottom half uses graduated fills
-        let ch_high = map_sculpted_outline(0.0, 0.0, 0.9, 0.9);
-        let ch_low = map_sculpted_outline(0.0, 0.0, 0.1, 0.1);
-        // High brightness → tall fill, low brightness → short fill
-        assert_ne!(
-            ch_high, ch_low,
-            "Different brightness should give different fills"
-        );
-        // Both should be valid block fill characters (▁▂▃▄▅▆▇)
-        assert!(ch_high >= '\u{2581}' && ch_high <= '\u{2587}');
-        assert!(ch_low >= '\u{2581}' && ch_low <= '\u{2587}');
+    fn test_sculpted_outline_bottom_half() {
+        let ch = map_sculpted_outline(0.0, 0.0, 0.9, 0.9);
+        assert_eq!(ch, '\u{2584}', "Bottom half should produce ▄, got '{ch}'");
     }
 
     #[test]
-    fn test_sculpted_outline_left_graduated() {
-        // Left half uses graduated left fills
-        let ch_high = map_sculpted_outline(0.9, 0.0, 0.9, 0.0);
-        let ch_low = map_sculpted_outline(0.1, 0.0, 0.1, 0.0);
-        assert_ne!(
-            ch_high, ch_low,
-            "Different brightness should give different fills"
-        );
-        // Both should be valid left fill characters (▏▎▍▌▋▊▉)
-        assert!(ch_high >= '\u{258A}' && ch_high <= '\u{258F}');
-        assert!(ch_low >= '\u{258C}' && ch_low <= '\u{258F}');
+    fn test_sculpted_outline_left_half() {
+        let ch = map_sculpted_outline(0.9, 0.0, 0.9, 0.0);
+        assert_eq!(ch, '\u{258C}', "Left half should produce ▌, got '{ch}'");
     }
 
     #[test]
@@ -2034,9 +1981,31 @@ mod tests {
     }
 
     #[test]
-    fn test_sculpted_outline_three_quarter() {
+    fn test_sculpted_outline_three_quarter_tl_tr_bl() {
+        // TL+TR+BL → ◤ upper-left triangle (missing BR)
         let ch = map_sculpted_outline(0.9, 0.9, 0.9, 0.0);
-        assert_eq!(ch, '\u{259B}', "TL+TR+BL should produce ▛, got '{ch}'");
+        assert_eq!(ch, '\u{25E4}', "TL+TR+BL should produce ◤, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_three_quarter_tl_tr_br() {
+        // TL+TR+BR → ◥ upper-right triangle (missing BL)
+        let ch = map_sculpted_outline(0.9, 0.9, 0.0, 0.9);
+        assert_eq!(ch, '\u{25E5}', "TL+TR+BR should produce ◥, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_three_quarter_tl_bl_br() {
+        // TL+BL+BR → ◣ lower-left triangle (missing TR)
+        let ch = map_sculpted_outline(0.9, 0.0, 0.9, 0.9);
+        assert_eq!(ch, '\u{25E3}', "TL+BL+BR should produce ◣, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_three_quarter_tr_bl_br() {
+        // TR+BL+BR → ◢ lower-right triangle (missing TL)
+        let ch = map_sculpted_outline(0.0, 0.9, 0.9, 0.9);
+        assert_eq!(ch, '\u{25E2}', "TR+BL+BR should produce ◢, got '{ch}'");
     }
 
     #[test]
@@ -2071,28 +2040,5 @@ mod tests {
             "Expected at least 8 distinct outline patterns, got {}",
             patterns.len()
         );
-    }
-
-    #[test]
-    fn test_graduated_bottom_fill_range() {
-        // Low brightness → short fill
-        let ch_low = graduated_bottom_fill(0.1);
-        assert_eq!(ch_low, '\u{2581}', "Low brightness → ▁");
-        // High brightness → tall fill
-        let ch_high = graduated_bottom_fill(0.9);
-        assert_eq!(ch_high, '\u{2586}', "High brightness → ▆");
-        // Full brightness → tallest fill
-        let ch_full = graduated_bottom_fill(1.0);
-        assert_eq!(ch_full, '\u{2587}', "Full brightness → ▇");
-    }
-
-    #[test]
-    fn test_graduated_left_fill_range() {
-        let ch_low = graduated_left_fill(0.1);
-        assert_eq!(ch_low, '\u{258F}', "Low brightness → ▏");
-        let ch_high = graduated_left_fill(0.9);
-        assert_eq!(ch_high, '\u{258A}', "High brightness → ▊");
-        let ch_full = graduated_left_fill(1.0);
-        assert_eq!(ch_full, '\u{2589}', "Full brightness → ▉");
     }
 }
