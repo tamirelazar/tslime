@@ -1286,6 +1286,15 @@ pub struct Args {
     pub ascii_chars: Option<String>,
 
     #[arg(
+        long = "ascii-contrast",
+        value_name = "FLOAT",
+        default_value = "1.5",
+        help = "Shape-vector ASCII contrast exponent (1.0 = none, 1.5 = default, 3.0 = strong edge enhancement)"
+    )]
+    /// Contrast exponent for shape-vector ASCII rendering.
+    pub ascii_contrast: f32,
+
+    #[arg(
         long = "bg-color",
         alias = "bg",
         value_name = "HEX",
@@ -1834,6 +1843,7 @@ impl Default for Args {
             grid_opacity: 0.15,
             grid_adaptive: false,
             ascii_chars: None,
+            ascii_contrast: 1.5,
             random: false,
             explain: false,
             completions: None,

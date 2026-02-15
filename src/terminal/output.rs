@@ -39,6 +39,7 @@ pub struct FrameBuffer {
     species_colors_enabled: bool,
     species_rgb_colors: Vec<RgbColor>,
     background_color: Option<RgbColor>,
+    ascii_contrast: f32,
 }
 
 impl FrameBuffer {
@@ -85,6 +86,7 @@ impl FrameBuffer {
             species_colors_enabled: false,
             species_rgb_colors: Vec::new(),
             background_color,
+            ascii_contrast: 1.5,
         }
     }
 
@@ -245,9 +247,11 @@ impl FrameBuffer {
         species_colors_enabled: bool,
         species_rgb_colors: Option<Vec<RgbColor>>,
         background_color: Option<RgbColor>,
+        ascii_contrast: f32,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode, background_color);
         buffer.species_colors_enabled = species_colors_enabled;
+        buffer.ascii_contrast = ascii_contrast;
 
         let species_colors_slice = species_rgb_colors.as_deref();
 
@@ -444,7 +448,27 @@ impl FrameBuffer {
                         let avg = (top_adj + bottom_adj) / 2.0;
                         charset::map_point(avg, 0.15)
                     }
-                    Charset::Ascii | Charset::CustomAscii(_) => {
+                    Charset::Ascii => {
+                        let idx = y * self.width + x;
+                        if idx < downsampled.len() {
+                            let dcell = &downsampled[idx];
+                            let inv = if max_trail_value > 0.0 {
+                                1.0 / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            charset::map_shape_ascii(
+                                dcell.top_left * inv,
+                                dcell.top_right * inv,
+                                dcell.bottom_left * inv,
+                                dcell.bottom_right * inv,
+                                self.ascii_contrast,
+                            )
+                        } else {
+                            ' '
+                        }
+                    }
+                    Charset::CustomAscii(_) => {
                         charset::map_brightness((top_adj + bottom_adj) / 2.0, None, charset.clone())
                     }
                 }
@@ -493,7 +517,26 @@ impl FrameBuffer {
                             ' '
                         }
                     }
-                    Charset::Ascii => charset::map_ascii_directional(top_adj, true),
+                    Charset::Ascii => {
+                        let idx = y * self.width + x;
+                        if idx < downsampled.len() {
+                            let dcell = &downsampled[idx];
+                            let inv = if max_trail_value > 0.0 {
+                                1.0 / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            charset::map_shape_ascii(
+                                dcell.top_left * inv,
+                                dcell.top_right * inv,
+                                dcell.bottom_left * inv,
+                                dcell.bottom_right * inv,
+                                self.ascii_contrast,
+                            )
+                        } else {
+                            charset::map_ascii_directional(top_adj, true)
+                        }
+                    }
                     Charset::CustomAscii(_) => {
                         charset::map_brightness(top_adj, None, charset.clone())
                     }
@@ -543,7 +586,26 @@ impl FrameBuffer {
                             ' '
                         }
                     }
-                    Charset::Ascii => charset::map_ascii_directional(bottom_adj, false),
+                    Charset::Ascii => {
+                        let idx = y * self.width + x;
+                        if idx < downsampled.len() {
+                            let dcell = &downsampled[idx];
+                            let inv = if max_trail_value > 0.0 {
+                                1.0 / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            charset::map_shape_ascii(
+                                dcell.top_left * inv,
+                                dcell.top_right * inv,
+                                dcell.bottom_left * inv,
+                                dcell.bottom_right * inv,
+                                self.ascii_contrast,
+                            )
+                        } else {
+                            charset::map_ascii_directional(bottom_adj, false)
+                        }
+                    }
                     Charset::CustomAscii(_) => {
                         charset::map_brightness(bottom_adj, None, charset.clone())
                     }
@@ -968,6 +1030,7 @@ pub fn render_frame(
         species_colors_enabled,
         species_rgb_colors,
         background_color,
+        1.5,
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -992,6 +1055,7 @@ pub struct TerminalRenderer {
     species_colors_enabled: bool,
     species_rgb_colors: Vec<RgbColor>,
     background_color: Option<RgbColor>,
+    ascii_contrast: f32,
 }
 
 impl TerminalRenderer {
@@ -1023,6 +1087,7 @@ impl TerminalRenderer {
             species_colors_enabled: false,
             species_rgb_colors: Vec::new(),
             background_color,
+            ascii_contrast: 1.5,
         }
     }
 
@@ -1104,6 +1169,13 @@ impl TerminalRenderer {
         self.reverse_palette = reverse;
     }
 
+    /// Set the contrast exponent for shape-vector ASCII rendering.
+    ///
+    /// Values > 1.0 sharpen edges; 1.0 = no enhancement; 2.0+ = strong.
+    pub fn set_ascii_contrast(&mut self, contrast: f32) {
+        self.ascii_contrast = contrast;
+    }
+
     /// Set specific colors for multi-species rendering.
     pub fn set_species_colors(&mut self, enabled: bool, colors: Vec<RgbColor>) {
         self.species_colors_enabled = enabled;
@@ -1147,6 +1219,7 @@ impl TerminalRenderer {
                 None
             },
             self.background_color,
+            self.ascii_contrast,
         );
 
         execute!(self.stdout, &buffer)
@@ -1196,6 +1269,7 @@ impl TerminalRenderer {
                 None
             },
             self.background_color,
+            self.ascii_contrast,
         );
 
         // Apply grid rendering if enabled
@@ -1378,6 +1452,7 @@ impl TerminalRenderer {
                 true,
                 Some(species_color_vec),
                 self.background_color,
+                self.ascii_contrast,
             );
 
             for (i, cell) in species_buffer.cells.iter().enumerate() {
@@ -2104,6 +2179,7 @@ mod tests {
             false,
             None,
             None,
+            1.5,
         );
         assert_eq!(fb.width, 10);
         assert_eq!(fb.height, 10);
@@ -2125,6 +2201,7 @@ mod tests {
             false,
             None,
             None,
+            1.5,
         );
         assert_ne!(fb.cells[0].fg_color_rgb, fb_rev.cells[0].fg_color_rgb);
     }
@@ -2252,6 +2329,7 @@ mod tests {
             false,
             None,
             None,
+            1.5,
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -2293,6 +2371,7 @@ mod tests {
             false,
             None,
             None,
+            1.5,
         );
 
         assert_eq!(buffer.cells[0].char, '▀');
