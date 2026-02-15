@@ -830,6 +830,239 @@ pub fn map_shape_ascii_with_neighbors(
     best_char
 }
 
+// ===== Shape-Vector Braille Rendering =====
+//
+// Instead of mapping just 2 values (top/bottom) to ~9 braille patterns,
+// we interpolate 8 sampling positions across the 2×4 braille dot grid
+// from the 4 quadrant values, then independently threshold each dot.
+// This unlocks all 256 braille patterns for precise edge rendering.
+
+/// Maps spatial brightness to a braille character using 8-position sampling.
+///
+/// Interpolates the 4 quadrant values to 8 positions matching the 2×4
+/// braille dot layout, thresholds each independently, and returns the
+/// corresponding Unicode braille character (U+2800–U+28FF).
+///
+/// # Arguments
+/// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values (0.0–1.0)
+/// * `threshold` - Minimum brightness for a dot to be "on" (e.g. 0.05)
+pub fn map_shape_braille(tl: f32, tr: f32, bl: f32, br: f32, threshold: f32) -> char {
+    // Interpolate 8 positions across the 2×4 braille grid.
+    // Row weights: row0=1.0/0.0, row1=0.67/0.33, row2=0.33/0.67, row3=0.0/1.0
+    // (fraction of top vs bottom quadrant contribution)
+    let samples = [
+        tl,                    // row 0, left  (dot 1)
+        tr,                    // row 0, right (dot 4)
+        tl * 0.67 + bl * 0.33, // row 1, left  (dot 2)
+        tr * 0.67 + br * 0.33, // row 1, right (dot 5)
+        tl * 0.33 + bl * 0.67, // row 2, left  (dot 3)
+        tr * 0.33 + br * 0.67, // row 2, right (dot 6)
+        bl,                    // row 3, left  (dot 7)
+        br,                    // row 3, right (dot 8)
+    ];
+
+    // Build the 8-bit braille dot pattern.
+    // Braille encoding: dots 1-3 are bits 0-2 (left column, top to bottom),
+    // dots 4-6 are bits 3-5 (right column), dots 7-8 are bits 6-7 (bottom row).
+    let mut pattern: u8 = 0;
+    if samples[0] > threshold {
+        pattern |= 0x01;
+    } // dot 1 (row 0, left)
+    if samples[2] > threshold {
+        pattern |= 0x02;
+    } // dot 2 (row 1, left)
+    if samples[4] > threshold {
+        pattern |= 0x04;
+    } // dot 3 (row 2, left)
+    if samples[1] > threshold {
+        pattern |= 0x08;
+    } // dot 4 (row 0, right)
+    if samples[3] > threshold {
+        pattern |= 0x10;
+    } // dot 5 (row 1, right)
+    if samples[5] > threshold {
+        pattern |= 0x20;
+    } // dot 6 (row 2, right)
+    if samples[6] > threshold {
+        pattern |= 0x40;
+    } // dot 7 (row 3, left)
+    if samples[7] > threshold {
+        pattern |= 0x80;
+    } // dot 8 (row 3, right)
+
+    char::from_u32(0x2800 + pattern as u32).unwrap_or(' ')
+}
+
+// ===== Shape-Vector Block Rendering =====
+//
+// Extends HalfBlock mode from brightness-only vertical fill (▁▂▃▄▅▆▇█)
+// to shape-aware selection from ~23 Unicode block elements including
+// quadrant blocks (▖▗▘▝), half blocks (▀▄▌▐), diagonals (▚▞),
+// and three-quarter blocks (▙▛▜▟).
+//
+// Uses the same 6D shape vector matching as ASCII mode.
+
+/// Shape vector table for Unicode block element characters.
+///
+/// Each entry maps a block character to its 2×3 spatial fill pattern,
+/// computed from the geometric coverage of each character within the cell.
+const BLOCK_SHAPE_TABLE: [ShapeEntry; 23] = [
+    // === Empty ===
+    ShapeEntry {
+        ch: ' ',
+        vector: [0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
+    },
+    // === Vertical fill from bottom (lower block elements) ===
+    ShapeEntry {
+        ch: '\u{2581}',
+        vector: [0.00, 0.00, 0.00, 0.00, 0.38, 0.38],
+    }, // ▁ 1/8
+    ShapeEntry {
+        ch: '\u{2582}',
+        vector: [0.00, 0.00, 0.00, 0.00, 0.75, 0.75],
+    }, // ▂ 1/4
+    ShapeEntry {
+        ch: '\u{2583}',
+        vector: [0.00, 0.00, 0.13, 0.13, 1.00, 1.00],
+    }, // ▃ 3/8
+    ShapeEntry {
+        ch: '\u{2584}',
+        vector: [0.00, 0.00, 0.50, 0.50, 1.00, 1.00],
+    }, // ▄ 1/2
+    ShapeEntry {
+        ch: '\u{2585}',
+        vector: [0.00, 0.00, 0.89, 0.89, 1.00, 1.00],
+    }, // ▅ 5/8
+    ShapeEntry {
+        ch: '\u{2586}',
+        vector: [0.25, 0.25, 1.00, 1.00, 1.00, 1.00],
+    }, // ▆ 3/4
+    ShapeEntry {
+        ch: '\u{2587}',
+        vector: [0.62, 0.62, 1.00, 1.00, 1.00, 1.00],
+    }, // ▇ 7/8
+    ShapeEntry {
+        ch: '\u{2588}',
+        vector: [1.00, 1.00, 1.00, 1.00, 1.00, 1.00],
+    }, // █ full
+    // === Upper half + upper 1/8 ===
+    ShapeEntry {
+        ch: '\u{2580}',
+        vector: [1.00, 1.00, 0.50, 0.50, 0.00, 0.00],
+    }, // ▀ upper half
+    ShapeEntry {
+        ch: '\u{2594}',
+        vector: [0.38, 0.38, 0.00, 0.00, 0.00, 0.00],
+    }, // ▔ upper 1/8
+    // === Left/right halves ===
+    ShapeEntry {
+        ch: '\u{258C}',
+        vector: [1.00, 0.00, 1.00, 0.00, 1.00, 0.00],
+    }, // ▌ left half
+    ShapeEntry {
+        ch: '\u{2590}',
+        vector: [0.00, 1.00, 0.00, 1.00, 0.00, 1.00],
+    }, // ▐ right half
+    // === Single quadrants ===
+    ShapeEntry {
+        ch: '\u{2598}',
+        vector: [1.00, 0.00, 0.50, 0.00, 0.00, 0.00],
+    }, // ▘ TL
+    ShapeEntry {
+        ch: '\u{259D}',
+        vector: [0.00, 1.00, 0.00, 0.50, 0.00, 0.00],
+    }, // ▝ TR
+    ShapeEntry {
+        ch: '\u{2596}',
+        vector: [0.00, 0.00, 0.50, 0.00, 1.00, 0.00],
+    }, // ▖ BL
+    ShapeEntry {
+        ch: '\u{2597}',
+        vector: [0.00, 0.00, 0.00, 0.50, 0.00, 1.00],
+    }, // ▗ BR
+    // === Diagonals ===
+    ShapeEntry {
+        ch: '\u{259A}',
+        vector: [1.00, 0.00, 0.50, 0.50, 0.00, 1.00],
+    }, // ▚ TL+BR
+    ShapeEntry {
+        ch: '\u{259E}',
+        vector: [0.00, 1.00, 0.50, 0.50, 1.00, 0.00],
+    }, // ▞ TR+BL
+    // === Three-quarter blocks ===
+    ShapeEntry {
+        ch: '\u{2599}',
+        vector: [1.00, 0.00, 1.00, 0.50, 1.00, 1.00],
+    }, // ▙ TL+BL+BR
+    ShapeEntry {
+        ch: '\u{259B}',
+        vector: [1.00, 1.00, 1.00, 0.50, 1.00, 0.00],
+    }, // ▛ TL+TR+BL
+    ShapeEntry {
+        ch: '\u{259C}',
+        vector: [1.00, 1.00, 0.50, 1.00, 0.00, 1.00],
+    }, // ▜ TL+TR+BR
+    ShapeEntry {
+        ch: '\u{259F}',
+        vector: [0.00, 1.00, 0.50, 1.00, 1.00, 1.00],
+    }, // ▟ TR+BL+BR
+];
+
+/// Maps spatial brightness distribution to a block element character.
+///
+/// Uses the same 6D shape vector matching as `map_shape_ascii`, but
+/// selects from Unicode block elements (quadrant blocks, half blocks,
+/// diagonals, partial fills) for pixel-art style rendering.
+///
+/// # Arguments
+/// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values (0.0–1.0)
+/// * `contrast` - Contrast enhancement exponent (1.0 = none)
+pub fn map_shape_block(tl: f32, tr: f32, bl: f32, br: f32, contrast: f32) -> char {
+    let mut v = [tl, tr, (tl + bl) * 0.5, (tr + br) * 0.5, bl, br];
+
+    if contrast > 1.01 {
+        enhance_contrast(&mut v, contrast);
+    }
+
+    let max = v.iter().cloned().fold(0.0_f32, f32::max);
+    if max < 0.01 {
+        return ' ';
+    }
+    let inv_max = 1.0 / max;
+    for val in v.iter_mut() {
+        *val *= inv_max;
+    }
+
+    let mut best_char = ' ';
+    let mut best_dist = f32::MAX;
+
+    for entry in &BLOCK_SHAPE_TABLE {
+        if entry.ch == ' ' {
+            continue;
+        }
+
+        let cv = &entry.vector;
+        let c_max = cv.iter().cloned().fold(0.0_f32, f32::max);
+        if c_max < 1e-6 {
+            continue;
+        }
+        let c_inv = 1.0 / c_max;
+
+        let mut dist = 0.0_f32;
+        for i in 0..6 {
+            let diff = v[i] - cv[i] * c_inv;
+            dist += diff * diff;
+        }
+
+        if dist < best_dist {
+            best_dist = dist;
+            best_char = entry.ch;
+        }
+    }
+
+    best_char
+}
+
 /// Returns the number of distinct brightness levels supported by the charset.
 pub fn charset_level_count(charset: Charset) -> usize {
     match charset {
@@ -1551,6 +1784,230 @@ mod tests {
         assert!(
             (v[1] - 0.25).abs() < 1e-5,
             "Half value should become 0.25 with exponent 2"
+        );
+    }
+
+    // ===== Shape Braille Tests =====
+
+    #[test]
+    fn test_shape_braille_empty() {
+        assert_eq!(map_shape_braille(0.0, 0.0, 0.0, 0.0, 0.05), '\u{2800}');
+    }
+
+    #[test]
+    fn test_shape_braille_full() {
+        // All quadrants bright → all 8 dots on
+        assert_eq!(map_shape_braille(1.0, 1.0, 1.0, 1.0, 0.05), '\u{28FF}');
+    }
+
+    #[test]
+    fn test_shape_braille_top_only() {
+        // Only top half bright → dots 1,2,3 (left) and 4,5,6 (right) on
+        // rows 0,1 fully on (from tl/tr), row 2 partially on (0.33*tl), row 3 off
+        let ch = map_shape_braille(1.0, 1.0, 0.0, 0.0, 0.05);
+        // Dots 1,2 on left (tl=1.0, 0.67*tl=0.67), dot 3 (0.33*tl=0.33 > 0.05)
+        // Dots 4,5 on right (tr=1.0, 0.67*tr=0.67), dot 6 (0.33*tr=0.33 > 0.05)
+        // Dots 7,8 off (bl=br=0)
+        assert_eq!(ch, '\u{283F}'); // all top 6 dots on, bottom 2 off
+    }
+
+    #[test]
+    fn test_shape_braille_bottom_only() {
+        // Only bottom half bright → bottom dots on
+        let ch = map_shape_braille(0.0, 0.0, 1.0, 1.0, 0.05);
+        // Row 0: tl=0 (off), Row 1: 0.67*0+0.33*1=0.33 (on)
+        // Row 2: 0.33*0+0.67*1=0.67 (on), Row 3: bl=1 (on)
+        // Left dots: 1=off, 2=on, 3=on, 7=on → bits 1,2,6 = 0x46
+        // Right dots: 4=off, 5=on, 6=on, 8=on → bits 4,5,7 = 0xB0
+        // Pattern = 0x46 | 0xB0 = 0xF6 -- hmm let me recalculate
+        // dot 2 = bit 1, dot 3 = bit 2, dot 7 = bit 6: 0b01000110 = 0x46
+        // dot 5 = bit 4, dot 6 = bit 5, dot 8 = bit 7: 0b10110000 = 0xB0
+        // 0x46 | 0xB0 = 0xF6
+        assert_eq!(ch, char::from_u32(0x2800 + 0xF6).unwrap());
+    }
+
+    #[test]
+    fn test_shape_braille_left_only() {
+        // Only left half bright
+        let ch = map_shape_braille(1.0, 0.0, 1.0, 0.0, 0.05);
+        // Left column all on (dots 1,2,3,7 = bits 0,1,2,6 = 0x47)
+        // Right column all off
+        assert_eq!(ch, char::from_u32(0x2800 + 0x47).unwrap());
+    }
+
+    #[test]
+    fn test_shape_braille_right_only() {
+        // Only right half bright
+        let ch = map_shape_braille(0.0, 1.0, 0.0, 1.0, 0.05);
+        // Right column all on (dots 4,5,6,8 = bits 3,4,5,7 = 0xB8)
+        assert_eq!(ch, char::from_u32(0x2800 + 0xB8).unwrap());
+    }
+
+    #[test]
+    fn test_shape_braille_diagonal_tl_br() {
+        // Top-left and bottom-right bright = diagonal pattern
+        let ch = map_shape_braille(1.0, 0.0, 0.0, 1.0, 0.05);
+        // TL quadrant: tl=1.0, tr=0.0, bl=0.0, br=1.0
+        // Left col: row0=1.0(on), row1=0.67(on), row2=0.33(on), row3=0(off)
+        // Right col: row0=0(off), row1=0.33(on), row2=0.67(on), row3=1(on)
+        // Left: dots 1,2,3 on, 7 off → bits 0,1,2 = 0x07
+        // Right: dots 4 off, 5,6 on, 8 on → bits 4,5,7 = 0xB0
+        assert_eq!(ch, char::from_u32(0x2800 + 0x07 + 0xB0).unwrap());
+    }
+
+    #[test]
+    fn test_shape_braille_threshold() {
+        // Values below threshold produce no dots
+        assert_eq!(map_shape_braille(0.04, 0.04, 0.04, 0.04, 0.05), '\u{2800}');
+        // Values above threshold produce dots
+        assert_ne!(map_shape_braille(0.06, 0.06, 0.06, 0.06, 0.05), '\u{2800}');
+    }
+
+    #[test]
+    fn test_shape_braille_produces_more_patterns_than_old() {
+        // Verify that different quadrant distributions produce different braille patterns
+        let patterns: std::collections::HashSet<char> = [
+            (1.0, 0.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0, 0.0),
+            (0.0, 0.0, 1.0, 0.0),
+            (0.0, 0.0, 0.0, 1.0),
+            (1.0, 1.0, 0.0, 0.0),
+            (0.0, 0.0, 1.0, 1.0),
+            (1.0, 0.0, 1.0, 0.0),
+            (0.0, 1.0, 0.0, 1.0),
+            (1.0, 0.0, 0.0, 1.0),
+            (0.0, 1.0, 1.0, 0.0),
+            (1.0, 1.0, 1.0, 1.0),
+        ]
+        .iter()
+        .map(|(tl, tr, bl, br)| map_shape_braille(*tl, *tr, *bl, *br, 0.05))
+        .collect();
+        // Should produce at least 6 distinct patterns (old approach produced ~4)
+        assert!(
+            patterns.len() >= 6,
+            "Expected at least 6 distinct braille patterns, got {}",
+            patterns.len()
+        );
+    }
+
+    // ===== Shape Block Tests =====
+
+    #[test]
+    fn test_shape_block_empty() {
+        assert_eq!(map_shape_block(0.0, 0.0, 0.0, 0.0, 1.0), ' ');
+    }
+
+    #[test]
+    fn test_shape_block_full() {
+        // Uniform high brightness → full block
+        assert_eq!(map_shape_block(1.0, 1.0, 1.0, 1.0, 1.0), '\u{2588}');
+    }
+
+    #[test]
+    fn test_shape_block_top_half() {
+        // Top half bright → upper half block ▀
+        let ch = map_shape_block(0.9, 0.9, 0.0, 0.0, 1.0);
+        assert_eq!(ch, '\u{2580}', "Top-heavy should produce ▀, got '{ch}'");
+    }
+
+    #[test]
+    fn test_shape_block_bottom_half() {
+        // Bottom half bright → lower half block ▄
+        let ch = map_shape_block(0.0, 0.0, 0.9, 0.9, 1.0);
+        assert_eq!(ch, '\u{2584}', "Bottom-heavy should produce ▄, got '{ch}'");
+    }
+
+    #[test]
+    fn test_shape_block_left_half() {
+        // Left half bright → left half block ▌
+        let ch = map_shape_block(0.9, 0.0, 0.9, 0.0, 1.0);
+        assert_eq!(ch, '\u{258C}', "Left-heavy should produce ▌, got '{ch}'");
+    }
+
+    #[test]
+    fn test_shape_block_right_half() {
+        // Right half bright → right half block ▐
+        let ch = map_shape_block(0.0, 0.9, 0.0, 0.9, 1.0);
+        assert_eq!(ch, '\u{2590}', "Right-heavy should produce ▐, got '{ch}'");
+    }
+
+    #[test]
+    fn test_shape_block_tl_quadrant() {
+        // Only top-left bright → TL quadrant ▘
+        let ch = map_shape_block(0.9, 0.0, 0.0, 0.0, 1.0);
+        assert_eq!(ch, '\u{2598}', "Top-left only should produce ▘, got '{ch}'");
+    }
+
+    #[test]
+    fn test_shape_block_br_quadrant() {
+        // Only bottom-right bright → BR quadrant ▗
+        let ch = map_shape_block(0.0, 0.0, 0.0, 0.9, 1.0);
+        assert_eq!(
+            ch, '\u{2597}',
+            "Bottom-right only should produce ▗, got '{ch}'"
+        );
+    }
+
+    #[test]
+    fn test_shape_block_diagonal_backslash() {
+        // TL+BR diagonal → ▚
+        let ch = map_shape_block(0.9, 0.0, 0.0, 0.9, 1.0);
+        assert_eq!(
+            ch, '\u{259A}',
+            "TL+BR diagonal should produce ▚, got '{ch}'"
+        );
+    }
+
+    #[test]
+    fn test_shape_block_diagonal_forwardslash() {
+        // TR+BL diagonal → ▞
+        let ch = map_shape_block(0.0, 0.9, 0.9, 0.0, 1.0);
+        assert_eq!(
+            ch, '\u{259E}',
+            "TR+BL diagonal should produce ▞, got '{ch}'"
+        );
+    }
+
+    #[test]
+    fn test_shape_block_three_quarter() {
+        // Three quadrants bright → three-quarter block
+        let ch = map_shape_block(0.9, 0.9, 0.9, 0.0, 1.0);
+        assert_eq!(ch, '\u{259B}', "TL+TR+BL should produce ▛, got '{ch}'");
+    }
+
+    #[test]
+    fn test_shape_block_near_zero() {
+        assert_eq!(
+            map_shape_block(0.005, 0.005, 0.005, 0.005, 1.0),
+            ' ',
+            "Below threshold should be space"
+        );
+    }
+
+    #[test]
+    fn test_shape_block_produces_distinct_patterns() {
+        // Verify that different inputs produce different block characters
+        let patterns: std::collections::HashSet<char> = [
+            (0.9, 0.0, 0.0, 0.0), // TL only
+            (0.0, 0.9, 0.0, 0.0), // TR only
+            (0.0, 0.0, 0.9, 0.0), // BL only
+            (0.0, 0.0, 0.0, 0.9), // BR only
+            (0.9, 0.9, 0.0, 0.0), // top half
+            (0.0, 0.0, 0.9, 0.9), // bottom half
+            (0.9, 0.0, 0.9, 0.0), // left half
+            (0.0, 0.9, 0.0, 0.9), // right half
+            (0.9, 0.0, 0.0, 0.9), // TL+BR diagonal
+            (0.0, 0.9, 0.9, 0.0), // TR+BL diagonal
+            (0.9, 0.9, 0.9, 0.9), // full
+        ]
+        .iter()
+        .map(|(tl, tr, bl, br)| map_shape_block(*tl, *tr, *bl, *br, 1.0))
+        .collect();
+        // Should produce at least 8 distinct block characters
+        assert!(
+            patterns.len() >= 8,
+            "Expected at least 8 distinct block patterns, got {}",
+            patterns.len()
         );
     }
 }

@@ -376,24 +376,6 @@ impl FrameBuffer {
             }
         };
 
-        // Dual half-block mode: bypass normal character selection and use independent fg/bg colors
-        if matches!(charset, Charset::HalfBlockDual) {
-            let ch = charset::map_half_block_dual(top_adj, bottom_adj, THRESHOLD);
-            return self.render_dual_colored_cell(
-                ch,
-                top_adj,
-                bottom_adj,
-                palette,
-                reverse_palette,
-                invert_palette,
-                color_mode,
-                hue_shift,
-                intensity_mapping,
-                species_colors_enabled,
-                species_rgb_colors,
-            );
-        }
-
         if top_adj < THRESHOLD && bottom_adj < THRESHOLD {
             Cell {
                 char: ' ',
@@ -405,10 +387,45 @@ impl FrameBuffer {
         } else {
             let char = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
                 match charset {
-                    Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
-                    Charset::HalfBlockDual => unreachable!("handled by early return"),
+                    Charset::HalfBlock => {
+                        let idx = y * self.width + x;
+                        if idx < downsampled.len() {
+                            let dcell = &downsampled[idx];
+                            let inv = if max_trail_value > 0.0 {
+                                1.0 / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            charset::map_shape_block(
+                                dcell.top_left * inv,
+                                dcell.top_right * inv,
+                                dcell.bottom_left * inv,
+                                dcell.bottom_right * inv,
+                                self.ascii_contrast,
+                            )
+                        } else {
+                            charset::map_vertical_block(top_adj, bottom_adj)
+                        }
+                    }
                     Charset::Braille => {
-                        charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
+                        let idx = y * self.width + x;
+                        if idx < downsampled.len() {
+                            let dcell = &downsampled[idx];
+                            let inv = if max_trail_value > 0.0 {
+                                1.0 / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            charset::map_shape_braille(
+                                dcell.top_left * inv,
+                                dcell.top_right * inv,
+                                dcell.bottom_left * inv,
+                                dcell.bottom_right * inv,
+                                THRESHOLD,
+                            )
+                        } else {
+                            charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
+                        }
                     }
                     Charset::Quadrant => {
                         // Use quadrant values from downsampled cell
@@ -475,10 +492,45 @@ impl FrameBuffer {
             } else if top_adj > bottom_adj {
                 match charset {
                     Charset::Braille => {
-                        charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
+                        let idx = y * self.width + x;
+                        if idx < downsampled.len() {
+                            let dcell = &downsampled[idx];
+                            let inv = if max_trail_value > 0.0 {
+                                1.0 / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            charset::map_shape_braille(
+                                dcell.top_left * inv,
+                                dcell.top_right * inv,
+                                dcell.bottom_left * inv,
+                                dcell.bottom_right * inv,
+                                THRESHOLD,
+                            )
+                        } else {
+                            charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
+                        }
                     }
-                    Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
-                    Charset::HalfBlockDual => unreachable!("handled by early return"),
+                    Charset::HalfBlock => {
+                        let idx = y * self.width + x;
+                        if idx < downsampled.len() {
+                            let dcell = &downsampled[idx];
+                            let inv = if max_trail_value > 0.0 {
+                                1.0 / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            charset::map_shape_block(
+                                dcell.top_left * inv,
+                                dcell.top_right * inv,
+                                dcell.bottom_left * inv,
+                                dcell.bottom_right * inv,
+                                self.ascii_contrast,
+                            )
+                        } else {
+                            charset::map_vertical_block(top_adj, bottom_adj)
+                        }
+                    }
                     Charset::Shade => {
                         let avg = (top_adj + bottom_adj) / 2.0;
                         charset::map_shade(avg)
@@ -544,10 +596,45 @@ impl FrameBuffer {
             } else {
                 match charset {
                     Charset::Braille => {
-                        charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
+                        let idx = y * self.width + x;
+                        if idx < downsampled.len() {
+                            let dcell = &downsampled[idx];
+                            let inv = if max_trail_value > 0.0 {
+                                1.0 / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            charset::map_shape_braille(
+                                dcell.top_left * inv,
+                                dcell.top_right * inv,
+                                dcell.bottom_left * inv,
+                                dcell.bottom_right * inv,
+                                THRESHOLD,
+                            )
+                        } else {
+                            charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
+                        }
                     }
-                    Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
-                    Charset::HalfBlockDual => unreachable!("handled by early return"),
+                    Charset::HalfBlock => {
+                        let idx = y * self.width + x;
+                        if idx < downsampled.len() {
+                            let dcell = &downsampled[idx];
+                            let inv = if max_trail_value > 0.0 {
+                                1.0 / max_trail_value
+                            } else {
+                                0.0
+                            };
+                            charset::map_shape_block(
+                                dcell.top_left * inv,
+                                dcell.top_right * inv,
+                                dcell.bottom_left * inv,
+                                dcell.bottom_right * inv,
+                                self.ascii_contrast,
+                            )
+                        } else {
+                            charset::map_vertical_block(top_adj, bottom_adj)
+                        }
+                    }
                     Charset::Shade => {
                         let avg = (top_adj + bottom_adj) / 2.0;
                         charset::map_shade(avg)
@@ -710,153 +797,6 @@ impl FrameBuffer {
         }
     }
 
-    /// Creates a cell with independent foreground and background colors for dual half-block mode.
-    ///
-    /// Maps top brightness to fg color and bottom brightness to bg color,
-    /// giving true 2× vertical color resolution per terminal cell.
-    #[allow(clippy::too_many_arguments)]
-    fn render_dual_colored_cell(
-        &self,
-        char: char,
-        top_brightness: f32,
-        bottom_brightness: f32,
-        palette: &Palette,
-        reverse_palette: bool,
-        invert_palette: bool,
-        color_mode: ColorMode,
-        hue_shift: f32,
-        intensity_mapping: Option<&IntensityMapping>,
-        species_colors_enabled: bool,
-        species_rgb_colors: Option<&[RgbColor]>,
-    ) -> Cell {
-        const THRESHOLD: f32 = 0.05;
-
-        let top_active = top_brightness > THRESHOLD;
-        let bottom_active = bottom_brightness > THRESHOLD;
-
-        // Helper to compute color from brightness
-        let compute_color_rgb = |brightness: f32| -> RgbColor {
-            if species_colors_enabled {
-                let base_color = species_rgb_colors
-                    .and_then(|colors| colors.first())
-                    .copied()
-                    .unwrap_or(RgbColor {
-                        r: 128,
-                        g: 128,
-                        b: 128,
-                    });
-                palette::map_species_brightness_rgb(brightness, base_color, reverse_palette)
-            } else {
-                palette::map_brightness_rgb(
-                    brightness,
-                    palette.clone(),
-                    reverse_palette,
-                    invert_palette,
-                    hue_shift,
-                    intensity_mapping,
-                )
-            }
-        };
-
-        let compute_color_256 = |brightness: f32| -> u8 {
-            if species_colors_enabled {
-                let base_color = species_rgb_colors
-                    .and_then(|colors| colors.first())
-                    .copied()
-                    .unwrap_or(RgbColor {
-                        r: 128,
-                        g: 128,
-                        b: 128,
-                    });
-                palette::map_species_brightness(brightness, base_color, reverse_palette)
-            } else {
-                palette::map_brightness(
-                    brightness,
-                    palette.clone(),
-                    reverse_palette,
-                    invert_palette,
-                    intensity_mapping,
-                )
-            }
-        };
-
-        match color_mode {
-            ColorMode::TrueColor => {
-                if top_active && bottom_active {
-                    // char = '▀': fg = top color, bg = bottom color
-                    Cell {
-                        char,
-                        fg_color_256: None,
-                        bg_color_256: None,
-                        fg_color_rgb: Some(compute_color_rgb(top_brightness)),
-                        bg_color_rgb: Some(compute_color_rgb(bottom_brightness)),
-                    }
-                } else if top_active {
-                    // char = '▀': fg = top color, bg = default
-                    Cell {
-                        char,
-                        fg_color_256: None,
-                        bg_color_256: None,
-                        fg_color_rgb: Some(compute_color_rgb(top_brightness)),
-                        bg_color_rgb: self.background_color,
-                    }
-                } else if bottom_active {
-                    // char = '▄': fg = bottom color, bg = default
-                    Cell {
-                        char,
-                        fg_color_256: None,
-                        bg_color_256: None,
-                        fg_color_rgb: Some(compute_color_rgb(bottom_brightness)),
-                        bg_color_rgb: self.background_color,
-                    }
-                } else {
-                    Cell {
-                        char: ' ',
-                        fg_color_256: None,
-                        bg_color_256: None,
-                        fg_color_rgb: None,
-                        bg_color_rgb: self.background_color,
-                    }
-                }
-            }
-            _ => {
-                if top_active && bottom_active {
-                    Cell {
-                        char,
-                        fg_color_256: Some(compute_color_256(top_brightness)),
-                        bg_color_256: Some(compute_color_256(bottom_brightness)),
-                        fg_color_rgb: None,
-                        bg_color_rgb: None,
-                    }
-                } else if top_active {
-                    Cell {
-                        char,
-                        fg_color_256: Some(compute_color_256(top_brightness)),
-                        bg_color_256: self.background_color.map(palette::rgb_to_256),
-                        fg_color_rgb: None,
-                        bg_color_rgb: None,
-                    }
-                } else if bottom_active {
-                    Cell {
-                        char,
-                        fg_color_256: Some(compute_color_256(bottom_brightness)),
-                        bg_color_256: self.background_color.map(palette::rgb_to_256),
-                        fg_color_rgb: None,
-                        bg_color_rgb: None,
-                    }
-                } else {
-                    Cell {
-                        char: ' ',
-                        fg_color_256: None,
-                        bg_color_256: self.background_color.map(palette::rgb_to_256),
-                        fg_color_rgb: None,
-                        bg_color_rgb: None,
-                    }
-                }
-            }
-        }
-    }
-
     #[allow(dead_code)]
     fn ansi_color_code(color: u8, is_fg: bool) -> String {
         if is_fg {
@@ -878,8 +818,6 @@ impl FrameBuffer {
     /// Build the final ANSI string for the frame.
     ///
     /// Optimizes output by only emitting color codes when they change.
-    /// Uses efficient relative cursor movement - writes characters sequentially
-    /// and only uses newlines to move to the next row.
     pub fn build_frame_string(&self, plain_output: bool, color_mode: ColorMode) -> String {
         let mut output = String::new();
 
@@ -897,6 +835,8 @@ impl FrameBuffer {
                 let cell = self.cells[y * self.width + x];
 
                 if !plain_output {
+                    output.push_str(&format!("\x1b[{};{}H", y + 1, x + 1));
+
                     match color_mode {
                         ColorMode::TrueColor => {
                             if let Some(fg) = cell.fg_color_rgb {
@@ -944,11 +884,6 @@ impl FrameBuffer {
                 }
 
                 output.push(cell.char);
-            }
-
-            // Move to next row - only needed if not the last row
-            if y < self.height - 1 {
-                output.push_str("\r\n");
             }
         }
 
@@ -2341,16 +2276,28 @@ mod tests {
             DownsampleCell {
                 top: 5.0,
                 bottom: 0.0,
+                top_left: 5.0,
+                top_right: 5.0,
+                bottom_left: 0.0,
+                bottom_right: 0.0,
                 ..Default::default()
             },
             DownsampleCell {
                 top: 0.0,
                 bottom: 5.0,
+                top_left: 0.0,
+                top_right: 0.0,
+                bottom_left: 5.0,
+                bottom_right: 5.0,
                 ..Default::default()
             },
             DownsampleCell {
                 top: 5.0,
                 bottom: 5.0,
+                top_left: 5.0,
+                top_right: 5.0,
+                bottom_left: 5.0,
+                bottom_right: 5.0,
                 ..Default::default()
             },
         ];
