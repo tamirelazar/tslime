@@ -1013,17 +1013,59 @@ const BLOCK_SHAPE_TABLE: [ShapeEntry; 23] = [
 
 /// Maps spatial brightness distribution to a block element character.
 ///
-/// Uses threshold-based quadrant matching to select from Unicode block
-/// elements. Each quadrant is independently thresholded to produce one of
-/// 16 possible quadrant combinations (space, ▘, ▝, ▀, ▖, ▌, ▞, ▛, ▗, ▚,
-/// ▐, ▜, ▄, ▙, ▟, █). This approach tiles consistently because adjacent
-/// cells with similar brightness values produce the same threshold decisions.
+/// Uses a two-tier approach:
+/// - **Edge cells** (1–3 quadrants above threshold): threshold-based quadrant
+///   matching selects from 15 partial block patterns (▘▝▀▖▌▞▛▗▚▐▜▄▙▟).
+///   This tiles consistently because adjacent cells with similar brightness
+///   values produce the same threshold decisions.
+/// - **Interior cells** (all 4 quadrants above threshold): graduated vertical
+///   fill (▁▂▃▄▅▆▇█) based on average brightness gives smooth density
+///   transitions. This is what distinguishes HalfBlock from Quadrant mode.
 ///
 /// # Arguments
 /// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values (0.0–1.0)
 /// * `_contrast` - Unused (kept for API compatibility)
 pub fn map_shape_block(tl: f32, tr: f32, bl: f32, br: f32, _contrast: f32) -> char {
-    map_quadrant(tl, tr, bl, br, 0.05)
+    const THRESHOLD: f32 = 0.05;
+    const FILL_CHARS: [char; 9] = [
+        ' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
+        '\u{2588}',
+    ];
+
+    let tl_on = tl > THRESHOLD;
+    let tr_on = tr > THRESHOLD;
+    let bl_on = bl > THRESHOLD;
+    let br_on = br > THRESHOLD;
+
+    let index =
+        (tl_on as u32) | ((tr_on as u32) << 1) | ((bl_on as u32) << 2) | ((br_on as u32) << 3);
+
+    match index {
+        0x0 => ' ',
+        0xF => {
+            // All quadrants active: graduated vertical fill based on
+            // average brightness for smooth density transitions.
+            let avg = (tl + tr + bl + br) / 4.0;
+            let fill = (avg * 8.0).round().clamp(1.0, 8.0) as usize;
+            FILL_CHARS[fill]
+        }
+        // Partial coverage: quadrant-based selection for clean edges
+        0x1 => '\u{2598}', // ▘ TL
+        0x2 => '\u{259D}', // ▝ TR
+        0x3 => '\u{2580}', // ▀ TL+TR (upper half)
+        0x4 => '\u{2596}', // ▖ BL
+        0x5 => '\u{258C}', // ▌ TL+BL (left half)
+        0x6 => '\u{259E}', // ▞ TR+BL
+        0x7 => '\u{259B}', // ▛ TL+TR+BL
+        0x8 => '\u{2597}', // ▗ BR
+        0x9 => '\u{259A}', // ▚ TL+BR
+        0xA => '\u{2590}', // ▐ TR+BR (right half)
+        0xB => '\u{259C}', // ▜ TL+TR+BR
+        0xC => '\u{2584}', // ▄ BL+BR (lower half)
+        0xD => '\u{2599}', // ▙ TL+BL+BR
+        0xE => '\u{259F}', // ▟ TR+BL+BR
+        _ => ' ',
+    }
 }
 
 /// Returns the number of distinct brightness levels supported by the charset.
