@@ -1,354 +1,29 @@
 use crate::cli::Palette;
 use crate::render::dither::DitherMode;
-use crate::render::palette::RgbColor;
-use crate::render::theme::PanelStyle;
 use crate::simulation::config::Attractor;
 use crate::simulation::config::MouseAttractor;
 use crate::simulation::config::Obstacle;
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
-/// Characters used for drawing window borders.
-#[derive(Clone, Debug)]
-pub struct BorderChars {
-    /// Top-left corner character
-    pub top_left: char,
-    /// Top-right corner character
-    pub top_right: char,
-    /// Bottom-left corner character
-    pub bottom_left: char,
-    /// Bottom-right corner character
-    pub bottom_right: char,
-    /// Horizontal line character
-    pub horizontal: char,
-    /// Vertical line character
-    pub vertical: char,
-    /// Left intersection character (T-shape)
-    pub left_intersection: char,
-    /// Right intersection character (T-shape)
-    pub right_intersection: char,
-}
+pub use crate::render::panel::{
+    BorderConfig, ColumnLayout, Padding, PanelBuilder, PanelRow, PanelSize, TextAlignment,
+    TitleAlignment,
+};
 
-impl Default for BorderChars {
-    fn default() -> Self {
-        Self {
-            top_left: '╭',
-            top_right: '╮',
-            bottom_left: '╰',
-            bottom_right: '╯',
-            horizontal: '─',
-            vertical: '│',
-            left_intersection: '├',
-            right_intersection: '┤',
-        }
-    }
-}
-
-/// Builder for creating box-drawn overlay windows with validated dimensions.
-///
-/// This ensures all lines fit within borders and padding, preventing width overflow.
-pub struct WindowBuilder {
-    width: usize,
-    height_padding: usize,
-    padding: usize,
-    inner_width: usize,
-    border_chars: BorderChars,
-    border_color: RgbColor,
-    text_primary: RgbColor,
-    text_secondary: RgbColor,
-    bg_color: RgbColor,
-}
-
-impl WindowBuilder {
-    /// Creates a new WindowBuilder with specified dimensions and default styling.
-    ///
-    /// # Arguments
-    /// * `width` - Total width including borders
-    /// * `height_padding` - Vertical padding (empty lines at top/bottom)
-    /// * `width_padding` - Horizontal padding (spaces on left/right)
-    pub fn new(width: usize, height_padding: usize, width_padding: usize) -> Self {
-        let min_width = 2 + 2 * width_padding + 1;
-        if width < min_width {
-            panic!(
-                "Window width {} is too small (minimum: {})",
-                width, min_width
-            );
-        }
-
-        let inner_width = width - 2 - 2 * width_padding;
-
-        Self {
-            width,
-            height_padding,
-            padding: width_padding,
-            inner_width,
-            border_chars: BorderChars::default(),
-            border_color: RgbColor {
-                r: 146,
-                g: 131,
-                b: 116,
-            },
-            text_primary: RgbColor {
-                r: 235,
-                g: 219,
-                b: 178,
-            },
-            text_secondary: RgbColor {
-                r: 168,
-                g: 153,
-                b: 132,
-            },
-            bg_color: RgbColor {
-                r: 40,
-                g: 40,
-                b: 40,
-            },
-        }
-    }
-
-    /// Creates a new WindowBuilder configured with a PanelStyle.
-    ///
-    /// # Arguments
-    /// * `width` - Total width including borders
-    /// * `height_padding` - Vertical padding (empty lines at top/bottom)
-    /// * `width_padding` - Horizontal padding (spaces on left/right)
-    /// * `style` - PanelStyle for colors and border settings
-    pub fn with_style(
-        width: usize,
-        height_padding: usize,
-        width_padding: usize,
-        style: &PanelStyle,
-    ) -> Self {
-        let mut builder = Self::new(width, height_padding, width_padding);
-        builder.border_color = style.border_color;
-        builder.text_primary = style.text_primary;
-        builder.text_secondary = style.text_secondary;
-        builder.bg_color = style.bg_color;
-        builder
-    }
-
-    /// Returns the inner content width (excluding borders and padding)
-    pub fn inner_width(&self) -> usize {
-        self.inner_width
-    }
-
-    /// Returns the height padding (vertical padding)
-    pub fn height_padding(&self) -> usize {
-        self.height_padding
-    }
-
-    /// Returns the total height including vertical padding
-    pub fn total_height(&self, content_lines: usize) -> usize {
-        self.height_padding * 2 + content_lines
-    }
-
-    /// Returns a reference to the border characters
-    pub fn border_chars(&self) -> &BorderChars {
-        &self.border_chars
-    }
-
-    /// Returns the text primary color
-    pub fn text_primary(&self) -> &RgbColor {
-        &self.text_primary
-    }
-
-    /// Returns the text secondary color
-    pub fn text_secondary(&self) -> &RgbColor {
-        &self.text_secondary
-    }
-
-    /// Returns the background color
-    pub fn bg_color(&self) -> &RgbColor {
-        &self.bg_color
-    }
-
-    /// Returns the border color
-    pub fn border_color(&self) -> &RgbColor {
-        &self.border_color
-    }
-
-    /// Builds a window with content lines, validating all fit within inner width.
-    ///
-    /// # Arguments
-    /// * `title` - Optional title for top border (e.g., "HELP", "STATS")
-    /// * `content` - Content lines (must each be <= inner_width chars)
-    ///
-    /// # Returns
-    /// `Ok(Vec<String>)` with the complete window, or `Err(String)` if validation fails
-    pub fn build(&self, title: Option<&str>, content: &[String]) -> Result<Vec<String>, String> {
-        // Validate content lines
-        for (i, line) in content.iter().enumerate() {
-            let line_len = line.chars().count();
-            if line_len > self.inner_width {
-                return Err(format!(
-                    "Content line {} is too long ({} chars, max {}): '{}'",
-                    i, line_len, self.inner_width, line
-                ));
-            }
-        }
-
-        let mut lines = Vec::with_capacity(content.len() + 2 + self.height_padding * 2);
-
-        // Top vertical padding
-        for _ in 0..self.height_padding {
-            lines.push(" ".repeat(self.width));
-        }
-
-        // Top border
-        lines.push(self.build_top_border(title));
-
-        // Content lines
-        for line in content {
-            lines.push(self.build_content_line(line));
-        }
-
-        // Bottom border
-        lines.push(self.build_bottom_border());
-
-        // Bottom vertical padding
-        for _ in 0..self.height_padding {
-            lines.push(" ".repeat(self.width));
-        }
-
-        Ok(lines)
-    }
-
-    /// Builds the top border, optionally with a title.
-    fn build_top_border(&self, title: Option<&str>) -> String {
-        let bc = &self.border_chars;
-        if let Some(title) = title {
-            let title_with_spaces = format!(" {} ", title);
-            let title_len = title_with_spaces.chars().count();
-            let remaining = self.width.saturating_sub(2 + title_len);
-            let left_dashes = remaining / 2;
-            let right_dashes = remaining.saturating_sub(left_dashes);
-            let horiz = bc.horizontal.to_string();
-
-            format!(
-                "{}{}{}{}{}",
-                bc.top_left,
-                horiz.repeat(left_dashes),
-                title_with_spaces,
-                horiz.repeat(right_dashes),
-                bc.top_right
-            )
-        } else {
-            let horiz = bc.horizontal.to_string();
-            format!(
-                "{}{}{}",
-                bc.top_left,
-                horiz.repeat(self.width - 2),
-                bc.top_right
-            )
-        }
-    }
-
-    /// Builds a content line with borders and padding.
-    fn build_content_line(&self, content: &str) -> String {
-        let bc = &self.border_chars;
-        let content_len = content.chars().count();
-        let extra = self.inner_width.saturating_sub(content_len);
-        let padding_left = extra / 2;
-        let padding_right = self.inner_width.saturating_sub(padding_left);
-
-        format!(
-            "{}{}{}{}{}",
-            bc.vertical,
-            " ".repeat(self.padding + padding_left),
-            content,
-            " ".repeat(padding_right + self.padding),
-            bc.vertical
-        )
-    }
-
-    /// Builds the bottom border.
-    fn build_bottom_border(&self) -> String {
-        let bc = &self.border_chars;
-        let horiz = bc.horizontal.to_string();
-        format!(
-            "{}{}{}",
-            bc.bottom_left,
-            horiz.repeat(self.width - 2),
-            bc.bottom_right
-        )
-    }
-
-    /// Builds a separator line (for dividing sections within a window).
-    pub fn build_separator(&self) -> String {
-        let bc = &self.border_chars;
-        let horiz = bc.horizontal.to_string();
-        format!(
-            "{}{}{}",
-            bc.left_intersection,
-            horiz.repeat(self.width - 2),
-            bc.right_intersection
-        )
-    }
-
-    /// Builds a solid panel with padding.
-    ///
-    /// No border characters - flat design with extra padding around content.
-    /// Includes vertical padding at top and bottom.
-    pub fn build_solid_panel(&self, title: Option<&str>, content: &[String]) -> Vec<String> {
-        let inner_width = self.width.saturating_sub(self.padding * 2);
-        let mut lines = Vec::with_capacity(content.len() + self.height_padding * 2 + 2);
-
-        // Top vertical padding
-        for _ in 0..self.height_padding {
-            lines.push(" ".repeat(self.width));
-        }
-
-        if let Some(title) = title {
-            let title_with_spaces = format!(" {} ", title);
-            let title_len = title_with_spaces.chars().count();
-            let remaining = inner_width.saturating_sub(title_len);
-            let left_pad = remaining / 2;
-            let right_pad = remaining.saturating_sub(left_pad);
-
-            let top_line = format!(
-                "{}{}{}",
-                " ".repeat(self.padding + left_pad),
-                title_with_spaces,
-                " ".repeat(right_pad + self.padding)
-            );
-            lines.push(top_line);
-        }
-
-        for line in content {
-            let line_len = line.chars().count();
-            let extra = inner_width.saturating_sub(line_len);
-            let left_pad = extra / 2;
-            let right_pad = extra.saturating_sub(left_pad);
-
-            let content_line = format!(
-                "{}{}{}",
-                " ".repeat(self.padding + left_pad),
-                line,
-                " ".repeat(right_pad + self.padding)
-            );
-            lines.push(content_line);
-        }
-
-        // Bottom vertical padding
-        for _ in 0..self.height_padding {
-            lines.push(" ".repeat(self.width));
-        }
-
-        lines
-    }
-}
-
-// --- END WindowBuilder ---
+// --- OverlayConfig ---
 
 /// Configuration for different overlay types.
-/// Centralizes all overlay-specific parameters in one place.
+///
+/// Used primarily for color/style configuration by the renderer; panel
+/// construction now uses `PanelBuilder` directly.
 #[derive(Clone, Debug)]
 pub struct OverlayConfig {
-    /// Width of the overlay in characters
+    /// Width of the overlay in characters (total, including border and padding)
     pub width: usize,
     /// Vertical padding (empty lines at top/bottom)
     pub height_padding: usize,
-    /// Horizontal padding (spaces on left/right)
+    /// Horizontal padding (spaces on left/right inside border)
     pub width_padding: usize,
     /// Text color (ANSI 256 index)
     pub text_color_256: u8,
@@ -490,69 +165,64 @@ impl OverlayConfig {
     };
 }
 
-/// Creates a WindowBuilder from an OverlayConfig.
-impl From<&OverlayConfig> for WindowBuilder {
-    fn from(config: &OverlayConfig) -> Self {
-        WindowBuilder::new(config.width, config.height_padding, config.width_padding)
-    }
-}
-
-/// Creates a WindowBuilder from an OverlayConfig with a PanelStyle.
-impl From<(&OverlayConfig, &PanelStyle)> for WindowBuilder {
-    fn from((config, style): (&OverlayConfig, &PanelStyle)) -> Self {
-        WindowBuilder::with_style(
-            config.width,
-            config.height_padding,
-            config.width_padding,
-            style,
-        )
-    }
-}
-
 // --- END OverlayConfig ---
 
 /// Overlay showing keyboard shortcuts.
 pub struct KeyboardHintsOverlay;
 
 impl KeyboardHintsOverlay {
-    /// Width of the keyboard hints window.
+    /// Total rendered width of the keyboard hints window.
     pub const WIDTH: usize = 60;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 54; // 60 - 2(border) - 2*2(padding)
 
     /// Builds the keyboard hints overlay content.
     pub fn build_overlay() -> Vec<String> {
-        let config = OverlayConfig::KEYBOARD_HINTS;
-        let builder = WindowBuilder::new(Self::WIDTH, config.height_padding, config.width_padding);
-        let content = vec![
-            "".to_string(),
-            "SIMULATION                VISUALS".to_string(),
-            "p, Space : Pause          c, Shift+C : Palette".to_string(),
-            "r        : Restart        o          : Palette Shift".to_string(),
-            "q, Esc   : Quit           x          : Invert Palette".to_string(),
-            "+, -     : Time Scale     z          : Reverse Palette".to_string(),
-            "".to_string(),
-            "PRESETS                   POST-PROCESSING".to_string(),
-            "1-7      : Presets        d, D       : Dither Mode".to_string(),
-            "8        : Randomize      [, ]       : Dither Inten.".to_string(),
-            "0        : Defaults       b          : Auto Normalize".to_string(),
-            "                          v          : Motion Blur".to_string(),
-            "SYSTEM                    n, Shift+N : Max Brightness".to_string(),
-            "h        : Controls       m, M       : Intensity Map".to_string(),
-            "?, |     : Help/Info      f          : Fast Mode".to_string(),
-            "\\        : Stats          g          : Save PNG".to_string(),
-            "Tab      : Category       Ctrl+S     : Save Config".to_string(),
-            "                          Ctrl+L     : Load Config".to_string(),
-            "".to_string(),
-            "DETAILED CONTROLS (Use Shift to decrease values)".to_string(),
-            "A: Sensor Angle   J: Sensor Dist    T: Turn Angle".to_string(),
-            "S: Step Size      E: Decay Factor   I: Deposit Amt".to_string(),
-            "K: Diff Kernel    ;: Diff Sigma     L: Attractor Str".to_string(),
-            "W: Wind Dir       U: Terrain Type   Y: Terrain Str".to_string(),
-            ",: Mouse Mode".to_string(),
-            "".to_string(),
-            "Press any key to close this help".to_string(),
-        ];
+        use TextAlignment::Left;
 
-        builder.build_solid_panel(Some("KEYBOARD SHORTCUTS"), &content)
+        PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(1, 1, 2, 2))
+            .with_title("KEYBOARD SHORTCUTS")
+            .add_empty()
+            .add_single("SIMULATION                VISUALS", Left)
+            .add_single("p, Space : Pause          c, Shift+C : Palette", Left)
+            .add_single("r        : Restart        o          : Palette Shift", Left)
+            .add_single(
+                "q, Esc   : Quit           x          : Invert Palette",
+                Left,
+            )
+            .add_single(
+                "+, -     : Time Scale     z          : Reverse Palette",
+                Left,
+            )
+            .add_empty()
+            .add_single("PRESETS                   POST-PROCESSING", Left)
+            .add_single("1-7      : Presets        d, D       : Dither Mode", Left)
+            .add_single("8        : Randomize      [, ]       : Dither Inten.", Left)
+            .add_single(
+                "0        : Defaults       b          : Auto Normalize",
+                Left,
+            )
+            .add_single("                          v          : Motion Blur", Left)
+            .add_single(
+                "SYSTEM                    n, Shift+N : Max Brightness",
+                Left,
+            )
+            .add_single("h        : Controls       m, M       : Intensity Map", Left)
+            .add_single("?, |     : Help/Info       f          : Fast Mode", Left)
+            .add_single("\\        : Stats           g          : Save PNG", Left)
+            .add_single("Tab      : Category       Ctrl+S     : Save Config", Left)
+            .add_single("                          Ctrl+L     : Load Config", Left)
+            .add_empty()
+            .add_single("DETAILED CONTROLS (Use Shift to decrease values)", Left)
+            .add_single("A: Sensor Angle   J: Sensor Dist    T: Turn Angle", Left)
+            .add_single("S: Step Size      E: Decay Factor   I: Deposit Amt", Left)
+            .add_single("K: Diff Kernel    ;: Diff Sigma     L: Attractor Str", Left)
+            .add_single("W: Wind Dir       U: Terrain Type   Y: Terrain Str", Left)
+            .add_single(",: Mouse Mode", Left)
+            .add_empty()
+            .add_single("Press any key to close this help", Left)
+            .build()
     }
 
     /// Calculates center position for the overlay.
@@ -567,89 +237,101 @@ impl KeyboardHintsOverlay {
 pub struct PresetComparisonOverlay;
 
 impl PresetComparisonOverlay {
-    /// Width of the comparison window.
+    /// Total rendered width of the comparison window.
     pub const WIDTH: usize = 62;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 56; // 62 - 2(border) - 2*2(padding)
 
     /// Builds the comparison overlay showing modified parameters.
     pub fn build_overlay(
         current: &crate::terminal::control::RuntimeState,
         preset: Preset,
     ) -> Vec<String> {
+        use TextAlignment::Left;
+
         let defaults = crate::terminal::control::DefaultValues::from_preset(preset);
-        let preset_name = preset_name(preset);
-        let config = OverlayConfig::PRESET_COMPARISON;
-        let builder = WindowBuilder::new(Self::WIDTH, config.height_padding, config.width_padding);
+        let pname = preset_name(preset);
 
-        let mut content = vec![
-            "".to_string(),
-            "Parameter        │ Current      │ Preset Default".to_string(),
-            "──────────────────┼──────────────┼──────────────────────".to_string(),
-        ];
+        let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(1, 1, 2, 2))
+            .with_title(format!("PRESET COMPARISON: {}", pname))
+            .add_empty()
+            .add_single("Parameter        │ Current      │ Preset Default", Left)
+            .add_single(
+                "──────────────────┼──────────────┼──────────────────────",
+                Left,
+            );
 
-        let mut add_row = |name: &str, cur: String, def: String, modif: bool| {
-            let marker = if modif { "*" } else { " " };
-            content.push(format!(
-                "{} {:<16} │ {:<12} │ {:<18}",
-                marker, name, cur, def
-            ));
-        };
+        let add_row =
+            |b: PanelBuilder, name: &str, cur: String, def: String, modif: bool| -> PanelBuilder {
+                let marker = if modif { "*" } else { " " };
+                b.add_single(
+                    format!("{} {:<16} │ {:<12} │ {:<18}", marker, name, cur, def),
+                    Left,
+                )
+            };
 
-        add_row(
+        builder = add_row(
+            builder,
             "Sensor Angle",
             format!("{:.1}°", current.sensor_angle),
             format!("{:.1}°", defaults.sensor_angle),
             (current.sensor_angle - defaults.sensor_angle).abs() > 0.01,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Sensor Dist",
             format!("{:.1}px", current.sensor_distance),
             format!("{:.1}px", defaults.sensor_distance),
             (current.sensor_distance - defaults.sensor_distance).abs() > 0.01,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Turn Angle",
             format!("{:.1}°", current.turn_angle),
             format!("{:.1}°", defaults.turn_angle),
             (current.turn_angle - defaults.turn_angle).abs() > 0.01,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Step Size",
             format!("{:.1}px", current.step_size),
             format!("{:.1}px", defaults.step_size),
             (current.step_size - defaults.step_size).abs() > 0.01,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Decay Factor",
             format!("{:.3}x", current.decay_factor),
             format!("{:.3}x", defaults.decay_factor),
             (current.decay_factor - defaults.decay_factor).abs() > 0.001,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Deposit Amt",
             format!("{:.1}x", current.deposit_amount),
             format!("{:.1}x", defaults.deposit_amount),
             (current.deposit_amount - defaults.deposit_amount).abs() > 0.01,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Diff Sigma",
             format!("{:.2}x", current.diffusion_sigma),
             format!("{:.2}x", defaults.diffusion_sigma),
             (current.diffusion_sigma - defaults.diffusion_sigma).abs() > 0.01,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Max Bright",
             format!("{:.1}x", current.max_brightness),
             format!("{:.1}x", defaults.max_brightness),
             (current.max_brightness - defaults.max_brightness).abs() > 0.01,
         );
 
-        content.push("".to_string());
-        content.push("Press Enter to Apply Preset     Esc to Close".to_string());
-
-        builder.build_solid_panel(
-            Some(&format!("PRESET COMPARISON: {}", preset_name)),
-            &content,
-        )
+        builder
+            .add_empty()
+            .add_single("Press Enter to Apply Preset     Esc to Close", Left)
+            .build()
     }
 
     /// Calculates center position for the comparison overlay.
@@ -694,51 +376,54 @@ impl WarmupOverlay {
 pub struct ConfigBrowserOverlay;
 
 impl ConfigBrowserOverlay {
-    /// Width of the browser window.
+    /// Total rendered width of the browser window.
     pub const WIDTH: usize = 56;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 50; // 56 - 2(border) - 2*2(padding)
 
     /// Builds the configuration list overlay.
     pub fn build_overlay(
         configs: &[crate::config_manager::SavedConfig],
         selected_index: usize,
     ) -> Vec<String> {
-        let config = OverlayConfig::CONFIG_BROWSER;
-        let builder = WindowBuilder::new(Self::WIDTH, config.height_padding, config.width_padding);
-        let mut content = Vec::new();
+        use TextAlignment::Left;
+
+        let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(1, 1, 2, 2))
+            .with_title("SAVED CONFIGURATIONS");
 
         if configs.is_empty() {
-            content.push("".to_string());
-            content.push("No saved configurations".to_string());
-            content.push("".to_string());
-            content.push("Press Ctrl+S to save current settings".to_string());
-            content.push("".to_string());
+            builder = builder
+                .add_empty()
+                .add_single("No saved configurations", Left)
+                .add_empty()
+                .add_single("Press Ctrl+S to save current settings", Left)
+                .add_empty();
         } else {
-            content.push("".to_string());
+            builder = builder.add_empty();
             for (i, config) in configs.iter().enumerate().take(9) {
                 let num = i + 1;
                 let selected_marker = if i == selected_index { "›" } else { " " };
                 let name = &config.name;
                 let palette = &config.palette;
                 let pop = config.population / 1000;
-
                 let line = format!(
                     "{}{} {} - {} - {}k agents",
                     selected_marker, num, name, palette, pop,
                 );
-                content.push(line);
+                builder = builder.add_single(line, Left);
             }
 
             if configs.len() > 9 {
-                content.push(format!("... and {} more", configs.len() - 9));
+                builder = builder.add_single(format!("... and {} more", configs.len() - 9), Left);
             }
 
-            content.push("".to_string());
-            content.push("↑/↓: Navigate  Enter: Load  Del: Delete".to_string());
+            builder = builder
+                .add_empty()
+                .add_single("↑/↓: Navigate  Enter: Load  Del: Delete", Left);
         }
 
-        content.push("Esc: Cancel".to_string());
-
-        builder.build_solid_panel(Some("SAVED CONFIGURATIONS"), &content)
+        builder.add_single("Esc: Cancel", Left).build()
     }
 
     /// Calculates center position for the browser overlay.
@@ -753,21 +438,28 @@ impl ConfigBrowserOverlay {
 pub struct ConfigSaveOverlay;
 
 impl ConfigSaveOverlay {
+    /// Total rendered width.
+    const TOTAL_WIDTH: usize = 38;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 34; // 38 - 2(border) - 2*1(padding)
+
     /// Builds the save dialog overlay.
     pub fn build_overlay(name_input: &str) -> Vec<String> {
-        let builder = WindowBuilder::new(38, 0, 1);
-        let content = vec![
-            "".to_string(),
-            format!("Name: {:<25}", name_input),
-            "".to_string(),
-            "Enter: Save    Esc: Cancel".to_string(),
-        ];
-        builder.build_solid_panel(Some("SAVE CONFIGURATION"), &content)
+        use TextAlignment::Left;
+
+        PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(0, 0, 1, 1))
+            .with_title("SAVE CONFIGURATION")
+            .add_empty()
+            .add_single(format!("Name: {:<25}", name_input), Left)
+            .add_empty()
+            .add_single("Enter: Save    Esc: Cancel", Left)
+            .build()
     }
 
     /// Calculates center position for the save dialog.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
-        let x = (term_width.saturating_sub(40)) / 2;
+        let x = (term_width.saturating_sub(Self::TOTAL_WIDTH)) / 2;
         let y = (term_height.saturating_sub(5)) / 2;
         (x, y)
     }
@@ -875,8 +567,10 @@ impl OverlayRenderer {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
         if !attractors.is_empty() {
-            let builder = WindowBuilder::new(42, 0, 1);
-            let mut content = Vec::new();
+            // ATTRACTOR config: WIDTH=42, padding=1 → CONTENT_WIDTH=38
+            let mut builder = PanelBuilder::new(38, None)
+                .with_padding(Padding::new(0, 0, 1, 1))
+                .with_title("ATTRACTORS");
 
             for (i, attractor) in attractors.iter().enumerate() {
                 let kind = if attractor.strength > 0.0 {
@@ -885,18 +579,21 @@ impl OverlayRenderer {
                     "repel"
                 };
                 let strength = attractor.strength.abs();
-                content.push(format!(
-                    "{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x",
-                    i + 1,
-                    attractor.x as i32,
-                    attractor.y as i32,
-                    kind,
-                    strength,
-                ));
+                builder = builder.add_single(
+                    format!(
+                        "{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x",
+                        i + 1,
+                        attractor.x as i32,
+                        attractor.y as i32,
+                        kind,
+                        strength,
+                    ),
+                    TextAlignment::Left,
+                );
             }
 
             lines.push(String::new());
-            lines.extend(builder.build_solid_panel(Some("ATTRACTORS"), &content));
+            lines.extend(builder.build());
         }
 
         lines
@@ -908,35 +605,33 @@ impl OverlayRenderer {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
         if !obstacles.is_empty() {
-            let builder = WindowBuilder::new(42, 0, 1);
-            let mut content = Vec::new();
+            // OBSTACLE config: WIDTH=42, padding=1 → CONTENT_WIDTH=38
+            let mut builder = PanelBuilder::new(38, None)
+                .with_padding(Padding::new(0, 0, 1, 1))
+                .with_title("OBSTACLES");
 
             for (i, obstacle) in obstacles.iter().enumerate() {
-                match obstacle {
-                    Obstacle::Circle { x, y, radius } => {
-                        content.push(format!(
-                            "{:2}: circle ({:>4},{:>4}) r: {:>4.1}px",
-                            i + 1,
-                            *x as i32,
-                            *y as i32,
-                            radius,
-                        ));
-                    }
+                let line = match obstacle {
+                    Obstacle::Circle { x, y, radius } => format!(
+                        "{:2}: circle ({:>4},{:>4}) r: {:>4.1}px",
+                        i + 1,
+                        *x as i32,
+                        *y as i32,
+                        radius,
+                    ),
                     Obstacle::Rect {
                         x,
                         y,
                         width,
                         height,
-                    } => {
-                        content.push(format!(
-                            "{:2}: rect  ({:>4},{:>4}) {:>4.1}x{:>4.1}px",
-                            i + 1,
-                            *x as i32,
-                            *y as i32,
-                            width,
-                            height,
-                        ));
-                    }
+                    } => format!(
+                        "{:2}: rect  ({:>4},{:>4}) {:>4.1}x{:>4.1}px",
+                        i + 1,
+                        *x as i32,
+                        *y as i32,
+                        width,
+                        height,
+                    ),
                     Obstacle::Image {
                         path,
                         x: _,
@@ -950,19 +645,20 @@ impl OverlayRenderer {
                             .file_name()
                             .and_then(|n| n.to_str())
                             .unwrap_or(path);
-                        content.push(format!(
+                        format!(
                             "{:2}: image {:>15} {:>3}x{:>3}px",
                             i + 1,
                             &filename[..filename.len().min(15)],
                             width,
                             height,
-                        ));
+                        )
                     }
-                }
+                };
+                builder = builder.add_single(line, TextAlignment::Left);
             }
 
             lines.push(String::new());
-            lines.extend(builder.build_solid_panel(Some("OBSTACLES"), &content));
+            lines.extend(builder.build());
         }
 
         lines
@@ -979,8 +675,10 @@ impl OverlayRenderer {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
         if !mouse_attractors.is_empty() {
-            let builder = WindowBuilder::new(46, 0, 1);
-            let mut content = Vec::new();
+            // MOUSE_ATTRACTOR config: WIDTH=46, padding=1 → CONTENT_WIDTH=42
+            let mut builder = PanelBuilder::new(42, None)
+                .with_padding(Padding::new(0, 0, 1, 1))
+                .with_title("MOUSE ATTRACTORS");
 
             for (i, ma) in mouse_attractors.iter().enumerate() {
                 let kind = if ma.strength > 0.0 {
@@ -994,19 +692,22 @@ impl OverlayRenderer {
                 } else {
                     "expired".to_string()
                 };
-                content.push(format!(
-                    "{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x {:>7}",
-                    i + 1,
-                    ma.x as i32,
-                    ma.y as i32,
-                    kind,
-                    ma.strength.abs(),
-                    remaining_str,
-                ));
+                builder = builder.add_single(
+                    format!(
+                        "{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x {:>7}",
+                        i + 1,
+                        ma.x as i32,
+                        ma.y as i32,
+                        kind,
+                        ma.strength.abs(),
+                        remaining_str,
+                    ),
+                    TextAlignment::Left,
+                );
             }
 
             lines.push(String::new());
-            lines.extend(builder.build_solid_panel(Some("MOUSE ATTRACTORS"), &content));
+            lines.extend(builder.build());
         }
 
         lines
@@ -1024,7 +725,7 @@ impl OverlayRenderer {
             return true;
         }
         let target_len = attractor_lines[0].chars().count();
-        // Skip potential title/border differences if needed, but WindowBuilder should be consistent
+        // Skip potential title/border differences if needed, but PanelBuilder should be consistent
         attractor_lines
             .iter()
             .all(|line| line.chars().count() == target_len)
@@ -1129,26 +830,13 @@ mod tests {
     }
 
     #[test]
-    fn test_window_builder_content_too_long() {
-        let builder = WindowBuilder::new(20, 0, 1);
-        let content = vec!["this line is definitely too long for the builder".to_string()];
-        let result = builder.build(None, &content);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_window_builder_too_small() {
-        let _ = WindowBuilder::new(2, 0, 1);
-    }
-
-    #[test]
-    fn test_window_builder_separator() {
-        let builder = WindowBuilder::new(10, 0, 1);
-        let sep = builder.build_separator();
-        assert!(sep.starts_with('├'));
-        assert!(sep.ends_with('┤'));
-        assert_eq!(sep.chars().count(), 10);
+    fn test_panel_builder_separator() {
+        let panel = PanelBuilder::new(8, None).with_padding(Padding::new(0, 0, 1, 1));
+        let sep = panel.render_separator_line();
+        assert!(sep.starts_with('▌'));
+        assert!(sep.ends_with('▐'));
+        // total_width = 1 + 1 + 8 + 1 + 1 = 12
+        assert_eq!(sep.chars().count(), 12);
     }
 
     #[test]
@@ -1259,8 +947,10 @@ fn build_sparkline(history: &std::collections::VecDeque<f32>, min: f32, max: f32
 pub struct StatsOverlay;
 
 impl StatsOverlay {
-    /// Width of the stats window.
+    /// Total rendered width of the stats window.
     pub const WIDTH: usize = 32;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 26; // 32 - 2(border) - 2*2(padding)
 
     #[allow(clippy::too_many_arguments)]
     /// Builds the stats overlay content.
@@ -1286,6 +976,8 @@ impl StatsOverlay {
         entropy_history: &std::collections::VecDeque<f32>,
         density_history: &std::collections::VecDeque<f32>,
     ) -> Vec<String> {
+        use TextAlignment::Left;
+
         let trail_percent = if trail_capacity > 0.0 {
             (trail_sum / trail_capacity * 100.0).min(99.9)
         } else {
@@ -1299,43 +991,30 @@ impl StatsOverlay {
         let entropy_spark = build_sparkline(entropy_history, 0.0, 8.0);
         let density_spark = build_sparkline(density_history, 0.0, 1.0);
 
-        let config = OverlayConfig::STATS;
-        let builder = WindowBuilder::new(Self::WIDTH, config.height_padding, config.width_padding);
-        let content = vec![
-            format!("Agents:   {:>15}", agent_count),
-            format!("Trail:    {:>14.1}%", trail_percent),
-            format!("{:<26}", density_spark),
-            format!("Trail Max: {:>13.2}x", trail_max),
-            format!("Entropy:   {:>15.2}", entropy),
-            format!("{:<26}", entropy_spark),
-            format!("FPS: {:>11.0} ({:>4.0})", fps, avg_fps),
-            format!("{:<26}", fps_spark),
-            format!("Frames:    {:>15}", frame_count),
-            format!("Time:      {:>15}", elapsed_str),
-        ];
-
-        let mut lines = builder.build_solid_panel(Some("STATS"), &content);
-
-        if lines.len() > 1 {
-            lines.pop();
-            lines.push(builder.build_separator());
-
-            let system_content = vec![
-                format!("Grid:     {:>15}", grid_str),
-                format!("Attractor: {:>13}", attractor_count),
-                format!("Obstacle:  {:>13}", obstacle_count),
-                format!("Species:   {:>14}", species_count),
-                format!("Memory:    {:>11.1} MB", memory_mb),
-                format!("CPU:       {:>14.0}%", cpu_percent),
-            ];
-
-            for line in system_content {
-                lines.push(builder.build_content_line(&line));
-            }
-            lines.push(builder.build_bottom_border());
-        }
-
-        lines
+        PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(1, 1, 2, 2))
+            .with_title("STATS")
+            // Simulation stats
+            .add_single(format!("Agents:   {:>15}", agent_count), Left)
+            .add_single(format!("Trail:    {:>14.1}%", trail_percent), Left)
+            .add_single(format!("{:<26}", density_spark), Left)
+            .add_single(format!("Trail Max: {:>13.2}x", trail_max), Left)
+            .add_single(format!("Entropy:   {:>15.2}", entropy), Left)
+            .add_single(format!("{:<26}", entropy_spark), Left)
+            .add_single(format!("FPS: {:>11.0} ({:>4.0})", fps, avg_fps), Left)
+            .add_single(format!("{:<26}", fps_spark), Left)
+            .add_single(format!("Frames:    {:>15}", frame_count), Left)
+            .add_single(format!("Time:      {:>15}", elapsed_str), Left)
+            // Section separator
+            .add_separator()
+            // System stats
+            .add_single(format!("Grid:     {:>15}", grid_str), Left)
+            .add_single(format!("Attractor: {:>13}", attractor_count), Left)
+            .add_single(format!("Obstacle:  {:>13}", obstacle_count), Left)
+            .add_single(format!("Species:   {:>14}", species_count), Left)
+            .add_single(format!("Memory:    {:>11.1} MB", memory_mb), Left)
+            .add_single(format!("CPU:       {:>14.0}%", cpu_percent), Left)
+            .build()
     }
 
     /// Calculates the X position for the stats overlay (top-right).
@@ -1391,8 +1070,10 @@ impl StatsOverlay {
 pub struct InfoOverlay;
 
 impl InfoOverlay {
-    /// Width of the info window.
+    /// Total rendered width of the info window.
     pub const WIDTH: usize = 28;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 24; // 28 - 2(border) - 2*1(padding)
 
     #[allow(clippy::too_many_arguments)]
     /// Builds the info overlay content.
@@ -1413,20 +1094,21 @@ impl InfoOverlay {
         _auto_reset_threshold: f32,
         _auto_reset_duration: usize,
     ) -> Vec<String> {
+        use TextAlignment::Left;
+
         let resolution_str = format!("{}x{}", sim_width, sim_height);
         let term_str = format!("{}x{}", term_width, term_height);
         let simd_str = if simd_enabled { "On" } else { "Off" };
 
-        let config = OverlayConfig::INFO;
-        let builder = WindowBuilder::new(Self::WIDTH, config.height_padding, config.width_padding);
-        let mut content = vec![
-            format!("Res:       {:>13}", resolution_str),
-            format!("Term:      {:>13}", term_str),
-            format!("Init:      {:>13}", init_mode),
-            format!("Color:     {:>13}", color_mode),
-            format!("Char:      {:>13}", charset),
-            format!("SIMD:      {:>13}", simd_str),
-        ];
+        let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(1, 1, 1, 1))
+            .with_title("INFO")
+            .add_single(format!("Res:       {:>13}", resolution_str), Left)
+            .add_single(format!("Term:      {:>13}", term_str), Left)
+            .add_single(format!("Init:      {:>13}", init_mode), Left)
+            .add_single(format!("Color:     {:>13}", color_mode), Left)
+            .add_single(format!("Char:      {:>13}", charset), Left)
+            .add_single(format!("SIMD:      {:>13}", simd_str), Left);
 
         if let Some(food) = food_source {
             let food_name = std::path::Path::new(food)
@@ -1438,18 +1120,18 @@ impl InfoOverlay {
             } else {
                 food_name
             };
-            content.push(format!("Food:      {:>13}", truncated));
+            builder = builder.add_single(format!("Food:      {:>13}", truncated), Left);
         }
 
         if warmup_frames > 0 {
-            content.push(format!("Warm:      {:>6} frames", warmup_frames));
+            builder = builder.add_single(format!("Warm:      {:>6} frames", warmup_frames), Left);
         }
 
         if auto_reset {
-            content.push(format!("Auto:      {:>13}", "On"));
+            builder = builder.add_single(format!("Auto:      {:>13}", "On"), Left);
         }
 
-        builder.build_solid_panel(Some("INFO"), &content)
+        builder.build()
     }
 
     /// Calculates X position for the info overlay.
@@ -1488,8 +1170,16 @@ mod stats_tests {
         );
 
         assert!(!lines.is_empty());
-        assert!(lines[0].starts_with('╭'));
-        assert!(lines.last().unwrap().starts_with('╰'));
+        // Solid block borders
+        assert!(
+            lines[0].starts_with('▀'),
+            "Top border should be solid block ▀, got: {}",
+            lines[0]
+        );
+        assert!(
+            lines.last().unwrap().starts_with('▄'),
+            "Bottom border should be solid block ▄"
+        );
 
         // All lines should be exactly WIDTH chars
         for (i, line) in lines.iter().enumerate() {
@@ -1585,8 +1275,16 @@ mod info_tests {
         );
 
         assert!(!lines.is_empty());
-        assert!(lines[0].starts_with('╭'));
-        assert!(lines.last().unwrap().starts_with('╰'));
+        // Solid block borders
+        assert!(
+            lines[0].starts_with('▀'),
+            "Top border should be ▀, got: {}",
+            lines[0]
+        );
+        assert!(
+            lines.last().unwrap().starts_with('▄'),
+            "Bottom border should be ▄"
+        );
 
         // All lines should be exactly WIDTH chars
         for (i, line) in lines.iter().enumerate() {
@@ -1787,9 +1485,18 @@ mod status_line_tests {
     fn test_keyboard_hints_overlay_format() {
         let hints_lines = KeyboardHintsOverlay::build_overlay();
 
+        // Solid block borders
         for line in &hints_lines {
-            assert!(line.starts_with('│') || line.starts_with('╭') || line.starts_with('╰'));
-            assert!(line.ends_with('│') || line.ends_with('╮') || line.ends_with('╯'));
+            assert!(
+                line.starts_with('▀') || line.starts_with('█') || line.starts_with('▄'),
+                "Line should start with solid block char, got: {}",
+                line
+            );
+            assert!(
+                line.ends_with('▀') || line.ends_with('█') || line.ends_with('▄'),
+                "Line should end with solid block char, got: {}",
+                line
+            );
         }
 
         // All lines should be KeyboardHintsOverlay::WIDTH chars wide

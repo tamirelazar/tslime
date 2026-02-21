@@ -1,5 +1,4 @@
-use crate::render::overlay::OverlayConfig;
-use crate::render::overlay::WindowBuilder;
+use crate::render::panel::{Padding, PanelBuilder, TextAlignment};
 use crate::simulation::config::DiffusionKernel;
 use crate::simulation::config::TerrainType;
 use crate::terminal::control::DefaultValues;
@@ -16,8 +15,10 @@ pub struct ControlsOverlay;
 pub type OptionsOverlay = ControlsOverlay;
 
 impl ControlsOverlay {
-    /// Width of the controls overlay window.
+    /// Total rendered width of the controls overlay window.
     pub const WIDTH: usize = 50;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 44; // 50 - 2(border) - 2*2(padding)
     /// Total number of control categories.
     pub const TOTAL_CATEGORIES: usize = 6;
 
@@ -72,18 +73,11 @@ impl ControlsOverlay {
         defaults: DefaultValues,
         population: usize,
     ) -> Vec<String> {
-        let config = OverlayConfig::CONTROLS;
-        let builder = WindowBuilder::new(Self::WIDTH, config.height_padding, config.width_padding);
+        use TextAlignment::Left;
+
         let cat_name = Self::category_name(category_idx);
         let cat_num = category_idx + 1;
-
-        let mut content = Vec::new();
-        content.push(format!(
-            "{:^width$}",
-            cat_name,
-            width = builder.inner_width()
-        ));
-        content.push("".to_string());
+        let title = format!("CONTROLS [{}/{}]", cat_num, Self::TOTAL_CATEGORIES);
 
         let mod_marker = |current: f32, default: f32, eps: f32| {
             if (current - default).abs() > eps {
@@ -102,162 +96,232 @@ impl ControlsOverlay {
             }
         };
 
-        match category_idx {
-            0 => {
-                content.push(format!(
-                    "{} A/a  Sensor Angle  {:>5.1}° [5-90°]",
-                    mod_marker(sensor_angle, defaults.sensor_angle, 0.01),
-                    sensor_angle
-                ));
-                content.push(format!(
-                    "{} J/j  Sensor Dist   {:>5.1}px [1-50]",
-                    mod_marker(sensor_distance, defaults.sensor_distance, 0.01),
-                    sensor_distance
-                ));
-                content.push(format!(
-                    "{} T/t  Turn Angle    {:>5.1}° [5-90°]",
-                    mod_marker(turn_angle, defaults.turn_angle, 0.01),
-                    turn_angle
-                ));
-                content.push(format!(
-                    "{} S/s  Step Size     {:>5.1}px [0.5-5.0]",
-                    mod_marker(step_size, defaults.step_size, 0.01),
-                    step_size
-                ));
-                content.push(format!(
-                    "{} E/e  Decay Factor  {:>5.3}x [0.5-0.99]",
-                    mod_marker(decay_factor, defaults.decay_factor, 0.001),
-                    decay_factor
-                ));
-                content.push(format!(
-                    "{} I/i  Deposit Amt   {:>5.1}x [1-20]",
-                    mod_marker(deposit_amount, defaults.deposit_amount, 0.01),
-                    deposit_amount
-                ));
-                content.push(format!(
-                    "   +/-  Time Scale    {:>5.1}x [0.5-4x]",
-                    time_scale
-                ));
-            }
+        let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(1, 1, 2, 2))
+            .with_title(title)
+            .add_single(
+                format!("{:^width$}", cat_name, width = Self::CONTENT_WIDTH),
+                Left,
+            )
+            .add_empty();
+
+        builder = match category_idx {
+            0 => builder
+                .add_single(
+                    format!(
+                        "{} A/a  Sensor Angle  {:>5.1}° [5-90°]",
+                        mod_marker(sensor_angle, defaults.sensor_angle, 0.01),
+                        sensor_angle
+                    ),
+                    Left,
+                )
+                .add_single(
+                    format!(
+                        "{} J/j  Sensor Dist   {:>5.1}px [1-50]",
+                        mod_marker(sensor_distance, defaults.sensor_distance, 0.01),
+                        sensor_distance
+                    ),
+                    Left,
+                )
+                .add_single(
+                    format!(
+                        "{} T/t  Turn Angle    {:>5.1}° [5-90°]",
+                        mod_marker(turn_angle, defaults.turn_angle, 0.01),
+                        turn_angle
+                    ),
+                    Left,
+                )
+                .add_single(
+                    format!(
+                        "{} S/s  Step Size     {:>5.1}px [0.5-5.0]",
+                        mod_marker(step_size, defaults.step_size, 0.01),
+                        step_size
+                    ),
+                    Left,
+                )
+                .add_single(
+                    format!(
+                        "{} E/e  Decay Factor  {:>5.3}x [0.5-0.99]",
+                        mod_marker(decay_factor, defaults.decay_factor, 0.001),
+                        decay_factor
+                    ),
+                    Left,
+                )
+                .add_single(
+                    format!(
+                        "{} I/i  Deposit Amt   {:>5.1}x [1-20]",
+                        mod_marker(deposit_amount, defaults.deposit_amount, 0.01),
+                        deposit_amount
+                    ),
+                    Left,
+                )
+                .add_single(
+                    format!("   +/-  Time Scale    {:>5.1}x [0.5-4x]", time_scale),
+                    Left,
+                ),
             1 => {
-                content.push(format!(
-                    "{} K    Diffusion         {:>14}",
-                    mod_marker_enum(&diffusion_kernel, &defaults.diffusion_kernel),
-                    match diffusion_kernel {
-                        DiffusionKernel::Mean3x3 => "Mean3x3",
-                        DiffusionKernel::Gaussian => "Gaussian",
-                    }
-                ));
+                let kernel_name = match diffusion_kernel {
+                    DiffusionKernel::Mean3x3 => "Mean3x3",
+                    DiffusionKernel::Gaussian => "Gaussian",
+                };
+                let mut b = builder.add_single(
+                    format!(
+                        "{} K    Diffusion         {:>14}",
+                        mod_marker_enum(&diffusion_kernel, &defaults.diffusion_kernel),
+                        kernel_name
+                    ),
+                    Left,
+                );
                 if matches!(diffusion_kernel, DiffusionKernel::Gaussian) {
-                    content.push(format!(
-                        "{} ;/:  Diff Sigma  {:>5.2}x [0.5-2.0]",
-                        mod_marker(diffusion_sigma, defaults.diffusion_sigma, 0.01),
-                        diffusion_sigma
-                    ));
+                    b = b.add_single(
+                        format!(
+                            "{} ;/:  Diff Sigma  {:>5.2}x [0.5-2.0]",
+                            mod_marker(diffusion_sigma, defaults.diffusion_sigma, 0.01),
+                            diffusion_sigma
+                        ),
+                        Left,
+                    );
                 }
-                content.push(format!(
-                    "{} W    Wind              {:>14}",
-                    mod_marker_enum(&wind_direction, &defaults.wind_direction),
-                    wind_direction.name()
-                ));
-                content.push(format!(
-                    "{} U    Terrain Type      {:>14}",
-                    mod_marker_enum(&terrain_type, &defaults.terrain_type),
-                    match terrain_type {
-                        TerrainType::None => "None",
-                        TerrainType::Smooth => "Smooth",
-                        TerrainType::Turbulent => "Turbulent",
-                        TerrainType::Mixed => "Mixed",
-                    }
-                ));
-                content.push(format!(
-                    "{} Y/y  Terrain Str   {:>5.1}x [0.1-5.0]",
-                    mod_marker(terrain_strength, defaults.terrain_strength, 0.01),
-                    terrain_strength
-                ));
-                content.push(format!(
-                    "{} L/l  Attractor Str {:>5.1}x [0.1-10]",
-                    mod_marker(attractor_strength, defaults.attractor_strength, 0.01),
-                    attractor_strength
-                ));
-                content.push(format!("   ,    Mouse Mode        {:>14}", mouse_mode));
+                let terrain_name = match terrain_type {
+                    TerrainType::None => "None",
+                    TerrainType::Smooth => "Smooth",
+                    TerrainType::Turbulent => "Turbulent",
+                    TerrainType::Mixed => "Mixed",
+                };
+                b = b
+                    .add_single(
+                        format!(
+                            "{} W    Wind              {:>14}",
+                            mod_marker_enum(&wind_direction, &defaults.wind_direction),
+                            wind_direction.name()
+                        ),
+                        Left,
+                    )
+                    .add_single(
+                        format!(
+                            "{} U    Terrain Type      {:>14}",
+                            mod_marker_enum(&terrain_type, &defaults.terrain_type),
+                            terrain_name
+                        ),
+                        Left,
+                    )
+                    .add_single(
+                        format!(
+                            "{} Y/y  Terrain Str   {:>5.1}x [0.1-5.0]",
+                            mod_marker(terrain_strength, defaults.terrain_strength, 0.01),
+                            terrain_strength
+                        ),
+                        Left,
+                    )
+                    .add_single(
+                        format!(
+                            "{} L/l  Attractor Str {:>5.1}x [0.1-10]",
+                            mod_marker(attractor_strength, defaults.attractor_strength, 0.01),
+                            attractor_strength
+                        ),
+                        Left,
+                    )
+                    .add_single(
+                        format!("   ,    Mouse Mode        {:>14}", mouse_mode),
+                        Left,
+                    );
                 if mouse_mode != "Disabled" {
-                    content.push(format!(
-                        "   ─    Mouse Timeout {:>4.1}s (CLI-only)",
-                        mouse_timeout
-                    ));
+                    b = b.add_single(
+                        format!("   ─    Mouse Timeout {:>4.1}s (CLI-only)", mouse_timeout),
+                        Left,
+                    );
                 }
+                b
             }
             2 => {
-                content.push(format!("   c/C  Palette           {:>14}", palette_name));
-                content.push(format!(
-                    "   O    Palette Shift     {:>14}",
-                    match palette_shift_speed {
-                        PaletteShiftSpeed::Off => "Off",
-                        PaletteShiftSpeed::Slow => "Slow",
-                        PaletteShiftSpeed::Medium => "Medium",
-                        PaletteShiftSpeed::Fast => "Fast",
-                    }
-                ));
-                content.push(format!(
-                    "   X    Invert Palette    {:>14}",
-                    if invert_palette { "On" } else { "Off" }
-                ));
-                content.push(format!(
-                    "   Z    Reverse Palette   {:>14}",
-                    if reverse_palette { "On" } else { "Off" }
-                ));
+                let shift_name = match palette_shift_speed {
+                    PaletteShiftSpeed::Off => "Off",
+                    PaletteShiftSpeed::Slow => "Slow",
+                    PaletteShiftSpeed::Medium => "Medium",
+                    PaletteShiftSpeed::Fast => "Fast",
+                };
+                builder
+                    .add_single(
+                        format!("   c/C  Palette           {:>14}", palette_name),
+                        Left,
+                    )
+                    .add_single(
+                        format!("   O    Palette Shift     {:>14}", shift_name),
+                        Left,
+                    )
+                    .add_single(
+                        format!(
+                            "   X    Invert Palette    {:>14}",
+                            if invert_palette { "On" } else { "Off" }
+                        ),
+                        Left,
+                    )
+                    .add_single(
+                        format!(
+                            "   Z    Reverse Palette   {:>14}",
+                            if reverse_palette { "On" } else { "Off" }
+                        ),
+                        Left,
+                    )
             }
-            3 => {
-                content.push(format!(
-                    "   d/D  Dither Mode       {:>14}",
-                    dither_mode_name
-                ));
-                content.push(format!(
-                    "{} B    Auto Normalize    {:>14}",
-                    if auto_normalize != defaults.auto_normalize {
-                        "*"
-                    } else {
-                        " "
-                    },
-                    if auto_normalize { "On" } else { "Off" }
-                ));
-                content.push(format!(
-                    "{} V    Motion Blur    {:>1} frames [0,3,5,7]",
-                    mod_marker_int(motion_blur_frames, defaults.motion_blur_frames),
-                    motion_blur_frames
-                ));
-                content.push(format!(
-                    "{} N/n  Max Bright    {:>5.1}x [1-100]",
-                    mod_marker(max_brightness, defaults.max_brightness, 0.01),
-                    max_brightness
-                ));
-            }
-            4 => {
-                content.push(format!(
-                    "   F    Fast Mode         {:>14}",
-                    if fast_mode_enabled { "On" } else { "Off" }
-                ));
-                content.push(format!(
-                    "   ─    Population      {:>3}k (fixed)",
-                    population / 1000
-                ));
-            }
-            5 => {
-                content.push("   G    Save Frame             (PNG)".to_string());
-                content.push("   0    Reset to Defaults".to_string());
-                content.push("   8    Randomize Parameters".to_string());
-            }
-            _ => {}
-        }
+            3 => builder
+                .add_single(
+                    format!("   d/D  Dither Mode       {:>14}", dither_mode_name),
+                    Left,
+                )
+                .add_single(
+                    format!(
+                        "{} B    Auto Normalize    {:>14}",
+                        if auto_normalize != defaults.auto_normalize {
+                            "*"
+                        } else {
+                            " "
+                        },
+                        if auto_normalize { "On" } else { "Off" }
+                    ),
+                    Left,
+                )
+                .add_single(
+                    format!(
+                        "{} V    Motion Blur    {:>1} frames [0,3,5,7]",
+                        mod_marker_int(motion_blur_frames, defaults.motion_blur_frames),
+                        motion_blur_frames
+                    ),
+                    Left,
+                )
+                .add_single(
+                    format!(
+                        "{} N/n  Max Bright    {:>5.1}x [1-100]",
+                        mod_marker(max_brightness, defaults.max_brightness, 0.01),
+                        max_brightness
+                    ),
+                    Left,
+                ),
+            4 => builder
+                .add_single(
+                    format!(
+                        "   F    Fast Mode         {:>14}",
+                        if fast_mode_enabled { "On" } else { "Off" }
+                    ),
+                    Left,
+                )
+                .add_single(
+                    format!("   ─    Population      {:>3}k (fixed)", population / 1000),
+                    Left,
+                ),
+            5 => builder
+                .add_single("   G    Save Frame             (PNG)".to_string(), Left)
+                .add_single("   0    Reset to Defaults".to_string(), Left)
+                .add_single("   8    Randomize Parameters".to_string(), Left),
+            _ => builder,
+        };
 
-        content.push("".to_string());
-        content.push("   * Modified from default value".to_string());
-        content.push("   ─ Startup-only parameter (CLI)".to_string());
-        content.push("   Tab: Next         Esc: Close".to_string());
-
-        let title = format!("CONTROLS [{}/{}]", cat_num, Self::TOTAL_CATEGORIES);
-        builder.build_solid_panel(Some(&title), &content)
+        builder
+            .add_empty()
+            .add_single("   * Modified from default value".to_string(), Left)
+            .add_single("   ─ Startup-only parameter (CLI)".to_string(), Left)
+            .add_single("   Tab: Next         Esc: Close".to_string(), Left)
+            .build()
     }
 }
 
@@ -318,15 +382,15 @@ mod tests {
             50000,
         );
 
-        assert!(lines[0].starts_with('╭'), "First line should start with ╭");
-        assert!(lines[0].ends_with('╮'), "First line should end with ╮");
+        assert!(lines[0].starts_with('▀'), "First line should start with ▀");
+        assert!(lines[0].ends_with('▀'), "First line should end with ▀");
         assert!(
-            lines.last().unwrap().starts_with('╰'),
-            "Last line should start with ╰"
+            lines.last().unwrap().starts_with('▄'),
+            "Last line should start with ▄"
         );
         assert!(
-            lines.last().unwrap().ends_with('╯'),
-            "Last line should end with ╯"
+            lines.last().unwrap().ends_with('▄'),
+            "Last line should end with ▄"
         );
     }
 
@@ -367,20 +431,20 @@ mod tests {
             // All lines should be exactly WIDTH chars wide
             for (line_num, line) in lines.iter().enumerate() {
                 assert!(
-                    line.starts_with('╭')
-                        || line.starts_with('│')
-                        || line.starts_with('╰')
-                        || line.starts_with('├'),
-                    "Category {}, line {}: All lines should start with border character",
+                    line.starts_with('▀')
+                        || line.starts_with('█')
+                        || line.starts_with('▄')
+                        || line.starts_with('▌'),
+                    "Category {}, line {}: All lines should start with solid block char",
                     category_idx,
                     line_num
                 );
                 assert!(
-                    line.ends_with('╮')
-                        || line.ends_with('│')
-                        || line.ends_with('╯')
-                        || line.ends_with('┤'),
-                    "Category {}, line {}: All lines should end with border character",
+                    line.ends_with('▀')
+                        || line.ends_with('█')
+                        || line.ends_with('▄')
+                        || line.ends_with('▐'),
+                    "Category {}, line {}: All lines should end with solid block char",
                     category_idx,
                     line_num
                 );
@@ -430,7 +494,7 @@ mod tests {
             50000,
         );
 
-        // First line should contain [3/6] indicator
+        // First line (top border) should contain [3/6] indicator
         assert!(
             lines[0].contains("[3/6]"),
             "Header should contain category indicator [3/6], got: {}",
@@ -706,23 +770,20 @@ fn test_options_overlay_format() {
             50000,
         );
 
+        // Solid block borders
         assert!(
-            overlay.iter().any(|line| line.starts_with("╭─")),
-            "Should have top border"
+            overlay.iter().any(|line| line.starts_with('▀')),
+            "Should have solid block top border"
         );
         assert!(
-            overlay.iter().any(|line| line.contains("─")),
-            "Should have horizontal border"
-        );
-        assert!(
-            overlay.iter().any(|line| line.contains("│")),
-            "Should have vertical border"
+            overlay.iter().any(|line| line.contains('█')),
+            "Should have solid block vertical border"
         );
         assert!(
             overlay
                 .iter()
-                .any(|line| line.ends_with("╯") || line.ends_with("│")),
-            "Should have bottom corners"
+                .any(|line| line.ends_with('▄') || line.ends_with('█')),
+            "Should have bottom border or vertical chars"
         );
 
         for (i, line) in overlay.iter().enumerate() {
