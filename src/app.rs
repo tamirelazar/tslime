@@ -1774,6 +1774,9 @@ pub fn run_simulation(
             }
         }
 
+        // Update focused overlay state before rendering
+        runtime_state.update_focused_overlay();
+
         // Entropy-based auto-reset
         if args.auto_reset && !runtime_state.is_paused {
             let should_reset = runtime_state.track_entropy(
@@ -1834,6 +1837,8 @@ pub fn run_simulation(
                 preset_comparison_lines
                     .as_ref()
                     .map(|v| (v.as_slice(), preset_comparison_x, preset_comparison_y)),
+                Some(&runtime_state.panel_style),
+                runtime_state.focused_overlay,
             )?;
         } else {
             renderer.render_with_overlay::<String, String>(
@@ -1860,6 +1865,8 @@ pub fn run_simulation(
                 preset_comparison_lines
                     .as_ref()
                     .map(|v| (v.as_slice(), preset_comparison_x, preset_comparison_y)),
+                Some(&runtime_state.panel_style),
+                runtime_state.focused_overlay,
             )?;
         }
 

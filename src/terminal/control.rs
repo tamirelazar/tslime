@@ -1,6 +1,7 @@
 use crate::cli::Palette;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::IntensityMapping;
+use crate::render::theme::{PanelStyle, GRUVBOX_DARK};
 use crate::simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType, Wind};
 use crossterm::event::KeyEvent;
 use rand::Rng;
@@ -457,6 +458,31 @@ pub struct RuntimeState {
     pub entropy_history: std::collections::VecDeque<f32>,
     /// Recent density history.
     pub density_history: std::collections::VecDeque<f32>,
+    /// Current panel theme/style.
+    pub panel_style: PanelStyle,
+    /// Currently focused overlay type.
+    pub focused_overlay: Option<OverlayType>,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+/// Types of overlays that can be displayed.
+pub enum OverlayType {
+    /// Help overlay.
+    Help,
+    /// Controls overlay.
+    Controls,
+    /// Stats overlay.
+    Stats,
+    /// Info overlay.
+    Info,
+    /// Config browser overlay.
+    ConfigBrowser,
+    /// Config save dialog overlay.
+    ConfigSave,
+    /// Preset comparison overlay.
+    PresetComparison,
+    /// Keyboard hints overlay.
+    KeyboardHints,
 }
 
 impl RuntimeState {
@@ -527,6 +553,8 @@ impl RuntimeState {
             fps_history: std::collections::VecDeque::with_capacity(20),
             entropy_history: std::collections::VecDeque::with_capacity(20),
             density_history: std::collections::VecDeque::with_capacity(20),
+            panel_style: GRUVBOX_DARK,
+            focused_overlay: None,
         }
     }
 
@@ -677,6 +705,33 @@ impl RuntimeState {
         self.show_preset_comparison = false;
         self.show_stats = false;
         self.show_info = false;
+        self.focused_overlay = None;
+    }
+
+    /// Updates the focused overlay based on currently open overlays.
+    pub fn update_focused_overlay(&mut self) {
+        self.focused_overlay = if self.show_keyboard_hints {
+            Some(OverlayType::KeyboardHints)
+        } else if self.show_preset_comparison {
+            Some(OverlayType::PresetComparison)
+        } else if self.show_config_save_dialog {
+            Some(OverlayType::ConfigSave)
+        } else if self.show_config_browser {
+            Some(OverlayType::ConfigBrowser)
+        } else if self.show_controls {
+            Some(OverlayType::Controls)
+        } else if self.show_info {
+            Some(OverlayType::Info)
+        } else if self.show_stats {
+            Some(OverlayType::Stats)
+        } else {
+            None
+        };
+    }
+
+    /// Returns whether the given overlay type is currently focused.
+    pub fn is_overlay_focused(&self, overlay: OverlayType) -> bool {
+        self.focused_overlay == Some(overlay)
     }
 
     /// Cycles through control categories.

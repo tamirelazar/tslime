@@ -1,3 +1,5 @@
+use crate::render::overlay::OverlayConfig;
+use crate::render::overlay::WindowBuilder;
 use crate::simulation::config::DiffusionKernel;
 use crate::simulation::config::TerrainType;
 use crate::terminal::control::DefaultValues;
@@ -15,7 +17,7 @@ pub type OptionsOverlay = ControlsOverlay;
 
 impl ControlsOverlay {
     /// Width of the controls overlay window.
-    pub const WIDTH: usize = 48;
+    pub const WIDTH: usize = 50;
     /// Total number of control categories.
     pub const TOTAL_CATEGORIES: usize = 6;
 
@@ -70,7 +72,8 @@ impl ControlsOverlay {
         defaults: DefaultValues,
         population: usize,
     ) -> Vec<String> {
-        let builder = crate::render::overlay::WindowBuilder::new(Self::WIDTH, 2);
+        let config = OverlayConfig::CONTROLS;
+        let builder = WindowBuilder::new(Self::WIDTH, config.height_padding, config.width_padding);
         let cat_name = Self::category_name(category_idx);
         let cat_num = category_idx + 1;
 
@@ -254,7 +257,7 @@ impl ControlsOverlay {
         content.push("   Tab: Next         Esc: Close".to_string());
 
         let title = format!("CONTROLS [{}/{}]", cat_num, Self::TOTAL_CATEGORIES);
-        builder.build(Some(&title), &content).unwrap_or_default()
+        builder.build_solid_panel(Some(&title), &content)
     }
 }
 
