@@ -88,25 +88,6 @@ pub fn apply_ordered_dither(
     dithered.clamp(0.0, 1.0)
 }
 
-/// Applies ordered dithering with temporal modulation (animation).
-///
-/// Shifts the dither threshold based on the frame number to create animated noise.
-#[allow(dead_code)]
-pub fn apply_ordered_dither_with_frame(
-    x: usize,
-    y: usize,
-    brightness: f32,
-    intensity: f32,
-    matrix: DitherMatrix,
-    frame: usize,
-) -> f32 {
-    let threshold = bayer_threshold(x, y, matrix);
-    let phase = (frame as f32 * 0.1) % 1.0;
-    let modulated = if threshold < phase { 1.0 } else { 0.0 };
-    let dithered = brightness + (modulated - 0.5) * intensity;
-    dithered.clamp(0.0, 1.0)
-}
-
 /// Quantizes a brightness value to a specific number of discrete levels.
 pub fn quantize_to_levels(brightness: f32, num_levels: usize) -> f32 {
     if num_levels <= 1 {
@@ -159,15 +140,7 @@ pub fn local_variance(
     variance.sqrt()
 }
 
-#[deprecated(since = "0.1.0", note = "Use apply_ordered_dither instead")]
-#[allow(dead_code)]
-/// Legacy dither function (deprecated).
-pub fn apply_dither(x: usize, y: usize, brightness: f32, intensity: f32) -> f32 {
-    apply_ordered_dither(x, y, brightness, intensity, DitherMatrix::Bayer4x4)
-}
-
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
 
@@ -205,35 +178,35 @@ mod tests {
     #[test]
     fn test_apply_dither_no_intensity() {
         let brightness = 0.5;
-        let dithered = apply_dither(0, 0, brightness, 0.0);
+        let dithered = apply_ordered_dither(0, 0, brightness, 0.0, DitherMatrix::Bayer4x4);
         assert_eq!(dithered, brightness);
     }
 
     #[test]
     fn test_apply_dither_clamping_min() {
-        let dithered = apply_dither(0, 0, 0.0, 1.0);
+        let dithered = apply_ordered_dither(0, 0, 0.0, 1.0, DitherMatrix::Bayer4x4);
         assert!(dithered >= 0.0);
     }
 
     #[test]
     fn test_apply_dither_clamping_max() {
-        let dithered = apply_dither(0, 0, 1.0, 1.0);
+        let dithered = apply_ordered_dither(0, 0, 1.0, 1.0, DitherMatrix::Bayer4x4);
         assert!(dithered <= 1.0);
     }
 
     #[test]
     fn test_apply_dither_tiling_x() {
         let brightness = 0.5;
-        let dithered0 = apply_dither(0, 0, brightness, 1.0);
-        let dithered4 = apply_dither(4, 0, brightness, 1.0);
+        let dithered0 = apply_ordered_dither(0, 0, brightness, 1.0, DitherMatrix::Bayer4x4);
+        let dithered4 = apply_ordered_dither(4, 0, brightness, 1.0, DitherMatrix::Bayer4x4);
         assert_eq!(dithered0, dithered4);
     }
 
     #[test]
     fn test_apply_dither_tiling_y() {
         let brightness = 0.5;
-        let dithered0 = apply_dither(0, 0, brightness, 1.0);
-        let dithered4 = apply_dither(0, 4, brightness, 1.0);
+        let dithered0 = apply_ordered_dither(0, 0, brightness, 1.0, DitherMatrix::Bayer4x4);
+        let dithered4 = apply_ordered_dither(0, 4, brightness, 1.0, DitherMatrix::Bayer4x4);
         assert_eq!(dithered0, dithered4);
     }
 
@@ -246,7 +219,7 @@ mod tests {
             .map(|i| {
                 let x = i % 4;
                 let y = i / 4;
-                apply_dither(x, y, brightness, intensity)
+                apply_ordered_dither(x, y, brightness, intensity, DitherMatrix::Bayer4x4)
             })
             .collect();
 
@@ -261,8 +234,8 @@ mod tests {
     #[test]
     fn test_apply_dither_intensity_scaling() {
         let brightness = 0.5;
-        let dithered_low = apply_dither(0, 0, brightness, 0.25);
-        let dithered_high = apply_dither(0, 0, brightness, 1.0);
+        let dithered_low = apply_ordered_dither(0, 0, brightness, 0.25, DitherMatrix::Bayer4x4);
+        let dithered_high = apply_ordered_dither(0, 0, brightness, 1.0, DitherMatrix::Bayer4x4);
 
         assert_ne!(dithered_low, dithered_high);
     }
@@ -270,7 +243,7 @@ mod tests {
     #[test]
     fn test_apply_dither_mid_brightness() {
         let brightness = 0.5;
-        let dithered = apply_dither(0, 0, brightness, 0.5);
+        let dithered = apply_ordered_dither(0, 0, brightness, 0.5, DitherMatrix::Bayer4x4);
 
         assert!(dithered >= 0.0);
         assert!(dithered <= 1.0);
@@ -282,21 +255,23 @@ mod tests {
         let brightness = 0.5;
         let intensity = 1.0;
 
-        let min_threshold = apply_dither(0, 0, brightness, intensity);
-        let max_threshold = apply_dither(3, 0, brightness, intensity);
+        let min_threshold =
+            apply_ordered_dither(0, 0, brightness, intensity, DitherMatrix::Bayer4x4);
+        let max_threshold =
+            apply_ordered_dither(3, 0, brightness, intensity, DitherMatrix::Bayer4x4);
 
         assert_ne!(min_threshold, max_threshold);
     }
 
     #[test]
     fn test_apply_dither_negative_brightness() {
-        let dithered = apply_dither(0, 0, -0.5, 1.0);
+        let dithered = apply_ordered_dither(0, 0, -0.5, 1.0, DitherMatrix::Bayer4x4);
         assert_eq!(dithered, 0.0);
     }
 
     #[test]
     fn test_apply_dither_above_one_brightness() {
-        let dithered = apply_dither(0, 0, 1.5, 1.0);
+        let dithered = apply_ordered_dither(0, 0, 1.5, 1.0, DitherMatrix::Bayer4x4);
         assert_eq!(dithered, 1.0);
     }
 

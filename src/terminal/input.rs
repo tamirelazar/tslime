@@ -3,18 +3,10 @@
 //! This module provides a non-blocking input poller that handles keyboard
 //! and mouse events using `crossterm`.
 
+pub use crate::terminal::control::MousePosition;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, MouseEventKind};
 use std::io;
 use std::time::Duration;
-
-/// Represents a 2D coordinate for mouse events.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MousePosition {
-    /// Column index (0-based).
-    pub x: usize,
-    /// Row index (0-based).
-    pub y: usize,
-}
 
 /// The type of mouse interaction detected.
 pub enum MouseEventType {
@@ -69,7 +61,7 @@ impl InputPoller {
     /// Ignores mouse up and scroll events for now.
     #[allow(dead_code)]
     pub fn poll_mouse_event(&self) -> io::Result<Option<(MousePosition, MouseEventType)>> {
-        if event::poll(Duration::from_millis(1))? {
+        if event::poll(self.poll_timeout)? {
             if let Event::Mouse(mouse_event) = event::read()? {
                 let event_type = if matches!(mouse_event.kind, MouseEventKind::Down(_)) {
                     MouseEventType::Down
@@ -83,8 +75,8 @@ impl InputPoller {
 
                 return Ok(Some((
                     MousePosition {
-                        x: mouse_event.column as usize - 1,
-                        y: mouse_event.row as usize - 1,
+                        x: mouse_event.column.saturating_sub(1) as usize,
+                        y: mouse_event.row.saturating_sub(1) as usize,
                     },
                     event_type,
                 )));

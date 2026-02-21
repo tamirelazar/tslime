@@ -342,36 +342,6 @@ impl PresetComparisonOverlay {
     }
 }
 
-#[allow(dead_code)]
-/// Overlay shown during warmup phase.
-pub struct WarmupOverlay;
-
-#[allow(dead_code)]
-impl WarmupOverlay {
-    /// Builds the warmup status message.
-    pub fn build_overlay(frame_counter: usize, max_frames: usize) -> Vec<String> {
-        // Create a pulsing effect using sine wave
-        let progress = (frame_counter as f32 / 30.0 * std::f32::consts::PI)
-            .sin()
-            .abs();
-        let opacity = (progress * 10.0) as usize;
-
-        let dots = ".".repeat(opacity.min(3));
-        let message = format!("Press any key to begin{}", dots);
-        let frame_info = format!("Warmup: {}/{}", frame_counter, max_frames);
-
-        vec![message, frame_info]
-    }
-
-    /// Calculates position for warmup overlay (bottom center).
-    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
-        // Center horizontally, bottom third vertically
-        let y = (term_height * 2) / 3;
-        let x = term_width / 2;
-        (x, y)
-    }
-}
-
 /// Overlay for browsing saved configurations.
 pub struct ConfigBrowserOverlay;
 
@@ -847,16 +817,6 @@ mod tests {
     }
 
     #[test]
-    fn test_warmup_overlay() {
-        let lines = WarmupOverlay::build_overlay(10, 100);
-        assert_eq!(lines.len(), 2);
-        assert!(lines[1].contains("10/100"));
-        let (x, y) = WarmupOverlay::calculate_position(100, 90);
-        assert_eq!(x, 50);
-        assert_eq!(y, 60);
-    }
-
-    #[test]
     fn test_config_browser_overlay_empty() {
         let lines = ConfigBrowserOverlay::build_overlay(&[], 0);
         assert!(lines.iter().any(|l| l.contains("No saved configurations")));
@@ -921,8 +881,10 @@ mod tests {
     }
 }
 
+const SPARKLINE_CHARS: [char; 8] = [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
 fn build_sparkline(history: &std::collections::VecDeque<f32>, min: f32, max: f32) -> String {
-    let chars = [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let chars = SPARKLINE_CHARS;
     let mut sparkline = String::with_capacity(20);
 
     // Fill with empty if history is small

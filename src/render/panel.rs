@@ -65,6 +65,22 @@ pub struct Padding {
 }
 
 impl Padding {
+    /// Standard panel padding: 1 top/bottom, 2 left/right.
+    pub const PANEL: Self = Self {
+        top: 1,
+        bottom: 1,
+        left: 2,
+        right: 2,
+    };
+
+    /// Compact panel padding: 0 top/bottom, 1 left/right.
+    pub const COMPACT: Self = Self {
+        top: 0,
+        bottom: 0,
+        left: 1,
+        right: 1,
+    };
+
     /// Creates a new Padding with individual values for each side.
     pub fn new(top: usize, bottom: usize, left: usize, right: usize) -> Self {
         Self {

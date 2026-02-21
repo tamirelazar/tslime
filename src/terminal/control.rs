@@ -447,9 +447,9 @@ pub struct RuntimeState {
     /// Default values for reset.
     pub default_values: DefaultValues,
     /// Undo history stack.
-    pub undo_stack: Vec<ParameterState>,
+    pub undo_stack: std::collections::VecDeque<ParameterState>,
     /// Redo history stack.
-    pub redo_stack: Vec<ParameterState>,
+    pub redo_stack: std::collections::VecDeque<ParameterState>,
     /// Time of last undo checkpoint.
     pub last_checkpoint_time: std::time::Instant,
     /// Recent FPS history.
@@ -547,8 +547,8 @@ impl RuntimeState {
             config_browser_selected_index: 0,
             config_save_name_input: String::new(),
             default_values,
-            undo_stack: Vec::with_capacity(50),
-            redo_stack: Vec::with_capacity(50),
+            undo_stack: std::collections::VecDeque::with_capacity(50),
+            redo_stack: std::collections::VecDeque::with_capacity(50),
             last_checkpoint_time: std::time::Instant::now(),
             fps_history: std::collections::VecDeque::with_capacity(20),
             entropy_history: std::collections::VecDeque::with_capacity(20),
@@ -611,15 +611,15 @@ impl RuntimeState {
         }
 
         let current = self.capture_parameter_state();
-        if let Some(last) = self.undo_stack.last() {
+        if let Some(last) = self.undo_stack.back() {
             if last == &current {
                 return;
             }
         }
 
-        self.undo_stack.push(current);
+        self.undo_stack.push_back(current);
         if self.undo_stack.len() > 50 {
-            self.undo_stack.remove(0);
+            self.undo_stack.pop_front();
         }
         self.redo_stack.clear();
         self.last_checkpoint_time = std::time::Instant::now();
@@ -628,9 +628,9 @@ impl RuntimeState {
     /// Forces creation of an undo checkpoint regardless of time.
     pub fn force_checkpoint(&mut self) {
         let current = self.capture_parameter_state();
-        self.undo_stack.push(current);
+        self.undo_stack.push_back(current);
         if self.undo_stack.len() > 50 {
-            self.undo_stack.remove(0);
+            self.undo_stack.pop_front();
         }
         self.redo_stack.clear();
         self.last_checkpoint_time = std::time::Instant::now();
@@ -643,9 +643,9 @@ impl RuntimeState {
         }
 
         let current = self.capture_parameter_state();
-        self.redo_stack.push(current);
+        self.redo_stack.push_back(current);
 
-        let previous = self.undo_stack.pop().unwrap();
+        let previous = self.undo_stack.pop_back().unwrap();
         self.apply_parameter_state(previous.clone());
         Some(previous)
     }
@@ -657,9 +657,9 @@ impl RuntimeState {
         }
 
         let current = self.capture_parameter_state();
-        self.undo_stack.push(current);
+        self.undo_stack.push_back(current);
 
-        let next = self.redo_stack.pop().unwrap();
+        let next = self.redo_stack.pop_back().unwrap();
         self.apply_parameter_state(next.clone());
         Some(next)
     }

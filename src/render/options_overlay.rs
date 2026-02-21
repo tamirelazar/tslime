@@ -5,14 +5,8 @@ use crate::terminal::control::DefaultValues;
 use crate::terminal::control::PaletteShiftSpeed;
 use crate::terminal::control::WindDirection;
 
-// Renamed from OptionsOverlay - this is now the Controls overlay
 /// Overlay that displays current simulation controls and parameters.
 pub struct ControlsOverlay;
-
-// Type alias for backwards compatibility
-#[allow(dead_code)]
-/// Deprecated alias for `ControlsOverlay`.
-pub type OptionsOverlay = ControlsOverlay;
 
 impl ControlsOverlay {
     /// Total rendered width of the controls overlay window.
@@ -539,11 +533,11 @@ fn test_options_overlay_renders_all_categories() {
         crate::render::palette::IntensityMapping::linear(),
     );
 
-    let total = OptionsOverlay::total_categories();
+    let total = ControlsOverlay::total_categories();
     assert_eq!(total, 6);
 
     for idx in 0..total {
-        let overlay = OptionsOverlay::build_overlay(
+        let overlay = ControlsOverlay::build_overlay(
             idx,
             state.sensor_angle,
             state.sensor_distance,
@@ -576,7 +570,7 @@ fn test_options_overlay_renders_all_categories() {
 
         assert!(!overlay.is_empty(), "Category {} should not be empty", idx);
 
-        let category_name = OptionsOverlay::category_name(idx);
+        let category_name = ControlsOverlay::category_name(idx);
         assert!(
             overlay.iter().any(|line| line.contains(category_name)),
             "Category {} should contain its name '{}'",
@@ -587,7 +581,7 @@ fn test_options_overlay_renders_all_categories() {
         assert!(!overlay.is_empty(), "Category {} should have lines", idx);
     }
 
-    let sim_overlay = OptionsOverlay::build_overlay(
+    let sim_overlay = ControlsOverlay::build_overlay(
         0,
         state.sensor_angle,
         state.sensor_distance,
@@ -622,7 +616,7 @@ fn test_options_overlay_renders_all_categories() {
     assert!(sim_overlay.iter().any(|line| line.contains("Turn Angle")));
     assert!(sim_overlay.iter().any(|line| line.contains("Step Size")));
 
-    let env_overlay = OptionsOverlay::build_overlay(
+    let env_overlay = ControlsOverlay::build_overlay(
         1,
         state.sensor_angle,
         state.sensor_distance,
@@ -675,7 +669,7 @@ fn test_options_overlay_shows_live_parameter_values() {
     state.max_brightness = 100.0;
     state.motion_blur_frames = 3;
 
-    let postprocessing_overlay = OptionsOverlay::build_overlay(
+    let postprocessing_overlay = ControlsOverlay::build_overlay(
         3,
         state.sensor_angle,
         state.sensor_distance,
@@ -738,8 +732,8 @@ fn test_options_overlay_format() {
         crate::render::palette::IntensityMapping::linear(),
     );
 
-    for idx in 0..OptionsOverlay::total_categories() {
-        let overlay = OptionsOverlay::build_overlay(
+    for idx in 0..ControlsOverlay::total_categories() {
+        let overlay = ControlsOverlay::build_overlay(
             idx,
             state.sensor_angle,
             state.sensor_distance,
