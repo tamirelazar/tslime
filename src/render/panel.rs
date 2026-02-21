@@ -222,15 +222,15 @@ pub struct BorderConfig {
 impl Default for BorderConfig {
     fn default() -> Self {
         Self {
-            top_left: '▀',
-            top_right: '▀',
-            bottom_left: '▄',
-            bottom_right: '▄',
+            top_left: '█',
+            top_right: '█',
+            bottom_left: '█',
+            bottom_right: '█',
             top_horizontal: '▀',
             bottom_horizontal: '▄',
             vertical: '█',
-            left_intersection: '▌',
-            right_intersection: '▐',
+            left_intersection: '█',
+            right_intersection: '█',
         }
     }
 }
