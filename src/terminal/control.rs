@@ -764,6 +764,7 @@ impl RuntimeState {
     }
 
     /// Available intensity mapping presets.
+    #[allow(clippy::type_complexity)]
     pub const INTENSITY_MAPPINGS: &'static [(&'static str, fn() -> IntensityMapping)] = &[
         ("Linear", || IntensityMapping::linear()),
         ("Logarithmic", || IntensityMapping::logarithmic(10.0)),

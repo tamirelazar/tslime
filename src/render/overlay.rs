@@ -807,8 +807,8 @@ mod tests {
     fn test_panel_builder_separator() {
         let panel = PanelBuilder::new(8, None).with_padding(Padding::new(0, 0, 1, 1));
         let sep = panel.render_separator_line();
-        assert!(sep.starts_with('▌'));
-        assert!(sep.ends_with('▐'));
+        assert!(sep.starts_with('█'));
+        assert!(sep.ends_with('█'));
         // total_width = 1 + 1 + 8 + 1 + 1 = 12
         assert_eq!(sep.chars().count(), 12);
     }
@@ -1140,13 +1140,13 @@ mod stats_tests {
         assert!(!lines.lines.is_empty());
         // Solid block borders
         assert!(
-            lines.lines[0].starts_with('▀'),
-            "Top border should be solid block ▀, got: {}",
+            lines.lines[0].starts_with('█'),
+            "Top border should start with solid block █, got: {}",
             lines.lines[0]
         );
         assert!(
-            lines.lines.last().unwrap().starts_with('▄'),
-            "Bottom border should be solid block ▄"
+            lines.lines.last().unwrap().starts_with('█'),
+            "Bottom border should start with solid block █"
         );
 
         // All lines should be exactly WIDTH chars
@@ -1245,13 +1245,13 @@ mod info_tests {
         assert!(!lines.lines.is_empty());
         // Solid block borders
         assert!(
-            lines.lines[0].starts_with('▀'),
-            "Top border should be ▀, got: {}",
+            lines.lines[0].starts_with('█'),
+            "Top border should start with █, got: {}",
             lines.lines[0]
         );
         assert!(
-            lines.lines.last().unwrap().starts_with('▄'),
-            "Bottom border should be ▄"
+            lines.lines.last().unwrap().starts_with('█'),
+            "Bottom border should start with █"
         );
 
         // All lines should be exactly WIDTH chars

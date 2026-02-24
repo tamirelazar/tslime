@@ -848,10 +848,10 @@ mod tests {
             .with_title("STATS");
         let border_line = panel.render_top_border();
         assert!(
-            border_line.starts_with('▀'),
+            border_line.starts_with('█'),
             "Should start with solid block"
         );
-        assert!(border_line.ends_with('▀'), "Should end with solid block");
+        assert!(border_line.ends_with('█'), "Should end with solid block");
         assert!(border_line.contains("STATS"), "Should contain title");
         assert_eq!(border_line.chars().count(), 32);
     }
@@ -860,8 +860,8 @@ mod tests {
     fn test_separator_line_width() {
         let panel = PanelBuilder::new(26, None).with_padding(Padding::new(1, 1, 2, 2));
         let sep = panel.render_separator_line();
-        assert!(sep.starts_with('▌'));
-        assert!(sep.ends_with('▐'));
+        assert!(sep.starts_with('█'));
+        assert!(sep.ends_with('█'));
         assert_eq!(sep.chars().count(), 32);
     }
 
@@ -913,12 +913,12 @@ mod tests {
     fn test_solid_block_default_border() {
         let lines = PanelBuilder::new(10, None).build();
         assert!(
-            lines[0].starts_with('▀'),
-            "Top border should be solid block ▀"
+            lines[0].starts_with('█'),
+            "Top border should start with solid block █"
         );
         assert!(
-            lines.last().unwrap().starts_with('▄'),
-            "Bottom border should be solid block ▄"
+            lines.last().unwrap().starts_with('█'),
+            "Bottom border should start with solid block █"
         );
     }
 

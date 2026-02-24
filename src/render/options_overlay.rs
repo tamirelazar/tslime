@@ -377,15 +377,15 @@ mod tests {
             50000,
         );
 
-        assert!(lines.lines[0].starts_with('▀'), "First line should start with ▀");
-        assert!(lines.lines[0].ends_with('▀'), "First line should end with ▀");
+        assert!(lines.lines[0].starts_with('█'), "First line should start with █");
+        assert!(lines.lines[0].ends_with('█'), "First line should end with █");
         assert!(
-            lines.lines.last().unwrap().starts_with('▄'),
-            "Last line should start with ▄"
+            lines.lines.last().unwrap().starts_with('█'),
+            "Last line should start with █"
         );
         assert!(
-            lines.lines.last().unwrap().ends_with('▄'),
-            "Last line should end with ▄"
+            lines.lines.last().unwrap().ends_with('█'),
+            "Last line should end with █"
         );
     }
 
@@ -489,11 +489,11 @@ mod tests {
             50000,
         );
 
-        // First line (top border) should contain [3/6] indicator
+        // Category indicator [3/6] is in the title_box (mini panel drawn above the main border)
+        let title_box = lines.title_box.as_ref().expect("Expected title_box to be present");
         assert!(
-            lines.lines[0].contains("[3/6]"),
-            "Header should contain category indicator [3/6], got: {}",
-            lines.lines[0]
+            title_box.lines.iter().any(|l| l.contains("[3/6]")),
+            "Title box should contain category indicator [3/6]"
         );
     }
 
@@ -769,7 +769,7 @@ fn test_options_overlay_format() {
 
         // Solid block borders
         assert!(
-            overlay.lines.iter().any(|line| line.starts_with('▀')),
+            overlay.lines.iter().any(|line| line.starts_with('█')),
             "Should have solid block top border"
         );
         assert!(

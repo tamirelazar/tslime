@@ -964,7 +964,7 @@ pub fn export_gif_mode(
     let charset = Charset::Ascii;
 
     let mut gif_exporter =
-        GifExporter::new(width, height, output_path, args.export_fps).map_err(io::Error::other)?;
+        GifExporter::new(width, height, output_path, args.export_fps).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
@@ -1035,7 +1035,7 @@ pub fn export_gif_mode(
         }
     }
 
-    gif_exporter.finish(output_path).map_err(io::Error::other)?;
+    gif_exporter.finish(output_path).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     eprintln!(
         "Done! Exported {} frames to {}",
@@ -1070,7 +1070,7 @@ pub fn export_webm_mode(
     let config = args.to_sim_config();
 
     let mut webm_exporter =
-        WebmExporter::new(width, height, output_path, args.export_fps).map_err(io::Error::other)?;
+        WebmExporter::new(width, height, output_path, args.export_fps).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
@@ -1131,7 +1131,7 @@ pub fn export_webm_mode(
         let pixels = buffer.get_rgb_pixels();
         webm_exporter
             .add_frame_png(&pixels)
-            .map_err(io::Error::other)?;
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         if args.verbose || frame_idx % 10 == 0 || frame_idx + 1 == args.export_frames {
             eprintln!(
@@ -1145,7 +1145,7 @@ pub fn export_webm_mode(
 
     webm_exporter
         .finish(output_path)
-        .map_err(io::Error::other)?;
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     eprintln!(
         "Done! Exported {} frames to {}",
