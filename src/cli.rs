@@ -1578,7 +1578,7 @@ impl Args {
         }
         // Population bounds - prevent memory explosion
         if let Some(pop) = self.population {
-            if pop < 100 || pop > 500_000 {
+            if !(100..=500_000).contains(&pop) {
                 return Err(format!(
                     "population must be between 100 and 500,000, got {}",
                     pop
@@ -1587,7 +1587,7 @@ impl Args {
         }
         // Simulation parameter bounds
         if let Some(sa) = self.sensor_angle {
-            if sa < 1.0 || sa > 180.0 {
+            if !(1.0..=180.0).contains(&sa) {
                 return Err(format!(
                     "sensor_angle must be between 1.0 and 180.0 degrees, got {}",
                     sa
@@ -1595,7 +1595,7 @@ impl Args {
             }
         }
         if let Some(sd) = self.sensor_distance {
-            if sd < 0.5 || sd > 100.0 {
+            if !(0.5..=100.0).contains(&sd) {
                 return Err(format!(
                     "sensor_distance must be between 0.5 and 100.0, got {}",
                     sd
@@ -1603,7 +1603,7 @@ impl Args {
             }
         }
         if let Some(ra) = self.rotation_angle {
-            if ra < 1.0 || ra > 180.0 {
+            if !(1.0..=180.0).contains(&ra) {
                 return Err(format!(
                     "rotation_angle must be between 1.0 and 180.0 degrees, got {}",
                     ra
@@ -1611,7 +1611,7 @@ impl Args {
             }
         }
         if let Some(ss) = self.step_size {
-            if ss < 0.01 || ss > 10.0 {
+            if !(0.01..=10.0).contains(&ss) {
                 return Err(format!(
                     "step_size must be between 0.01 and 10.0, got {}",
                     ss
@@ -1619,24 +1619,24 @@ impl Args {
             }
         }
         if let Some(df) = self.decay_factor {
-            if df < 0.01 || df > 0.9999 {
+            if !(0.01..=0.9999).contains(&df) {
                 return Err(format!("decay must be between 0.01 and 0.9999, got {}", df));
             }
         }
         if let Some(da) = self.deposit_amount {
-            if da < 0.1 || da > 100.0 {
+            if !(0.1..=100.0).contains(&da) {
                 return Err(format!("deposit must be between 0.1 and 100.0, got {}", da));
             }
         }
         if let Some(mb) = self.max_brightness {
-            if mb < 1.0 || mb > 1000.0 {
+            if !(1.0..=1000.0).contains(&mb) {
                 return Err(format!(
                     "max_brightness must be between 1.0 and 1000.0, got {}",
                     mb
                 ));
             }
         }
-        if self.time_scale < 0.1 || self.time_scale > 10.0 {
+        if !(0.1..=10.0).contains(&self.time_scale) {
             return Err(format!(
                 "time_scale must be between 0.1 and 10.0, got {}",
                 self.time_scale

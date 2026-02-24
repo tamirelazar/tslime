@@ -22,7 +22,7 @@ use crate::render::grid::{GridRenderer, GridStyle};
 use crate::render::options_overlay::ControlsOverlay;
 use crate::render::overlay::{
     ConfigBrowserOverlay, ConfigSaveOverlay, InfoOverlay, KeyboardHintsOverlay,
-    PresetComparisonOverlay, StatsOverlay,
+    PresetComparisonOverlay, RenderedOverlay, StatsOverlay,
 };
 use crate::render::palette::{hex_to_rgb, RgbColor};
 use crate::simulation::config::{
@@ -964,7 +964,7 @@ pub fn export_gif_mode(
     let charset = Charset::Ascii;
 
     let mut gif_exporter =
-        GifExporter::new(width, height, output_path, args.export_fps).map_err(io::Error::other)?;
+        GifExporter::new(width, height, output_path, args.export_fps).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
@@ -1035,7 +1035,7 @@ pub fn export_gif_mode(
         }
     }
 
-    gif_exporter.finish(output_path).map_err(io::Error::other)?;
+    gif_exporter.finish(output_path).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     eprintln!(
         "Done! Exported {} frames to {}",
@@ -1070,7 +1070,7 @@ pub fn export_webm_mode(
     let config = args.to_sim_config();
 
     let mut webm_exporter =
-        WebmExporter::new(width, height, output_path, args.export_fps).map_err(io::Error::other)?;
+        WebmExporter::new(width, height, output_path, args.export_fps).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
@@ -1131,7 +1131,7 @@ pub fn export_webm_mode(
         let pixels = buffer.get_rgb_pixels();
         webm_exporter
             .add_frame_png(&pixels)
-            .map_err(io::Error::other)?;
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         if args.verbose || frame_idx % 10 == 0 || frame_idx + 1 == args.export_frames {
             eprintln!(
@@ -1145,7 +1145,7 @@ pub fn export_webm_mode(
 
     webm_exporter
         .finish(output_path)
-        .map_err(io::Error::other)?;
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     eprintln!(
         "Done! Exported {} frames to {}",
@@ -1464,7 +1464,7 @@ pub fn run_simulation(
         // The renderer handles None gracefully by skipping the overlay
 
         // Build keyboard hints overlay (? key)
-        let keyboard_hints_lines: Option<Vec<String>> = if runtime_state.show_keyboard_hints {
+        let keyboard_hints_lines: Option<RenderedOverlay> = if runtime_state.show_keyboard_hints {
             Some(KeyboardHintsOverlay::build_overlay())
         } else {
             None
@@ -1476,7 +1476,7 @@ pub fn run_simulation(
         };
 
         // Build preset comparison overlay (Shift+1-7 keys)
-        let preset_comparison_lines: Option<Vec<String>> = if runtime_state.show_preset_comparison {
+        let preset_comparison_lines: Option<RenderedOverlay> = if runtime_state.show_preset_comparison {
             Some(PresetComparisonOverlay::build_overlay(
                 &runtime_state,
                 runtime_state.comparison_preset,
@@ -1494,7 +1494,7 @@ pub fn run_simulation(
         let controls_y = 2; // Fixed position since help overlay is deprecated
 
         // Build controls overlay (h key)
-        let controls_lines: Option<Vec<String>> = if runtime_state.show_controls {
+        let controls_lines: Option<RenderedOverlay> = if runtime_state.show_controls {
             Some(ControlsOverlay::build_overlay(
                 runtime_state.controls_category_idx,
                 runtime_state.sensor_angle,
@@ -1597,7 +1597,7 @@ pub fn run_simulation(
 
         runtime_state.update_history(timer.current_fps() as f32, entropy, trail_density);
 
-        let stats_lines: Option<Vec<String>> = if runtime_state.show_stats {
+        let stats_overlay: Option<RenderedOverlay> = if runtime_state.show_stats {
             let elapsed = start_time.elapsed().as_secs_f32();
             let trail_max = blended_trail.iter().fold(0.0f32, |m, &v| v.max(m));
             let memory_mb = memory_stats()
@@ -1634,7 +1634,7 @@ pub fn run_simulation(
         let stats_x = StatsOverlay::calculate_x_position(term_width as usize);
 
         // Info overlay (below stats)
-        let info_lines: Option<Vec<String>> = if runtime_state.show_info {
+        let info_overlay: Option<RenderedOverlay> = if runtime_state.show_info {
             let init_mode_name = match init_mode {
                 InitMode::Random => "Random",
                 InitMode::CentralBurst => "Central",
@@ -1691,15 +1691,15 @@ pub fn run_simulation(
             None
         };
 
-        let info_y = if let Some(stats) = &stats_lines {
-            2 + stats.len() + 1
+        let info_y = if let Some(stats) = &stats_overlay {
+            2 + stats.lines.len() + 1
         } else {
             2
         };
         let info_x = InfoOverlay::calculate_x_position(term_width as usize);
 
         // Config browser overlay
-        let config_browser_lines: Option<Vec<String>> = if runtime_state.show_config_browser {
+        let config_browser_overlay: Option<RenderedOverlay> = if runtime_state.show_config_browser {
             match config_manager::list_configs() {
                 Ok(configs) => {
                     // Clamp selected index to valid range
@@ -1720,21 +1720,21 @@ pub fn run_simulation(
         } else {
             None
         };
-        let (config_browser_x, config_browser_y) = if config_browser_lines.is_some() {
+        let (config_browser_x, config_browser_y) = if config_browser_overlay.is_some() {
             ConfigBrowserOverlay::calculate_position(term_width as usize, term_height as usize)
         } else {
             (0, 0)
         };
 
         // Config save dialog overlay
-        let config_save_lines: Option<Vec<String>> = if runtime_state.show_config_save_dialog {
+        let config_save_overlay: Option<RenderedOverlay> = if runtime_state.show_config_save_dialog {
             Some(ConfigSaveOverlay::build_overlay(
                 &runtime_state.config_save_name_input,
             ))
         } else {
             None
         };
-        let (config_save_x, config_save_y) = if config_save_lines.is_some() {
+        let (config_save_x, config_save_y) = if config_save_overlay.is_some() {
             ConfigSaveOverlay::calculate_position(term_width as usize, term_height as usize)
         } else {
             (0, 0)
@@ -1811,60 +1811,54 @@ pub fn run_simulation(
                 .zip(species_rgb_colors.iter())
                 .map(|(tm, color)| (*tm, *color))
                 .collect();
-            renderer.render_multi_species_with_overlay::<String, String>(
+            renderer.render_multi_species_with_overlay(
                 &combined,
                 sim.width(),
                 sim.height(),
                 max_brightness.max(1.0),
-                None, // Help overlay deprecated
-                controls_lines
-                    .as_ref()
-                    .map(|v| (v.as_slice(), 2usize, controls_y)),
+                controls_lines.as_ref().map(|v| (v, 2usize, controls_y)),
                 status_data,
                 notification_data,
-                stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
-                info_lines.as_ref().map(|v| (v.as_slice(), info_x, info_y)),
+                stats_overlay.as_ref().map(|v| (v, stats_x)),
+                info_overlay.as_ref().map(|v| (v, info_x, info_y)),
                 grid_renderer.as_ref(),
-                config_browser_lines
+                config_browser_overlay
                     .as_ref()
-                    .map(|v| (v.as_slice(), config_browser_x, config_browser_y)),
-                config_save_lines
+                    .map(|v| (v, config_browser_x, config_browser_y)),
+                config_save_overlay
                     .as_ref()
-                    .map(|v| (v.as_slice(), config_save_x, config_save_y)),
+                    .map(|v| (v, config_save_x, config_save_y)),
                 keyboard_hints_lines
                     .as_ref()
-                    .map(|v| (v.as_slice(), keyboard_hints_x, keyboard_hints_y)),
+                    .map(|v| (v, keyboard_hints_x, keyboard_hints_y)),
                 preset_comparison_lines
                     .as_ref()
-                    .map(|v| (v.as_slice(), preset_comparison_x, preset_comparison_y)),
+                    .map(|v| (v, preset_comparison_x, preset_comparison_y)),
                 Some(&runtime_state.panel_style),
                 runtime_state.focused_overlay,
             )?;
         } else {
-            renderer.render_with_overlay::<String, String>(
+            renderer.render_with_overlay(
                 downsampled.cells(),
                 max_brightness.max(1.0),
-                None, // Help overlay deprecated
-                controls_lines
-                    .as_ref()
-                    .map(|v| (v.as_slice(), 2usize, controls_y)),
+                controls_lines.as_ref().map(|v| (v, 2usize, controls_y)),
                 status_data,
                 notification_data,
-                stats_lines.as_ref().map(|v| (v.as_slice(), stats_x)),
-                info_lines.as_ref().map(|v| (v.as_slice(), info_x, info_y)),
+                stats_overlay.as_ref().map(|v| (v, stats_x)),
+                info_overlay.as_ref().map(|v| (v, info_x, info_y)),
                 grid_renderer.as_ref(),
-                config_browser_lines
+                config_browser_overlay
                     .as_ref()
-                    .map(|v| (v.as_slice(), config_browser_x, config_browser_y)),
-                config_save_lines
+                    .map(|v| (v, config_browser_x, config_browser_y)),
+                config_save_overlay
                     .as_ref()
-                    .map(|v| (v.as_slice(), config_save_x, config_save_y)),
+                    .map(|v| (v, config_save_x, config_save_y)),
                 keyboard_hints_lines
                     .as_ref()
-                    .map(|v| (v.as_slice(), keyboard_hints_x, keyboard_hints_y)),
+                    .map(|v| (v, keyboard_hints_x, keyboard_hints_y)),
                 preset_comparison_lines
                     .as_ref()
-                    .map(|v| (v.as_slice(), preset_comparison_x, preset_comparison_y)),
+                    .map(|v| (v, preset_comparison_x, preset_comparison_y)),
                 Some(&runtime_state.panel_style),
                 runtime_state.focused_overlay,
             )?;
