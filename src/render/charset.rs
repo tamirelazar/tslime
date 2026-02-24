@@ -5,6 +5,8 @@ use crate::cli::Args;
 pub enum Charset {
     /// Half-block characters (▀, ▄, █) for 2× vertical resolution.
     HalfBlock,
+    /// Dual-color half-block mode: uses ▀ with independent fg/bg colors for true 2× color resolution.
+    HalfBlockDual,
     /// Standard ASCII characters mapped by density.
     Ascii,
     /// Braille patterns for 4×2 subpixel resolution.
@@ -30,6 +32,8 @@ impl Charset {
             Charset::Points
         } else if args.braille {
             Charset::Braille
+        } else if args.half_block_dual {
+            Charset::HalfBlockDual
         } else if let Some(ref custom_chars) = args.ascii_chars {
             // Create custom ASCII charset from user-provided characters
             Charset::from_custom_string(custom_chars)
@@ -259,7 +263,7 @@ pub fn map_quadrant(
 /// * `charset` - The character set to use.
 pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
     match charset {
-        Charset::HalfBlock => {
+        Charset::HalfBlock | Charset::HalfBlockDual => {
             let brightness = top.clamp(0.0, 1.0);
             let index = (brightness * (HALF_BLOCK_CHARS.len() - 1) as f32).round() as usize;
             HALF_BLOCK_CHARS[index]
@@ -320,6 +324,26 @@ pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
     }
 }
 
+/// Maps two vertical subpixels for dual-color half-block mode.
+///
+/// Returns '▀', '▄', or ' '. Unlike `map_vertical_block`, this never returns '█'
+/// because both halves get independent colors via fg/bg. The character choice tells
+/// the renderer which half is foreground:
+/// - '▀': foreground = top, background = bottom
+/// - '▄': foreground = bottom (used when only bottom is lit)
+/// - ' ': both halves dark
+pub fn map_half_block_dual(top: f32, bottom: f32, threshold: f32) -> char {
+    let top_above = top > threshold;
+    let bottom_above = bottom > threshold;
+
+    match (top_above, bottom_above) {
+        (true, true) => '▀',  // fg = top color, bg = bottom color
+        (true, false) => '▀', // fg = top color, bg = default
+        (false, true) => '▄', // fg = bottom color, bg = default
+        (false, false) => ' ',
+    }
+}
+
 /// Maps two vertical subpixel values to a block character.
 ///
 /// Returns '█', '▀', '▄', or ' ' based on which subpixels exceed the threshold.
@@ -354,6 +378,7 @@ pub fn map_ascii_directional(brightness: f32, is_top: bool) -> char {
 pub fn charset_level_count(charset: Charset) -> usize {
     match charset {
         Charset::HalfBlock => 9,
+        Charset::HalfBlockDual => 256, // Continuous color; effectively unlimited levels
         Charset::Ascii => 10,
         Charset::Braille => 16,
         Charset::Quadrant => 16, // 2^4 combinations of 4 quadrants
@@ -857,5 +882,62 @@ mod tests {
         // When bottom is provided, should average top and bottom
         assert_eq!(map_brightness(0.2, Some(0.1), Charset::Points), ' '); // avg = 0.15, at threshold
         assert_eq!(map_brightness(0.3, Some(0.1), Charset::Points), '▪'); // avg = 0.2, above threshold
+    }
+
+    #[test]
+    fn test_half_block_dual_both_dark() {
+        assert_eq!(map_half_block_dual(0.0, 0.0, 0.05), ' ');
+        assert_eq!(map_half_block_dual(0.04, 0.04, 0.05), ' ');
+    }
+
+    #[test]
+    fn test_half_block_dual_top_only() {
+        assert_eq!(map_half_block_dual(0.5, 0.0, 0.05), '▀');
+        assert_eq!(map_half_block_dual(1.0, 0.03, 0.05), '▀');
+    }
+
+    #[test]
+    fn test_half_block_dual_bottom_only() {
+        assert_eq!(map_half_block_dual(0.0, 0.5, 0.05), '▄');
+        assert_eq!(map_half_block_dual(0.03, 1.0, 0.05), '▄');
+    }
+
+    #[test]
+    fn test_half_block_dual_both_bright() {
+        assert_eq!(map_half_block_dual(0.5, 0.5, 0.05), '▀');
+        assert_eq!(map_half_block_dual(1.0, 0.1, 0.05), '▀');
+        assert_eq!(map_half_block_dual(0.1, 1.0, 0.05), '▀');
+    }
+
+    #[test]
+    fn test_half_block_dual_threshold_edge() {
+        assert_eq!(map_half_block_dual(0.05, 0.0, 0.05), ' ');
+        assert_eq!(map_half_block_dual(0.051, 0.0, 0.05), '▀');
+        assert_eq!(map_half_block_dual(0.0, 0.05, 0.05), ' ');
+        assert_eq!(map_half_block_dual(0.0, 0.051, 0.05), '▄');
+    }
+
+    #[test]
+    fn test_charset_from_args_half_block_dual() {
+        let args = Args {
+            half_block_dual: true,
+            ..Default::default()
+        };
+        assert_eq!(Charset::from_args(&args), Charset::HalfBlockDual);
+    }
+
+    #[test]
+    fn test_charset_level_count_half_block_dual() {
+        assert_eq!(charset_level_count(Charset::HalfBlockDual), 256);
+    }
+
+    #[test]
+    fn test_map_brightness_half_block_dual_uses_half_block_chars() {
+        // HalfBlockDual shares the same char array as HalfBlock for map_brightness
+        assert_eq!(map_brightness(0.0, None, Charset::HalfBlockDual), ' ');
+        assert_eq!(
+            map_brightness(1.0, None, Charset::HalfBlockDual),
+            '\u{2588}'
+        );
     }
 }
