@@ -66,7 +66,7 @@ impl ControlsOverlay {
         _term_width: usize,
         defaults: DefaultValues,
         population: usize,
-    ) -> Vec<String> {
+    ) -> crate::render::panel::RenderedOverlay {
         use TextAlignment::Left;
 
         let cat_name = Self::category_name(category_idx);
@@ -93,6 +93,7 @@ impl ControlsOverlay {
         let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
             .with_padding(Padding::new(1, 1, 2, 2))
             .with_title(title)
+            .with_title_box()
             .add_single(
                 format!("{:^width$}", cat_name, width = Self::CONTENT_WIDTH),
                 Left,
@@ -315,7 +316,7 @@ impl ControlsOverlay {
             .add_single("   * Modified from default value".to_string(), Left)
             .add_single("   ─ Startup-only parameter (CLI)".to_string(), Left)
             .add_single("   Tab: Next         Esc: Close".to_string(), Left)
-            .build()
+            .build_overlay()
     }
 }
 
@@ -376,14 +377,14 @@ mod tests {
             50000,
         );
 
-        assert!(lines[0].starts_with('▀'), "First line should start with ▀");
-        assert!(lines[0].ends_with('▀'), "First line should end with ▀");
+        assert!(lines.lines[0].starts_with('▀'), "First line should start with ▀");
+        assert!(lines.lines[0].ends_with('▀'), "First line should end with ▀");
         assert!(
-            lines.last().unwrap().starts_with('▄'),
+            lines.lines.last().unwrap().starts_with('▄'),
             "Last line should start with ▄"
         );
         assert!(
-            lines.last().unwrap().ends_with('▄'),
+            lines.lines.last().unwrap().ends_with('▄'),
             "Last line should end with ▄"
         );
     }
@@ -423,7 +424,7 @@ mod tests {
             );
 
             // All lines should be exactly WIDTH chars wide
-            for (line_num, line) in lines.iter().enumerate() {
+            for (line_num, line) in lines.lines.iter().enumerate() {
                 assert!(
                     line.starts_with('▀')
                         || line.starts_with('█')
@@ -490,9 +491,9 @@ mod tests {
 
         // First line (top border) should contain [3/6] indicator
         assert!(
-            lines[0].contains("[3/6]"),
+            lines.lines[0].contains("[3/6]"),
             "Header should contain category indicator [3/6], got: {}",
-            lines[0]
+            lines.lines[0]
         );
     }
 
@@ -568,17 +569,17 @@ fn test_options_overlay_renders_all_categories() {
             50000,
         );
 
-        assert!(!overlay.is_empty(), "Category {} should not be empty", idx);
+        assert!(!overlay.lines.is_empty(), "Category {} should not be empty", idx);
 
         let category_name = ControlsOverlay::category_name(idx);
         assert!(
-            overlay.iter().any(|line| line.contains(category_name)),
+            overlay.lines.iter().any(|line| line.contains(category_name)),
             "Category {} should contain its name '{}'",
             idx,
             category_name
         );
 
-        assert!(!overlay.is_empty(), "Category {} should have lines", idx);
+        assert!(!overlay.lines.is_empty(), "Category {} should have lines", idx);
     }
 
     let sim_overlay = ControlsOverlay::build_overlay(
@@ -611,10 +612,10 @@ fn test_options_overlay_renders_all_categories() {
         state.default_values,
         50000,
     );
-    assert!(sim_overlay.iter().any(|line| line.contains("Sensor Angle")));
-    assert!(sim_overlay.iter().any(|line| line.contains("Sensor Dist")));
-    assert!(sim_overlay.iter().any(|line| line.contains("Turn Angle")));
-    assert!(sim_overlay.iter().any(|line| line.contains("Step Size")));
+    assert!(sim_overlay.lines.iter().any(|line| line.contains("Sensor Angle")));
+    assert!(sim_overlay.lines.iter().any(|line| line.contains("Sensor Dist")));
+    assert!(sim_overlay.lines.iter().any(|line| line.contains("Turn Angle")));
+    assert!(sim_overlay.lines.iter().any(|line| line.contains("Step Size")));
 
     let env_overlay = ControlsOverlay::build_overlay(
         1,
@@ -646,9 +647,9 @@ fn test_options_overlay_renders_all_categories() {
         state.default_values,
         50000,
     );
-    assert!(env_overlay.iter().any(|line| line.contains("Diffusion")));
-    assert!(env_overlay.iter().any(|line| line.contains("Wind")));
-    assert!(env_overlay.iter().any(|line| line.contains("Terrain")));
+    assert!(env_overlay.lines.iter().any(|line| line.contains("Diffusion")));
+    assert!(env_overlay.lines.iter().any(|line| line.contains("Wind")));
+    assert!(env_overlay.lines.iter().any(|line| line.contains("Terrain")));
 }
 
 #[test]
@@ -702,18 +703,20 @@ fn test_options_overlay_shows_live_parameter_values() {
 
     assert!(
         postprocessing_overlay
+            .lines
             .iter()
             .any(|line| line.contains("100.0") || line.contains("100")),
         "Should contain max brightness value. Got: {:?}",
-        postprocessing_overlay
+        postprocessing_overlay.lines
     );
 
     assert!(
         postprocessing_overlay
+            .lines
             .iter()
             .any(|line| line.contains("3") && line.contains("[0,3,5,7]")),
         "Should contain motion blur frames value. Got: {:?}",
-        postprocessing_overlay
+        postprocessing_overlay.lines
     );
 }
 
@@ -766,21 +769,22 @@ fn test_options_overlay_format() {
 
         // Solid block borders
         assert!(
-            overlay.iter().any(|line| line.starts_with('▀')),
+            overlay.lines.iter().any(|line| line.starts_with('▀')),
             "Should have solid block top border"
         );
         assert!(
-            overlay.iter().any(|line| line.contains('█')),
+            overlay.lines.iter().any(|line| line.contains('█')),
             "Should have solid block vertical border"
         );
         assert!(
             overlay
+                .lines
                 .iter()
                 .any(|line| line.ends_with('▄') || line.ends_with('█')),
             "Should have bottom border or vertical chars"
         );
 
-        for (i, line) in overlay.iter().enumerate() {
+        for (i, line) in overlay.lines.iter().enumerate() {
             assert_eq!(
                 line.chars().count(),
                 ControlsOverlay::WIDTH,

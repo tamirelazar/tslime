@@ -7,8 +7,8 @@ use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
 pub use crate::render::panel::{
-    BorderConfig, ColumnLayout, Padding, PanelBuilder, PanelRow, PanelSize, TextAlignment,
-    TitleAlignment,
+    BorderConfig, ColumnLayout, Padding, PanelBuilder, PanelRow, PanelSize, RenderedOverlay,
+    RenderedTitleBox, TextAlignment, TitleAlignment,
 };
 
 // --- OverlayConfig ---
@@ -177,12 +177,13 @@ impl KeyboardHintsOverlay {
     const CONTENT_WIDTH: usize = 54; // 60 - 2(border) - 2*2(padding)
 
     /// Builds the keyboard hints overlay content.
-    pub fn build_overlay() -> Vec<String> {
+    pub fn build_overlay() -> RenderedOverlay {
         use TextAlignment::Left;
 
         PanelBuilder::new(Self::CONTENT_WIDTH, None)
             .with_padding(Padding::new(1, 1, 2, 2))
             .with_title("KEYBOARD SHORTCUTS")
+            .with_title_box()
             .add_empty()
             .add_single("SIMULATION                VISUALS", Left)
             .add_single("p, Space : Pause          c, Shift+C : Palette", Left)
@@ -222,7 +223,7 @@ impl KeyboardHintsOverlay {
             .add_single(",: Mouse Mode", Left)
             .add_empty()
             .add_single("Press any key to close this help", Left)
-            .build()
+            .build_overlay()
     }
 
     /// Calculates center position for the overlay.
@@ -246,7 +247,7 @@ impl PresetComparisonOverlay {
     pub fn build_overlay(
         current: &crate::terminal::control::RuntimeState,
         preset: Preset,
-    ) -> Vec<String> {
+    ) -> RenderedOverlay {
         use TextAlignment::Left;
 
         let defaults = crate::terminal::control::DefaultValues::from_preset(preset);
@@ -255,6 +256,7 @@ impl PresetComparisonOverlay {
         let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
             .with_padding(Padding::new(1, 1, 2, 2))
             .with_title(format!("PRESET COMPARISON: {}", pname))
+            .with_title_box()
             .add_empty()
             .add_single("Parameter        │ Current      │ Preset Default", Left)
             .add_single(
@@ -331,7 +333,7 @@ impl PresetComparisonOverlay {
         builder
             .add_empty()
             .add_single("Press Enter to Apply Preset     Esc to Close", Left)
-            .build()
+            .build_overlay()
     }
 
     /// Calculates center position for the comparison overlay.
@@ -355,12 +357,13 @@ impl ConfigBrowserOverlay {
     pub fn build_overlay(
         configs: &[crate::config_manager::SavedConfig],
         selected_index: usize,
-    ) -> Vec<String> {
+    ) -> RenderedOverlay {
         use TextAlignment::Left;
 
         let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
             .with_padding(Padding::new(1, 1, 2, 2))
-            .with_title("SAVED CONFIGURATIONS");
+            .with_title("SAVED CONFIGURATIONS")
+            .with_title_box();
 
         if configs.is_empty() {
             builder = builder
@@ -393,7 +396,7 @@ impl ConfigBrowserOverlay {
                 .add_single("↑/↓: Navigate  Enter: Load  Del: Delete", Left);
         }
 
-        builder.add_single("Esc: Cancel", Left).build()
+        builder.add_single("Esc: Cancel", Left).build_overlay()
     }
 
     /// Calculates center position for the browser overlay.
@@ -414,17 +417,18 @@ impl ConfigSaveOverlay {
     const CONTENT_WIDTH: usize = 34; // 38 - 2(border) - 2*1(padding)
 
     /// Builds the save dialog overlay.
-    pub fn build_overlay(name_input: &str) -> Vec<String> {
+    pub fn build_overlay(name_input: &str) -> RenderedOverlay {
         use TextAlignment::Left;
 
         PanelBuilder::new(Self::CONTENT_WIDTH, None)
             .with_padding(Padding::new(0, 0, 1, 1))
             .with_title("SAVE CONFIGURATION")
+            .with_title_box()
             .add_empty()
             .add_single(format!("Name: {:<25}", name_input), Left)
             .add_empty()
             .add_single("Enter: Save    Esc: Cancel", Left)
-            .build()
+            .build_overlay()
     }
 
     /// Calculates center position for the save dialog.
@@ -819,7 +823,7 @@ mod tests {
     #[test]
     fn test_config_browser_overlay_empty() {
         let lines = ConfigBrowserOverlay::build_overlay(&[], 0);
-        assert!(lines.iter().any(|l| l.contains("No saved configurations")));
+        assert!(lines.lines.iter().any(|l| l.contains("No saved configurations")));
         let (x, _y) = ConfigBrowserOverlay::calculate_position(100, 100);
         assert_eq!(x, 22);
     }
@@ -827,7 +831,7 @@ mod tests {
     #[test]
     fn test_config_save_overlay() {
         let lines = ConfigSaveOverlay::build_overlay("test");
-        assert!(lines.iter().any(|l| l.contains("test")));
+        assert!(lines.lines.iter().any(|l| l.contains("test")));
         let (x, _y) = ConfigSaveOverlay::calculate_position(100, 100);
         assert_eq!(x, 31);
     }
@@ -937,7 +941,7 @@ impl StatsOverlay {
         fps_history: &std::collections::VecDeque<f32>,
         entropy_history: &std::collections::VecDeque<f32>,
         density_history: &std::collections::VecDeque<f32>,
-    ) -> Vec<String> {
+    ) -> RenderedOverlay {
         use TextAlignment::Left;
 
         let trail_percent = if trail_capacity > 0.0 {
@@ -956,6 +960,7 @@ impl StatsOverlay {
         PanelBuilder::new(Self::CONTENT_WIDTH, None)
             .with_padding(Padding::new(1, 1, 2, 2))
             .with_title("STATS")
+            .with_title_box()
             // Simulation stats
             .add_single(format!("Agents:   {:>15}", agent_count), Left)
             .add_single(format!("Trail:    {:>14.1}%", trail_percent), Left)
@@ -976,7 +981,7 @@ impl StatsOverlay {
             .add_single(format!("Species:   {:>14}", species_count), Left)
             .add_single(format!("Memory:    {:>11.1} MB", memory_mb), Left)
             .add_single(format!("CPU:       {:>14.0}%", cpu_percent), Left)
-            .build()
+            .build_overlay()
     }
 
     /// Calculates the X position for the stats overlay (top-right).
@@ -1055,7 +1060,7 @@ impl InfoOverlay {
         auto_reset: bool,
         _auto_reset_threshold: f32,
         _auto_reset_duration: usize,
-    ) -> Vec<String> {
+    ) -> RenderedOverlay {
         use TextAlignment::Left;
 
         let resolution_str = format!("{}x{}", sim_width, sim_height);
@@ -1065,6 +1070,7 @@ impl InfoOverlay {
         let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
             .with_padding(Padding::new(1, 1, 1, 1))
             .with_title("INFO")
+            .with_title_box()
             .add_single(format!("Res:       {:>13}", resolution_str), Left)
             .add_single(format!("Term:      {:>13}", term_str), Left)
             .add_single(format!("Init:      {:>13}", init_mode), Left)
@@ -1093,7 +1099,7 @@ impl InfoOverlay {
             builder = builder.add_single(format!("Auto:      {:>13}", "On"), Left);
         }
 
-        builder.build()
+        builder.build_overlay()
     }
 
     /// Calculates X position for the info overlay.
@@ -1131,20 +1137,20 @@ mod stats_tests {
             12.5, 85.0, 80, &history, &history, &history,
         );
 
-        assert!(!lines.is_empty());
+        assert!(!lines.lines.is_empty());
         // Solid block borders
         assert!(
-            lines[0].starts_with('▀'),
+            lines.lines[0].starts_with('▀'),
             "Top border should be solid block ▀, got: {}",
-            lines[0]
+            lines.lines[0]
         );
         assert!(
-            lines.last().unwrap().starts_with('▄'),
+            lines.lines.last().unwrap().starts_with('▄'),
             "Bottom border should be solid block ▄"
         );
 
         // All lines should be exactly WIDTH chars
-        for (i, line) in lines.iter().enumerate() {
+        for (i, line) in lines.lines.iter().enumerate() {
             assert_eq!(
                 line.chars().count(),
                 StatsOverlay::WIDTH,
@@ -1172,8 +1178,8 @@ mod stats_tests {
             &history, &history, &history,
         );
 
-        assert!(!lines.is_empty());
-        assert!(lines.iter().any(|l| l.contains("0.0%")));
+        assert!(!lines.lines.is_empty());
+        assert!(lines.lines.iter().any(|l| l.contains("0.0%")));
     }
 
     #[test]
@@ -1236,20 +1242,20 @@ mod info_tests {
             0,
         );
 
-        assert!(!lines.is_empty());
+        assert!(!lines.lines.is_empty());
         // Solid block borders
         assert!(
-            lines[0].starts_with('▀'),
+            lines.lines[0].starts_with('▀'),
             "Top border should be ▀, got: {}",
-            lines[0]
+            lines.lines[0]
         );
         assert!(
-            lines.last().unwrap().starts_with('▄'),
+            lines.lines.last().unwrap().starts_with('▄'),
             "Bottom border should be ▄"
         );
 
         // All lines should be exactly WIDTH chars
-        for (i, line) in lines.iter().enumerate() {
+        for (i, line) in lines.lines.iter().enumerate() {
             assert_eq!(
                 line.chars().count(),
                 InfoOverlay::WIDTH,
@@ -1282,10 +1288,10 @@ mod info_tests {
             300,
         );
 
-        assert!(!lines.is_empty());
+        assert!(!lines.lines.is_empty());
 
         // All lines should be exactly WIDTH chars
-        for (i, line) in lines.iter().enumerate() {
+        for (i, line) in lines.lines.iter().enumerate() {
             assert_eq!(
                 line.chars().count(),
                 InfoOverlay::WIDTH,
@@ -1298,9 +1304,9 @@ mod info_tests {
         }
 
         // Should contain optional fields
-        assert!(lines.iter().any(|l| l.contains("Food")));
-        assert!(lines.iter().any(|l| l.contains("Warm")));
-        assert!(lines.iter().any(|l| l.contains("Auto")));
+        assert!(lines.lines.iter().any(|l| l.contains("Food")));
+        assert!(lines.lines.iter().any(|l| l.contains("Warm")));
+        assert!(lines.lines.iter().any(|l| l.contains("Auto")));
     }
 
     #[test]
@@ -1448,7 +1454,7 @@ mod status_line_tests {
         let hints_lines = KeyboardHintsOverlay::build_overlay();
 
         // Solid block borders
-        for line in &hints_lines {
+        for line in &hints_lines.lines {
             assert!(
                 line.starts_with('▀') || line.starts_with('█') || line.starts_with('▄'),
                 "Line should start with solid block char, got: {}",
@@ -1462,7 +1468,7 @@ mod status_line_tests {
         }
 
         // All lines should be KeyboardHintsOverlay::WIDTH chars wide
-        for line in &hints_lines {
+        for line in &hints_lines.lines {
             assert_eq!(
                 line.chars().count(),
                 KeyboardHintsOverlay::WIDTH,
@@ -1487,8 +1493,9 @@ mod status_line_tests {
         state.sensor_angle = 90.0; // Changed from default
 
         let lines = PresetComparisonOverlay::build_overlay(&state, Preset::Organic);
-        assert!(!lines.is_empty());
+        assert!(!lines.lines.is_empty());
         let content_lines = lines
+            .lines
             .iter()
             .filter(|l| l.contains("Sensor Angle"))
             .collect::<Vec<_>>();
@@ -1531,7 +1538,7 @@ mod status_line_tests {
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
-        assert!(lines.iter().any(|l| l.contains("Test Config")));
-        assert!(lines.iter().any(|l| l.contains("10k agents")));
+        assert!(lines.lines.iter().any(|l| l.contains("Test Config")));
+        assert!(lines.lines.iter().any(|l| l.contains("10k agents")));
     }
 }

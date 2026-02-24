@@ -306,6 +306,26 @@ pub enum PanelRow {
     },
 }
 
+/// A built overlay containing main panel lines and an optional title-box mini panel.
+///
+/// Produced by [`PanelBuilder::build_overlay`]. Pass this to the renderer so it can
+/// composite the title box on top of the main panel via a second `draw_text_overlay` call.
+pub struct RenderedOverlay {
+    /// Main panel lines (all the same width).
+    pub lines: Vec<String>,
+    /// Optional title-box mini panel to draw on top of the main panel.
+    pub title_box: Option<RenderedTitleBox>,
+}
+
+/// A 3-line mini panel (top border, content, bottom border) used as a floating title box.
+pub struct RenderedTitleBox {
+    /// The 3 lines of the mini panel.
+    pub lines: Vec<String>,
+    /// Column offset from `panel_x + 1` (i.e. one past the main panel's left border char)
+    /// at which to draw the mini panel.
+    pub col_offset: usize,
+}
+
 /// Builder for creating panel content with borders, padding, and layouts.
 ///
 /// # Width semantics
@@ -330,6 +350,7 @@ pub struct PanelBuilder {
     column_layout: ColumnLayout,
     rows: Vec<PanelRow>,
     style: PanelStyle,
+    title_box: bool,
 }
 
 impl PanelBuilder {
@@ -350,6 +371,7 @@ impl PanelBuilder {
             column_layout: ColumnLayout::Single,
             rows: Vec::new(),
             style: PanelStyle::default(),
+            title_box: false,
         }
     }
 
@@ -368,6 +390,17 @@ impl PanelBuilder {
     /// Sets the title alignment.
     pub fn with_title_alignment(mut self, alignment: TitleAlignment) -> Self {
         self.title_alignment = alignment;
+        self
+    }
+
+    /// Renders the title as a distinct mini-panel overlapping the top border.
+    ///
+    /// When active (and a title is set):
+    /// - The main panel's top border is a plain horizontal line (no inline title).
+    /// - [`build_title_box`](Self::build_title_box) produces a 3-line mini panel to be drawn on
+    ///   top via a second `draw_text_overlay` call at `(panel_x + 1 + col_offset, panel_y - 1)`.
+    pub fn with_title_box(mut self) -> Self {
+        self.title_box = true;
         self
     }
 
@@ -553,6 +586,58 @@ impl PanelBuilder {
         self.render_separator_line()
     }
 
+    // ── Title-box support ─────────────────────────────────────────────────────
+
+    /// Returns the 3-line mini title-box panel and its column offset, or `None` when
+    /// `with_title_box` was not called or no title is set.
+    ///
+    /// The caller should draw the mini panel at `(panel_x + 1 + col_offset, panel_y - 1)` *after*
+    /// drawing the main panel so that the FrameBuffer compositing overwrites correctly.
+    pub fn build_title_box(&self) -> Option<(Vec<String>, usize)> {
+        if !self.title_box {
+            return None;
+        }
+        let title = self.title.as_ref()?;
+        let border = self.border.as_ref()?;
+
+        let title_text = format!(" {} ", title);
+        let title_inner_w = title_text.chars().count();
+
+        // Build a standard mini panel with just the title content.
+        // No padding — the border chars act as the box walls.
+        let mini_lines = PanelBuilder::new(title_inner_w, None)
+            .with_border(border.clone())
+            .add_single(&title_text, TextAlignment::Left)
+            .build();
+
+        // Centering offset within the main panel's inner span.
+        let inner = self.padding.left + self.content_width + self.padding.right;
+        let title_box_w = title_inner_w + 2; // including the two border chars
+        let col_offset = match self.title_alignment {
+            TitleAlignment::Center => inner.saturating_sub(title_box_w) / 2,
+            TitleAlignment::Left => 0,
+        };
+
+        Some((mini_lines, col_offset))
+    }
+
+    /// Builds the panel into a [`RenderedOverlay`] that bundles the main panel lines with an
+    /// optional title-box mini panel.
+    ///
+    /// Use this instead of [`build`](Self::build) when the panel was configured with
+    /// [`with_title_box`](Self::with_title_box).
+    pub fn build_overlay(self) -> RenderedOverlay {
+        // Extract title-box data before consuming self.
+        let title_box = self.build_title_box().map(|(lines, col_offset)| RenderedTitleBox {
+            lines,
+            col_offset,
+        });
+        RenderedOverlay {
+            lines: self.build(),
+            title_box,
+        }
+    }
+
     // ── Build ─────────────────────────────────────────────────────────────────
 
     /// Builds the panel and returns all rendered lines.
@@ -622,6 +707,17 @@ impl PanelBuilder {
     fn render_top_border(&self) -> String {
         let border = self.border.as_ref().unwrap();
         let inner = self.padding.left + self.content_width + self.padding.right;
+
+        // When title_box mode is active the mini panel drawn on top provides the title
+        // visually, so the main panel's top border is a plain horizontal line.
+        if self.title_box && self.title.is_some() {
+            return format!(
+                "{}{}{}",
+                border.top_left,
+                border.top_horizontal.to_string().repeat(inner),
+                border.top_right,
+            );
+        }
 
         if let Some(ref title) = self.title {
             let title_str = format!(" {} ", title);
