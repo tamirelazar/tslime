@@ -132,6 +132,7 @@ impl SavedConfig {
 
         let charset_str = match charset {
             Charset::HalfBlock => "halfblock",
+            Charset::HalfBlockDual => "halfblockdual",
             Charset::Ascii => "ascii",
             Charset::Braille => "braille",
             Charset::Quadrant => "quadrant",
@@ -378,6 +379,7 @@ fn parse_init_mode(s: &str) -> Result<InitMode, String> {
 fn parse_charset(s: &str) -> Result<Charset, String> {
     match s.to_lowercase().as_str() {
         "halfblock" => Ok(Charset::HalfBlock),
+        "halfblockdual" => Ok(Charset::HalfBlockDual),
         "ascii" => Ok(Charset::Ascii),
         "braille" => Ok(Charset::Braille),
         _ => Err(format!("Unknown charset: {}", s)),

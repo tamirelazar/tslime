@@ -1656,6 +1656,7 @@ pub fn run_simulation(
 
             let charset_name = match charset {
                 Charset::HalfBlock => "HalfBlock",
+                Charset::HalfBlockDual => "HalfBlockDual",
                 Charset::Ascii => "ASCII",
                 Charset::Braille => "Braille",
                 Charset::Quadrant => "Quadrant",

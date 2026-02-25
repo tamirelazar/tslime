@@ -833,6 +833,14 @@ pub struct Args {
     pub points: bool,
 
     #[arg(
+        long = "half-block-dual",
+        alias = "hbd",
+        help = "Use dual-color half-block mode (▀ with independent fg/bg colors for true 2× vertical color resolution)"
+    )]
+    /// Dual-color half-block mode for maximum color fidelity.
+    pub half_block_dual: bool,
+
+    #[arg(
         long = "plain-output",
         help = "Output plain text without ANSI color codes (for frame capture)"
     )]
@@ -1763,6 +1771,7 @@ impl Default for Args {
             quadrant: false,
             shade: false,
             points: false,
+            half_block_dual: false,
             plain_output: false,
             verbose: false,
             reverse_palette: false,
