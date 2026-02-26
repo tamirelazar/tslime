@@ -1444,14 +1444,19 @@ mod status_line_tests {
 
     #[test]
     fn test_preset_comparison_overlay() {
+        use crate::render::palette::IntensityMapping;
+        use crate::simulation::config::{InitMode, SimConfig};
+
         let mut state = crate::terminal::control::RuntimeState::new(
             42,
-            crate::simulation::config::InitMode::Random,
+            InitMode::Random,
             Preset::Organic,
+            0,
             0,
             crate::terminal::control::MouseInteractionMode::Disabled,
             0.0,
-            crate::render::palette::IntensityMapping::linear(),
+            IntensityMapping::linear(),
+            &SimConfig::default(),
         );
         state.sensor_angle = 90.0; // Changed from default
 

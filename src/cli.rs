@@ -1489,6 +1489,8 @@ impl Args {
             config.diffusion_sigma = sigma;
         }
 
+        config.time_scale = self.time_scale;
+
         if self.fps >= 60 && self.diffusion_kernel.is_none() && self.diffusion_sigma.is_none() {
             config.diffusion_kernel = crate::simulation::config::DiffusionKernel::Gaussian;
             config.diffusion_sigma = 0.5;
@@ -1566,6 +1568,7 @@ impl Args {
     }
 
     /// Validates arguments for correctness and safety bounds.
+    #[allow(clippy::manual_range_contains)]
     pub fn validate(&self) -> Result<(), String> {
         // Resolution bounds - prevent excessive memory allocation
         if self.resolution.width < 10 || self.resolution.width > 2000 {

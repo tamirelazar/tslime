@@ -30,8 +30,8 @@ use crate::simulation::config::{
 };
 use crate::simulation::Simulation;
 use crate::terminal::control::{
-    handle_key_event, num_palettes, ControlAction, MouseInteractionMode, PaletteShiftSpeed,
-    RuntimeState, ALL_PALETTES,
+    charset_name, handle_key_event, num_palettes, ControlAction, MouseInteractionMode,
+    PaletteShiftSpeed, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
 };
 use crate::terminal::detection::{log_capabilities, TerminalCapabilities};
 use crate::terminal::input::{InputPoller, MouseEventType};
@@ -943,6 +943,7 @@ pub fn capture_frames_mode(
 /// Executes the "GIF Export" mode.
 ///
 /// Runs the simulation and renders frames directly to an animated GIF file.
+#[allow(clippy::incompatible_msrv)]
 pub fn export_gif_mode(
     sim: &mut Simulation,
     args: &Args,
@@ -1049,6 +1050,7 @@ pub fn export_gif_mode(
 ///
 /// Runs the simulation and streams frames to an external FFmpeg process
 /// to generate a WebM video file. Requires FFmpeg to be installed.
+#[allow(clippy::incompatible_msrv)]
 pub fn export_webm_mode(
     sim: &mut Simulation,
     args: &Args,
@@ -1261,14 +1263,18 @@ pub fn run_simulation(
 
     renderer.set_intensity_mapping(Some(initial_intensity_mapping.clone()));
 
+    let initial_charset_index = ALL_CHARSETS.iter().position(|c| c == &charset).unwrap_or(0);
+
     let mut runtime_state = RuntimeState::new(
         seed,
         init_mode,
         initial_preset,
         initial_palette_index,
+        initial_charset_index,
         mouse_mode,
         args.mouse_timeout,
         initial_intensity_mapping,
+        &config,
     );
     runtime_state.dither_mode = dither_mode;
     runtime_state.show_stats = args.stats;
@@ -1456,8 +1462,20 @@ pub fn run_simulation(
         let current_palette = runtime_state.current_palette(&palette_list);
 
         let shift_degrees = runtime_state.palette_shift_speed.degrees_per_second();
-        hue_offset += shift_degrees * dt;
-        hue_offset %= 360.0;
+        let is_off = runtime_state.palette_shift_speed == PaletteShiftSpeed::Off;
+
+        if is_off && hue_offset.abs() > 0.05 {
+            let lerp_factor = 3.0 * dt;
+            hue_offset *= 1.0 - lerp_factor;
+
+            if hue_offset.abs() < 0.1 {
+                hue_offset = 0.0;
+            }
+        } else if !is_off {
+            hue_offset += shift_degrees * dt;
+            hue_offset %= 360.0;
+        }
+
         renderer.set_hue_shift(hue_offset);
 
         // Help lines are no longer used (deprecated), passing None to renderer
@@ -1521,6 +1539,7 @@ pub fn run_simulation(
                 runtime_state.max_brightness,
                 runtime_state.fast_mode_enabled,
                 runtime_state.current_palette(&ALL_PALETTES).name(),
+                charset_name(&runtime_state.current_charset()),
                 runtime_state.palette_shift_speed,
                 runtime_state.invert_palette,
                 runtime_state.reverse_palette,
@@ -2099,6 +2118,7 @@ pub fn run_simulation(
                             new_config.obstacles = sim.config().obstacles.clone();
                             new_config.obstacle_masks = sim.config().obstacle_masks.clone();
                             sim.update_config(new_config);
+                            timer.set_time_scale(runtime_state.time_scale);
                         }
                         ControlAction::ComparePreset(preset) => {
                             runtime_state.toggle_preset_comparison(preset);
@@ -2116,6 +2136,22 @@ pub fn run_simulation(
                             runtime_state.cycle_palette_reverse(num_palettes());
                             let new_palette = runtime_state.current_palette(&palette_list);
                             renderer.set_palette(new_palette);
+                        }
+                        ControlAction::CycleCharset => {
+                            runtime_state.cycle_charset();
+                            renderer.set_charset(runtime_state.current_charset());
+                            runtime_state.show_notification(format!(
+                                "Charset: {}",
+                                charset_name(&runtime_state.current_charset())
+                            ));
+                        }
+                        ControlAction::CycleCharsetReverse => {
+                            runtime_state.cycle_charset_reverse();
+                            renderer.set_charset(runtime_state.current_charset());
+                            runtime_state.show_notification(format!(
+                                "Charset: {}",
+                                charset_name(&runtime_state.current_charset())
+                            ));
                         }
                         ControlAction::ToggleDither => {
                             runtime_state.toggle_dither();
@@ -2430,10 +2466,17 @@ pub fn run_simulation(
                             runtime_state.reset_to_defaults();
                             let new_config = SimConfig::from(runtime_state.current_preset);
                             sim.update_config(new_config);
+                            timer.set_time_scale(runtime_state.time_scale);
                             _current_max_brightness = runtime_state.max_brightness;
                             renderer.set_invert_palette(runtime_state.invert_palette);
                             renderer.set_reverse_palette(runtime_state.reverse_palette);
-                            runtime_state.show_notification("Reset to defaults".to_string());
+                            hue_offset = 0.0;
+                            let notification = if runtime_state.cli_overrides.is_some() {
+                                "Reset to CLI parameters"
+                            } else {
+                                "Reset to defaults"
+                            };
+                            runtime_state.show_notification(notification.to_string());
                         }
                         ControlAction::ToggleStats => {
                             runtime_state.toggle_stats();

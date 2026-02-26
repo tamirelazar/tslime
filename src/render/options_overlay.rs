@@ -62,6 +62,7 @@ impl ControlsOverlay {
         max_brightness: f32,
         fast_mode_enabled: bool,
         palette_name: &str,
+        charset_name: &str,
         palette_shift_speed: PaletteShiftSpeed,
         invert_palette: bool,
         reverse_palette: bool,
@@ -187,6 +188,7 @@ impl ControlsOverlay {
             }
             2 => {
                 content.push(format!("   c/C  Palette           {:>14}", palette_name));
+                content.push(format!("   `/~  Charset          {:>14}", charset_name));
                 content.push(format!(
                     "   O    Palette Shift     {:>14}",
                     match palette_shift_speed {
@@ -306,6 +308,7 @@ mod tests {
             20.0,
             false,
             "Forest",
+            "HalfBlock",
             PaletteShiftSpeed::Off,
             false,
             false,
@@ -352,6 +355,7 @@ mod tests {
                 20.0,
                 false,
                 "Forest",
+                "HalfBlock",
                 PaletteShiftSpeed::Medium,
                 false,
                 false,
@@ -418,6 +422,7 @@ mod tests {
             20.0,
             false,
             "Forest",
+            "HalfBlock",
             PaletteShiftSpeed::Off,
             false,
             false,
@@ -459,17 +464,20 @@ mod tests {
 
 #[test]
 fn test_options_overlay_renders_all_categories() {
-    use crate::simulation::config::InitMode;
+    use crate::render::palette::IntensityMapping;
+    use crate::simulation::config::{InitMode, Preset, SimConfig};
     use crate::terminal::control::RuntimeState;
 
     let state = RuntimeState::new(
         42,
         InitMode::Random,
-        crate::simulation::config::Preset::Organic,
+        Preset::Organic,
+        0,
         0,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
-        crate::render::palette::IntensityMapping::linear(),
+        IntensityMapping::linear(),
+        &SimConfig::default(),
     );
 
     let total = OptionsOverlay::total_categories();
@@ -498,6 +506,7 @@ fn test_options_overlay_renders_all_categories() {
             state.max_brightness,
             state.fast_mode_enabled,
             "Forest",
+            "HalfBlock",
             state.palette_shift_speed,
             state.invert_palette,
             state.reverse_palette,
@@ -542,6 +551,7 @@ fn test_options_overlay_renders_all_categories() {
         state.max_brightness,
         state.fast_mode_enabled,
         "Forest",
+        "HalfBlock",
         state.palette_shift_speed,
         state.invert_palette,
         state.reverse_palette,
@@ -577,6 +587,7 @@ fn test_options_overlay_renders_all_categories() {
         state.max_brightness,
         state.fast_mode_enabled,
         "Forest",
+        "HalfBlock",
         state.palette_shift_speed,
         state.invert_palette,
         state.reverse_palette,
@@ -592,17 +603,20 @@ fn test_options_overlay_renders_all_categories() {
 
 #[test]
 fn test_options_overlay_shows_live_parameter_values() {
-    use crate::simulation::config::InitMode;
+    use crate::render::palette::IntensityMapping;
+    use crate::simulation::config::{InitMode, Preset, SimConfig};
     use crate::terminal::control::RuntimeState;
 
     let mut state = RuntimeState::new(
         42,
         InitMode::Random,
-        crate::simulation::config::Preset::Organic,
+        Preset::Organic,
+        0,
         0,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
-        crate::render::palette::IntensityMapping::linear(),
+        IntensityMapping::linear(),
+        &SimConfig::default(),
     );
 
     state.max_brightness = 100.0;
@@ -630,6 +644,7 @@ fn test_options_overlay_shows_live_parameter_values() {
         state.max_brightness,
         state.fast_mode_enabled,
         "Forest",
+        "HalfBlock",
         state.palette_shift_speed,
         state.invert_palette,
         state.reverse_palette,
@@ -658,17 +673,20 @@ fn test_options_overlay_shows_live_parameter_values() {
 
 #[test]
 fn test_options_overlay_format() {
-    use crate::simulation::config::InitMode;
+    use crate::render::palette::IntensityMapping;
+    use crate::simulation::config::{InitMode, Preset, SimConfig};
     use crate::terminal::control::RuntimeState;
 
     let state = RuntimeState::new(
         42,
         InitMode::Random,
-        crate::simulation::config::Preset::Organic,
+        Preset::Organic,
+        0,
         0,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
-        crate::render::palette::IntensityMapping::linear(),
+        IntensityMapping::linear(),
+        &SimConfig::default(),
     );
 
     for idx in 0..OptionsOverlay::total_categories() {
@@ -694,6 +712,7 @@ fn test_options_overlay_format() {
             state.max_brightness,
             state.fast_mode_enabled,
             "Forest",
+            "HalfBlock",
             state.palette_shift_speed,
             state.invert_palette,
             state.reverse_palette,

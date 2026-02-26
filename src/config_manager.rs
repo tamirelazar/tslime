@@ -307,6 +307,7 @@ impl SavedConfig {
             diffusion_kernel,
             diffusion_sigma: self.diffusion_sigma,
             max_brightness: self.max_brightness,
+            time_scale: 1.0,
             attractors: Vec::new(),
             attractor_strength: 1.0,
             mouse_attractors: Vec::new(),
@@ -496,9 +497,11 @@ mod tests {
             InitMode::Random,
             Preset::Organic,
             0,
+            0,
             crate::terminal::control::MouseInteractionMode::Disabled,
             3.0,
             crate::render::palette::IntensityMapping::linear(),
+            &SimConfig::default(),
         )
     }
 
@@ -620,6 +623,7 @@ mod tests {
             diffusion_kernel: state.diffusion_kernel,
             diffusion_sigma: 1.0,
             max_brightness: state.max_brightness,
+            time_scale: 1.0,
             attractors: Vec::new(),
             attractor_strength: 1.0,
             mouse_attractors: Vec::new(),
