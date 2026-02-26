@@ -823,7 +823,10 @@ mod tests {
     #[test]
     fn test_config_browser_overlay_empty() {
         let lines = ConfigBrowserOverlay::build_overlay(&[], 0);
-        assert!(lines.lines.iter().any(|l| l.contains("No saved configurations")));
+        assert!(lines
+            .lines
+            .iter()
+            .any(|l| l.contains("No saved configurations")));
         let (x, _y) = ConfigBrowserOverlay::calculate_position(100, 100);
         assert_eq!(x, 22);
     }
@@ -984,13 +987,11 @@ impl StatsOverlay {
             .build_overlay()
     }
 
-    /// Calculates the X position for the stats overlay (top-right).
-    pub fn calculate_x_position(term_width: usize) -> usize {
-        if term_width > Self::WIDTH + 2 {
-            term_width.saturating_sub(Self::WIDTH + 2)
-        } else {
-            1
-        }
+    /// Calculates centered position for the stats overlay.
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
+        let y = (term_height.saturating_sub(24)) / 2;
+        (x, y)
     }
 
     /// Calculates entropy of the trail map for complexity analysis.
@@ -1102,13 +1103,11 @@ impl InfoOverlay {
         builder.build_overlay()
     }
 
-    /// Calculates X position for the info overlay.
-    pub fn calculate_x_position(term_width: usize) -> usize {
-        if term_width > Self::WIDTH + 2 {
-            term_width.saturating_sub(Self::WIDTH + 2)
-        } else {
-            1
-        }
+    /// Calculates centered position for the info overlay.
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
+        let y = (term_height.saturating_sub(17)) / 2;
+        (x, y)
     }
 }
 
@@ -1165,9 +1164,12 @@ mod stats_tests {
 
     #[test]
     fn test_stats_overlay_position() {
-        assert_eq!(StatsOverlay::calculate_x_position(80), 46);
-        assert_eq!(StatsOverlay::calculate_x_position(120), 86);
-        assert_eq!(StatsOverlay::calculate_x_position(24), 1);
+        let (x, y) = StatsOverlay::calculate_position(80, 40);
+        assert_eq!(x, 24);
+        assert_eq!(y, 8);
+        let (x2, y2) = StatsOverlay::calculate_position(120, 50);
+        assert_eq!(x2, 44);
+        assert_eq!(y2, 13);
     }
 
     #[test]
@@ -1311,9 +1313,12 @@ mod info_tests {
 
     #[test]
     fn test_info_overlay_position() {
-        assert_eq!(InfoOverlay::calculate_x_position(80), 50);
-        assert_eq!(InfoOverlay::calculate_x_position(120), 90);
-        assert_eq!(InfoOverlay::calculate_x_position(28), 1);
+        let (x, y) = InfoOverlay::calculate_position(80, 40);
+        assert_eq!(x, 26);
+        assert_eq!(y, 11);
+        let (x2, y2) = InfoOverlay::calculate_position(120, 50);
+        assert_eq!(x2, 46);
+        assert_eq!(y2, 16);
     }
 }
 

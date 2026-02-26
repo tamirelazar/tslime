@@ -628,10 +628,9 @@ impl PanelBuilder {
     /// [`with_title_box`](Self::with_title_box).
     pub fn build_overlay(self) -> RenderedOverlay {
         // Extract title-box data before consuming self.
-        let title_box = self.build_title_box().map(|(lines, col_offset)| RenderedTitleBox {
-            lines,
-            col_offset,
-        });
+        let title_box = self
+            .build_title_box()
+            .map(|(lines, col_offset)| RenderedTitleBox { lines, col_offset });
         RenderedOverlay {
             lines: self.build(),
             title_box,

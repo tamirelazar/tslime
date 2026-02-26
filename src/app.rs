@@ -963,8 +963,8 @@ pub fn export_gif_mode(
     let config = args.to_sim_config();
     let charset = Charset::Ascii;
 
-    let mut gif_exporter =
-        GifExporter::new(width, height, output_path, args.export_fps).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let mut gif_exporter = GifExporter::new(width, height, output_path, args.export_fps)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
@@ -1035,7 +1035,9 @@ pub fn export_gif_mode(
         }
     }
 
-    gif_exporter.finish(output_path).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    gif_exporter
+        .finish(output_path)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     eprintln!(
         "Done! Exported {} frames to {}",
@@ -1069,8 +1071,8 @@ pub fn export_webm_mode(
 
     let config = args.to_sim_config();
 
-    let mut webm_exporter =
-        WebmExporter::new(width, height, output_path, args.export_fps).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let mut webm_exporter = WebmExporter::new(width, height, output_path, args.export_fps)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
@@ -1476,22 +1478,24 @@ pub fn run_simulation(
         };
 
         // Build preset comparison overlay (Shift+1-7 keys)
-        let preset_comparison_lines: Option<RenderedOverlay> = if runtime_state.show_preset_comparison {
-            Some(PresetComparisonOverlay::build_overlay(
-                &runtime_state,
-                runtime_state.comparison_preset,
-            ))
-        } else {
-            None
-        };
+        let preset_comparison_lines: Option<RenderedOverlay> =
+            if runtime_state.show_preset_comparison {
+                Some(PresetComparisonOverlay::build_overlay(
+                    &runtime_state,
+                    runtime_state.comparison_preset,
+                ))
+            } else {
+                None
+            };
         let (preset_comparison_x, preset_comparison_y) = if preset_comparison_lines.is_some() {
             PresetComparisonOverlay::calculate_position(term_width as usize, term_height as usize)
         } else {
             (0, 0)
         };
 
-        // Calculate controls Y position (below help if help is visible)
-        let controls_y = 2; // Fixed position since help overlay is deprecated
+        // Calculate controls position (centered)
+        let (controls_x, controls_y) =
+            ControlsOverlay::calculate_position(term_width as usize, term_height as usize);
 
         // Build controls overlay (h key)
         let controls_lines: Option<RenderedOverlay> = if runtime_state.show_controls {
@@ -1631,7 +1635,8 @@ pub fn run_simulation(
         } else {
             None
         };
-        let stats_x = StatsOverlay::calculate_x_position(term_width as usize);
+        let (stats_x, stats_y) =
+            StatsOverlay::calculate_position(term_width as usize, term_height as usize);
 
         // Info overlay (below stats)
         let info_overlay: Option<RenderedOverlay> = if runtime_state.show_info {
@@ -1691,12 +1696,8 @@ pub fn run_simulation(
             None
         };
 
-        let info_y = if let Some(stats) = &stats_overlay {
-            2 + stats.lines.len() + 1
-        } else {
-            2
-        };
-        let info_x = InfoOverlay::calculate_x_position(term_width as usize);
+        let (info_x, info_y) =
+            InfoOverlay::calculate_position(term_width as usize, term_height as usize);
 
         // Config browser overlay
         let config_browser_overlay: Option<RenderedOverlay> = if runtime_state.show_config_browser {
@@ -1727,7 +1728,8 @@ pub fn run_simulation(
         };
 
         // Config save dialog overlay
-        let config_save_overlay: Option<RenderedOverlay> = if runtime_state.show_config_save_dialog {
+        let config_save_overlay: Option<RenderedOverlay> = if runtime_state.show_config_save_dialog
+        {
             Some(ConfigSaveOverlay::build_overlay(
                 &runtime_state.config_save_name_input,
             ))
@@ -1816,10 +1818,10 @@ pub fn run_simulation(
                 sim.width(),
                 sim.height(),
                 max_brightness.max(1.0),
-                controls_lines.as_ref().map(|v| (v, 2usize, controls_y)),
+                controls_lines.as_ref().map(|v| (v, controls_x, controls_y)),
                 status_data,
                 notification_data,
-                stats_overlay.as_ref().map(|v| (v, stats_x)),
+                stats_overlay.as_ref().map(|v| (v, stats_x, stats_y)),
                 info_overlay.as_ref().map(|v| (v, info_x, info_y)),
                 grid_renderer.as_ref(),
                 config_browser_overlay
@@ -1841,10 +1843,10 @@ pub fn run_simulation(
             renderer.render_with_overlay(
                 downsampled.cells(),
                 max_brightness.max(1.0),
-                controls_lines.as_ref().map(|v| (v, 2usize, controls_y)),
+                controls_lines.as_ref().map(|v| (v, controls_x, controls_y)),
                 status_data,
                 notification_data,
-                stats_overlay.as_ref().map(|v| (v, stats_x)),
+                stats_overlay.as_ref().map(|v| (v, stats_x, stats_y)),
                 info_overlay.as_ref().map(|v| (v, info_x, info_y)),
                 grid_renderer.as_ref(),
                 config_browser_overlay
@@ -2443,10 +2445,12 @@ pub fn run_simulation(
                             runtime_state.toggle_info();
                         }
                         ControlAction::ShowConfigBrowser => {
+                            runtime_state.close_all_overlays();
                             runtime_state.show_config_browser = true;
                             runtime_state.config_browser_selected_index = 0;
                         }
                         ControlAction::ShowConfigSaveDialog => {
+                            runtime_state.close_all_overlays();
                             runtime_state.show_config_save_dialog = true;
                             runtime_state.config_save_name_input.clear();
                         }

@@ -671,12 +671,22 @@ impl RuntimeState {
 
     /// Toggles the controls overlay.
     pub fn toggle_controls(&mut self) {
-        self.show_controls = !self.show_controls;
+        if self.show_controls {
+            self.show_controls = false;
+        } else {
+            self.close_all_overlays();
+            self.show_controls = true;
+        }
     }
 
     /// Toggles the keyboard shortcuts overlay.
     pub fn toggle_keyboard_hints(&mut self) {
-        self.show_keyboard_hints = !self.show_keyboard_hints;
+        if self.show_keyboard_hints {
+            self.show_keyboard_hints = false;
+        } else {
+            self.close_all_overlays();
+            self.show_keyboard_hints = true;
+        }
     }
 
     /// Toggles the preset comparison overlay.
@@ -684,6 +694,7 @@ impl RuntimeState {
         if self.show_preset_comparison && self.comparison_preset == preset {
             self.show_preset_comparison = false;
         } else {
+            self.close_all_overlays();
             self.show_preset_comparison = true;
             self.comparison_preset = preset;
         }
@@ -696,6 +707,8 @@ impl RuntimeState {
             || self.show_preset_comparison
             || self.show_stats
             || self.show_info
+            || self.show_config_browser
+            || self.show_config_save_dialog
     }
 
     /// Closes all open overlay windows.
@@ -705,6 +718,8 @@ impl RuntimeState {
         self.show_preset_comparison = false;
         self.show_stats = false;
         self.show_info = false;
+        self.show_config_browser = false;
+        self.show_config_save_dialog = false;
         self.focused_overlay = None;
     }
 
@@ -1080,12 +1095,22 @@ impl RuntimeState {
 
     /// Toggles statistics overlay.
     pub fn toggle_stats(&mut self) {
-        self.show_stats = !self.show_stats;
+        if self.show_stats {
+            self.show_stats = false;
+        } else {
+            self.close_all_overlays();
+            self.show_stats = true;
+        }
     }
 
     /// Toggles info overlay.
     pub fn toggle_info(&mut self) {
-        self.show_info = !self.show_info;
+        if self.show_info {
+            self.show_info = false;
+        } else {
+            self.close_all_overlays();
+            self.show_info = true;
+        }
     }
 
     /// Resets all parameters to default values.

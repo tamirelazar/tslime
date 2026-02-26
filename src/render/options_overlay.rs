@@ -35,6 +35,13 @@ impl ControlsOverlay {
         Self::TOTAL_CATEGORIES
     }
 
+    /// Calculates centered position for the controls overlay.
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
+        let y = (term_height.saturating_sub(20)) / 2;
+        (x, y)
+    }
+
     #[allow(clippy::too_many_arguments)]
     /// Builds the list of strings for the controls overlay based on current state.
     pub fn build_overlay(
@@ -377,8 +384,14 @@ mod tests {
             50000,
         );
 
-        assert!(lines.lines[0].starts_with('█'), "First line should start with █");
-        assert!(lines.lines[0].ends_with('█'), "First line should end with █");
+        assert!(
+            lines.lines[0].starts_with('█'),
+            "First line should start with █"
+        );
+        assert!(
+            lines.lines[0].ends_with('█'),
+            "First line should end with █"
+        );
         assert!(
             lines.lines.last().unwrap().starts_with('█'),
             "Last line should start with █"
@@ -490,7 +503,10 @@ mod tests {
         );
 
         // Category indicator [3/6] is in the title_box (mini panel drawn above the main border)
-        let title_box = lines.title_box.as_ref().expect("Expected title_box to be present");
+        let title_box = lines
+            .title_box
+            .as_ref()
+            .expect("Expected title_box to be present");
         assert!(
             title_box.lines.iter().any(|l| l.contains("[3/6]")),
             "Title box should contain category indicator [3/6]"
@@ -569,17 +585,28 @@ fn test_options_overlay_renders_all_categories() {
             50000,
         );
 
-        assert!(!overlay.lines.is_empty(), "Category {} should not be empty", idx);
+        assert!(
+            !overlay.lines.is_empty(),
+            "Category {} should not be empty",
+            idx
+        );
 
         let category_name = ControlsOverlay::category_name(idx);
         assert!(
-            overlay.lines.iter().any(|line| line.contains(category_name)),
+            overlay
+                .lines
+                .iter()
+                .any(|line| line.contains(category_name)),
             "Category {} should contain its name '{}'",
             idx,
             category_name
         );
 
-        assert!(!overlay.lines.is_empty(), "Category {} should have lines", idx);
+        assert!(
+            !overlay.lines.is_empty(),
+            "Category {} should have lines",
+            idx
+        );
     }
 
     let sim_overlay = ControlsOverlay::build_overlay(
@@ -612,10 +639,22 @@ fn test_options_overlay_renders_all_categories() {
         state.default_values,
         50000,
     );
-    assert!(sim_overlay.lines.iter().any(|line| line.contains("Sensor Angle")));
-    assert!(sim_overlay.lines.iter().any(|line| line.contains("Sensor Dist")));
-    assert!(sim_overlay.lines.iter().any(|line| line.contains("Turn Angle")));
-    assert!(sim_overlay.lines.iter().any(|line| line.contains("Step Size")));
+    assert!(sim_overlay
+        .lines
+        .iter()
+        .any(|line| line.contains("Sensor Angle")));
+    assert!(sim_overlay
+        .lines
+        .iter()
+        .any(|line| line.contains("Sensor Dist")));
+    assert!(sim_overlay
+        .lines
+        .iter()
+        .any(|line| line.contains("Turn Angle")));
+    assert!(sim_overlay
+        .lines
+        .iter()
+        .any(|line| line.contains("Step Size")));
 
     let env_overlay = ControlsOverlay::build_overlay(
         1,
@@ -647,9 +686,15 @@ fn test_options_overlay_renders_all_categories() {
         state.default_values,
         50000,
     );
-    assert!(env_overlay.lines.iter().any(|line| line.contains("Diffusion")));
+    assert!(env_overlay
+        .lines
+        .iter()
+        .any(|line| line.contains("Diffusion")));
     assert!(env_overlay.lines.iter().any(|line| line.contains("Wind")));
-    assert!(env_overlay.lines.iter().any(|line| line.contains("Terrain")));
+    assert!(env_overlay
+        .lines
+        .iter()
+        .any(|line| line.contains("Terrain")));
 }
 
 #[test]
