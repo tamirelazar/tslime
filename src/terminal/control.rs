@@ -1,4 +1,5 @@
 use crate::cli::Palette;
+use crate::render::charset::Charset;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::IntensityMapping;
 use crate::simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType, Wind};
@@ -44,6 +45,22 @@ pub const ALL_PALETTES: [Palette; 16] = [
     Palette::Cosmic,
     Palette::Ethereal,
 ];
+
+/// List of all available charsets for cycling.
+pub const ALL_CHARSETS: [Charset; 7] = [
+    Charset::HalfBlock,
+    Charset::HalfBlockDual,
+    Charset::Ascii,
+    Charset::Braille,
+    Charset::Quadrant,
+    Charset::Shade,
+    Charset::Points,
+];
+
+/// Returns the number of available charsets.
+pub fn num_charsets() -> usize {
+    ALL_CHARSETS.len()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Speed of automatic palette hue shifting.
@@ -143,6 +160,10 @@ pub enum ControlAction {
     CyclePalette,
     /// Cycle to previous color palette.
     CyclePaletteReverse,
+    /// Cycle to next charset.
+    CycleCharset,
+    /// Cycle to previous charset.
+    CycleCharsetReverse,
     /// Toggle controls overlay.
     ToggleControls,
     /// Toggle keyboard shortcuts overlay.
@@ -260,6 +281,8 @@ pub struct ParameterState {
     pub max_brightness: f32,
     /// Palette index.
     pub palette_index: usize,
+    /// Charset index.
+    pub charset_index: usize,
     /// Invert palette flag.
     pub invert_palette: bool,
     /// Reverse palette flag.
@@ -365,6 +388,8 @@ pub struct RuntimeState {
     pub current_preset: Preset,
     /// Index of current palette.
     pub palette_index: usize,
+    /// Index of current charset.
+    pub charset_index: usize,
     /// Random seed used for initialization.
     pub original_seed: u64,
     /// Initialization mode used.
@@ -485,6 +510,7 @@ impl RuntimeState {
             time_scale: cli_config.time_scale,
             current_preset: initial_preset,
             palette_index: initial_palette_index,
+            charset_index: 0, // Default to HalfBlock
             original_seed: seed,
             original_init_mode: init_mode,
             dither_mode: DitherMode::None,
@@ -567,6 +593,7 @@ impl RuntimeState {
             terrain_strength: self.terrain_strength,
             max_brightness: self.max_brightness,
             palette_index: self.palette_index,
+            charset_index: self.charset_index,
             invert_palette: self.invert_palette,
             reverse_palette: self.reverse_palette,
             dither_mode: self.dither_mode,
@@ -590,6 +617,7 @@ impl RuntimeState {
         self.terrain_strength = state.terrain_strength;
         self.max_brightness = state.max_brightness;
         self.palette_index = state.palette_index;
+        self.charset_index = state.charset_index;
         self.invert_palette = state.invert_palette;
         self.reverse_palette = state.reverse_palette;
         self.dither_mode = state.dither_mode;
@@ -781,6 +809,27 @@ impl RuntimeState {
         } else {
             self.palette_index -= 1;
         }
+    }
+
+    /// Cycles to the next charset.
+    pub fn cycle_charset(&mut self) {
+        self.force_checkpoint();
+        self.charset_index = (self.charset_index + 1) % ALL_CHARSETS.len();
+    }
+
+    /// Cycles to the previous charset.
+    pub fn cycle_charset_reverse(&mut self) {
+        self.force_checkpoint();
+        if self.charset_index == 0 {
+            self.charset_index = ALL_CHARSETS.len() - 1;
+        } else {
+            self.charset_index -= 1;
+        }
+    }
+
+    /// Gets the currently active charset.
+    pub fn current_charset(&self) -> Charset {
+        ALL_CHARSETS[self.charset_index].clone()
     }
 
     /// Gets the currently active palette.
@@ -1358,6 +1407,8 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('0') => ControlAction::ResetToDefaults,
         KeyCode::Char('\\') => ControlAction::ToggleStats,
         KeyCode::Char('|') => ControlAction::ToggleInfo,
+        KeyCode::Char('`') => ControlAction::CycleCharset,
+        KeyCode::Char('~') => ControlAction::CycleCharsetReverse,
         _ => ControlAction::None,
     }
 }
@@ -1407,6 +1458,20 @@ pub fn palette_name(palette: Palette) -> &'static str {
         Palette::Cosmic => "Cosmic",
         Palette::Ethereal => "Ethereal",
         Palette::Custom(_) => "Custom",
+    }
+}
+
+/// Returns the display name of a charset.
+pub fn charset_name(charset: &Charset) -> &'static str {
+    match charset {
+        Charset::HalfBlock => "HalfBlock",
+        Charset::HalfBlockDual => "HalfBlockDual",
+        Charset::Ascii => "ASCII",
+        Charset::Braille => "Braille",
+        Charset::Quadrant => "Quadrant",
+        Charset::Shade => "Shade",
+        Charset::Points => "Points",
+        Charset::CustomAscii(_) => "Custom",
     }
 }
 

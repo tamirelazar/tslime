@@ -1446,7 +1446,7 @@ mod status_line_tests {
     fn test_preset_comparison_overlay() {
         use crate::render::palette::IntensityMapping;
         use crate::simulation::config::{InitMode, SimConfig};
-        
+
         let mut state = crate::terminal::control::RuntimeState::new(
             42,
             InitMode::Random,

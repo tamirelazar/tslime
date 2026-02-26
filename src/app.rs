@@ -30,8 +30,8 @@ use crate::simulation::config::{
 };
 use crate::simulation::Simulation;
 use crate::terminal::control::{
-    handle_key_event, num_palettes, ControlAction, MouseInteractionMode, PaletteShiftSpeed,
-    RuntimeState, ALL_PALETTES,
+    charset_name, handle_key_event, num_palettes, ControlAction, MouseInteractionMode,
+    PaletteShiftSpeed, RuntimeState, ALL_PALETTES,
 };
 use crate::terminal::detection::{log_capabilities, TerminalCapabilities};
 use crate::terminal::input::{InputPoller, MouseEventType};
@@ -2132,6 +2132,22 @@ pub fn run_simulation(
                             runtime_state.cycle_palette_reverse(num_palettes());
                             let new_palette = runtime_state.current_palette(&palette_list);
                             renderer.set_palette(new_palette);
+                        }
+                        ControlAction::CycleCharset => {
+                            runtime_state.cycle_charset();
+                            renderer.set_charset(runtime_state.current_charset());
+                            runtime_state.show_notification(format!(
+                                "Charset: {}",
+                                charset_name(&runtime_state.current_charset())
+                            ));
+                        }
+                        ControlAction::CycleCharsetReverse => {
+                            runtime_state.cycle_charset_reverse();
+                            renderer.set_charset(runtime_state.current_charset());
+                            runtime_state.show_notification(format!(
+                                "Charset: {}",
+                                charset_name(&runtime_state.current_charset())
+                            ));
                         }
                         ControlAction::ToggleDither => {
                             runtime_state.toggle_dither();
