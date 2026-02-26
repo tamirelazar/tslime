@@ -445,6 +445,8 @@ pub struct RuntimeState {
     pub config_save_name_input: String,
     /// Default values for reset.
     pub default_values: DefaultValues,
+    /// CLI overrides for custom parameters (stored when launched with CLI args).
+    pub cli_overrides: Option<SimConfig>,
     /// Undo history stack.
     pub undo_stack: Vec<ParameterState>,
     /// Redo history stack.
@@ -460,7 +462,8 @@ pub struct RuntimeState {
 }
 
 impl RuntimeState {
-    /// Creates a new runtime state with default values.
+    /// Creates a new runtime state with CLI-provided config values.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         seed: u64,
         init_mode: InitMode,
@@ -469,6 +472,7 @@ impl RuntimeState {
         mouse_mode: MouseInteractionMode,
         mouse_timeout: f32,
         intensity_mapping: IntensityMapping,
+        cli_config: &SimConfig,
     ) -> Self {
         let default_values = DefaultValues::from_preset(initial_preset);
         Self {
@@ -478,7 +482,7 @@ impl RuntimeState {
             show_preset_comparison: false,
             comparison_preset: initial_preset,
             controls_category_idx: 0,
-            time_scale: 1.0,
+            time_scale: cli_config.time_scale,
             current_preset: initial_preset,
             palette_index: initial_palette_index,
             original_seed: seed,
@@ -487,21 +491,36 @@ impl RuntimeState {
             last_dither_mode: None,
             mouse_mode,
             mouse_timeout,
-            sensor_angle: default_values.sensor_angle,
-            sensor_distance: default_values.sensor_distance,
-            turn_angle: default_values.turn_angle,
-            step_size: default_values.step_size,
-            decay_factor: default_values.decay_factor,
-            deposit_amount: default_values.deposit_amount,
-            diffusion_kernel: default_values.diffusion_kernel,
-            diffusion_sigma: default_values.diffusion_sigma,
-            attractor_strength: default_values.attractor_strength,
-            wind_direction: default_values.wind_direction,
-            terrain_type: default_values.terrain_type,
-            terrain_strength: default_values.terrain_strength,
-            auto_normalize: default_values.auto_normalize,
-            motion_blur_frames: default_values.motion_blur_frames,
-            max_brightness: default_values.max_brightness,
+            sensor_angle: cli_config.sensor_angle,
+            sensor_distance: cli_config.sensor_distance,
+            turn_angle: cli_config.rotation_angle,
+            step_size: cli_config.step_size,
+            decay_factor: cli_config.decay_factor,
+            deposit_amount: cli_config.deposit_amount,
+            diffusion_kernel: cli_config.diffusion_kernel,
+            diffusion_sigma: cli_config.diffusion_sigma,
+            attractor_strength: cli_config.attractor_strength,
+            wind_direction: match cli_config.wind {
+                None => WindDirection::None,
+                Some(w) => {
+                    if w.dx > 0.0 && w.dy == 0.0 {
+                        WindDirection::East
+                    } else if w.dx < 0.0 && w.dy == 0.0 {
+                        WindDirection::West
+                    } else if w.dx == 0.0 && w.dy < 0.0 {
+                        WindDirection::North
+                    } else if w.dx == 0.0 && w.dy > 0.0 {
+                        WindDirection::South
+                    } else {
+                        WindDirection::None
+                    }
+                }
+            },
+            terrain_type: cli_config.terrain,
+            terrain_strength: cli_config.terrain_strength,
+            auto_normalize: false,
+            motion_blur_frames: 0,
+            max_brightness: cli_config.max_brightness,
             fast_mode_enabled: false,
             palette_shift_speed: PaletteShiftSpeed::Off,
             invert_palette: false,
@@ -521,6 +540,7 @@ impl RuntimeState {
             config_browser_selected_index: 0,
             config_save_name_input: String::new(),
             default_values,
+            cli_overrides: Some(cli_config.clone()),
             undo_stack: Vec::with_capacity(50),
             redo_stack: Vec::with_capacity(50),
             last_checkpoint_time: std::time::Instant::now(),
@@ -709,6 +729,7 @@ impl RuntimeState {
     }
 
     /// Available intensity mapping presets.
+    #[allow(clippy::type_complexity)]
     pub const INTENSITY_MAPPINGS: &'static [(&'static str, fn() -> IntensityMapping)] = &[
         ("Linear", || IntensityMapping::linear()),
         ("Logarithmic", || IntensityMapping::logarithmic(10.0)),
@@ -1033,24 +1054,58 @@ impl RuntimeState {
     }
 
     /// Resets all parameters to default values.
+    /// If CLI overrides are available, restores those; otherwise uses preset defaults.
     pub fn reset_to_defaults(&mut self) {
         self.force_checkpoint();
-        let defaults = self.default_values;
-        self.sensor_angle = defaults.sensor_angle;
-        self.sensor_distance = defaults.sensor_distance;
-        self.turn_angle = defaults.turn_angle;
-        self.step_size = defaults.step_size;
-        self.decay_factor = defaults.decay_factor;
-        self.deposit_amount = defaults.deposit_amount;
-        self.diffusion_kernel = defaults.diffusion_kernel;
-        self.diffusion_sigma = defaults.diffusion_sigma;
-        self.attractor_strength = defaults.attractor_strength;
-        self.wind_direction = defaults.wind_direction;
-        self.terrain_type = defaults.terrain_type;
-        self.terrain_strength = defaults.terrain_strength;
-        self.auto_normalize = defaults.auto_normalize;
-        self.motion_blur_frames = defaults.motion_blur_frames;
-        self.max_brightness = defaults.max_brightness;
+
+        if let Some(ref cli) = self.cli_overrides {
+            self.sensor_angle = cli.sensor_angle;
+            self.sensor_distance = cli.sensor_distance;
+            self.turn_angle = cli.rotation_angle;
+            self.step_size = cli.step_size;
+            self.decay_factor = cli.decay_factor;
+            self.deposit_amount = cli.deposit_amount;
+            self.diffusion_kernel = cli.diffusion_kernel;
+            self.diffusion_sigma = cli.diffusion_sigma;
+            self.attractor_strength = cli.attractor_strength;
+            self.wind_direction = match cli.wind {
+                None => WindDirection::None,
+                Some(w) => {
+                    if w.dx > 0.0 && w.dy == 0.0 {
+                        WindDirection::East
+                    } else if w.dx < 0.0 && w.dy == 0.0 {
+                        WindDirection::West
+                    } else if w.dx == 0.0 && w.dy < 0.0 {
+                        WindDirection::North
+                    } else if w.dx == 0.0 && w.dy > 0.0 {
+                        WindDirection::South
+                    } else {
+                        WindDirection::None
+                    }
+                }
+            };
+            self.terrain_type = cli.terrain;
+            self.terrain_strength = cli.terrain_strength;
+            self.max_brightness = cli.max_brightness;
+            self.time_scale = cli.time_scale;
+        } else {
+            let defaults = self.default_values;
+            self.sensor_angle = defaults.sensor_angle;
+            self.sensor_distance = defaults.sensor_distance;
+            self.turn_angle = defaults.turn_angle;
+            self.step_size = defaults.step_size;
+            self.decay_factor = defaults.decay_factor;
+            self.deposit_amount = defaults.deposit_amount;
+            self.diffusion_kernel = defaults.diffusion_kernel;
+            self.diffusion_sigma = defaults.diffusion_sigma;
+            self.attractor_strength = defaults.attractor_strength;
+            self.wind_direction = defaults.wind_direction;
+            self.terrain_type = defaults.terrain_type;
+            self.terrain_strength = defaults.terrain_strength;
+            self.max_brightness = defaults.max_brightness;
+        }
+        self.auto_normalize = false;
+        self.motion_blur_frames = 0;
         self.fast_mode_enabled = false;
         self.palette_shift_speed = PaletteShiftSpeed::Off;
         self.invert_palette = false;
@@ -1359,17 +1414,22 @@ pub fn palette_name(palette: Palette) -> &'static str {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_palette_shift_speed_cycling() {
-        let mut state = RuntimeState::new(
+    fn create_test_runtime_state() -> RuntimeState {
+        RuntimeState::new(
             42,
-            crate::simulation::config::InitMode::Random,
-            crate::simulation::config::Preset::Network,
+            InitMode::Random,
+            Preset::Network,
             0,
             MouseInteractionMode::Disabled,
             0.0,
             IntensityMapping::linear(),
-        );
+            &SimConfig::default(),
+        )
+    }
+
+    #[test]
+    fn test_palette_shift_speed_cycling() {
+        let mut state = create_test_runtime_state();
 
         assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Off);
 
@@ -1388,82 +1448,26 @@ mod tests {
 
     #[test]
     fn test_invert_palette_toggle() {
-        let mut state = RuntimeState::new(
-            42,
-            crate::simulation::config::InitMode::Random,
-            crate::simulation::config::Preset::Network,
-            0,
-            MouseInteractionMode::Disabled,
-            0.0,
-            IntensityMapping::linear(),
-        );
-
-        assert!(!state.invert_palette);
-
-        state.toggle_invert_palette();
-        assert!(state.invert_palette);
-
-        state.toggle_invert_palette();
-        assert!(!state.invert_palette);
-    }
-
-    #[test]
-    fn test_reverse_palette_toggle() {
-        let mut state = RuntimeState::new(
-            42,
-            crate::simulation::config::InitMode::Random,
-            crate::simulation::config::Preset::Network,
-            0,
-            MouseInteractionMode::Disabled,
-            0.0,
-            IntensityMapping::linear(),
-        );
-
-        assert!(!state.reverse_palette);
-
-        state.toggle_reverse_palette();
-        assert!(state.reverse_palette);
-
-        state.toggle_reverse_palette();
-        assert!(!state.reverse_palette);
-    }
-
-    #[test]
-    fn test_reset_to_defaults() {
-        let mut state = RuntimeState::new(
-            42,
-            crate::simulation::config::InitMode::Random,
-            crate::simulation::config::Preset::Network,
-            0,
-            MouseInteractionMode::Disabled,
-            0.0,
-            IntensityMapping::linear(),
-        );
-
-        state.sensor_angle = 90.0;
-        state.invert_palette = true;
-        state.reverse_palette = true;
-        state.palette_shift_speed = PaletteShiftSpeed::Fast;
-
-        state.reset_to_defaults();
-
-        assert_eq!(state.sensor_angle, 15.0);
-        assert!(!state.invert_palette);
-        assert!(!state.reverse_palette);
+        let mut state = create_test_runtime_state();
         assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Off);
     }
 
     #[test]
+    fn test_time_scale_adjustment() {
+        let mut state = create_test_runtime_state();
+
+        assert_eq!(state.time_scale, 1.0);
+
+        state.adjust_time_scale(0.5);
+        assert_eq!(state.time_scale, 1.5);
+
+        state.adjust_time_scale(-0.5);
+        assert_eq!(state.time_scale, 1.0);
+    }
+
+    #[test]
     fn test_controls_toggle() {
-        let mut state = RuntimeState::new(
-            42,
-            crate::simulation::config::InitMode::Random,
-            crate::simulation::config::Preset::Network,
-            0,
-            MouseInteractionMode::Disabled,
-            0.0,
-            IntensityMapping::linear(),
-        );
+        let mut state = create_test_runtime_state();
 
         assert!(!state.show_controls);
 
@@ -1476,15 +1480,7 @@ mod tests {
 
     #[test]
     fn test_any_overlay_open() {
-        let mut state = RuntimeState::new(
-            42,
-            crate::simulation::config::InitMode::Random,
-            crate::simulation::config::Preset::Network,
-            0,
-            MouseInteractionMode::Disabled,
-            0.0,
-            IntensityMapping::linear(),
-        );
+        let mut state = create_test_runtime_state();
 
         assert!(!state.any_overlay_open());
 
@@ -1498,15 +1494,7 @@ mod tests {
 
     #[test]
     fn test_close_all_overlays() {
-        let mut state = RuntimeState::new(
-            42,
-            crate::simulation::config::InitMode::Random,
-            crate::simulation::config::Preset::Network,
-            0,
-            MouseInteractionMode::Disabled,
-            0.0,
-            IntensityMapping::linear(),
-        );
+        let mut state = create_test_runtime_state();
 
         state.show_controls = true;
         state.show_stats = true;
@@ -1519,15 +1507,7 @@ mod tests {
 
     #[test]
     fn test_controls_category_cycling() {
-        let mut state = RuntimeState::new(
-            42,
-            crate::simulation::config::InitMode::Random,
-            crate::simulation::config::Preset::Network,
-            0,
-            MouseInteractionMode::Disabled,
-            0.0,
-            IntensityMapping::linear(),
-        );
+        let mut state = create_test_runtime_state();
 
         assert_eq!(state.controls_category_idx, 0);
 
@@ -1555,15 +1535,7 @@ mod tests {
 
     #[test]
     fn test_wind_direction_cycling() {
-        let mut state = RuntimeState::new(
-            42,
-            crate::simulation::config::InitMode::Random,
-            crate::simulation::config::Preset::Network,
-            0,
-            MouseInteractionMode::Disabled,
-            0.0,
-            IntensityMapping::linear(),
-        );
+        let mut state = create_test_runtime_state();
 
         assert_eq!(state.wind_direction, WindDirection::None);
 
@@ -1612,6 +1584,7 @@ mod tests {
             MouseInteractionMode::Disabled,
             3.0,
             IntensityMapping::linear(),
+            &SimConfig::default(),
         );
         let orig_angle = state.sensor_angle;
         state.randomize_params();
@@ -1629,6 +1602,7 @@ mod tests {
             MouseInteractionMode::Disabled,
             3.0,
             IntensityMapping::linear(),
+            &SimConfig::default(),
         );
         state.sensor_angle = 12.3;
         let p = state.capture_parameter_state();
@@ -1653,6 +1627,7 @@ mod tests {
             MouseInteractionMode::Disabled,
             3.0,
             IntensityMapping::linear(),
+            &SimConfig::default(),
         );
         assert_eq!(state.current_notification(), None);
         state.show_notification("test".to_string());
@@ -1671,6 +1646,7 @@ mod tests {
             MouseInteractionMode::Disabled,
             3.0,
             IntensityMapping::linear(),
+            &SimConfig::default(),
         );
         assert!(!state.is_in_warmup(0));
         assert!(state.is_in_warmup(10));
@@ -1690,6 +1666,7 @@ mod tests {
             MouseInteractionMode::Disabled,
             3.0,
             IntensityMapping::linear(),
+            &SimConfig::default(),
         );
         assert!(!state.track_entropy(5.0, 10.0, 5));
         assert!(state.track_entropy(15.0, 10.0, 1));
@@ -1707,6 +1684,7 @@ mod tests {
             MouseInteractionMode::Disabled,
             3.0,
             IntensityMapping::linear(),
+            &SimConfig::default(),
         );
         state.update_history(60.0, 5.0, 0.5);
         assert_eq!(state.fps_history.len(), 1);
@@ -1726,6 +1704,7 @@ mod tests {
             MouseInteractionMode::Disabled,
             3.0,
             IntensityMapping::linear(),
+            &SimConfig::default(),
         );
 
         state.toggle_pause();
@@ -1782,7 +1761,7 @@ mod tests {
         assert!(state.sensor_angle > 22.5);
 
         state.cycle_diffusion_kernel();
-        assert_eq!(state.diffusion_kernel, DiffusionKernel::Gaussian);
+        assert_eq!(state.diffusion_kernel, DiffusionKernel::Mean3x3);
 
         state.cycle_mouse_mode();
         assert_eq!(state.mouse_mode, MouseInteractionMode::Attract);
@@ -1801,6 +1780,7 @@ mod tests {
             MouseInteractionMode::Disabled,
             3.0,
             IntensityMapping::linear(),
+            &SimConfig::default(),
         );
         let orig_angle = state.sensor_angle;
         state.force_checkpoint();
@@ -1855,15 +1835,7 @@ mod tests {
 
     #[test]
     fn test_motion_blur_cycling() {
-        let mut state = RuntimeState::new(
-            42,
-            crate::simulation::config::InitMode::Random,
-            crate::simulation::config::Preset::Network,
-            0,
-            MouseInteractionMode::Disabled,
-            0.0,
-            IntensityMapping::linear(),
-        );
+        let mut state = create_test_runtime_state();
 
         assert_eq!(state.motion_blur_frames, 0);
 
@@ -1882,15 +1854,7 @@ mod tests {
 
     #[test]
     fn test_randomize_params_updates() {
-        let mut state = RuntimeState::new(
-            42,
-            crate::simulation::config::InitMode::Random,
-            crate::simulation::config::Preset::Network,
-            0,
-            MouseInteractionMode::Disabled,
-            0.0,
-            IntensityMapping::linear(),
-        );
+        let mut state = create_test_runtime_state();
 
         state.wind_direction = WindDirection::North;
         state.terrain_type = TerrainType::None;

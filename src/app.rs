@@ -943,6 +943,7 @@ pub fn capture_frames_mode(
 /// Executes the "GIF Export" mode.
 ///
 /// Runs the simulation and renders frames directly to an animated GIF file.
+#[allow(clippy::incompatible_msrv)]
 pub fn export_gif_mode(
     sim: &mut Simulation,
     args: &Args,
@@ -1049,6 +1050,7 @@ pub fn export_gif_mode(
 ///
 /// Runs the simulation and streams frames to an external FFmpeg process
 /// to generate a WebM video file. Requires FFmpeg to be installed.
+#[allow(clippy::incompatible_msrv)]
 pub fn export_webm_mode(
     sim: &mut Simulation,
     args: &Args,
@@ -1269,6 +1271,7 @@ pub fn run_simulation(
         mouse_mode,
         args.mouse_timeout,
         initial_intensity_mapping,
+        &config,
     );
     runtime_state.dither_mode = dither_mode;
     runtime_state.show_stats = args.stats;
@@ -2099,6 +2102,7 @@ pub fn run_simulation(
                             new_config.obstacles = sim.config().obstacles.clone();
                             new_config.obstacle_masks = sim.config().obstacle_masks.clone();
                             sim.update_config(new_config);
+                            timer.set_time_scale(runtime_state.time_scale);
                         }
                         ControlAction::ComparePreset(preset) => {
                             runtime_state.toggle_preset_comparison(preset);
@@ -2430,10 +2434,16 @@ pub fn run_simulation(
                             runtime_state.reset_to_defaults();
                             let new_config = SimConfig::from(runtime_state.current_preset);
                             sim.update_config(new_config);
+                            timer.set_time_scale(runtime_state.time_scale);
                             _current_max_brightness = runtime_state.max_brightness;
                             renderer.set_invert_palette(runtime_state.invert_palette);
                             renderer.set_reverse_palette(runtime_state.reverse_palette);
-                            runtime_state.show_notification("Reset to defaults".to_string());
+                            let notification = if runtime_state.cli_overrides.is_some() {
+                                "Reset to CLI parameters"
+                            } else {
+                                "Reset to defaults"
+                            };
+                            runtime_state.show_notification(notification.to_string());
                         }
                         ControlAction::ToggleStats => {
                             runtime_state.toggle_stats();

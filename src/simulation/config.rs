@@ -509,6 +509,8 @@ pub struct SimConfig {
     pub diffusion_sigma: f32,
     /// Max brightness for normalization.
     pub max_brightness: f32,
+    /// Time scale multiplier (0.1-10.0).
+    pub time_scale: f32,
     /// List of active attractors.
     pub attractors: Vec<Attractor>,
     /// Global attractor strength multiplier.
@@ -607,6 +609,12 @@ impl SimConfig {
                 self.diffusion_sigma
             ));
         }
+        if self.time_scale < 0.1 || self.time_scale > 10.0 {
+            return Err(format!(
+                "time_scale must be between 0.1 and 10.0, got {}",
+                self.time_scale
+            ));
+        }
         if self.attractor_strength < 0.1 || self.attractor_strength > 10.0 {
             return Err(format!(
                 "attractor_strength must be between 0.1 and 10.0, got {}",
@@ -697,6 +705,7 @@ impl Default for SimConfig {
             diffusion_kernel: DiffusionKernel::Gaussian,
             diffusion_sigma: 1.0,
             max_brightness: 100.0,
+            time_scale: 1.0,
             attractors: Vec::new(),
             attractor_strength: 1.0,
             mouse_attractors: Vec::new(),
@@ -730,6 +739,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 20.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -766,6 +776,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 3.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 12.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -802,6 +813,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 4.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 16.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -838,6 +850,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 20.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -866,6 +879,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 3.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 15.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -902,6 +916,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 4.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 18.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -938,6 +953,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 3.0,
                 diffusion_kernel: DiffusionKernel::Gaussian,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 14.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -974,6 +990,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 20.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -1010,6 +1027,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 2.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 12.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -1046,6 +1064,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 18.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -1082,6 +1101,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 18.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -1118,6 +1138,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 2.0,
                 diffusion_kernel: DiffusionKernel::Gaussian,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 12.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -1154,6 +1175,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 0.2,
                 diffusion_kernel: DiffusionKernel::Gaussian,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 50.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -1197,6 +1219,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 4.3,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 16.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -1235,6 +1258,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 20.0, // Max intensity trails
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 40.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -1274,6 +1298,7 @@ impl From<Preset> for SimConfig {
                 diffusion_kernel: DiffusionKernel::Gaussian,
                 diffusion_sigma: 1.2,
                 max_brightness: 15.0,
+                time_scale: 1.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
                 mouse_attractors: Vec::new(),
@@ -1311,6 +1336,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 15.8,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 25.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -1349,6 +1375,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 9.3,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 25.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,
@@ -1387,6 +1414,7 @@ impl From<Preset> for SimConfig {
                 deposit_amount: 6.3,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 diffusion_sigma: 1.0,
+                time_scale: 1.0,
                 max_brightness: 18.0,
                 attractors: Vec::new(),
                 attractor_strength: 1.0,

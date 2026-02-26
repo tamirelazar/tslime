@@ -459,17 +459,19 @@ mod tests {
 
 #[test]
 fn test_options_overlay_renders_all_categories() {
-    use crate::simulation::config::InitMode;
+    use crate::render::palette::IntensityMapping;
+    use crate::simulation::config::{InitMode, Preset, SimConfig};
     use crate::terminal::control::RuntimeState;
 
     let state = RuntimeState::new(
         42,
         InitMode::Random,
-        crate::simulation::config::Preset::Organic,
+        Preset::Organic,
         0,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
-        crate::render::palette::IntensityMapping::linear(),
+        IntensityMapping::linear(),
+        &SimConfig::default(),
     );
 
     let total = OptionsOverlay::total_categories();
@@ -592,17 +594,19 @@ fn test_options_overlay_renders_all_categories() {
 
 #[test]
 fn test_options_overlay_shows_live_parameter_values() {
-    use crate::simulation::config::InitMode;
+    use crate::render::palette::IntensityMapping;
+    use crate::simulation::config::{InitMode, Preset, SimConfig};
     use crate::terminal::control::RuntimeState;
 
     let mut state = RuntimeState::new(
         42,
         InitMode::Random,
-        crate::simulation::config::Preset::Organic,
+        Preset::Organic,
         0,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
-        crate::render::palette::IntensityMapping::linear(),
+        IntensityMapping::linear(),
+        &SimConfig::default(),
     );
 
     state.max_brightness = 100.0;
@@ -658,17 +662,19 @@ fn test_options_overlay_shows_live_parameter_values() {
 
 #[test]
 fn test_options_overlay_format() {
-    use crate::simulation::config::InitMode;
+    use crate::render::palette::IntensityMapping;
+    use crate::simulation::config::{InitMode, Preset, SimConfig};
     use crate::terminal::control::RuntimeState;
 
     let state = RuntimeState::new(
         42,
         InitMode::Random,
-        crate::simulation::config::Preset::Organic,
+        Preset::Organic,
         0,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
-        crate::render::palette::IntensityMapping::linear(),
+        IntensityMapping::linear(),
+        &SimConfig::default(),
     );
 
     for idx in 0..OptionsOverlay::total_categories() {
