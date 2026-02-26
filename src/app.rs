@@ -1459,8 +1459,20 @@ pub fn run_simulation(
         let current_palette = runtime_state.current_palette(&palette_list);
 
         let shift_degrees = runtime_state.palette_shift_speed.degrees_per_second();
-        hue_offset += shift_degrees * dt;
-        hue_offset %= 360.0;
+        let is_off = runtime_state.palette_shift_speed == PaletteShiftSpeed::Off;
+
+        if is_off && hue_offset.abs() > 0.05 {
+            let lerp_factor = 3.0 * dt;
+            hue_offset *= 1.0 - lerp_factor;
+
+            if hue_offset.abs() < 0.1 {
+                hue_offset = 0.0;
+            }
+        } else if !is_off {
+            hue_offset += shift_degrees * dt;
+            hue_offset %= 360.0;
+        }
+
         renderer.set_hue_shift(hue_offset);
 
         // Help lines are no longer used (deprecated), passing None to renderer
@@ -2438,6 +2450,7 @@ pub fn run_simulation(
                             _current_max_brightness = runtime_state.max_brightness;
                             renderer.set_invert_palette(runtime_state.invert_palette);
                             renderer.set_reverse_palette(runtime_state.reverse_palette);
+                            hue_offset = 0.0;
                             let notification = if runtime_state.cli_overrides.is_some() {
                                 "Reset to CLI parameters"
                             } else {
