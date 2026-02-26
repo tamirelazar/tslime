@@ -31,7 +31,7 @@ use crate::simulation::config::{
 use crate::simulation::Simulation;
 use crate::terminal::control::{
     charset_name, handle_key_event, num_palettes, ControlAction, MouseInteractionMode,
-    PaletteShiftSpeed, RuntimeState, ALL_PALETTES,
+    PaletteShiftSpeed, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
 };
 use crate::terminal::detection::{log_capabilities, TerminalCapabilities};
 use crate::terminal::input::{InputPoller, MouseEventType};
@@ -1263,11 +1263,14 @@ pub fn run_simulation(
 
     renderer.set_intensity_mapping(Some(initial_intensity_mapping.clone()));
 
+    let initial_charset_index = ALL_CHARSETS.iter().position(|c| c == &charset).unwrap_or(0);
+
     let mut runtime_state = RuntimeState::new(
         seed,
         init_mode,
         initial_preset,
         initial_palette_index,
+        initial_charset_index,
         mouse_mode,
         args.mouse_timeout,
         initial_intensity_mapping,
@@ -1536,6 +1539,7 @@ pub fn run_simulation(
                 runtime_state.max_brightness,
                 runtime_state.fast_mode_enabled,
                 runtime_state.current_palette(&ALL_PALETTES).name(),
+                charset_name(&runtime_state.current_charset()),
                 runtime_state.palette_shift_speed,
                 runtime_state.invert_palette,
                 runtime_state.reverse_palette,

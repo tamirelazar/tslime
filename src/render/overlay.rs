@@ -1452,6 +1452,7 @@ mod status_line_tests {
             InitMode::Random,
             Preset::Organic,
             0,
+            0,
             crate::terminal::control::MouseInteractionMode::Disabled,
             0.0,
             IntensityMapping::linear(),

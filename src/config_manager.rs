@@ -497,6 +497,7 @@ mod tests {
             InitMode::Random,
             Preset::Organic,
             0,
+            0,
             crate::terminal::control::MouseInteractionMode::Disabled,
             3.0,
             crate::render::palette::IntensityMapping::linear(),
