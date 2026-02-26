@@ -2147,29 +2147,21 @@ pub fn run_simulation(
                             const TOTAL_CATEGORIES: usize = 6;
 
                             if !runtime_state.show_controls {
-                                // Was hidden, show at current remembered tab
                                 runtime_state.show_controls = true;
+                            } else if runtime_state.controls_category_idx == TOTAL_CATEGORIES - 1 {
+                                runtime_state.controls_category_idx = 0;
                             } else {
-                                // Cycle forward
                                 runtime_state.cycle_controls_category(true);
-
-                                // If we wrapped back to 0, hide instead
-                                if runtime_state.controls_category_idx == 0 {
-                                    runtime_state.show_controls = false;
-                                    runtime_state.controls_category_idx = TOTAL_CATEGORIES - 1;
-                                    // Keep at last tab
-                                }
                             }
                         }
                         ControlAction::CycleOptionsCategoryReverse => {
+                            const TOTAL_CATEGORIES: usize = 6;
+
                             if !runtime_state.show_controls {
-                                // Was hidden, show at current remembered tab
                                 runtime_state.show_controls = true;
                             } else if runtime_state.controls_category_idx == 0 {
-                                // At first tab going backward, hide
-                                runtime_state.show_controls = false;
+                                runtime_state.controls_category_idx = TOTAL_CATEGORIES - 1;
                             } else {
-                                // Cycle backward
                                 runtime_state.cycle_controls_category(false);
                             }
                         }
