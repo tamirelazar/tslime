@@ -440,6 +440,7 @@ impl FrameBuffer {
             let char = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
                 match charset {
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
+                    Charset::HalfBlockDual => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::Sculpted => {
                         let idx = y * self.width + x;
                         if idx < downsampled.len() {
@@ -568,6 +569,7 @@ impl FrameBuffer {
                             charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
                         }
                     }
+                    Charset::HalfBlockDual => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::Sculpted => {
                         let idx = y * self.width + x;
@@ -677,6 +679,7 @@ impl FrameBuffer {
                             charset::map_brightness(top_adj, Some(bottom_adj), charset.clone())
                         }
                     }
+                    Charset::HalfBlockDual => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::Sculpted => {
                         let idx = y * self.width + x;

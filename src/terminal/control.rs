@@ -1472,6 +1472,7 @@ pub fn charset_name(charset: &Charset) -> &'static str {
         Charset::Quadrant => "Quadrant",
         Charset::Shade => "Shade",
         Charset::Points => "Points",
+        Charset::Sculpted => "Sculpted",
         Charset::CustomAscii(_) => "Custom",
     }
 }
