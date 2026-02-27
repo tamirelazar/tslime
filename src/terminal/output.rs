@@ -816,6 +816,8 @@ impl FrameBuffer {
     /// Build the final ANSI string for the frame.
     ///
     /// Optimizes output by only emitting color codes when they change.
+    /// Uses efficient relative cursor movement - writes characters sequentially
+    /// and only uses newlines to move to the next row.
     pub fn build_frame_string(&self, plain_output: bool, color_mode: ColorMode) -> String {
         let mut output = String::new();
 
@@ -833,8 +835,6 @@ impl FrameBuffer {
                 let cell = self.cells[y * self.width + x];
 
                 if !plain_output {
-                    output.push_str(&format!("\x1b[{};{}H", y + 1, x + 1));
-
                     match color_mode {
                         ColorMode::TrueColor => {
                             if let Some(fg) = cell.fg_color_rgb {
@@ -882,6 +882,11 @@ impl FrameBuffer {
                 }
 
                 output.push(cell.char);
+            }
+
+            // Move to next row - only needed if not the last row
+            if y < self.height - 1 {
+                output.push_str("\r\n");
             }
         }
 
