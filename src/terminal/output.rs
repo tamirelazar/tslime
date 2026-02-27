@@ -380,7 +380,8 @@ impl FrameBuffer {
         species_colors_enabled: bool,
         species_rgb_colors: Option<&[RgbColor]>,
     ) -> Cell {
-        const THRESHOLD: f32 = 0.05;
+        const THRESHOLD: f32 = 0.01;
+        let log_gaps = std::env::var("TSLIME_LOG_GAPS").is_ok();
 
         let levels = charset::charset_level_count(charset.clone());
 
@@ -429,6 +430,12 @@ impl FrameBuffer {
         };
 
         if top_adj < THRESHOLD && bottom_adj < THRESHOLD {
+            if log_gaps {
+                eprintln!(
+                    "Empty cell at ({}, {}): top_adj={}, bottom_adj={}, charset={:?}",
+                    x, y, top_adj, bottom_adj, charset
+                );
+            }
             Cell {
                 char: ' ',
                 fg_color_256: None,
