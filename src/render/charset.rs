@@ -17,6 +17,9 @@ pub enum Charset {
     Shade,
     /// Point grid using ▪ for sparse particle visualization.
     Points,
+    /// Sculpted mode: solid interior blocks with shape-aware outlines using
+    /// triangle fills, quadrant blocks, and half blocks.
+    Sculpted,
     /// User-defined ASCII character set.
     CustomAscii(Vec<char>),
 }
@@ -24,7 +27,9 @@ pub enum Charset {
 impl Charset {
     /// Selects the appropriate character set based on command-line arguments.
     pub fn from_args(args: &Args) -> Self {
-        if args.quadrant {
+        if args.sculpted {
+            Charset::Sculpted
+        } else if args.quadrant {
             Charset::Quadrant
         } else if args.shade {
             Charset::Shade
@@ -313,6 +318,12 @@ pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
             };
             map_point(avg, 0.15) // Higher threshold for sparse dots
         }
+        Charset::Sculpted => {
+            // Fallback: same as HalfBlock when no quadrant data available
+            let brightness = top.clamp(0.0, 1.0);
+            let index = (brightness * (HALF_BLOCK_CHARS.len() - 1) as f32).round() as usize;
+            HALF_BLOCK_CHARS[index]
+        }
         Charset::CustomAscii(ref chars) => {
             if chars.is_empty() {
                 return ' ';
@@ -374,6 +385,695 @@ pub fn map_ascii_directional(brightness: f32, is_top: bool) -> char {
     chars[index]
 }
 
+// ===== Shape Vector ASCII Rendering =====
+//
+// Based on Alex Harri's technique: instead of mapping a single brightness
+// value to a character by density, we match the *spatial distribution* of
+// brightness within each cell to the visual shape of ASCII characters.
+//
+// Each character is described by a 6D "shape vector" representing ink density
+// across a 2×3 grid:
+//   [top_left, top_right, mid_left, mid_right, bot_left, bot_right]
+//
+// The input cell is sampled the same way and matched to the nearest character
+// by Euclidean distance, so edge-like patterns get edge-like characters
+// (/, \, |, -, etc.) rather than uniform fill characters.
+
+/// Shape vector entry: a character paired with its 2×3 spatial density profile.
+struct ShapeEntry {
+    ch: char,
+    vector: [f32; 6],
+}
+
+/// Precomputed shape vectors for ~55 printable ASCII characters.
+///
+/// Values represent approximate ink density in a 2×3 grid layout:
+///   [TL, TR, ML, MR, BL, BR]
+/// where each value ∈ [0.0, 1.0].
+///
+/// These are tuned for typical monospace terminal fonts (Consolas, DejaVu Mono,
+/// etc.) and emphasize characters useful for rendering organic contours.
+const SHAPE_TABLE: [ShapeEntry; 55] = [
+    // === Empty / very light ===
+    ShapeEntry {
+        ch: ' ',
+        vector: [0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
+    },
+    ShapeEntry {
+        ch: '.',
+        vector: [0.00, 0.00, 0.00, 0.00, 0.05, 0.05],
+    },
+    ShapeEntry {
+        ch: ',',
+        vector: [0.00, 0.00, 0.00, 0.00, 0.02, 0.10],
+    },
+    ShapeEntry {
+        ch: '\'',
+        vector: [0.05, 0.08, 0.00, 0.00, 0.00, 0.00],
+    },
+    ShapeEntry {
+        ch: '`',
+        vector: [0.10, 0.03, 0.00, 0.00, 0.00, 0.00],
+    },
+    ShapeEntry {
+        ch: '"',
+        vector: [0.10, 0.10, 0.00, 0.00, 0.00, 0.00],
+    },
+    ShapeEntry {
+        ch: ':',
+        vector: [0.00, 0.00, 0.08, 0.08, 0.08, 0.08],
+    },
+    ShapeEntry {
+        ch: ';',
+        vector: [0.00, 0.00, 0.06, 0.06, 0.04, 0.10],
+    },
+    // === Horizontal lines ===
+    ShapeEntry {
+        ch: '-',
+        vector: [0.00, 0.00, 0.35, 0.35, 0.00, 0.00],
+    },
+    ShapeEntry {
+        ch: '_',
+        vector: [0.00, 0.00, 0.00, 0.00, 0.35, 0.35],
+    },
+    ShapeEntry {
+        ch: '~',
+        vector: [0.00, 0.00, 0.28, 0.28, 0.00, 0.00],
+    },
+    ShapeEntry {
+        ch: '=',
+        vector: [0.12, 0.12, 0.30, 0.30, 0.12, 0.12],
+    },
+    // === Vertical lines ===
+    ShapeEntry {
+        ch: '|',
+        vector: [0.15, 0.15, 0.18, 0.18, 0.15, 0.15],
+    },
+    ShapeEntry {
+        ch: '!',
+        vector: [0.12, 0.12, 0.12, 0.12, 0.03, 0.08],
+    },
+    ShapeEntry {
+        ch: 'i',
+        vector: [0.08, 0.08, 0.12, 0.12, 0.12, 0.12],
+    },
+    // === Diagonals ===
+    ShapeEntry {
+        ch: '/',
+        vector: [0.03, 0.30, 0.18, 0.18, 0.30, 0.03],
+    },
+    ShapeEntry {
+        ch: '\\',
+        vector: [0.30, 0.03, 0.18, 0.18, 0.03, 0.30],
+    },
+    // === Corners and brackets ===
+    ShapeEntry {
+        ch: '(',
+        vector: [0.10, 0.00, 0.22, 0.00, 0.10, 0.00],
+    },
+    ShapeEntry {
+        ch: ')',
+        vector: [0.00, 0.10, 0.00, 0.22, 0.00, 0.10],
+    },
+    ShapeEntry {
+        ch: '[',
+        vector: [0.22, 0.00, 0.22, 0.00, 0.22, 0.00],
+    },
+    ShapeEntry {
+        ch: ']',
+        vector: [0.00, 0.22, 0.00, 0.22, 0.00, 0.22],
+    },
+    ShapeEntry {
+        ch: '{',
+        vector: [0.08, 0.00, 0.22, 0.00, 0.08, 0.00],
+    },
+    ShapeEntry {
+        ch: '}',
+        vector: [0.00, 0.08, 0.00, 0.22, 0.00, 0.08],
+    },
+    ShapeEntry {
+        ch: '<',
+        vector: [0.00, 0.18, 0.22, 0.00, 0.00, 0.18],
+    },
+    ShapeEntry {
+        ch: '>',
+        vector: [0.18, 0.00, 0.00, 0.22, 0.18, 0.00],
+    },
+    // === Top-heavy / bottom-heavy ===
+    ShapeEntry {
+        ch: '^',
+        vector: [0.12, 0.12, 0.00, 0.00, 0.00, 0.00],
+    },
+    ShapeEntry {
+        ch: 'v',
+        vector: [0.00, 0.00, 0.00, 0.00, 0.12, 0.12],
+    },
+    ShapeEntry {
+        ch: 'T',
+        vector: [0.30, 0.30, 0.12, 0.12, 0.12, 0.12],
+    },
+    ShapeEntry {
+        ch: 'L',
+        vector: [0.15, 0.00, 0.15, 0.00, 0.25, 0.25],
+    },
+    ShapeEntry {
+        ch: 'J',
+        vector: [0.00, 0.15, 0.00, 0.15, 0.22, 0.22],
+    },
+    ShapeEntry {
+        ch: 'Y',
+        vector: [0.22, 0.22, 0.12, 0.12, 0.12, 0.12],
+    },
+    // === Medium fill / structural ===
+    ShapeEntry {
+        ch: '+',
+        vector: [0.10, 0.10, 0.38, 0.38, 0.10, 0.10],
+    },
+    ShapeEntry {
+        ch: '*',
+        vector: [0.18, 0.18, 0.25, 0.25, 0.18, 0.18],
+    },
+    ShapeEntry {
+        ch: 'x',
+        vector: [0.25, 0.25, 0.10, 0.10, 0.25, 0.25],
+    },
+    ShapeEntry {
+        ch: 'o',
+        vector: [0.15, 0.15, 0.22, 0.22, 0.15, 0.15],
+    },
+    ShapeEntry {
+        ch: 'c',
+        vector: [0.12, 0.15, 0.18, 0.00, 0.12, 0.15],
+    },
+    ShapeEntry {
+        ch: 'n',
+        vector: [0.22, 0.22, 0.18, 0.18, 0.18, 0.18],
+    },
+    ShapeEntry {
+        ch: 'u',
+        vector: [0.18, 0.18, 0.18, 0.18, 0.22, 0.22],
+    },
+    ShapeEntry {
+        ch: 's',
+        vector: [0.08, 0.25, 0.18, 0.18, 0.25, 0.08],
+    },
+    ShapeEntry {
+        ch: 'r',
+        vector: [0.12, 0.18, 0.18, 0.05, 0.15, 0.00],
+    },
+    ShapeEntry {
+        ch: 'z',
+        vector: [0.20, 0.28, 0.18, 0.18, 0.28, 0.20],
+    },
+    ShapeEntry {
+        ch: 't',
+        vector: [0.12, 0.00, 0.25, 0.10, 0.12, 0.12],
+    },
+    // === Heavy fill ===
+    ShapeEntry {
+        ch: '#',
+        vector: [0.55, 0.55, 0.60, 0.60, 0.55, 0.55],
+    },
+    ShapeEntry {
+        ch: '@',
+        vector: [0.58, 0.58, 0.65, 0.65, 0.55, 0.55],
+    },
+    ShapeEntry {
+        ch: '%',
+        vector: [0.40, 0.18, 0.25, 0.25, 0.18, 0.40],
+    },
+    ShapeEntry {
+        ch: '&',
+        vector: [0.30, 0.20, 0.40, 0.30, 0.35, 0.30],
+    },
+    ShapeEntry {
+        ch: '$',
+        vector: [0.20, 0.30, 0.35, 0.25, 0.30, 0.20],
+    },
+    ShapeEntry {
+        ch: 'H',
+        vector: [0.35, 0.35, 0.50, 0.50, 0.35, 0.35],
+    },
+    ShapeEntry {
+        ch: 'N',
+        vector: [0.42, 0.35, 0.38, 0.38, 0.35, 0.42],
+    },
+    ShapeEntry {
+        ch: 'M',
+        vector: [0.50, 0.50, 0.42, 0.42, 0.38, 0.38],
+    },
+    ShapeEntry {
+        ch: 'W',
+        vector: [0.38, 0.38, 0.50, 0.50, 0.35, 0.35],
+    },
+    ShapeEntry {
+        ch: 'O',
+        vector: [0.28, 0.28, 0.38, 0.38, 0.28, 0.28],
+    },
+    ShapeEntry {
+        ch: 'B',
+        vector: [0.48, 0.38, 0.48, 0.38, 0.48, 0.38],
+    },
+    ShapeEntry {
+        ch: 'D',
+        vector: [0.48, 0.32, 0.48, 0.38, 0.48, 0.32],
+    },
+    ShapeEntry {
+        ch: 'S',
+        vector: [0.15, 0.35, 0.30, 0.30, 0.35, 0.15],
+    },
+];
+
+/// Applies global contrast enhancement to a shape vector.
+///
+/// Normalizes the vector to its peak, applies an exponent to amplify
+/// differences between bright and dim regions, then denormalizes.
+/// Uniform regions are unaffected; regions with spatial variation
+/// get sharper separation.
+#[inline]
+fn enhance_contrast(v: &mut [f32; 6], exponent: f32) {
+    let max = v.iter().cloned().fold(0.0_f32, f32::max);
+    if max < 1e-6 {
+        return;
+    }
+    for val in v.iter_mut() {
+        let normalized = *val / max;
+        *val = normalized.powf(exponent) * max;
+    }
+}
+
+/// Applies directional contrast enhancement using neighboring cell values.
+///
+/// For each of the 6 sampling regions, we compare the internal value to
+/// the corresponding region of a neighboring cell. If the neighbor is
+/// brighter in that direction, we push the internal value darker,
+/// sharpening the boundary between cells.
+#[inline]
+fn enhance_directional_contrast(v: &mut [f32; 6], neighbors: &[[f32; 6]], exponent: f32) {
+    let max = v.iter().cloned().fold(0.0_f32, f32::max);
+    if max < 1e-6 {
+        return;
+    }
+    for (i, val) in v.iter_mut().enumerate() {
+        let normalized = *val / max;
+        // Find the maximum neighboring value for this sampling region
+        let max_neighbor = neighbors.iter().map(|n| n[i]).fold(0.0_f32, f32::max);
+        let neighbor_norm = if max > 1e-6 {
+            (max_neighbor / max).min(1.0)
+        } else {
+            0.0
+        };
+        // If this region is dimmer than the neighbor's corresponding region,
+        // push it darker (higher exponent = more suppression)
+        let contrast_exp = if neighbor_norm > normalized + 0.05 {
+            exponent * 1.5
+        } else {
+            exponent
+        };
+        *val = normalized.powf(contrast_exp) * max;
+    }
+}
+
+/// Maps spatial brightness distribution to an ASCII character using shape vectors.
+///
+/// Constructs a 6D shape vector from the cell's quadrant values and finds the
+/// character whose visual density distribution best matches, using squared
+/// Euclidean distance.
+///
+/// # Arguments
+/// * `tl` - Top-left quadrant brightness (0.0-1.0)
+/// * `tr` - Top-right quadrant brightness
+/// * `bl` - Bottom-left quadrant brightness
+/// * `br` - Bottom-right quadrant brightness
+/// * `contrast` - Contrast enhancement exponent (1.0 = none, 2.0 = strong)
+pub fn map_shape_ascii(tl: f32, tr: f32, bl: f32, br: f32, contrast: f32) -> char {
+    // Construct 2×3 shape vector from 2×2 quadrant data
+    // Middle row is estimated as the average of top and bottom halves
+    let mut v = [tl, tr, (tl + bl) * 0.5, (tr + br) * 0.5, bl, br];
+
+    // Apply contrast enhancement if requested
+    if contrast > 1.01 {
+        enhance_contrast(&mut v, contrast);
+    }
+
+    // Normalize to unit scale for shape matching (we care about distribution,
+    // not absolute magnitude). The overall brightness is handled by color.
+    let max = v.iter().cloned().fold(0.0_f32, f32::max);
+    if max < 0.01 {
+        return ' ';
+    }
+    let inv_max = 1.0 / max;
+    for val in v.iter_mut() {
+        *val *= inv_max;
+    }
+
+    // Find the character with the smallest squared Euclidean distance
+    let mut best_char = ' ';
+    let mut best_dist = f32::MAX;
+
+    for entry in &SHAPE_TABLE {
+        // Skip space — we already handle fully empty cells above
+        if entry.ch == ' ' {
+            continue;
+        }
+
+        // Normalize the character vector the same way
+        let cv = &entry.vector;
+        let c_max = cv.iter().cloned().fold(0.0_f32, f32::max);
+        if c_max < 1e-6 {
+            continue;
+        }
+        let c_inv = 1.0 / c_max;
+
+        let mut dist = 0.0_f32;
+        for i in 0..6 {
+            let diff = v[i] - cv[i] * c_inv;
+            dist += diff * diff;
+        }
+
+        if dist < best_dist {
+            best_dist = dist;
+            best_char = entry.ch;
+        }
+    }
+
+    best_char
+}
+
+/// Shape-vector ASCII matching with directional contrast using neighbor data.
+///
+/// Like `map_shape_ascii` but takes neighboring cells to enhance boundaries.
+///
+/// # Arguments
+/// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values for this cell
+/// * `neighbor_quads` - Slice of `[tl, tr, bl, br]` arrays from adjacent cells
+/// * `contrast` - Contrast enhancement exponent (1.0 = none, 2.0 = strong)
+pub fn map_shape_ascii_with_neighbors(
+    tl: f32,
+    tr: f32,
+    bl: f32,
+    br: f32,
+    neighbor_quads: &[[f32; 4]],
+    contrast: f32,
+) -> char {
+    // Construct 2×3 shape vector
+    let mut v = [tl, tr, (tl + bl) * 0.5, (tr + br) * 0.5, bl, br];
+
+    // Build neighbor shape vectors
+    let neighbor_vecs: Vec<[f32; 6]> = neighbor_quads
+        .iter()
+        .map(|q| {
+            [
+                q[0],
+                q[1],
+                (q[0] + q[2]) * 0.5,
+                (q[1] + q[3]) * 0.5,
+                q[2],
+                q[3],
+            ]
+        })
+        .collect();
+
+    // Apply contrast enhancement
+    if contrast > 1.01 {
+        enhance_contrast(&mut v, contrast);
+        enhance_directional_contrast(&mut v, &neighbor_vecs, contrast);
+    }
+
+    // Normalize to unit scale
+    let max = v.iter().cloned().fold(0.0_f32, f32::max);
+    if max < 0.01 {
+        return ' ';
+    }
+    let inv_max = 1.0 / max;
+    for val in v.iter_mut() {
+        *val *= inv_max;
+    }
+
+    // Find nearest character
+    let mut best_char = ' ';
+    let mut best_dist = f32::MAX;
+
+    for entry in &SHAPE_TABLE {
+        if entry.ch == ' ' {
+            continue;
+        }
+
+        let cv = &entry.vector;
+        let c_max = cv.iter().cloned().fold(0.0_f32, f32::max);
+        if c_max < 1e-6 {
+            continue;
+        }
+        let c_inv = 1.0 / c_max;
+
+        let mut dist = 0.0_f32;
+        for i in 0..6 {
+            let diff = v[i] - cv[i] * c_inv;
+            dist += diff * diff;
+        }
+
+        if dist < best_dist {
+            best_dist = dist;
+            best_char = entry.ch;
+        }
+    }
+
+    best_char
+}
+
+// ===== Shape-Vector Braille Rendering =====
+//
+// Instead of mapping just 2 values (top/bottom) to ~9 braille patterns,
+// we interpolate 8 sampling positions across the 2×4 braille dot grid
+// from the 4 quadrant values, then independently threshold each dot.
+// This unlocks all 256 braille patterns for precise edge rendering.
+
+/// Maps spatial brightness to a braille character using 8-position sampling.
+///
+/// Interpolates the 4 quadrant values to 8 positions matching the 2×4
+/// braille dot layout, thresholds each independently, and returns the
+/// corresponding Unicode braille character (U+2800–U+28FF).
+///
+/// # Arguments
+/// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values (0.0–1.0)
+/// * `threshold` - Minimum brightness for a dot to be "on" (e.g. 0.05)
+pub fn map_shape_braille(tl: f32, tr: f32, bl: f32, br: f32, threshold: f32) -> char {
+    // Interpolate 8 positions across the 2×4 braille grid.
+    // Row weights: row0=1.0/0.0, row1=0.67/0.33, row2=0.33/0.67, row3=0.0/1.0
+    // (fraction of top vs bottom quadrant contribution)
+    let samples = [
+        tl,                    // row 0, left  (dot 1)
+        tr,                    // row 0, right (dot 4)
+        tl * 0.67 + bl * 0.33, // row 1, left  (dot 2)
+        tr * 0.67 + br * 0.33, // row 1, right (dot 5)
+        tl * 0.33 + bl * 0.67, // row 2, left  (dot 3)
+        tr * 0.33 + br * 0.67, // row 2, right (dot 6)
+        bl,                    // row 3, left  (dot 7)
+        br,                    // row 3, right (dot 8)
+    ];
+
+    // Build the 8-bit braille dot pattern.
+    // Braille encoding: dots 1-3 are bits 0-2 (left column, top to bottom),
+    // dots 4-6 are bits 3-5 (right column), dots 7-8 are bits 6-7 (bottom row).
+    let mut pattern: u8 = 0;
+    if samples[0] > threshold {
+        pattern |= 0x01;
+    } // dot 1 (row 0, left)
+    if samples[2] > threshold {
+        pattern |= 0x02;
+    } // dot 2 (row 1, left)
+    if samples[4] > threshold {
+        pattern |= 0x04;
+    } // dot 3 (row 2, left)
+    if samples[1] > threshold {
+        pattern |= 0x08;
+    } // dot 4 (row 0, right)
+    if samples[3] > threshold {
+        pattern |= 0x10;
+    } // dot 5 (row 1, right)
+    if samples[5] > threshold {
+        pattern |= 0x20;
+    } // dot 6 (row 2, right)
+    if samples[6] > threshold {
+        pattern |= 0x40;
+    } // dot 7 (row 3, left)
+    if samples[7] > threshold {
+        pattern |= 0x80;
+    } // dot 8 (row 3, right)
+
+    char::from_u32(0x2800 + pattern as u32).unwrap_or(' ')
+}
+
+// ===== Shape-Vector Block Rendering =====
+//
+// Extends HalfBlock mode from brightness-only vertical fill (▁▂▃▄▅▆▇█)
+// to shape-aware selection from ~23 Unicode block elements including
+// quadrant blocks (▖▗▘▝), half blocks (▀▄▌▐), diagonals (▚▞),
+// and three-quarter blocks (▙▛▜▟).
+//
+// Uses the same 6D shape vector matching as ASCII mode.
+
+/// Shape vector table for Unicode block element characters.
+///
+/// Each entry maps a block character to its 2×3 spatial fill pattern,
+/// computed from the geometric coverage of each character within the cell.
+/// Note: Currently unused since `map_shape_block` uses threshold-based
+/// quadrant matching for consistent tiling. Retained for reference.
+#[allow(dead_code)]
+const BLOCK_SHAPE_TABLE: [ShapeEntry; 23] = [
+    // === Empty ===
+    ShapeEntry {
+        ch: ' ',
+        vector: [0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
+    },
+    // === Vertical fill from bottom (lower block elements) ===
+    ShapeEntry {
+        ch: '\u{2581}',
+        vector: [0.00, 0.00, 0.00, 0.00, 0.38, 0.38],
+    }, // ▁ 1/8
+    ShapeEntry {
+        ch: '\u{2582}',
+        vector: [0.00, 0.00, 0.00, 0.00, 0.75, 0.75],
+    }, // ▂ 1/4
+    ShapeEntry {
+        ch: '\u{2583}',
+        vector: [0.00, 0.00, 0.13, 0.13, 1.00, 1.00],
+    }, // ▃ 3/8
+    ShapeEntry {
+        ch: '\u{2584}',
+        vector: [0.00, 0.00, 0.50, 0.50, 1.00, 1.00],
+    }, // ▄ 1/2
+    ShapeEntry {
+        ch: '\u{2585}',
+        vector: [0.00, 0.00, 0.89, 0.89, 1.00, 1.00],
+    }, // ▅ 5/8
+    ShapeEntry {
+        ch: '\u{2586}',
+        vector: [0.25, 0.25, 1.00, 1.00, 1.00, 1.00],
+    }, // ▆ 3/4
+    ShapeEntry {
+        ch: '\u{2587}',
+        vector: [0.62, 0.62, 1.00, 1.00, 1.00, 1.00],
+    }, // ▇ 7/8
+    ShapeEntry {
+        ch: '\u{2588}',
+        vector: [1.00, 1.00, 1.00, 1.00, 1.00, 1.00],
+    }, // █ full
+    // === Upper half + upper 1/8 ===
+    ShapeEntry {
+        ch: '\u{2580}',
+        vector: [1.00, 1.00, 0.50, 0.50, 0.00, 0.00],
+    }, // ▀ upper half
+    ShapeEntry {
+        ch: '\u{2594}',
+        vector: [0.38, 0.38, 0.00, 0.00, 0.00, 0.00],
+    }, // ▔ upper 1/8
+    // === Left/right halves ===
+    ShapeEntry {
+        ch: '\u{258C}',
+        vector: [1.00, 0.00, 1.00, 0.00, 1.00, 0.00],
+    }, // ▌ left half
+    ShapeEntry {
+        ch: '\u{2590}',
+        vector: [0.00, 1.00, 0.00, 1.00, 0.00, 1.00],
+    }, // ▐ right half
+    // === Single quadrants ===
+    ShapeEntry {
+        ch: '\u{2598}',
+        vector: [1.00, 0.00, 0.50, 0.00, 0.00, 0.00],
+    }, // ▘ TL
+    ShapeEntry {
+        ch: '\u{259D}',
+        vector: [0.00, 1.00, 0.00, 0.50, 0.00, 0.00],
+    }, // ▝ TR
+    ShapeEntry {
+        ch: '\u{2596}',
+        vector: [0.00, 0.00, 0.50, 0.00, 1.00, 0.00],
+    }, // ▖ BL
+    ShapeEntry {
+        ch: '\u{2597}',
+        vector: [0.00, 0.00, 0.00, 0.50, 0.00, 1.00],
+    }, // ▗ BR
+    // === Diagonals ===
+    ShapeEntry {
+        ch: '\u{259A}',
+        vector: [1.00, 0.00, 0.50, 0.50, 0.00, 1.00],
+    }, // ▚ TL+BR
+    ShapeEntry {
+        ch: '\u{259E}',
+        vector: [0.00, 1.00, 0.50, 0.50, 1.00, 0.00],
+    }, // ▞ TR+BL
+    // === Three-quarter blocks ===
+    ShapeEntry {
+        ch: '\u{2599}',
+        vector: [1.00, 0.00, 1.00, 0.50, 1.00, 1.00],
+    }, // ▙ TL+BL+BR
+    ShapeEntry {
+        ch: '\u{259B}',
+        vector: [1.00, 1.00, 1.00, 0.50, 1.00, 0.00],
+    }, // ▛ TL+TR+BL
+    ShapeEntry {
+        ch: '\u{259C}',
+        vector: [1.00, 1.00, 0.50, 1.00, 0.00, 1.00],
+    }, // ▜ TL+TR+BR
+    ShapeEntry {
+        ch: '\u{259F}',
+        vector: [0.00, 1.00, 0.50, 1.00, 1.00, 1.00],
+    }, // ▟ TR+BL+BR
+];
+
+// ===== Sculpted Outline Rendering =====
+//
+// Used by the Sculpted charset mode for cells at the outline/edge of
+// shapes. Interior cells use solid blocks (▀▄█) while outline cells
+// use this function to select shape-aware characters.
+//
+// Characters used:
+// - Quadrant blocks (▘▝▖▗) for single-corner shapes
+// - Half blocks (▀▄▌▐) for straight edges
+// - Triangle fills (◢◣◤◥) for diagonal contours
+// - Full block (█) for fully filled cells
+
+/// Selects an outline character based on quadrant brightness distribution.
+///
+/// Uses quadrant blocks for corners, half blocks for straight edges,
+/// and triangle fills (◢◣◤◥) for diagonal contours. This is used
+/// by Sculpted mode for cells at the boundary of shapes.
+///
+/// # Arguments
+/// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values (0.0–1.0)
+pub fn map_sculpted_outline(tl: f32, tr: f32, bl: f32, br: f32) -> char {
+    const THRESHOLD: f32 = 0.05;
+
+    let tl_on = tl > THRESHOLD;
+    let tr_on = tr > THRESHOLD;
+    let bl_on = bl > THRESHOLD;
+    let br_on = br > THRESHOLD;
+
+    let index =
+        (tl_on as u32) | ((tr_on as u32) << 1) | ((bl_on as u32) << 2) | ((br_on as u32) << 3);
+
+    match index {
+        0x0 => ' ',
+        0x1 => '\u{2598}', // ▘ TL
+        0x2 => '\u{259D}', // ▝ TR
+        0x3 => '\u{2580}', // ▀ top half
+        0x4 => '\u{2596}', // ▖ BL
+        0x5 => '\u{258C}', // ▌ left half
+        0x6 => '\u{25E3}', // ◣ lower-left triangle (TR+BL diagonal)
+        0x7 => '\u{25E4}', // ◤ upper-left triangle (TL+TR+BL → missing BR)
+        0x8 => '\u{2597}', // ▗ BR
+        0x9 => '\u{25E2}', // ◢ lower-right triangle (TL+BR diagonal)
+        0xA => '\u{2590}', // ▐ right half
+        0xB => '\u{25E5}', // ◥ upper-right triangle (TL+TR+BR → missing BL)
+        0xC => '\u{2584}', // ▄ bottom half
+        0xD => '\u{25E3}', // ◣ lower-left triangle (TL+BL+BR → missing TR)
+        0xE => '\u{25E2}', // ◢ lower-right triangle (TR+BL+BR → missing TL)
+        0xF => '\u{2588}', // █ full
+        _ => ' ',
+    }
+}
+
 /// Returns the number of distinct brightness levels supported by the charset.
 pub fn charset_level_count(charset: Charset) -> usize {
     match charset {
@@ -384,6 +1084,7 @@ pub fn charset_level_count(charset: Charset) -> usize {
         Charset::Quadrant => 16, // 2^4 combinations of 4 quadrants
         Charset::Shade => 5,     // space, ░, ▒, ▓, █
         Charset::Points => 2,    // space or ▪
+        Charset::Sculpted => 16, // 16 quadrant patterns + graduated fills
         Charset::CustomAscii(ref chars) => chars.len().max(2), // At least 2 levels
     }
 }
@@ -938,6 +1639,406 @@ mod tests {
         assert_eq!(
             map_brightness(1.0, None, Charset::HalfBlockDual),
             '\u{2588}'
+        );
+    }
+
+    // ===== Shape Vector ASCII Tests =====
+
+    #[test]
+    fn test_shape_ascii_empty_returns_space() {
+        assert_eq!(map_shape_ascii(0.0, 0.0, 0.0, 0.0, 1.5), ' ');
+    }
+
+    #[test]
+    fn test_shape_ascii_uniform_returns_dense_char() {
+        // Uniform brightness should match a uniform/dense character
+        let ch = map_shape_ascii(0.8, 0.8, 0.8, 0.8, 1.0);
+        // Should be a heavy fill char, not a directional one
+        assert!(
+            "#@HMWOn*".contains(ch),
+            "Uniform brightness should produce a dense fill character, got '{ch}'"
+        );
+    }
+
+    #[test]
+    fn test_shape_ascii_diagonal_forward_slash() {
+        // Bright in top-right and bottom-left = forward slash pattern
+        let ch = map_shape_ascii(0.0, 0.8, 0.8, 0.0, 1.0);
+        assert_eq!(
+            ch, '/',
+            "Top-right + bottom-left diagonal should produce '/'"
+        );
+    }
+
+    #[test]
+    fn test_shape_ascii_diagonal_backslash() {
+        // Bright in top-left and bottom-right = backslash pattern
+        let ch = map_shape_ascii(0.8, 0.0, 0.0, 0.8, 1.0);
+        assert_eq!(
+            ch, '\\',
+            "Top-left + bottom-right diagonal should produce '\\'"
+        );
+    }
+
+    #[test]
+    fn test_shape_ascii_top_heavy() {
+        // Bright on top, dark on bottom
+        let ch = map_shape_ascii(0.8, 0.8, 0.0, 0.0, 1.0);
+        // Should pick a top-heavy character like ^, ", T, Y
+        assert!(
+            "^\"TY".contains(ch),
+            "Top-heavy pattern should produce a top-heavy character, got '{ch}'"
+        );
+    }
+
+    #[test]
+    fn test_shape_ascii_bottom_heavy() {
+        // Dark on top, bright on bottom
+        let ch = map_shape_ascii(0.0, 0.0, 0.8, 0.8, 1.0);
+        // Should pick a bottom-leaning character. Due to 2x2→2x3 interpolation,
+        // the middle row also gets weight, so chars like ; (mid+bottom dots)
+        // are also valid matches alongside v, _, u, J, L
+        assert!(
+            "v_u;JL:".contains(ch),
+            "Bottom-heavy pattern should produce a bottom-leaning character, got '{ch}'"
+        );
+    }
+
+    #[test]
+    fn test_shape_ascii_left_heavy() {
+        // Bright on left, dark on right
+        let ch = map_shape_ascii(0.8, 0.0, 0.8, 0.0, 1.0);
+        // Should pick a left-heavy character like [, (, {
+        assert!(
+            "[({BDLt".contains(ch),
+            "Left-heavy pattern should produce a left-side character, got '{ch}'"
+        );
+    }
+
+    #[test]
+    fn test_shape_ascii_right_heavy() {
+        // Dark on left, bright on right
+        let ch = map_shape_ascii(0.0, 0.8, 0.0, 0.8, 1.0);
+        // Should pick a right-heavy character like ], ), }
+        assert!(
+            "])}.!i".contains(ch),
+            "Right-heavy pattern should produce a right-side character, got '{ch}'"
+        );
+    }
+
+    #[test]
+    fn test_shape_ascii_horizontal_band() {
+        // Bright in middle row only (approximated: equal TL=BL, TR=BR)
+        // When all 4 corners are equal, the middle row = average of all = same
+        // Instead, test with slight middle emphasis
+        let ch = map_shape_ascii(0.1, 0.1, 0.1, 0.1, 1.0);
+        // Low uniform brightness should still produce some character (not space)
+        assert_ne!(
+            ch, ' ',
+            "Low but nonzero uniform brightness should not be space"
+        );
+    }
+
+    #[test]
+    fn test_shape_ascii_contrast_enhancement() {
+        // With contrast enhancement, characters should still be valid
+        let ch_low = map_shape_ascii(0.0, 0.8, 0.8, 0.0, 1.0);
+        let ch_high = map_shape_ascii(0.0, 0.8, 0.8, 0.0, 3.0);
+        // Both should produce a valid character (not space or panic)
+        assert_ne!(ch_low, ' ');
+        assert_ne!(ch_high, ' ');
+    }
+
+    #[test]
+    fn test_shape_ascii_near_zero_not_space() {
+        // Very low but nonzero values should still produce a character
+        let ch = map_shape_ascii(0.02, 0.0, 0.0, 0.0, 1.0);
+        // At 0.02 max, should be above the 0.01 threshold
+        assert_ne!(ch, ' ', "Brightness 0.02 should produce a character");
+    }
+
+    #[test]
+    fn test_shape_ascii_just_below_threshold() {
+        // Below the 0.01 threshold should return space
+        let ch = map_shape_ascii(0.005, 0.005, 0.005, 0.005, 1.0);
+        assert_eq!(ch, ' ', "Brightness below 0.01 threshold should be space");
+    }
+
+    #[test]
+    fn test_enhance_contrast_uniform_unchanged() {
+        // A uniform vector should remain uniform after enhancement
+        let mut v = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
+        enhance_contrast(&mut v, 2.0);
+        for val in &v {
+            assert!(
+                (*val - 0.5).abs() < 1e-5,
+                "Uniform vector should be unchanged by contrast, got {val}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_enhance_contrast_zero_unchanged() {
+        let mut v = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        enhance_contrast(&mut v, 2.0);
+        for val in &v {
+            assert!(val.abs() < 1e-6, "Zero vector should stay zero");
+        }
+    }
+
+    #[test]
+    fn test_enhance_contrast_amplifies_differences() {
+        let mut v = [1.0, 0.5, 0.0, 0.0, 0.0, 0.0];
+        enhance_contrast(&mut v, 2.0);
+        // After contrast with exponent 2: normalized [1, 0.5, 0, 0, 0, 0]
+        // raised to power 2: [1, 0.25, 0, 0, 0, 0], then * max(1.0)
+        assert!((v[0] - 1.0).abs() < 1e-5, "Max value should stay at 1.0");
+        assert!(
+            (v[1] - 0.25).abs() < 1e-5,
+            "Half value should become 0.25 with exponent 2"
+        );
+    }
+
+    // ===== Shape Braille Tests =====
+
+    #[test]
+    fn test_shape_braille_empty() {
+        assert_eq!(map_shape_braille(0.0, 0.0, 0.0, 0.0, 0.05), '\u{2800}');
+    }
+
+    #[test]
+    fn test_shape_braille_full() {
+        // All quadrants bright → all 8 dots on
+        assert_eq!(map_shape_braille(1.0, 1.0, 1.0, 1.0, 0.05), '\u{28FF}');
+    }
+
+    #[test]
+    fn test_shape_braille_top_only() {
+        // Only top half bright → dots 1,2,3 (left) and 4,5,6 (right) on
+        // rows 0,1 fully on (from tl/tr), row 2 partially on (0.33*tl), row 3 off
+        let ch = map_shape_braille(1.0, 1.0, 0.0, 0.0, 0.05);
+        // Dots 1,2 on left (tl=1.0, 0.67*tl=0.67), dot 3 (0.33*tl=0.33 > 0.05)
+        // Dots 4,5 on right (tr=1.0, 0.67*tr=0.67), dot 6 (0.33*tr=0.33 > 0.05)
+        // Dots 7,8 off (bl=br=0)
+        assert_eq!(ch, '\u{283F}'); // all top 6 dots on, bottom 2 off
+    }
+
+    #[test]
+    fn test_shape_braille_bottom_only() {
+        // Only bottom half bright → bottom dots on
+        let ch = map_shape_braille(0.0, 0.0, 1.0, 1.0, 0.05);
+        // Row 0: tl=0 (off), Row 1: 0.67*0+0.33*1=0.33 (on)
+        // Row 2: 0.33*0+0.67*1=0.67 (on), Row 3: bl=1 (on)
+        // Left dots: 1=off, 2=on, 3=on, 7=on → bits 1,2,6 = 0x46
+        // Right dots: 4=off, 5=on, 6=on, 8=on → bits 4,5,7 = 0xB0
+        // Pattern = 0x46 | 0xB0 = 0xF6 -- hmm let me recalculate
+        // dot 2 = bit 1, dot 3 = bit 2, dot 7 = bit 6: 0b01000110 = 0x46
+        // dot 5 = bit 4, dot 6 = bit 5, dot 8 = bit 7: 0b10110000 = 0xB0
+        // 0x46 | 0xB0 = 0xF6
+        assert_eq!(ch, char::from_u32(0x2800 + 0xF6).unwrap());
+    }
+
+    #[test]
+    fn test_shape_braille_left_only() {
+        // Only left half bright
+        let ch = map_shape_braille(1.0, 0.0, 1.0, 0.0, 0.05);
+        // Left column all on (dots 1,2,3,7 = bits 0,1,2,6 = 0x47)
+        // Right column all off
+        assert_eq!(ch, char::from_u32(0x2800 + 0x47).unwrap());
+    }
+
+    #[test]
+    fn test_shape_braille_right_only() {
+        // Only right half bright
+        let ch = map_shape_braille(0.0, 1.0, 0.0, 1.0, 0.05);
+        // Right column all on (dots 4,5,6,8 = bits 3,4,5,7 = 0xB8)
+        assert_eq!(ch, char::from_u32(0x2800 + 0xB8).unwrap());
+    }
+
+    #[test]
+    fn test_shape_braille_diagonal_tl_br() {
+        // Top-left and bottom-right bright = diagonal pattern
+        let ch = map_shape_braille(1.0, 0.0, 0.0, 1.0, 0.05);
+        // TL quadrant: tl=1.0, tr=0.0, bl=0.0, br=1.0
+        // Left col: row0=1.0(on), row1=0.67(on), row2=0.33(on), row3=0(off)
+        // Right col: row0=0(off), row1=0.33(on), row2=0.67(on), row3=1(on)
+        // Left: dots 1,2,3 on, 7 off → bits 0,1,2 = 0x07
+        // Right: dots 4 off, 5,6 on, 8 on → bits 4,5,7 = 0xB0
+        assert_eq!(ch, char::from_u32(0x2800 + 0x07 + 0xB0).unwrap());
+    }
+
+    #[test]
+    fn test_shape_braille_threshold() {
+        // Values below threshold produce no dots
+        assert_eq!(map_shape_braille(0.04, 0.04, 0.04, 0.04, 0.05), '\u{2800}');
+        // Values above threshold produce dots
+        assert_ne!(map_shape_braille(0.06, 0.06, 0.06, 0.06, 0.05), '\u{2800}');
+    }
+
+    #[test]
+    fn test_shape_braille_produces_more_patterns_than_old() {
+        // Verify that different quadrant distributions produce different braille patterns
+        let patterns: std::collections::HashSet<char> = [
+            (1.0, 0.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0, 0.0),
+            (0.0, 0.0, 1.0, 0.0),
+            (0.0, 0.0, 0.0, 1.0),
+            (1.0, 1.0, 0.0, 0.0),
+            (0.0, 0.0, 1.0, 1.0),
+            (1.0, 0.0, 1.0, 0.0),
+            (0.0, 1.0, 0.0, 1.0),
+            (1.0, 0.0, 0.0, 1.0),
+            (0.0, 1.0, 1.0, 0.0),
+            (1.0, 1.0, 1.0, 1.0),
+        ]
+        .iter()
+        .map(|(tl, tr, bl, br)| map_shape_braille(*tl, *tr, *bl, *br, 0.05))
+        .collect();
+        // Should produce at least 6 distinct patterns (old approach produced ~4)
+        assert!(
+            patterns.len() >= 6,
+            "Expected at least 6 distinct braille patterns, got {}",
+            patterns.len()
+        );
+    }
+
+    // ===== Sculpted Outline Tests =====
+
+    #[test]
+    fn test_sculpted_outline_empty() {
+        assert_eq!(map_sculpted_outline(0.0, 0.0, 0.0, 0.0), ' ');
+    }
+
+    #[test]
+    fn test_sculpted_outline_full() {
+        assert_eq!(map_sculpted_outline(1.0, 1.0, 1.0, 1.0), '\u{2588}');
+    }
+
+    #[test]
+    fn test_sculpted_outline_top_half() {
+        let ch = map_sculpted_outline(0.9, 0.9, 0.0, 0.0);
+        assert_eq!(ch, '\u{2580}', "Top-heavy should produce ▀, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_top_half_dim() {
+        // Dim top → still ▀ (no graduated fills)
+        let ch = map_sculpted_outline(0.1, 0.1, 0.0, 0.0);
+        assert_eq!(ch, '\u{2580}', "Dim top should produce ▀, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_bottom_half() {
+        let ch = map_sculpted_outline(0.0, 0.0, 0.9, 0.9);
+        assert_eq!(ch, '\u{2584}', "Bottom half should produce ▄, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_left_half() {
+        let ch = map_sculpted_outline(0.9, 0.0, 0.9, 0.0);
+        assert_eq!(ch, '\u{258C}', "Left half should produce ▌, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_right_half() {
+        let ch = map_sculpted_outline(0.0, 0.9, 0.0, 0.9);
+        assert_eq!(ch, '\u{2590}', "Right-heavy should produce ▐, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_tl_quadrant() {
+        let ch = map_sculpted_outline(0.9, 0.0, 0.0, 0.0);
+        assert_eq!(ch, '\u{2598}', "Top-left only should produce ▘, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_br_quadrant() {
+        let ch = map_sculpted_outline(0.0, 0.0, 0.0, 0.9);
+        assert_eq!(
+            ch, '\u{2597}',
+            "Bottom-right only should produce ▗, got '{ch}'"
+        );
+    }
+
+    #[test]
+    fn test_sculpted_outline_diagonal_backslash() {
+        // TL+BR diagonal → ◢ (lower-right triangle fill)
+        let ch = map_sculpted_outline(0.9, 0.0, 0.0, 0.9);
+        assert_eq!(
+            ch, '\u{25E2}',
+            "TL+BR diagonal should produce ◢, got '{ch}'"
+        );
+    }
+
+    #[test]
+    fn test_sculpted_outline_diagonal_forwardslash() {
+        // TR+BL diagonal → ◣ (lower-left triangle fill)
+        let ch = map_sculpted_outline(0.0, 0.9, 0.9, 0.0);
+        assert_eq!(
+            ch, '\u{25E3}',
+            "TR+BL diagonal should produce ◣, got '{ch}'"
+        );
+    }
+
+    #[test]
+    fn test_sculpted_outline_three_quarter_tl_tr_bl() {
+        // TL+TR+BL → ◤ upper-left triangle (missing BR)
+        let ch = map_sculpted_outline(0.9, 0.9, 0.9, 0.0);
+        assert_eq!(ch, '\u{25E4}', "TL+TR+BL should produce ◤, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_three_quarter_tl_tr_br() {
+        // TL+TR+BR → ◥ upper-right triangle (missing BL)
+        let ch = map_sculpted_outline(0.9, 0.9, 0.0, 0.9);
+        assert_eq!(ch, '\u{25E5}', "TL+TR+BR should produce ◥, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_three_quarter_tl_bl_br() {
+        // TL+BL+BR → ◣ lower-left triangle (missing TR)
+        let ch = map_sculpted_outline(0.9, 0.0, 0.9, 0.9);
+        assert_eq!(ch, '\u{25E3}', "TL+BL+BR should produce ◣, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_three_quarter_tr_bl_br() {
+        // TR+BL+BR → ◢ lower-right triangle (missing TL)
+        let ch = map_sculpted_outline(0.0, 0.9, 0.9, 0.9);
+        assert_eq!(ch, '\u{25E2}', "TR+BL+BR should produce ◢, got '{ch}'");
+    }
+
+    #[test]
+    fn test_sculpted_outline_near_zero() {
+        assert_eq!(
+            map_sculpted_outline(0.005, 0.005, 0.005, 0.005),
+            ' ',
+            "Below threshold should be space"
+        );
+    }
+
+    #[test]
+    fn test_sculpted_outline_produces_distinct_patterns() {
+        let patterns: std::collections::HashSet<char> = [
+            (0.9, 0.0, 0.0, 0.0), // TL only
+            (0.0, 0.9, 0.0, 0.0), // TR only
+            (0.0, 0.0, 0.9, 0.0), // BL only
+            (0.0, 0.0, 0.0, 0.9), // BR only
+            (0.9, 0.9, 0.0, 0.0), // top half
+            (0.0, 0.0, 0.9, 0.9), // bottom half
+            (0.9, 0.0, 0.9, 0.0), // left half
+            (0.0, 0.9, 0.0, 0.9), // right half
+            (0.9, 0.0, 0.0, 0.9), // TL+BR diagonal
+            (0.0, 0.9, 0.9, 0.0), // TR+BL diagonal
+            (0.9, 0.9, 0.9, 0.9), // full
+        ]
+        .iter()
+        .map(|(tl, tr, bl, br)| map_sculpted_outline(*tl, *tr, *bl, *br))
+        .collect();
+        assert!(
+            patterns.len() >= 8,
+            "Expected at least 8 distinct outline patterns, got {}",
+            patterns.len()
         );
     }
 }

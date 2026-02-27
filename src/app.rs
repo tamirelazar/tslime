@@ -711,6 +711,7 @@ pub fn print_mode(
         args.species_colors,
         species_rgb_colors,
         background_color,
+        args.ascii_contrast,
     );
 
     // Apply grid rendering if enabled
@@ -848,6 +849,7 @@ pub fn capture_frames_mode(
             args.species_colors,
             species_rgb_colors,
             background_color,
+            args.ascii_contrast,
         );
 
         // Apply grid rendering if enabled
@@ -1021,6 +1023,7 @@ pub fn export_gif_mode(
             args.species_colors,
             species_rgb_colors,
             background_color,
+            args.ascii_contrast,
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1128,6 +1131,7 @@ pub fn export_webm_mode(
             args.species_colors,
             species_rgb_colors,
             background_color,
+            args.ascii_contrast,
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1214,6 +1218,7 @@ pub fn run_simulation(
     );
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
     renderer.set_dither_mode(dither_mode);
+    renderer.set_ascii_contrast(args.ascii_contrast);
     let mut timer = FrameTimer::with_time_scale(args.fps, args.frame_delay, args.time_scale);
     timer.set_adaptive_fps(args.auto_fps);
     let input_poller = InputPoller::new();
@@ -1681,6 +1686,7 @@ pub fn run_simulation(
                 Charset::Quadrant => "Quadrant",
                 Charset::Shade => "Shade",
                 Charset::Points => "Points",
+                Charset::Sculpted => "Sculpted",
                 Charset::CustomAscii(_) => "Custom",
             };
 
