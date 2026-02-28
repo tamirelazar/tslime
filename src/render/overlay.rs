@@ -1,5 +1,7 @@
 use crate::cli::Palette;
 use crate::render::dither::DitherMode;
+use crate::render::palette::RgbColor;
+use crate::render::theme::GRUVBOX_DARK;
 use crate::simulation::config::Attractor;
 use crate::simulation::config::MouseAttractor;
 use crate::simulation::config::Obstacle;
@@ -439,42 +441,7 @@ impl ConfigSaveOverlay {
     }
 }
 
-/// Urgency level for toast notifications.
-///
-/// Controls the icon prefix and background color of a notification.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NotificationLevel {
-    /// Neutral informational message (cyan accent).
-    Info,
-    /// Positive confirmation (green accent).
-    Success,
-    /// Non-critical caution (amber accent).
-    Warning,
-    /// Critical error (red accent).
-    Error,
-}
-
-impl NotificationLevel {
-    /// Returns a single-character icon prefix for the notification.
-    pub fn icon(self) -> &'static str {
-        match self {
-            NotificationLevel::Info => "ℹ",
-            NotificationLevel::Success => "✓",
-            NotificationLevel::Warning => "⚠",
-            NotificationLevel::Error => "✗",
-        }
-    }
-
-    /// Returns the ANSI 256-color index for this level's accent background.
-    pub fn bg_color_256(self) -> u8 {
-        match self {
-            NotificationLevel::Info => 23,    // Dark teal
-            NotificationLevel::Success => 22, // Dark green
-            NotificationLevel::Warning => 94, // Dark amber/orange
-            NotificationLevel::Error => 52,   // Dark red
-        }
-    }
-}
+pub use crate::terminal::control::NotificationLevel;
 
 /// Formats a notification string with an icon prefix for the given level.
 ///
@@ -510,8 +477,10 @@ impl OverlayRenderer {
         diffusion_kernel: Option<&str>,
         can_undo: bool,
         can_redo: bool,
-    ) -> String {
+        accent: Option<RgbColor>,
+    ) -> (String, Vec<(usize, RgbColor)>) {
         const SEP: &str = "  ▸  ";
+        let mut color_overrides: Vec<(usize, RgbColor)> = Vec::new();
 
         let preset_text = preset_name(preset);
         let palette_text = palette_name(palette);
@@ -520,9 +489,17 @@ impl OverlayRenderer {
         // Core left-side segments (always visible)
         let mut left = format!("  {}{}{}  ", preset_text, SEP, time_text);
 
-        // Add palette if space permits
+        // Add palette swatch + name if space permits
         if width >= 52 {
-            left.push_str(&format!("▸  {}  ", palette_text));
+            left.push_str("▸  ");
+            // Color swatch: two block chars tinted with the palette accent
+            if let Some(accent_color) = accent {
+                let swatch_start = left.chars().count();
+                left.push_str("██ ");
+                color_overrides.push((swatch_start, accent_color));
+                color_overrides.push((swatch_start + 1, accent_color));
+            }
+            left.push_str(&format!("{}  ", palette_text));
         }
 
         // Add population if space permits
@@ -554,6 +531,7 @@ impl OverlayRenderer {
 
         // Right-side status indicators
         let mut right = String::new();
+        let mut paused_offset_in_right: Option<usize> = None;
 
         if can_undo || can_redo {
             let z = if can_undo { "Z" } else { "·" };
@@ -562,6 +540,7 @@ impl OverlayRenderer {
         }
 
         if _is_paused {
+            paused_offset_in_right = Some(right.chars().count());
             right.push_str("⏸ PAUSED  ");
         }
 
@@ -571,14 +550,30 @@ impl OverlayRenderer {
 
         // Combine: left segments + right-aligned indicators
         let combined_len = left.chars().count() + right.chars().count();
-        if combined_len <= width {
+        let result = if combined_len <= width {
             // Pad between left and right
             let gap = width.saturating_sub(combined_len);
-            format!("{}{}{}", left, " ".repeat(gap), right)
+            let full = format!("{}{}{}", left, " ".repeat(gap), right);
+            // Color PAUSED with amber
+            if let Some(paused_off) = paused_offset_in_right {
+                let right_start = left.chars().count() + gap;
+                let global_start = right_start + paused_off;
+                let amber = RgbColor {
+                    r: 215,
+                    g: 153,
+                    b: 33,
+                };
+                for i in 0.."⏸ PAUSED".chars().count() {
+                    color_overrides.push((global_start + i, amber));
+                }
+            }
+            full
         } else {
             // No room to right-align; just return the left part
             left
-        }
+        };
+
+        (result, color_overrides)
     }
 
     #[allow(dead_code)]
@@ -870,8 +865,8 @@ mod tests {
     fn test_panel_builder_separator() {
         let panel = PanelBuilder::new(8, None).with_padding(Padding::new(0, 0, 1, 1));
         let sep = panel.render_separator_line();
-        assert!(sep.starts_with('├'));
-        assert!(sep.ends_with('┤'));
+        assert!(sep.starts_with('█'));
+        assert!(sep.ends_with('█'));
         // total_width = 1 + 1 + 8 + 1 + 1 = 12
         assert_eq!(sep.chars().count(), 12);
     }
@@ -975,6 +970,110 @@ fn build_sparkline(history: &std::collections::VecDeque<f32>, min: f32, max: f32
     format!("{:<20}", sparkline)
 }
 
+/// Generates per-cell color overrides for the stats overlay rich rendering.
+///
+/// Colors:
+/// - FPS number: green (≥55 fps), amber (≥25 fps), red (< 25 fps)
+/// - Sparkline bars: gradient from muted gray → `accent` based on bar height
+fn generate_stats_rich_lines(
+    lines: &[String],
+    fps: f32,
+    accent: RgbColor,
+) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
+    let muted = GRUVBOX_DARK.muted;
+    let fps_color = if fps >= 55.0 {
+        RgbColor {
+            r: 142,
+            g: 192,
+            b: 124,
+        } // gruvbox green
+    } else if fps >= 25.0 {
+        RgbColor {
+            r: 215,
+            g: 153,
+            b: 33,
+        } // amber
+    } else {
+        RgbColor {
+            r: 251,
+            g: 73,
+            b: 52,
+        } // red bright
+    };
+
+    lines
+        .iter()
+        .map(|line| {
+            let chars: Vec<char> = line.chars().collect();
+            let n = chars.len();
+            // Content starts at col 3 (border=1, padding.left=2)
+            let content_start = 3.min(n);
+            let content_end = n.saturating_sub(3);
+
+            // Detect sparkline row: all non-space content chars are sparkline chars
+            let is_sparkline = content_start < content_end
+                && chars[content_start..content_end]
+                    .iter()
+                    .all(|&c| matches!(c, ' ' | '▂' | '▃' | '▄' | '▅' | '▆' | '▇' | '█'));
+
+            // Detect FPS row: content starts with "FPS:"
+            let is_fps_row =
+                content_start < n && chars[content_start..].starts_with(&['F', 'P', 'S', ':']);
+
+            if is_sparkline {
+                chars
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &c)| {
+                        let fg = if i >= content_start && i < content_end {
+                            let spark_idx = SPARKLINE_CHARS.iter().position(|&sc| sc == c);
+                            if let Some(idx) = spark_idx {
+                                if idx == 0 {
+                                    None
+                                } else {
+                                    let t = idx as f32 / (SPARKLINE_CHARS.len() - 1) as f32;
+                                    let r = (muted.r as f32
+                                        + (accent.r as f32 - muted.r as f32) * t)
+                                        as u8;
+                                    let g = (muted.g as f32
+                                        + (accent.g as f32 - muted.g as f32) * t)
+                                        as u8;
+                                    let b = (muted.b as f32
+                                        + (accent.b as f32 - muted.b as f32) * t)
+                                        as u8;
+                                    Some(RgbColor { r, g, b })
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        (c, fg, None)
+                    })
+                    .collect()
+            } else if is_fps_row {
+                // Format: "FPS: {:>11.0} ({:>4.0})" — fps value occupies cols 5..16
+                chars
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &c)| {
+                        let col = i.saturating_sub(content_start);
+                        let fg = if col >= 5 && col < 16 && (c.is_ascii_digit() || c == '.') {
+                            Some(fps_color)
+                        } else {
+                            None
+                        };
+                        (c, fg, None)
+                    })
+                    .collect()
+            } else {
+                chars.iter().map(|&c| (c, None, None)).collect()
+            }
+        })
+        .collect()
+}
+
 /// Overlay showing real-time statistics.
 pub struct StatsOverlay;
 
@@ -1007,6 +1106,7 @@ impl StatsOverlay {
         fps_history: &std::collections::VecDeque<f32>,
         entropy_history: &std::collections::VecDeque<f32>,
         density_history: &std::collections::VecDeque<f32>,
+        accent: RgbColor,
     ) -> RenderedOverlay {
         use TextAlignment::Left;
 
@@ -1023,7 +1123,7 @@ impl StatsOverlay {
         let entropy_spark = build_sparkline(entropy_history, 0.0, 8.0);
         let density_spark = build_sparkline(density_history, 0.0, 1.0);
 
-        PanelBuilder::new(Self::CONTENT_WIDTH, None)
+        let mut overlay = PanelBuilder::new(Self::CONTENT_WIDTH, None)
             .with_padding(Padding::new(1, 1, 2, 2))
             .with_title("STATS")
             .with_title_box()
@@ -1047,7 +1147,10 @@ impl StatsOverlay {
             .add_single(format!("Species:   {:>14}", species_count), Left)
             .add_single(format!("Memory:    {:>11.1} MB", memory_mb), Left)
             .add_single(format!("CPU:       {:>14.0}%", cpu_percent), Left)
-            .build_overlay()
+            .build_overlay();
+
+        overlay.rich_lines = Some(generate_stats_rich_lines(&overlay.lines, fps, accent));
+        overlay
     }
 
     /// Calculates centered position for the stats overlay.
@@ -1195,20 +1298,43 @@ mod stats_tests {
     fn test_stats_overlay_format() {
         let history = std::collections::VecDeque::from(vec![0.5f32; 20]);
         let lines = StatsOverlay::build_overlay(
-            50000, 1234567.0, 8000000.0, 8.5, 5.5, 30.0, 28.5, 1234, 125.5, 400, 400, 3, 1, 2,
-            12.5, 85.0, 80, &history, &history, &history,
+            50000,
+            1234567.0,
+            8000000.0,
+            8.5,
+            5.5,
+            30.0,
+            28.5,
+            1234,
+            125.5,
+            400,
+            400,
+            3,
+            1,
+            2,
+            12.5,
+            85.0,
+            80,
+            &history,
+            &history,
+            &history,
+            RgbColor {
+                r: 57,
+                g: 211,
+                b: 83,
+            },
         );
 
         assert!(!lines.lines.is_empty());
-        // Box-drawing borders
+        // Solid-block borders
         assert!(
-            lines.lines[0].starts_with('╭'),
-            "Top border should start with rounded corner ╭, got: {}",
+            lines.lines[0].starts_with('█'),
+            "Top border should start with solid block █, got: {}",
             lines.lines[0]
         );
         assert!(
-            lines.lines.last().unwrap().starts_with('╰'),
-            "Bottom border should start with rounded corner ╰"
+            lines.lines.last().unwrap().starts_with('█'),
+            "Bottom border should start with solid block █"
         );
 
         // All lines should be exactly WIDTH chars
@@ -1239,8 +1365,31 @@ mod stats_tests {
     fn test_stats_overlay_with_zero_values() {
         let history = std::collections::VecDeque::new();
         let lines = StatsOverlay::build_overlay(
-            0, 0.0, 1000000.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 400, 400, 0, 0, 0, 0.0, 0.0, 80,
-            &history, &history, &history,
+            0,
+            0.0,
+            1000000.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            400,
+            400,
+            0,
+            0,
+            0,
+            0.0,
+            0.0,
+            80,
+            &history,
+            &history,
+            &history,
+            RgbColor {
+                r: 57,
+                g: 211,
+                b: 83,
+            },
         );
 
         assert!(!lines.lines.is_empty());
@@ -1308,15 +1457,15 @@ mod info_tests {
         );
 
         assert!(!lines.lines.is_empty());
-        // Box-drawing borders
+        // Solid-block borders
         assert!(
-            lines.lines[0].starts_with('╭'),
-            "Top border should start with rounded corner ╭, got: {}",
+            lines.lines[0].starts_with('█'),
+            "Top border should start with solid block █, got: {}",
             lines.lines[0]
         );
         assert!(
-            lines.lines.last().unwrap().starts_with('╰'),
-            "Bottom border should start with rounded corner ╰"
+            lines.lines.last().unwrap().starts_with('█'),
+            "Bottom border should start with solid block █"
         );
 
         // All lines should be exactly WIDTH chars
@@ -1394,7 +1543,7 @@ mod status_line_tests {
 
     #[test]
     fn test_status_line_narrow_terminal_40_cols() {
-        let status = OverlayRenderer::build_status_line(
+        let (status, _) = OverlayRenderer::build_status_line(
             false,
             Preset::Organic,
             1.0,
@@ -1405,6 +1554,7 @@ mod status_line_tests {
             Some("Mean3x3"),
             false,
             false,
+            None,
         );
         // At 40 cols: should only have preset and time
         assert!(status.contains("Organic"));
@@ -1415,7 +1565,7 @@ mod status_line_tests {
 
     #[test]
     fn test_status_line_medium_terminal_80_cols() {
-        let status = OverlayRenderer::build_status_line(
+        let (status, _) = OverlayRenderer::build_status_line(
             false,
             Preset::Network,
             2.5,
@@ -1426,6 +1576,7 @@ mod status_line_tests {
             Some("Mean3x3"),
             false,
             false,
+            None,
         );
         // At 80 cols: should have preset, time, palette, and population
         assert!(status.contains("Network"));
@@ -1440,7 +1591,7 @@ mod status_line_tests {
 
     #[test]
     fn test_status_line_wide_terminal_120_cols() {
-        let status = OverlayRenderer::build_status_line(
+        let (status, _) = OverlayRenderer::build_status_line(
             false,
             Preset::Exploratory,
             1.5,
@@ -1451,6 +1602,7 @@ mod status_line_tests {
             Some("Gaussian"),
             false,
             false,
+            None,
         );
         // At 120 cols: should have everything including help
         assert!(status.contains("Exploratory"));
@@ -1463,7 +1615,7 @@ mod status_line_tests {
 
     #[test]
     fn test_status_line_paused() {
-        let status = OverlayRenderer::build_status_line(
+        let (status, colors) = OverlayRenderer::build_status_line(
             true,
             Preset::Organic,
             1.0,
@@ -1474,13 +1626,21 @@ mod status_line_tests {
             Some("Mean3x3"),
             false,
             false,
+            None,
         );
         assert!(status.contains("⏸ PAUSED"));
+        // PAUSED should have amber color overrides
+        let amber = RgbColor {
+            r: 215,
+            g: 153,
+            b: 33,
+        };
+        assert!(colors.iter().any(|(_, c)| *c == amber));
     }
 
     #[test]
     fn test_status_line_with_dither() {
-        let status = OverlayRenderer::build_status_line(
+        let (status, _) = OverlayRenderer::build_status_line(
             false,
             Preset::Organic,
             1.0,
@@ -1494,13 +1654,14 @@ mod status_line_tests {
             Some("Mean3x3"),
             false,
             false,
+            None,
         );
         assert!(status.contains("D 0.5×"));
     }
 
     #[test]
     fn test_status_line_without_optional_params() {
-        let status = OverlayRenderer::build_status_line(
+        let (status, _) = OverlayRenderer::build_status_line(
             false,
             Preset::Organic,
             1.0,
@@ -1511,6 +1672,7 @@ mod status_line_tests {
             None,
             false,
             false,
+            None,
         );
         // Should still work without population or diffusion kernel
         assert!(status.contains("Organic"));
@@ -1521,16 +1683,16 @@ mod status_line_tests {
     fn test_keyboard_hints_overlay_format() {
         let hints_lines = KeyboardHintsOverlay::build_overlay();
 
-        // Box-drawing borders
+        // Solid-block borders
         for line in &hints_lines.lines {
             assert!(
-                line.starts_with('╭') || line.starts_with('│') || line.starts_with('╰'),
-                "Line should start with box-drawing char, got: {}",
+                line.starts_with('█') || line.starts_with('▀') || line.starts_with('▄'),
+                "Line should start with solid block char, got: {}",
                 line
             );
             assert!(
-                line.ends_with('╮') || line.ends_with('│') || line.ends_with('╯'),
-                "Line should end with box-drawing char, got: {}",
+                line.ends_with('█') || line.ends_with('▀') || line.ends_with('▄'),
+                "Line should end with solid block char, got: {}",
                 line
             );
         }

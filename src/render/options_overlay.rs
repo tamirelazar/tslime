@@ -1,4 +1,6 @@
+use crate::render::palette::RgbColor;
 use crate::render::panel::{Padding, PanelBuilder, TextAlignment};
+use crate::render::theme::GRUVBOX_DARK;
 use crate::simulation::config::DiffusionKernel;
 use crate::simulation::config::TerrainType;
 use crate::terminal::control::DefaultValues;
@@ -84,6 +86,7 @@ impl ControlsOverlay {
         _term_width: usize,
         defaults: DefaultValues,
         population: usize,
+        accent: RgbColor,
     ) -> crate::render::panel::RenderedOverlay {
         use TextAlignment::Left;
 
@@ -489,14 +492,72 @@ impl ControlsOverlay {
             _ => builder,
         };
 
-        builder
+        let mut overlay = builder
             .add_separator()
             .add_single(
                 "  * modified  ─ CLI-only  Tab: next  Esc: close".to_string(),
                 Left,
             )
-            .build_overlay()
+            .build_overlay();
+        overlay.rich_lines = Some(generate_controls_rich_lines(&overlay.lines, accent));
+        overlay
     }
+}
+
+/// Applies per-cell color overrides to the controls overlay lines.
+///
+/// Identifies parameter rows (key binding + mini bar) and applies:
+/// - Accent colour to the key chars (cols 5–7).
+/// - `accent_modified` colour to the `*` modification marker at col 3.
+/// - Accent colour to filled bar chars (`█`/`▪`) at cols 25–32.
+/// - Muted colour to empty bar chars (`░`) at the same positions.
+fn generate_controls_rich_lines(
+    lines: &[String],
+    accent: RgbColor,
+) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
+    let modified_color = GRUVBOX_DARK.accent_modified;
+    let muted_color = GRUVBOX_DARK.muted;
+
+    lines
+        .iter()
+        .map(|line| {
+            let chars: Vec<char> = line.chars().collect();
+            let n = chars.len();
+
+            // A param row: marker at col 3 (' ' or '*'), space at col 4,
+            // col 5 is not another '*' (distinguishes from the "  * modified…" footer),
+            // and the region cols 3..47 is not all-spaces (padding rows).
+            let is_param_row = n == ControlsOverlay::WIDTH
+                && matches!(chars.get(3), Some(' ') | Some('*'))
+                && matches!(chars.get(4), Some(' '))
+                && !matches!(chars.get(5), Some('*'))
+                && chars
+                    .get(3..47.min(n))
+                    .map_or(false, |s| s.iter().any(|&c| c != ' '));
+
+            if !is_param_row {
+                return chars.iter().map(|&c| (c, None, None)).collect();
+            }
+
+            chars
+                .iter()
+                .enumerate()
+                .map(|(i, &c)| {
+                    let fg = match i {
+                        3 if c == '*' => Some(modified_color),
+                        5..=7 => Some(accent),
+                        25..=32 => match c {
+                            '█' | '▪' => Some(accent),
+                            '░' => Some(muted_color),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    (c, fg, None)
+                })
+                .collect()
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -554,23 +615,28 @@ mod tests {
             80,
             DefaultValues::from_preset(Preset::Organic),
             50000,
+            RgbColor {
+                r: 57,
+                g: 211,
+                b: 83,
+            },
         );
 
         assert!(
-            lines.lines[0].starts_with('╭'),
-            "First line should start with rounded corner ╭"
+            lines.lines[0].starts_with('█'),
+            "First line should start with solid block █"
         );
         assert!(
-            lines.lines[0].ends_with('╮'),
-            "First line should end with rounded corner ╮"
+            lines.lines[0].ends_with('█'),
+            "First line should end with solid block █"
         );
         assert!(
-            lines.lines.last().unwrap().starts_with('╰'),
-            "Last line should start with rounded corner ╰"
+            lines.lines.last().unwrap().starts_with('█'),
+            "Last line should start with solid block █"
         );
         assert!(
-            lines.lines.last().unwrap().ends_with('╯'),
-            "Last line should end with rounded corner ╯"
+            lines.lines.last().unwrap().ends_with('█'),
+            "Last line should end with solid block █"
         );
     }
 
@@ -606,25 +672,24 @@ mod tests {
                 80,
                 DefaultValues::from_preset(Preset::Organic),
                 50000,
+                RgbColor {
+                    r: 57,
+                    g: 211,
+                    b: 83,
+                },
             );
 
             // All lines should be exactly WIDTH chars wide
             for (line_num, line) in lines.lines.iter().enumerate() {
                 assert!(
-                    line.starts_with('╭')
-                        || line.starts_with('│')
-                        || line.starts_with('╰')
-                        || line.starts_with('├'),
-                    "Category {}, line {}: All lines should start with box-drawing char",
+                    line.starts_with('█') || line.starts_with('▀') || line.starts_with('▄'),
+                    "Category {}, line {}: All lines should start with solid block char",
                     category_idx,
                     line_num
                 );
                 assert!(
-                    line.ends_with('╮')
-                        || line.ends_with('│')
-                        || line.ends_with('╯')
-                        || line.ends_with('┤'),
-                    "Category {}, line {}: All lines should end with box-drawing char",
+                    line.ends_with('█') || line.ends_with('▀') || line.ends_with('▄'),
+                    "Category {}, line {}: All lines should end with solid block char",
                     category_idx,
                     line_num
                 );
@@ -672,6 +737,11 @@ mod tests {
             80,
             DefaultValues::from_preset(Preset::Organic),
             50000,
+            RgbColor {
+                r: 57,
+                g: 211,
+                b: 83,
+            },
         );
 
         // The title box shows "CONTROLS" (no longer includes [N/6]; the tab bar does that).
@@ -760,6 +830,11 @@ fn test_options_overlay_renders_all_categories() {
             80,
             state.default_values,
             50000,
+            RgbColor {
+                r: 57,
+                g: 211,
+                b: 83,
+            },
         );
 
         assert!(
@@ -811,6 +886,11 @@ fn test_options_overlay_renders_all_categories() {
         80,
         state.default_values,
         50000,
+        RgbColor {
+            r: 57,
+            g: 211,
+            b: 83,
+        },
     );
     assert!(sim_overlay
         .lines
@@ -858,6 +938,11 @@ fn test_options_overlay_renders_all_categories() {
         80,
         state.default_values,
         50000,
+        RgbColor {
+            r: 57,
+            g: 211,
+            b: 83,
+        },
     );
     assert!(env_overlay
         .lines
@@ -917,6 +1002,11 @@ fn test_options_overlay_shows_live_parameter_values() {
         80,
         state.default_values,
         50000,
+        RgbColor {
+            r: 57,
+            g: 211,
+            b: 83,
+        },
     );
 
     assert!(
@@ -983,22 +1073,27 @@ fn test_options_overlay_format() {
             80,
             state.default_values,
             50000,
+            RgbColor {
+                r: 57,
+                g: 211,
+                b: 83,
+            },
         );
 
-        // Box-drawing borders
+        // Solid-block borders
         assert!(
-            overlay.lines.iter().any(|line| line.starts_with('╭')),
-            "Should have rounded top-left corner ╭"
+            overlay.lines.iter().any(|line| line.starts_with('█')),
+            "Should have solid block border char █"
         );
         assert!(
-            overlay.lines.iter().any(|line| line.contains('│')),
-            "Should have vertical border │"
+            overlay.lines.iter().any(|line| line.contains('█')),
+            "Should have solid block vertical border"
         );
         assert!(
             overlay
                 .lines
                 .iter()
-                .any(|line| line.ends_with('╯') || line.ends_with('│')),
+                .any(|line| line.ends_with('█') || line.ends_with('▄')),
             "Should have bottom border or vertical chars"
         );
 

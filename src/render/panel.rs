@@ -315,6 +315,13 @@ pub struct RenderedOverlay {
     pub lines: Vec<String>,
     /// Optional title-box mini panel to draw on top of the main panel.
     pub title_box: Option<RenderedTitleBox>,
+    /// Optional per-cell color overrides for rich rendering.
+    ///
+    /// Each element corresponds to one line in `lines`; each inner vec has one entry per
+    /// *character* (not byte): `(char, fg_override, bg_override)`. When present the renderer
+    /// will call `draw_rich_overlay` after `draw_text_overlay` so that specific cells can be
+    /// coloured individually (key bindings, progress bars, palette swatches, …).
+    pub rich_lines: Option<Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>>>,
 }
 
 /// A 3-line mini panel (top border, content, bottom border) used as a floating title box.
@@ -366,7 +373,7 @@ impl PanelBuilder {
             padding: Padding::default(),
             title: None,
             title_alignment: TitleAlignment::Center,
-            border: Some(BorderConfig::box_drawing()),
+            border: Some(BorderConfig::solid_blocks()),
             border_color: None,
             column_layout: ColumnLayout::Single,
             rows: Vec::new(),
@@ -634,6 +641,7 @@ impl PanelBuilder {
         RenderedOverlay {
             lines: self.build(),
             title_box,
+            rich_lines: None,
         }
     }
 
@@ -847,12 +855,12 @@ mod tests {
             .with_title("STATS");
         let border_line = panel.render_top_border();
         assert!(
-            border_line.starts_with('╭'),
-            "Should start with rounded top-left corner"
+            border_line.starts_with('█'),
+            "Should start with solid block corner"
         );
         assert!(
-            border_line.ends_with('╮'),
-            "Should end with rounded top-right corner"
+            border_line.ends_with('█'),
+            "Should end with solid block corner"
         );
         assert!(border_line.contains("STATS"), "Should contain title");
         assert_eq!(border_line.chars().count(), 32);
@@ -862,8 +870,8 @@ mod tests {
     fn test_separator_line_width() {
         let panel = PanelBuilder::new(26, None).with_padding(Padding::new(1, 1, 2, 2));
         let sep = panel.render_separator_line();
-        assert!(sep.starts_with('├'));
-        assert!(sep.ends_with('┤'));
+        assert!(sep.starts_with('█'));
+        assert!(sep.ends_with('█'));
         assert_eq!(sep.chars().count(), 32);
     }
 
@@ -912,15 +920,15 @@ mod tests {
     }
 
     #[test]
-    fn test_box_drawing_default_border() {
+    fn test_solid_blocks_default_border() {
         let lines = PanelBuilder::new(10, None).build();
         assert!(
-            lines[0].starts_with('╭'),
-            "Top border should start with rounded corner ╭"
+            lines[0].starts_with('█'),
+            "Top border should start with solid block █"
         );
         assert!(
-            lines.last().unwrap().starts_with('╰'),
-            "Bottom border should start with rounded corner ╰"
+            lines.last().unwrap().starts_with('█'),
+            "Bottom border should start with solid block █"
         );
     }
 
