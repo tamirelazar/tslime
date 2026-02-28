@@ -268,7 +268,7 @@ impl PresetComparisonOverlay {
 
         let add_row =
             |b: PanelBuilder, name: &str, cur: String, def: String, modif: bool| -> PanelBuilder {
-                let marker = if modif { "*" } else { " " };
+                let marker = if modif { "⚙" } else { " " };
                 b.add_single(
                     format!("{} {:<16} │ {:<12} │ {:<18}", marker, name, cur, def),
                     Left,
@@ -590,7 +590,7 @@ impl OverlayRenderer {
             // Color swatch: two block chars tinted with the palette accent
             if let Some(accent_color) = accent {
                 let swatch_start = left.chars().count();
-                left.push_str("██ ");
+                left.push_str("▨ ");
                 color_overrides.push((swatch_start, accent_color));
                 color_overrides.push((swatch_start + 1, accent_color));
             }
@@ -1857,8 +1857,8 @@ mod status_line_tests {
             .filter(|l| l.contains("Sensor Angle"))
             .collect::<Vec<_>>();
         assert!(!content_lines.is_empty());
-        // Should show modified marker *
-        assert!(content_lines[0].contains('*'));
+        // Should show modified marker ⚙
+        assert!(content_lines[0].contains('⚙'));
     }
 
     #[test]
