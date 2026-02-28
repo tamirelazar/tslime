@@ -1,6 +1,6 @@
 use crate::render::palette::RgbColor;
 use crate::render::panel::{Padding, PanelBuilder, TextAlignment};
-use crate::render::theme::GRUVBOX_DARK;
+use crate::render::theme::PanelStyle;
 use crate::simulation::config::DiffusionKernel;
 use crate::simulation::config::TerrainType;
 use crate::terminal::control::DefaultValues;
@@ -89,6 +89,8 @@ impl ControlsOverlay {
         defaults: DefaultValues,
         population: usize,
         accent: RgbColor,
+        theme_name: &str,
+        panel_style: &PanelStyle,
     ) -> crate::render::panel::RenderedOverlay {
         use TextAlignment::Left;
 
@@ -350,6 +352,16 @@ impl ControlsOverlay {
                     .add_single(
                         param_row(
                             " ",
+                            "9/*",
+                            "Theme",
+                            "────────".to_string(),
+                            theme_name.to_string(),
+                        ),
+                        Left,
+                    )
+                    .add_single(
+                        param_row(
+                            " ",
                             "c/C",
                             "Palette",
                             "────────".to_string(),
@@ -533,6 +545,7 @@ impl ControlsOverlay {
             &overlay.lines,
             accent,
             category_idx,
+            panel_style,
         ));
         overlay
     }
@@ -551,9 +564,10 @@ fn generate_controls_rich_lines(
     lines: &[String],
     accent: RgbColor,
     category_idx: usize,
+    panel_style: &PanelStyle,
 ) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
-    let modified_color = GRUVBOX_DARK.accent_modified;
-    let muted_color = GRUVBOX_DARK.muted;
+    let modified_color = panel_style.accent_modified;
+    let muted_color = panel_style.muted;
     let tab_labels = ["SIM", "ENV", "APP", "PST", "PRF", "SYS"];
     let active_label = tab_labels[category_idx.min(tab_labels.len() - 1)];
 
@@ -647,6 +661,7 @@ fn generate_controls_rich_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::theme::GRUVBOX_DARK;
     use crate::simulation::config::DiffusionKernel;
     use crate::simulation::config::Preset;
     use crate::simulation::config::TerrainType;
@@ -704,6 +719,8 @@ mod tests {
                 g: 211,
                 b: 83,
             },
+            "GruvboxDark",
+            &GRUVBOX_DARK,
         );
 
         assert!(
@@ -761,6 +778,8 @@ mod tests {
                     g: 211,
                     b: 83,
                 },
+                "GruvboxDark",
+                &GRUVBOX_DARK,
             );
 
             // All lines should be exactly WIDTH chars wide
@@ -826,6 +845,8 @@ mod tests {
                 g: 211,
                 b: 83,
             },
+            "GruvboxDark",
+            &GRUVBOX_DARK,
         );
 
         // The title box shows "CONTROLS" (no longer includes [N/6]; the tab bar does that).
@@ -868,6 +889,7 @@ mod tests {
 
 #[test]
 fn test_options_overlay_renders_all_categories() {
+    use crate::render::theme::GRUVBOX_DARK;
     use crate::simulation::config::InitMode;
     use crate::terminal::control::RuntimeState;
 
@@ -919,6 +941,8 @@ fn test_options_overlay_renders_all_categories() {
                 g: 211,
                 b: 83,
             },
+            "GruvboxDark",
+            &GRUVBOX_DARK,
         );
 
         assert!(
@@ -975,6 +999,8 @@ fn test_options_overlay_renders_all_categories() {
             g: 211,
             b: 83,
         },
+        "GruvboxDark",
+        &GRUVBOX_DARK,
     );
     assert!(sim_overlay
         .lines
@@ -1027,6 +1053,8 @@ fn test_options_overlay_renders_all_categories() {
             g: 211,
             b: 83,
         },
+        "GruvboxDark",
+        &GRUVBOX_DARK,
     );
     assert!(env_overlay
         .lines
@@ -1041,6 +1069,7 @@ fn test_options_overlay_renders_all_categories() {
 
 #[test]
 fn test_options_overlay_shows_live_parameter_values() {
+    use crate::render::theme::GRUVBOX_DARK;
     use crate::simulation::config::InitMode;
     use crate::terminal::control::RuntimeState;
 
@@ -1091,6 +1120,8 @@ fn test_options_overlay_shows_live_parameter_values() {
             g: 211,
             b: 83,
         },
+        "GruvboxDark",
+        &GRUVBOX_DARK,
     );
 
     assert!(
@@ -1114,6 +1145,7 @@ fn test_options_overlay_shows_live_parameter_values() {
 
 #[test]
 fn test_options_overlay_format() {
+    use crate::render::theme::GRUVBOX_DARK;
     use crate::simulation::config::InitMode;
     use crate::terminal::control::RuntimeState;
 
@@ -1162,6 +1194,8 @@ fn test_options_overlay_format() {
                 g: 211,
                 b: 83,
             },
+            "GruvboxDark",
+            &GRUVBOX_DARK,
         );
 
         // Solid-block borders

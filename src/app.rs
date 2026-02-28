@@ -1543,6 +1543,8 @@ pub fn run_simulation(
                 runtime_state.default_values,
                 sim.agent_count(),
                 ui_accent,
+                runtime_state.current_theme_name(),
+                &runtime_state.panel_style,
             ))
         } else {
             None
@@ -1649,6 +1651,7 @@ pub fn run_simulation(
                 &runtime_state.entropy_history,
                 &runtime_state.density_history,
                 ui_accent,
+                &runtime_state.panel_style,
             ))
         } else {
             None
@@ -2527,6 +2530,20 @@ pub fn run_simulation(
                             } else {
                                 runtime_state.show_notification("Nothing to redo".to_string());
                             }
+                        }
+                        ControlAction::CycleTheme => {
+                            runtime_state.cycle_theme();
+                            runtime_state.show_notification(format!(
+                                "Theme: {}",
+                                runtime_state.current_theme_name()
+                            ));
+                        }
+                        ControlAction::CycleThemeReverse => {
+                            runtime_state.cycle_theme_reverse();
+                            runtime_state.show_notification(format!(
+                                "Theme: {}",
+                                runtime_state.current_theme_name()
+                            ));
                         }
                         ControlAction::None => {}
                     }

@@ -37,6 +37,10 @@ pub struct PanelStyle {
     pub muted: RgbColor,
     /// Color for modified/changed parameter markers.
     pub accent_modified: RgbColor,
+    /// FPS good (≥55): displayed green.
+    pub accent_fps_good: RgbColor,
+    /// FPS warning (≥25, <55): displayed amber.
+    pub accent_fps_warn: RgbColor,
 }
 
 /// Gruvbox Dark-inspired panel style.
@@ -118,6 +122,16 @@ pub const GRUVBOX_DARK: PanelStyle = PanelStyle {
         g: 128,
         b: 25,
     }, // Gruvbox orange
+    accent_fps_good: RgbColor {
+        r: 142,
+        g: 192,
+        b: 124,
+    }, // Gruvbox green
+    accent_fps_warn: RgbColor {
+        r: 215,
+        g: 153,
+        b: 33,
+    }, // Amber
 };
 
 /// Slime Mold Dark — a bioluminescent palette inspired by Physarum polycephalum.
@@ -198,6 +212,16 @@ pub const SLIME_DARK: PanelStyle = PanelStyle {
         g: 183,
         b: 0,
     }, // Amber for modified values
+    accent_fps_good: RgbColor {
+        r: 57,
+        g: 211,
+        b: 83,
+    }, // Electric green (same as focus)
+    accent_fps_warn: RgbColor {
+        r: 255,
+        g: 183,
+        b: 0,
+    }, // Amber (same as accent_warning)
 };
 
 impl Default for PanelStyle {
@@ -205,3 +229,33 @@ impl Default for PanelStyle {
         GRUVBOX_DARK
     }
 }
+
+/// Available UI themes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Theme {
+    /// Gruvbox Dark-inspired theme.
+    GruvboxDark,
+    /// Slime Mold Dark bioluminescent theme.
+    SlimeDark,
+}
+
+impl Theme {
+    /// Returns the display name of this theme.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Theme::GruvboxDark => "GruvboxDark",
+            Theme::SlimeDark => "SlimeDark",
+        }
+    }
+
+    /// Returns the `PanelStyle` for this theme.
+    pub fn style(&self) -> PanelStyle {
+        match self {
+            Theme::GruvboxDark => GRUVBOX_DARK,
+            Theme::SlimeDark => SLIME_DARK,
+        }
+    }
+}
+
+/// All available themes in cycling order.
+pub const ALL_THEMES: [Theme; 2] = [Theme::GruvboxDark, Theme::SlimeDark];

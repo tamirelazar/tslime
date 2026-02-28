@@ -1,7 +1,7 @@
 use crate::cli::Palette;
 use crate::render::dither::DitherMode;
 use crate::render::palette::RgbColor;
-use crate::render::theme::GRUVBOX_DARK;
+use crate::render::theme::PanelStyle;
 use crate::simulation::config::Attractor;
 use crate::simulation::config::MouseAttractor;
 use crate::simulation::config::Obstacle;
@@ -1098,26 +1098,15 @@ fn generate_stats_rich_lines(
     lines: &[String],
     fps: f32,
     accent: RgbColor,
+    panel_style: &PanelStyle,
 ) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
-    let muted = GRUVBOX_DARK.muted;
+    let muted = panel_style.muted;
     let fps_color = if fps >= 55.0 {
-        RgbColor {
-            r: 142,
-            g: 192,
-            b: 124,
-        } // gruvbox green
+        panel_style.accent_fps_good
     } else if fps >= 25.0 {
-        RgbColor {
-            r: 215,
-            g: 153,
-            b: 33,
-        } // amber
+        panel_style.accent_fps_warn
     } else {
-        RgbColor {
-            r: 251,
-            g: 73,
-            b: 52,
-        } // red bright
+        panel_style.accent_error
     };
 
     lines
@@ -1226,6 +1215,7 @@ impl StatsOverlay {
         entropy_history: &std::collections::VecDeque<f32>,
         density_history: &std::collections::VecDeque<f32>,
         accent: RgbColor,
+        panel_style: &PanelStyle,
     ) -> RenderedOverlay {
         use TextAlignment::Left;
 
@@ -1269,7 +1259,12 @@ impl StatsOverlay {
             .add_single(format!("CPU:       {:>14.0}%", cpu_percent), Left)
             .build_overlay();
 
-        overlay.rich_lines = Some(generate_stats_rich_lines(&overlay.lines, fps, accent));
+        overlay.rich_lines = Some(generate_stats_rich_lines(
+            &overlay.lines,
+            fps,
+            accent,
+            panel_style,
+        ));
         overlay
     }
 
@@ -1413,6 +1408,7 @@ fn format_elapsed_time(seconds: f32) -> String {
 #[cfg(test)]
 mod stats_tests {
     use super::*;
+    use crate::render::theme::GRUVBOX_DARK;
 
     #[test]
     fn test_stats_overlay_format() {
@@ -1443,6 +1439,7 @@ mod stats_tests {
                 g: 211,
                 b: 83,
             },
+            &GRUVBOX_DARK,
         );
 
         assert!(!lines.lines.is_empty());
@@ -1510,6 +1507,7 @@ mod stats_tests {
                 g: 211,
                 b: 83,
             },
+            &GRUVBOX_DARK,
         );
 
         assert!(!lines.lines.is_empty());

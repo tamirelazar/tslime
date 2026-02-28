@@ -1,7 +1,7 @@
 use crate::cli::Palette;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::IntensityMapping;
-use crate::render::theme::{PanelStyle, GRUVBOX_DARK};
+use crate::render::theme::{PanelStyle, ALL_THEMES, GRUVBOX_DARK};
 use crate::simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType, Wind};
 use crossterm::event::KeyEvent;
 use rand::Rng;
@@ -290,6 +290,10 @@ pub enum ControlAction {
     Undo,
     /// Redo last undone change.
     Redo,
+    /// Cycle to next UI theme.
+    CycleTheme,
+    /// Cycle to previous UI theme.
+    CycleThemeReverse,
     /// No action.
     None,
 }
@@ -524,6 +528,8 @@ pub struct RuntimeState {
     pub density_history: std::collections::VecDeque<f32>,
     /// Current panel theme/style.
     pub panel_style: PanelStyle,
+    /// Index into `ALL_THEMES` for the active UI theme.
+    pub theme_index: usize,
     /// Currently focused overlay type.
     pub focused_overlay: Option<OverlayType>,
 }
@@ -618,6 +624,7 @@ impl RuntimeState {
             entropy_history: std::collections::VecDeque::with_capacity(20),
             density_history: std::collections::VecDeque::with_capacity(20),
             panel_style: GRUVBOX_DARK,
+            theme_index: 0,
             focused_overlay: None,
         }
     }
@@ -1262,6 +1269,26 @@ impl RuntimeState {
             .map(|(msg, _, level)| (msg.as_str(), *level))
     }
 
+    /// Cycles to the next UI theme.
+    pub fn cycle_theme(&mut self) {
+        self.theme_index = (self.theme_index + 1) % ALL_THEMES.len();
+        self.panel_style = ALL_THEMES[self.theme_index].style();
+    }
+
+    /// Cycles to the previous UI theme.
+    pub fn cycle_theme_reverse(&mut self) {
+        self.theme_index = self
+            .theme_index
+            .checked_sub(1)
+            .unwrap_or(ALL_THEMES.len() - 1);
+        self.panel_style = ALL_THEMES[self.theme_index].style();
+    }
+
+    /// Returns the display name of the current UI theme.
+    pub fn current_theme_name(&self) -> &'static str {
+        ALL_THEMES[self.theme_index].name()
+    }
+
     /// Checks if the simulation is in the warmup phase.
     pub fn is_in_warmup(&self, warmup_frames: usize) -> bool {
         warmup_frames > 0 && self.warmup_counter < warmup_frames
@@ -1358,6 +1385,8 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('^') => ControlAction::ComparePreset(Preset::Moss),
         KeyCode::Char('&') => ControlAction::ComparePreset(Preset::Zen),
         KeyCode::Char('8') => ControlAction::RandomizeParams,
+        KeyCode::Char('9') => ControlAction::CycleTheme,
+        KeyCode::Char('*') => ControlAction::CycleThemeReverse,
         KeyCode::Char('+') | KeyCode::Char('=') => ControlAction::AdjustTimeScale(0.5),
         KeyCode::Char('-') | KeyCode::Char('_') => ControlAction::AdjustTimeScale(-0.5),
         KeyCode::Char('C') if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
