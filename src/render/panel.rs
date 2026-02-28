@@ -315,6 +315,13 @@ pub struct RenderedOverlay {
     pub lines: Vec<String>,
     /// Optional title-box mini panel to draw on top of the main panel.
     pub title_box: Option<RenderedTitleBox>,
+    /// Optional per-cell color overrides for rich rendering.
+    ///
+    /// Each element corresponds to one line in `lines`; each inner vec has one entry per
+    /// *character* (not byte): `(char, fg_override, bg_override)`. When present the renderer
+    /// will call `draw_rich_overlay` after `draw_text_overlay` so that specific cells can be
+    /// coloured individually (key bindings, progress bars, palette swatches, …).
+    pub rich_lines: Option<Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>>>,
 }
 
 /// A 3-line mini panel (top border, content, bottom border) used as a floating title box.
@@ -634,6 +641,7 @@ impl PanelBuilder {
         RenderedOverlay {
             lines: self.build(),
             title_box,
+            rich_lines: None,
         }
     }
 
@@ -848,9 +856,12 @@ mod tests {
         let border_line = panel.render_top_border();
         assert!(
             border_line.starts_with('█'),
-            "Should start with solid block"
+            "Should start with solid block corner"
         );
-        assert!(border_line.ends_with('█'), "Should end with solid block");
+        assert!(
+            border_line.ends_with('█'),
+            "Should end with solid block corner"
+        );
         assert!(border_line.contains("STATS"), "Should contain title");
         assert_eq!(border_line.chars().count(), 32);
     }
@@ -909,7 +920,7 @@ mod tests {
     }
 
     #[test]
-    fn test_solid_block_default_border() {
+    fn test_solid_blocks_default_border() {
         let lines = PanelBuilder::new(10, None).build();
         assert!(
             lines[0].starts_with('█'),

@@ -3138,6 +3138,25 @@ pub fn map_brightness_rgb(
     hsv_to_rgb(rotated)
 }
 
+/// Returns a vivid accent color representative of the current palette configuration.
+///
+/// Samples the palette at brightness = 0.85 so the accent sits in the bright but not
+/// fully-saturated region of each palette's gradient. Suitable for title badges,
+/// palette swatches, and key-binding highlights in the TUI.
+///
+/// Arguments mirror `map_brightness_rgb`: `reverse`, `invert`, `hue_offset`, and
+/// an optional `intensity_mapping`. Passing the same values used for simulation
+/// rendering ensures the accent matches what the user sees on screen.
+pub fn palette_accent_color(
+    palette: &Palette,
+    reverse: bool,
+    invert: bool,
+    hue_offset: f32,
+    mapping: Option<&IntensityMapping>,
+) -> RgbColor {
+    map_brightness_rgb(0.85, palette.clone(), reverse, invert, hue_offset, mapping)
+}
+
 #[allow(dead_code)]
 /// Generates an ANSI escape sequence for a truecolor foreground or background.
 pub fn truecolor_ansi(r: u8, g: u8, b: u8, is_fg: bool) -> String {

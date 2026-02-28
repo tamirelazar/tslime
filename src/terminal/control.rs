@@ -71,6 +71,70 @@ impl PaletteShiftSpeed {
     }
 }
 
+/// Urgency level for toast notifications.
+///
+/// Controls the icon prefix and accent color of a notification.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NotificationLevel {
+    /// Neutral informational message (teal accent).
+    Info,
+    /// Positive confirmation (green accent).
+    Success,
+    /// Non-critical caution (amber accent).
+    Warning,
+    /// Critical error (red accent).
+    Error,
+}
+
+impl NotificationLevel {
+    /// Returns a single-character icon prefix for the notification.
+    pub fn icon(self) -> &'static str {
+        match self {
+            NotificationLevel::Info => "ℹ",
+            NotificationLevel::Success => "✓",
+            NotificationLevel::Warning => "⚠",
+            NotificationLevel::Error => "✗",
+        }
+    }
+
+    /// Returns the ANSI 256-color index for this level's accent background.
+    pub fn bg_color_256(self) -> u8 {
+        match self {
+            NotificationLevel::Info => 23,    // Dark teal
+            NotificationLevel::Success => 22, // Dark green
+            NotificationLevel::Warning => 94, // Dark amber/orange
+            NotificationLevel::Error => 52,   // Dark red
+        }
+    }
+
+    /// Returns an RGB accent color for this level.
+    pub fn accent_rgb(self) -> crate::render::palette::RgbColor {
+        use crate::render::palette::RgbColor;
+        match self {
+            NotificationLevel::Info => RgbColor {
+                r: 69,
+                g: 192,
+                b: 191,
+            }, // aqua
+            NotificationLevel::Success => RgbColor {
+                r: 142,
+                g: 192,
+                b: 124,
+            }, // green
+            NotificationLevel::Warning => RgbColor {
+                r: 215,
+                g: 153,
+                b: 33,
+            }, // amber
+            NotificationLevel::Error => RgbColor {
+                r: 251,
+                g: 73,
+                b: 52,
+            }, // red bright
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Predefined wind directions for easy control.
 pub enum WindDirection {
@@ -424,8 +488,8 @@ pub struct RuntimeState {
     pub show_stats: bool,
     /// Show info overlay.
     pub show_info: bool,
-    /// Current notification message.
-    pub notification: Option<(String, std::time::Instant)>,
+    /// Current notification message with timestamp and severity level.
+    pub notification: Option<(String, std::time::Instant, NotificationLevel)>,
     /// Frame counter for entropy collapse detection.
     pub collapse_frame_counter: usize,
     /// Warmup frame counter.
@@ -1167,14 +1231,19 @@ impl RuntimeState {
         self.max_brightness = rng.gen_range(10.0..40.0);
     }
 
-    /// Shows a temporary notification message.
+    /// Shows a temporary notification message at Info level.
     pub fn show_notification(&mut self, message: String) {
-        self.notification = Some((message, std::time::Instant::now()));
+        self.notification = Some((message, std::time::Instant::now(), NotificationLevel::Info));
+    }
+
+    /// Shows a temporary notification with an explicit severity level.
+    pub fn show_notification_with_level(&mut self, message: String, level: NotificationLevel) {
+        self.notification = Some((message, std::time::Instant::now(), level));
     }
 
     /// Updates notification state (clears expired notifications).
     pub fn update_notifications(&mut self) {
-        if let Some((_, time)) = self.notification {
+        if let Some((_, time, _)) = self.notification {
             if time.elapsed().as_secs() >= 3 {
                 self.notification = None;
             }
@@ -1183,7 +1252,14 @@ impl RuntimeState {
 
     /// Returns the current notification message if any.
     pub fn current_notification(&self) -> Option<&String> {
-        self.notification.as_ref().map(|(msg, _)| msg)
+        self.notification.as_ref().map(|(msg, _, _)| msg)
+    }
+
+    /// Returns the current notification message and level if any.
+    pub fn current_notification_full(&self) -> Option<(&str, NotificationLevel)> {
+        self.notification
+            .as_ref()
+            .map(|(msg, _, level)| (msg.as_str(), *level))
     }
 
     /// Checks if the simulation is in the warmup phase.

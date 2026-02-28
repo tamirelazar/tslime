@@ -320,6 +320,45 @@ impl FrameBuffer {
         }
     }
 
+    /// Overlay per-cell color overrides produced by rich overlay builders.
+    ///
+    /// `rich` is a slice of rows; each row is a vec of `(char, fg_override, bg_override)`.
+    /// Only cells whose override is `Some(…)` are modified; the underlying character and
+    /// the existing `bg_color` from a previous `draw_text_overlay` call are preserved for
+    /// cells whose override is `None`.
+    pub fn draw_rich_overlay(
+        &mut self,
+        rich: &[Vec<(char, Option<RgbColor>, Option<RgbColor>)>],
+        start_x: usize,
+        start_y: usize,
+    ) {
+        for (dy, row) in rich.iter().enumerate() {
+            let y = start_y + dy;
+            if y >= self.height {
+                break;
+            }
+            for (dx, &(_, fg_override, bg_override)) in row.iter().enumerate() {
+                let x = start_x + dx;
+                if x >= self.width {
+                    break;
+                }
+                let idx = y * self.width + x;
+                if let Some(fg) = fg_override {
+                    match self.color_mode {
+                        ColorMode::TrueColor => self.cells[idx].fg_color_rgb = Some(fg),
+                        _ => self.cells[idx].fg_color_256 = Some(palette::rgb_to_256(fg)),
+                    }
+                }
+                if let Some(bg) = bg_override {
+                    match self.color_mode {
+                        ColorMode::TrueColor => self.cells[idx].bg_color_rgb = Some(bg),
+                        _ => self.cells[idx].bg_color_256 = Some(palette::rgb_to_256(bg)),
+                    }
+                }
+            }
+        }
+    }
+
     #[allow(dead_code)]
     fn max_brightness(frame: &[DownsampleCell]) -> f32 {
         frame
@@ -1093,8 +1132,8 @@ impl TerminalRenderer {
         downsampled: &[DownsampleCell],
         max_trail_value: f32,
         controls_lines: Option<(&RenderedOverlay, usize, usize)>,
-        status_line: Option<(String, usize)>,
-        notification_line: Option<(String, usize)>,
+        status_line: Option<(String, usize, Vec<(usize, RgbColor)>)>,
+        notification_line: Option<(&RenderedOverlay, usize, usize)>,
         stats_lines: Option<(&RenderedOverlay, usize, usize)>,
         info_lines: Option<(&RenderedOverlay, usize, usize)>,
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
@@ -1166,6 +1205,15 @@ impl TerminalRenderer {
             }
         }
 
+        // Palette accent color used for accented title badges.
+        let accent = palette::palette_accent_color(
+            &self.palette,
+            self.reverse_palette,
+            self.invert_palette,
+            self.hue_shift,
+            self.intensity_mapping.as_ref(),
+        );
+
         // Helper to get colors from OverlayConfig and PanelStyle
         let get_overlay_colors =
             |config: &OverlayConfig,
@@ -1190,184 +1238,106 @@ impl TerminalRenderer {
                 }
             };
 
-        // Controls overlay at top-left
-        if let Some((overlay, x, y)) = controls_lines {
-            let config = &OverlayConfig::CONTROLS;
-            let (fg, bg, panel_bg, ind, w) = get_overlay_colors(config, panel_style);
+        // Unified draw helper: main panel + rich_lines + accented title badge.
+        let draw_overlay = |buf: &mut FrameBuffer,
+                            overlay: &RenderedOverlay,
+                            x: usize,
+                            y: usize,
+                            config: &OverlayConfig| {
+            let (fg, bg, panel_bg, _ind, _w) = get_overlay_colors(config, panel_style);
             if panel_bg.is_some() {
-                buffer.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, ind, w);
+                buf.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, None, 0);
             } else {
-                buffer.draw_text_overlay(&overlay.lines, x, y, fg, bg);
+                buf.draw_text_overlay(&overlay.lines, x, y, fg, bg);
+            }
+            if let Some(ref rich) = overlay.rich_lines {
+                buf.draw_rich_overlay(rich, x, y);
             }
             if let Some(tb) = &overlay.title_box {
                 let mini_x = x + 1 + tb.col_offset;
                 let mini_y = y.saturating_sub(1);
+                let badge_fg = palette::rgb_to_256(accent);
                 if panel_bg.is_some() {
-                    buffer.draw_text_overlay_with_panel(
-                        &tb.lines, mini_x, mini_y, fg, bg, panel_bg, ind, w,
+                    buf.draw_text_overlay_with_panel(
+                        &tb.lines, mini_x, mini_y, badge_fg, bg, panel_bg, None, 0,
                     );
                 } else {
-                    buffer.draw_text_overlay(&tb.lines, mini_x, mini_y, fg, bg);
+                    buf.draw_text_overlay(&tb.lines, mini_x, mini_y, badge_fg, bg);
                 }
             }
+        };
+
+        // Controls overlay at top-left
+        if let Some((overlay, x, y)) = controls_lines {
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONTROLS);
         }
 
         // Status line at bottom
-        if let Some((line, x)) = status_line {
+        if let Some((line, x, color_overrides)) = status_line {
             let config = &OverlayConfig::STATUS;
+            let status_y = self.height.saturating_sub(2);
             let line_chars: Vec<char> = line.chars().collect();
             buffer.draw_text_overlay(
                 &[&line_chars.iter().collect::<String>()],
                 x,
-                self.height.saturating_sub(2),
+                status_y,
                 config.text_color_256,
                 Some(config.bg_color_256),
             );
+            // Apply per-column color overrides (swatch, PAUSED badge)
+            for (col, fg) in &color_overrides {
+                let cell_x = x + col;
+                if cell_x < buffer.width && status_y < buffer.height {
+                    let idx = status_y * buffer.width + cell_x;
+                    match buffer.color_mode {
+                        crate::cli::ColorMode::TrueColor => {
+                            buffer.cells[idx].fg_color_rgb = Some(*fg)
+                        }
+                        _ => buffer.cells[idx].fg_color_256 = Some(palette::rgb_to_256(*fg)),
+                    }
+                }
+            }
         }
 
         // Notification at bottom-center
-        if let Some((text, x)) = notification_line {
-            let config = &OverlayConfig::NOTIFICATION;
-            let text_chars: Vec<char> = text.chars().collect();
-            buffer.draw_text_overlay(
-                &[&text_chars.iter().collect::<String>()],
-                x,
-                self.height.saturating_sub(4),
-                config.text_color_256,
-                Some(config.bg_color_256),
-            );
+        if let Some((overlay, x, y)) = notification_line {
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::NOTIFICATION);
         }
 
         // Stats overlay
         if let Some((overlay, x, y)) = stats_lines {
-            let config = &OverlayConfig::STATS;
-            let (fg, bg, panel_bg, ind, w) = get_overlay_colors(config, panel_style);
-            if panel_bg.is_some() {
-                buffer.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, ind, w);
-            } else {
-                buffer.draw_text_overlay(&overlay.lines, x, y, fg, bg);
-            }
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                if panel_bg.is_some() {
-                    buffer.draw_text_overlay_with_panel(
-                        &tb.lines, mini_x, mini_y, fg, bg, panel_bg, ind, w,
-                    );
-                } else {
-                    buffer.draw_text_overlay(&tb.lines, mini_x, mini_y, fg, bg);
-                }
-            }
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::STATS);
         }
 
         // Info overlay
         if let Some((overlay, x, y)) = info_lines {
-            let config = &OverlayConfig::INFO;
-            let (fg, bg, panel_bg, ind, w) = get_overlay_colors(config, panel_style);
-            if panel_bg.is_some() {
-                buffer.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, ind, w);
-            } else {
-                buffer.draw_text_overlay(&overlay.lines, x, y, fg, bg);
-            }
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                if panel_bg.is_some() {
-                    buffer.draw_text_overlay_with_panel(
-                        &tb.lines, mini_x, mini_y, fg, bg, panel_bg, ind, w,
-                    );
-                } else {
-                    buffer.draw_text_overlay(&tb.lines, mini_x, mini_y, fg, bg);
-                }
-            }
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::INFO);
         }
 
         // Config browser overlay (modal, on top)
         if let Some((overlay, x, y)) = config_browser_lines {
-            let config = &OverlayConfig::CONFIG_BROWSER;
-            let (fg, bg, panel_bg, ind, w) = get_overlay_colors(config, panel_style);
-            if panel_bg.is_some() {
-                buffer.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, ind, w);
-            } else {
-                buffer.draw_text_overlay(&overlay.lines, x, y, fg, bg);
-            }
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                if panel_bg.is_some() {
-                    buffer.draw_text_overlay_with_panel(
-                        &tb.lines, mini_x, mini_y, fg, bg, panel_bg, ind, w,
-                    );
-                } else {
-                    buffer.draw_text_overlay(&tb.lines, mini_x, mini_y, fg, bg);
-                }
-            }
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONFIG_BROWSER);
         }
 
-        // Config save overlay (modal, on top) in render_with_overlay
+        // Config save overlay (modal, on top)
         if let Some((overlay, x, y)) = config_save_lines {
-            let config = &OverlayConfig::CONFIG_SAVE;
-            let (fg, bg, panel_bg, ind, w) = get_overlay_colors(config, panel_style);
-            if panel_bg.is_some() {
-                buffer.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, ind, w);
-            } else {
-                buffer.draw_text_overlay(&overlay.lines, x, y, fg, bg);
-            }
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                if panel_bg.is_some() {
-                    buffer.draw_text_overlay_with_panel(
-                        &tb.lines, mini_x, mini_y, fg, bg, panel_bg, ind, w,
-                    );
-                } else {
-                    buffer.draw_text_overlay(&tb.lines, mini_x, mini_y, fg, bg);
-                }
-            }
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONFIG_SAVE);
         }
 
         // Keyboard hints overlay (modal, on top)
         if let Some((overlay, x, y)) = keyboard_hints_lines {
-            let config = &OverlayConfig::KEYBOARD_HINTS;
-            let (fg, bg, panel_bg, ind, w) = get_overlay_colors(config, panel_style);
-            if panel_bg.is_some() {
-                buffer.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, ind, w);
-            } else {
-                buffer.draw_text_overlay(&overlay.lines, x, y, fg, bg);
-            }
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                if panel_bg.is_some() {
-                    buffer.draw_text_overlay_with_panel(
-                        &tb.lines, mini_x, mini_y, fg, bg, panel_bg, ind, w,
-                    );
-                } else {
-                    buffer.draw_text_overlay(&tb.lines, mini_x, mini_y, fg, bg);
-                }
-            }
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::KEYBOARD_HINTS);
         }
 
         // Preset comparison overlay (modal, on top)
         if let Some((overlay, x, y)) = preset_comparison_lines {
-            let config = &OverlayConfig::PRESET_COMPARISON;
-            let (fg, bg, panel_bg, ind, w) = get_overlay_colors(config, panel_style);
-            if panel_bg.is_some() {
-                buffer.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, ind, w);
-            } else {
-                buffer.draw_text_overlay(&overlay.lines, x, y, fg, bg);
-            }
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                if panel_bg.is_some() {
-                    buffer.draw_text_overlay_with_panel(
-                        &tb.lines, mini_x, mini_y, fg, bg, panel_bg, ind, w,
-                    );
-                } else {
-                    buffer.draw_text_overlay(&tb.lines, mini_x, mini_y, fg, bg);
-                }
-            }
+            draw_overlay(
+                &mut buffer,
+                overlay,
+                x,
+                y,
+                &OverlayConfig::PRESET_COMPARISON,
+            );
         }
 
         execute!(self.stdout, &buffer)
@@ -1384,8 +1354,8 @@ impl TerminalRenderer {
         sim_height: usize,
         max_trail_value: f32,
         controls_lines: Option<(&RenderedOverlay, usize, usize)>,
-        status_line: Option<(String, usize)>,
-        notification_line: Option<(String, usize)>,
+        status_line: Option<(String, usize, Vec<(usize, RgbColor)>)>,
+        notification_line: Option<(&RenderedOverlay, usize, usize)>,
         stats_lines: Option<(&RenderedOverlay, usize, usize)>,
         info_lines: Option<(&RenderedOverlay, usize, usize)>,
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
@@ -1496,191 +1466,115 @@ impl TerminalRenderer {
             }
         }
 
-        // Controls overlay at top-left
-        if let Some((overlay, x, y)) = controls_lines {
-            let config = &OverlayConfig::CONTROLS;
-            buffer.draw_text_overlay(
+        // Palette accent color for accented title badges (same approach as single-species).
+        let accent = palette::palette_accent_color(
+            &self.palette,
+            self.reverse_palette,
+            self.invert_palette,
+            self.hue_shift,
+            self.intensity_mapping.as_ref(),
+        );
+
+        // Unified draw helper: main panel + rich_lines + accented title badge.
+        let draw_ms_overlay = |buf: &mut FrameBuffer,
+                               overlay: &RenderedOverlay,
+                               x: usize,
+                               y: usize,
+                               config: &OverlayConfig| {
+            buf.draw_text_overlay(
                 &overlay.lines,
                 x,
                 y,
                 config.text_color_256,
                 Some(config.bg_color_256),
             );
+            if let Some(ref rich) = overlay.rich_lines {
+                buf.draw_rich_overlay(rich, x, y);
+            }
             if let Some(tb) = &overlay.title_box {
                 let mini_x = x + 1 + tb.col_offset;
                 let mini_y = y.saturating_sub(1);
-                buffer.draw_text_overlay(
+                let badge_fg = palette::rgb_to_256(accent);
+                buf.draw_text_overlay(
                     &tb.lines,
                     mini_x,
                     mini_y,
-                    config.text_color_256,
+                    badge_fg,
                     Some(config.bg_color_256),
                 );
             }
+        };
+
+        // Controls overlay at top-left
+        if let Some((overlay, x, y)) = controls_lines {
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONTROLS);
         }
 
         // Status line at bottom
-        if let Some((line, x)) = status_line {
+        if let Some((line, x, color_overrides)) = status_line {
             let config = &OverlayConfig::STATUS;
+            let status_y = self.height.saturating_sub(2);
             let line_chars: Vec<char> = line.chars().collect();
             buffer.draw_text_overlay(
                 &[&line_chars.iter().collect::<String>()],
                 x,
-                self.height.saturating_sub(2),
+                status_y,
                 config.text_color_256,
                 Some(config.bg_color_256),
             );
+            for (col, fg) in &color_overrides {
+                let cell_x = x + col;
+                if cell_x < buffer.width && status_y < buffer.height {
+                    let idx = status_y * buffer.width + cell_x;
+                    match buffer.color_mode {
+                        crate::cli::ColorMode::TrueColor => {
+                            buffer.cells[idx].fg_color_rgb = Some(*fg)
+                        }
+                        _ => buffer.cells[idx].fg_color_256 = Some(palette::rgb_to_256(*fg)),
+                    }
+                }
+            }
         }
 
         // Notification at bottom-center
-        if let Some((text, x)) = notification_line {
-            let config = &OverlayConfig::NOTIFICATION;
-            let text_chars: Vec<char> = text.chars().collect();
-            buffer.draw_text_overlay(
-                &[&text_chars.iter().collect::<String>()],
-                x,
-                self.height.saturating_sub(4),
-                config.text_color_256,
-                Some(config.bg_color_256),
-            );
+        if let Some((overlay, x, y)) = notification_line {
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::NOTIFICATION);
         }
 
         // Stats overlay
         if let Some((overlay, x, y)) = stats_lines {
-            let config = &OverlayConfig::STATS;
-            buffer.draw_text_overlay(
-                &overlay.lines,
-                x,
-                y,
-                config.text_color_256,
-                Some(config.bg_color_256),
-            );
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                buffer.draw_text_overlay(
-                    &tb.lines,
-                    mini_x,
-                    mini_y,
-                    config.text_color_256,
-                    Some(config.bg_color_256),
-                );
-            }
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::STATS);
         }
 
         // Info overlay
         if let Some((overlay, x, y)) = info_lines {
-            let config = &OverlayConfig::INFO;
-            buffer.draw_text_overlay(
-                &overlay.lines,
-                x,
-                y,
-                config.text_color_256,
-                Some(config.bg_color_256),
-            );
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                buffer.draw_text_overlay(
-                    &tb.lines,
-                    mini_x,
-                    mini_y,
-                    config.text_color_256,
-                    Some(config.bg_color_256),
-                );
-            }
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::INFO);
         }
 
         // Config browser overlay (modal, on top)
         if let Some((overlay, x, y)) = config_browser_lines {
-            let config = &OverlayConfig::CONFIG_BROWSER;
-            buffer.draw_text_overlay(
-                &overlay.lines,
-                x,
-                y,
-                config.text_color_256,
-                Some(config.bg_color_256),
-            );
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                buffer.draw_text_overlay(
-                    &tb.lines,
-                    mini_x,
-                    mini_y,
-                    config.text_color_256,
-                    Some(config.bg_color_256),
-                );
-            }
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONFIG_BROWSER);
         }
 
-        // Config save overlay (modal, on top) in render_multi_species_with_overlay
+        // Config save overlay (modal, on top)
         if let Some((overlay, x, y)) = config_save_lines {
-            let config = &OverlayConfig::CONFIG_SAVE;
-            buffer.draw_text_overlay(
-                &overlay.lines,
-                x,
-                y,
-                config.text_color_256,
-                Some(config.bg_color_256),
-            );
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                buffer.draw_text_overlay(
-                    &tb.lines,
-                    mini_x,
-                    mini_y,
-                    config.text_color_256,
-                    Some(config.bg_color_256),
-                );
-            }
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONFIG_SAVE);
         }
 
         // Keyboard hints overlay (modal, on top)
         if let Some((overlay, x, y)) = keyboard_hints_lines {
-            let config = &OverlayConfig::KEYBOARD_HINTS;
-            buffer.draw_text_overlay(
-                &overlay.lines,
-                x,
-                y,
-                config.text_color_256,
-                Some(config.bg_color_256),
-            );
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                buffer.draw_text_overlay(
-                    &tb.lines,
-                    mini_x,
-                    mini_y,
-                    config.text_color_256,
-                    Some(config.bg_color_256),
-                );
-            }
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::KEYBOARD_HINTS);
         }
 
         // Preset comparison overlay (modal, on top)
         if let Some((overlay, x, y)) = preset_comparison_lines {
-            let config = &OverlayConfig::PRESET_COMPARISON;
-            buffer.draw_text_overlay(
-                &overlay.lines,
+            draw_ms_overlay(
+                &mut buffer,
+                overlay,
                 x,
                 y,
-                config.text_color_256,
-                Some(config.bg_color_256),
+                &OverlayConfig::PRESET_COMPARISON,
             );
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                buffer.draw_text_overlay(
-                    &tb.lines,
-                    mini_x,
-                    mini_y,
-                    config.text_color_256,
-                    Some(config.bg_color_256),
-                );
-            }
         }
 
         execute!(self.stdout, &buffer)

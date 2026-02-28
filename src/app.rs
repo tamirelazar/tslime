@@ -21,17 +21,17 @@ use crate::render::downsample::downsample;
 use crate::render::grid::{GridRenderer, GridStyle};
 use crate::render::options_overlay::ControlsOverlay;
 use crate::render::overlay::{
-    ConfigBrowserOverlay, ConfigSaveOverlay, InfoOverlay, KeyboardHintsOverlay,
-    PresetComparisonOverlay, RenderedOverlay, StatsOverlay,
+    ConfigBrowserOverlay, ConfigSaveOverlay, InfoOverlay, KeyboardHintsOverlay, Padding,
+    PanelBuilder, PresetComparisonOverlay, RenderedOverlay, StatsOverlay, TextAlignment,
 };
-use crate::render::palette::{hex_to_rgb, RgbColor};
+use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
 use crate::simulation::config::{
     Attractor, DiffusionKernel, InitMode, Preset, SimConfig, TerrainType,
 };
 use crate::simulation::Simulation;
 use crate::terminal::control::{
-    handle_key_event, num_palettes, ControlAction, MouseInteractionMode, PaletteShiftSpeed,
-    RuntimeState, ALL_PALETTES,
+    handle_key_event, num_palettes, ControlAction, MouseInteractionMode, NotificationLevel,
+    PaletteShiftSpeed, RuntimeState, ALL_PALETTES,
 };
 use crate::terminal::detection::{log_capabilities, TerminalCapabilities};
 use crate::terminal::input::{InputPoller, MouseEventType};
@@ -1497,6 +1497,15 @@ pub fn run_simulation(
         let (controls_x, controls_y) =
             ControlsOverlay::calculate_position(term_width as usize, term_height as usize);
 
+        // Palette accent colour used for key-binding highlights and title badges.
+        let ui_accent = palette_accent_color(
+            &current_palette,
+            runtime_state.reverse_palette,
+            runtime_state.invert_palette,
+            hue_offset,
+            Some(&runtime_state.intensity_mapping),
+        );
+
         // Build controls overlay (h key)
         let controls_lines: Option<RenderedOverlay> = if runtime_state.show_controls {
             Some(ControlsOverlay::build_overlay(
@@ -1532,6 +1541,7 @@ pub fn run_simulation(
                 term_width as usize,
                 runtime_state.default_values,
                 sim.agent_count(),
+                ui_accent,
             ))
         } else {
             None
@@ -1542,7 +1552,7 @@ pub fn run_simulation(
             simulation::config::DiffusionKernel::Mean3x3 => "Mean3x3",
             simulation::config::DiffusionKernel::Gaussian => "Gaussian",
         };
-        let status_line = render::overlay::OverlayRenderer::build_status_line(
+        let (status_line, status_colors) = render::overlay::OverlayRenderer::build_status_line(
             runtime_state.is_paused,
             runtime_state.current_preset,
             runtime_state.time_scale,
@@ -1553,41 +1563,54 @@ pub fn run_simulation(
             Some(diffusion_kernel_name),
             !runtime_state.undo_stack.is_empty(),
             !runtime_state.redo_stack.is_empty(),
+            Some(ui_accent),
         );
         let status_x =
             render::overlay::OverlayRenderer::status_line_x(&status_line, term_width as usize);
         let status_data = if runtime_state.any_overlay_open() || runtime_state.is_paused {
-            Some((status_line, status_x))
+            Some((status_line, status_x, status_colors))
         } else {
             None
         };
 
         // Notification at bottom center (or warmup message during warmup)
-        let notification_data = if in_warmup {
-            // Show warmup message during warmup phase
+        let notification_overlay: Option<RenderedOverlay> = if in_warmup {
             let progress = (runtime_state.warmup_counter as f32 / 30.0 * std::f32::consts::PI)
                 .sin()
                 .abs();
             let opacity = (progress * 3.0) as usize;
             let dots = ".".repeat(opacity.min(3));
-            let warmup_text = format!("[ Press any key to begin{} ]", dots);
-            let warmup_x = if warmup_text.len() < term_width as usize {
-                (term_width as usize - warmup_text.len()) / 2
+            let msg = format!("Press any key to begin{}", dots);
+            let content = format!("{}  {}", NotificationLevel::Info.icon(), msg);
+            let cw = content.chars().count();
+            Some(
+                PanelBuilder::new(cw, None)
+                    .with_padding(Padding::COMPACT)
+                    .add_single(content, TextAlignment::Left)
+                    .build_overlay(),
+            )
+        } else {
+            runtime_state
+                .current_notification_full()
+                .map(|(msg, level)| {
+                    let content = format!("{}  {}", level.icon(), msg);
+                    let cw = content.chars().count();
+                    PanelBuilder::new(cw, None)
+                        .with_padding(Padding::COMPACT)
+                        .add_single(content, TextAlignment::Left)
+                        .build_overlay()
+                })
+        };
+        let notification_data = notification_overlay.as_ref().map(|overlay| {
+            let outer_w = overlay.lines.first().map_or(0, |l| l.chars().count());
+            let notif_x = if outer_w < term_width as usize {
+                (term_width as usize - outer_w) / 2
             } else {
                 0
             };
-            Some((warmup_text, warmup_x))
-        } else {
-            runtime_state.current_notification().map(|msg| {
-                let notification_text = format!("[ {} ]", msg);
-                let notification_x = if notification_text.len() < term_width as usize {
-                    (term_width as usize - notification_text.len()) / 2
-                } else {
-                    0
-                };
-                (notification_text, notification_x)
-            })
-        };
+            let notif_y = (term_height as usize).saturating_sub(5);
+            (overlay, notif_x, notif_y)
+        });
 
         // Stats overlay at top-right
         let entropy = StatsOverlay::calculate_entropy(&blended_trail, 100);
@@ -1631,6 +1654,7 @@ pub fn run_simulation(
                 &runtime_state.fps_history,
                 &runtime_state.entropy_history,
                 &runtime_state.density_history,
+                ui_accent,
             ))
         } else {
             None
