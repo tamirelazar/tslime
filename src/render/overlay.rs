@@ -454,10 +454,14 @@ pub fn format_notification(text: &str, level: NotificationLevel) -> String {
 ///
 /// The panel shows:
 /// - Line 1: `"{icon}  {LEVEL}  {message}"` with icon+level label in the level's accent color
-/// - Border characters colored with `level.accent_rgb()`
+/// - Border characters colored with the theme's accent color for the notification level
 ///
 /// Level labels: Info → "INFO", Success → "DONE", Warning → "WARN", Error → "ERR!"
-pub fn build_notification_panel(msg: &str, level: NotificationLevel) -> RenderedOverlay {
+pub fn build_notification_panel(
+    msg: &str,
+    level: NotificationLevel,
+    panel_style: &PanelStyle,
+) -> RenderedOverlay {
     let level_label = match level {
         NotificationLevel::Info => "INFO",
         NotificationLevel::Success => "DONE",
@@ -466,7 +470,12 @@ pub fn build_notification_panel(msg: &str, level: NotificationLevel) -> Rendered
     };
     let content = format!("{}  {}  {}", level.icon(), level_label, msg);
     let cw = content.chars().count();
-    let accent = level.accent_rgb();
+    let accent = match level {
+        NotificationLevel::Info => panel_style.accent_info,
+        NotificationLevel::Success => panel_style.accent_success,
+        NotificationLevel::Warning => panel_style.accent_warning,
+        NotificationLevel::Error => panel_style.accent_error,
+    };
     let mut overlay = PanelBuilder::new(cw, None)
         .with_padding(Padding::COMPACT)
         .with_border_color(accent)

@@ -1595,7 +1595,9 @@ pub fn run_simulation(
         } else {
             runtime_state
                 .current_notification_full()
-                .map(|(msg, level)| build_notification_panel(msg, level))
+                .map(|(msg, level)| {
+                    build_notification_panel(msg, level, &runtime_state.panel_style)
+                })
         };
         let notification_data = notification_overlay.as_ref().map(|overlay| {
             let outer_w = overlay.lines.first().map_or(0, |l| l.chars().count());
