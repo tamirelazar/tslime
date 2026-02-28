@@ -54,5 +54,9 @@ pub mod simulation;
 /// Terminal handling (input, output, raw mode).
 pub mod terminal;
 
+/// Embedded GUI terminal window (iced_term) for double-click launch.
+#[cfg(feature = "gui")]
+pub mod gui;
+
 // Re-export commonly used types
 pub use simulation::Simulation;
