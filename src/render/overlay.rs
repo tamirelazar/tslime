@@ -162,7 +162,7 @@ impl OverlayConfig {
         height_padding: 1,
         width_padding: 0,
         text_color_256: 15,
-        bg_color_256: 22,
+        bg_color_256: 235,
         has_border: false,
     };
 }
@@ -450,6 +450,75 @@ pub fn format_notification(text: &str, level: NotificationLevel) -> String {
     format!("{}  {}", level.icon(), text)
 }
 
+/// Builds a two-line notification toast panel with an accent-colored border.
+///
+/// The panel shows:
+/// - Line 1: `"{icon}  {LEVEL}  {message}"` with icon+level label in the level's accent color
+/// - Border characters colored with `level.accent_rgb()`
+///
+/// Level labels: Info → "INFO", Success → "DONE", Warning → "WARN", Error → "ERR!"
+pub fn build_notification_panel(msg: &str, level: NotificationLevel) -> RenderedOverlay {
+    let level_label = match level {
+        NotificationLevel::Info => "INFO",
+        NotificationLevel::Success => "DONE",
+        NotificationLevel::Warning => "WARN",
+        NotificationLevel::Error => "ERR!",
+    };
+    let content = format!("{}  {}  {}", level.icon(), level_label, msg);
+    let cw = content.chars().count();
+    let accent = level.accent_rgb();
+    let mut overlay = PanelBuilder::new(cw, None)
+        .with_padding(Padding::COMPACT)
+        .with_border_color(accent)
+        .add_single(content, TextAlignment::Left)
+        .build_overlay();
+    overlay.rich_lines = Some(build_notification_rich_lines(&overlay.lines, accent));
+    overlay
+}
+
+/// Applies per-character color overrides to a notification panel.
+///
+/// Colors:
+/// - All border characters (`█`, `▀`, `▄`) → accent foreground
+/// - Icon + level label prefix on the content line → accent foreground
+#[allow(clippy::type_complexity)]
+fn build_notification_rich_lines(
+    lines: &[String],
+    accent: RgbColor,
+) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
+    lines
+        .iter()
+        .enumerate()
+        .map(|(line_idx, line)| {
+            let chars: Vec<char> = line.chars().collect();
+            chars
+                .iter()
+                .enumerate()
+                .map(|(i, &c)| {
+                    let fg = if matches!(c, '█' | '▀' | '▄') {
+                        // Border characters: color with accent
+                        Some(accent)
+                    } else if line_idx == 1 {
+                        // Content line: positions 0-1 are border+padding, position 2 onwards is content.
+                        // Content format: "{icon}  {LABEL}  {message}"
+                        // icon = 1 char, 2 spaces, label = 4 chars → 7 chars total prefix
+                        // Panel layout: border(1) + pad(1) + content... so icon starts at char 2
+                        // Color positions 2 through 8 (icon + 2 spaces + 4-char label)
+                        if (2..=8).contains(&i) {
+                            Some(accent)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    (c, fg, None)
+                })
+                .collect()
+        })
+        .collect()
+}
+
 /// Utilities for rendering overlay elements (status line, help lists).
 pub struct OverlayRenderer;
 
@@ -481,6 +550,23 @@ impl OverlayRenderer {
     ) -> (String, Vec<(usize, RgbColor)>) {
         const SEP: &str = "  ▸  ";
         let mut color_overrides: Vec<(usize, RgbColor)> = Vec::new();
+
+        // Theme colors for status bar chrome (GRUVBOX-matching hardcoded values)
+        let muted = RgbColor {
+            r: 102,
+            g: 92,
+            b: 84,
+        };
+        let accent_success = RgbColor {
+            r: 184,
+            g: 187,
+            b: 38,
+        }; // green for undo ↺
+        let accent_info = RgbColor {
+            r: 131,
+            g: 165,
+            b: 152,
+        }; // teal for redo ↻ and ?
 
         let preset_text = preset_name(preset);
         let palette_text = palette_name(palette);
@@ -529,14 +615,34 @@ impl OverlayRenderer {
             }
         }
 
+        // Color all ▸ separator characters in the left segment with muted color
+        let separator_positions: Vec<usize> = left
+            .chars()
+            .enumerate()
+            .filter_map(|(i, c)| if c == '▸' { Some(i) } else { None })
+            .collect();
+        for pos in &separator_positions {
+            color_overrides.push((*pos, muted));
+        }
+
         // Right-side status indicators
         let mut right = String::new();
         let mut paused_offset_in_right: Option<usize> = None;
+        let mut undo_offset_in_right: Option<usize> = None;
+        let mut redo_offset_in_right: Option<usize> = None;
+        let mut help_q_offset_in_right: Option<usize> = None;
 
         if can_undo || can_redo {
-            let z = if can_undo { "Z" } else { "·" };
-            let y = if can_redo { "Y" } else { "·" };
-            right.push_str(&format!("[{} {}]  ", z, y));
+            if can_undo {
+                undo_offset_in_right = Some(right.chars().count());
+            }
+            right.push_str(if can_undo { "↺" } else { "·" });
+            right.push(' ');
+            if can_redo {
+                redo_offset_in_right = Some(right.chars().count());
+            }
+            right.push_str(if can_redo { "↻" } else { "·" });
+            right.push_str("  ");
         }
 
         if _is_paused {
@@ -545,7 +651,8 @@ impl OverlayRenderer {
         }
 
         if width >= 100 {
-            right.push_str("?  help  ");
+            help_q_offset_in_right = Some(right.chars().count());
+            right.push_str("? help  ");
         }
 
         // Combine: left segments + right-aligned indicators
@@ -553,10 +660,22 @@ impl OverlayRenderer {
         let result = if combined_len <= width {
             // Pad between left and right
             let gap = width.saturating_sub(combined_len);
-            let full = format!("{}{}{}", left, " ".repeat(gap), right);
-            // Color PAUSED with amber
+            let right_start = left.chars().count() + gap;
+
+            // Color ↺ (undo) in accent_success
+            if let Some(off) = undo_offset_in_right {
+                color_overrides.push((right_start + off, accent_success));
+            }
+            // Color ↻ (redo) in accent_info
+            if let Some(off) = redo_offset_in_right {
+                color_overrides.push((right_start + off, accent_info));
+            }
+            // Color ? in accent_info
+            if let Some(off) = help_q_offset_in_right {
+                color_overrides.push((right_start + off, accent_info));
+            }
+            // Color ⏸ PAUSED with amber
             if let Some(paused_off) = paused_offset_in_right {
-                let right_start = left.chars().count() + gap;
                 let global_start = right_start + paused_off;
                 let amber = RgbColor {
                     r: 215,
@@ -567,7 +686,7 @@ impl OverlayRenderer {
                     color_overrides.push((global_start + i, amber));
                 }
             }
-            full
+            format!("{}{}{}", left, " ".repeat(gap), right)
         } else {
             // No room to right-align; just return the left part
             left

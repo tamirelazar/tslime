@@ -529,7 +529,11 @@ impl ControlsOverlay {
                 Left,
             )
             .build_overlay();
-        overlay.rich_lines = Some(generate_controls_rich_lines(&overlay.lines, accent));
+        overlay.rich_lines = Some(generate_controls_rich_lines(
+            &overlay.lines,
+            accent,
+            category_idx,
+        ));
         overlay
     }
 }
@@ -542,13 +546,18 @@ impl ControlsOverlay {
 /// - Accent colour to filled bar chars (`█`/`▪`) at cols 25–32.
 /// - Muted colour to empty bar chars (`░`) at the same positions.
 ///
-/// Also colors tab indicators (●/○) in the tab strip with accent color.
+/// Also colors tab indicators (●/○) and the active tab name in the tab strip with accent color.
 fn generate_controls_rich_lines(
     lines: &[String],
     accent: RgbColor,
+    category_idx: usize,
 ) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
     let modified_color = GRUVBOX_DARK.accent_modified;
     let muted_color = GRUVBOX_DARK.muted;
+    let tab_labels = ["SIM", "ENV", "APP", "PST", "PRF", "SYS"];
+    let active_label = tab_labels[category_idx.min(tab_labels.len() - 1)];
+
+    let mut prev_was_indicator = false;
 
     lines
         .iter()
@@ -560,6 +569,7 @@ fn generate_controls_rich_lines(
             let is_indicator_line = chars.iter().any(|&c| c == '●' || c == '○');
 
             if is_indicator_line {
+                prev_was_indicator = true;
                 return chars
                     .iter()
                     .map(|&c| {
@@ -567,6 +577,32 @@ fn generate_controls_rich_lines(
                             '●' | '○' => Some(accent),
                             _ => None,
                         };
+                        (c, fg, None)
+                    })
+                    .collect();
+            }
+
+            // Color the active tab label on the line immediately after the indicator line
+            let is_label_line = prev_was_indicator;
+            prev_was_indicator = false;
+
+            if is_label_line {
+                let active_chars: Vec<char> = active_label.chars().collect();
+                // Find the start position of the active label in this line
+                let match_start = chars
+                    .windows(active_chars.len())
+                    .position(|w| w == active_chars.as_slice());
+                return chars
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &c)| {
+                        let fg = match_start.and_then(|start| {
+                            if i >= start && i < start + active_chars.len() {
+                                Some(accent)
+                            } else {
+                                None
+                            }
+                        });
                         (c, fg, None)
                     })
                     .collect();

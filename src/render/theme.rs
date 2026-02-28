@@ -52,9 +52,9 @@ pub const GRUVBOX_DARK: PanelStyle = PanelStyle {
         b: 47,
     },
     unfocus_color: RgbColor {
-        r: 146,
-        g: 131,
-        b: 116,
+        r: 120,
+        g: 95,
+        b: 38,
     },
     text_primary: RgbColor {
         r: 235,
@@ -62,20 +62,20 @@ pub const GRUVBOX_DARK: PanelStyle = PanelStyle {
         b: 178,
     },
     text_secondary: RgbColor {
-        r: 168,
-        g: 153,
-        b: 132,
+        r: 185,
+        g: 170,
+        b: 140,
     },
     border_color: RgbColor {
-        r: 146,
-        g: 131,
-        b: 116,
-    },
+        r: 105,
+        g: 99,
+        b: 88,
+    }, // Warm gray — subtle amber tint, very low saturation
     indicator_width: 0,
     status_bar_bg: RgbColor {
-        r: 29,
-        g: 32,
-        b: 33,
+        r: 16,
+        g: 18,
+        b: 19,
     },
     notification_bg: RgbColor {
         r: 33,
@@ -136,25 +136,25 @@ pub const SLIME_DARK: PanelStyle = PanelStyle {
         b: 83,
     }, // Bioluminescent green
     unfocus_color: RgbColor {
-        r: 42,
-        g: 78,
-        b: 58,
-    }, // Dim muted green
+        r: 28,
+        g: 85,
+        b: 46,
+    }, // Slightly lighter dim green
     text_primary: RgbColor {
         r: 195,
         g: 232,
         b: 211,
     }, // Soft green-white
     text_secondary: RgbColor {
-        r: 88,
-        g: 140,
-        b: 108,
-    }, // Mid-tone green-gray
+        r: 108,
+        g: 168,
+        b: 128,
+    }, // Brighter green-gray
     border_color: RgbColor {
-        r: 42,
-        g: 78,
-        b: 58,
-    }, // Dim green border
+        r: 38,
+        g: 115,
+        b: 62,
+    }, // Visible bioluminescent green
     indicator_width: 0,
     status_bar_bg: RgbColor { r: 8, g: 12, b: 14 }, // Very dark background for status bar
     notification_bg: RgbColor {

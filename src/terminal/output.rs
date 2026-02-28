@@ -1244,11 +1244,38 @@ impl TerminalRenderer {
                             x: usize,
                             y: usize,
                             config: &OverlayConfig| {
-            let (fg, bg, panel_bg, _ind, _w) = get_overlay_colors(config, panel_style);
+            let (fg, bg, panel_bg, border_col, _w) = get_overlay_colors(config, panel_style);
             if panel_bg.is_some() {
                 buf.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, None, 0);
             } else {
                 buf.draw_text_overlay(&overlay.lines, x, y, fg, bg);
+            }
+            // Apply theme colors per character — border chars get border_color,
+            // all other chars get text_primary. Done before rich_lines so per-overlay
+            // overrides (e.g. notification accent, key bindings) still win.
+            if let Some(style) = panel_style {
+                for (line_idx, line) in overlay.lines.iter().enumerate() {
+                    for (col, c) in line.chars().enumerate() {
+                        let cell_x = x + col;
+                        let cell_y = y + line_idx;
+                        if cell_x < buf.width && cell_y < buf.height {
+                            let idx = cell_y * buf.width + cell_x;
+                            let color = if matches!(c, '█' | '▀' | '▄') {
+                                style.border_color
+                            } else {
+                                style.text_primary
+                            };
+                            match buf.color_mode {
+                                crate::cli::ColorMode::TrueColor => {
+                                    buf.cells[idx].fg_color_rgb = Some(color);
+                                }
+                                _ => {
+                                    buf.cells[idx].fg_color_256 = Some(palette::rgb_to_256(color));
+                                }
+                            }
+                        }
+                    }
+                }
             }
             if let Some(ref rich) = overlay.rich_lines {
                 buf.draw_rich_overlay(rich, x, y);
@@ -1318,7 +1345,32 @@ impl TerminalRenderer {
                 config.text_color_256,
                 Some(config.bg_color_256),
             );
-            // Apply per-column color overrides (swatch, PAUSED badge)
+            // Apply theme colors: status_bar_bg across the full row, text_primary on text cells.
+            if let Some(style) = panel_style {
+                if status_y < buffer.height {
+                    let text_end = (x + line_chars.len()).min(buffer.width);
+                    for cell_x in 0..buffer.width {
+                        let idx = status_y * buffer.width + cell_x;
+                        match buffer.color_mode {
+                            crate::cli::ColorMode::TrueColor => {
+                                buffer.cells[idx].bg_color_rgb = Some(style.status_bar_bg);
+                                if cell_x >= x && cell_x < text_end {
+                                    buffer.cells[idx].fg_color_rgb = Some(style.text_primary);
+                                }
+                            }
+                            _ => {
+                                buffer.cells[idx].bg_color_256 =
+                                    Some(palette::rgb_to_256(style.status_bar_bg));
+                                if cell_x >= x && cell_x < text_end {
+                                    buffer.cells[idx].fg_color_256 =
+                                        Some(palette::rgb_to_256(style.text_primary));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Apply per-column color overrides (swatch, ↺↻ undo/redo, PAUSED badge, ? hint)
             for (col, fg) in &color_overrides {
                 let cell_x = x + col;
                 if cell_x < buffer.width && status_y < buffer.height {
@@ -1397,7 +1449,7 @@ impl TerminalRenderer {
         config_save_lines: Option<(&RenderedOverlay, usize, usize)>,
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
-        _panel_style: Option<&crate::render::theme::PanelStyle>,
+        panel_style_ms: Option<&crate::render::theme::PanelStyle>,
         _focused_overlay: Option<crate::terminal::control::OverlayType>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
@@ -1522,6 +1574,32 @@ impl TerminalRenderer {
                 config.text_color_256,
                 Some(config.bg_color_256),
             );
+            // Apply theme colors per character — border chars get border_color,
+            // all other chars get text_primary.
+            if let Some(style) = panel_style_ms {
+                for (line_idx, line) in overlay.lines.iter().enumerate() {
+                    for (col, c) in line.chars().enumerate() {
+                        let cell_x = x + col;
+                        let cell_y = y + line_idx;
+                        if cell_x < buf.width && cell_y < buf.height {
+                            let idx = cell_y * buf.width + cell_x;
+                            let color = if matches!(c, '█' | '▀' | '▄') {
+                                style.border_color
+                            } else {
+                                style.text_primary
+                            };
+                            match buf.color_mode {
+                                crate::cli::ColorMode::TrueColor => {
+                                    buf.cells[idx].fg_color_rgb = Some(color);
+                                }
+                                _ => {
+                                    buf.cells[idx].fg_color_256 = Some(palette::rgb_to_256(color));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if let Some(ref rich) = overlay.rich_lines {
                 buf.draw_rich_overlay(rich, x, y);
             }
@@ -1590,6 +1668,31 @@ impl TerminalRenderer {
                 config.text_color_256,
                 Some(config.bg_color_256),
             );
+            // Apply theme colors: status_bar_bg across the full row, text_primary on text cells.
+            if let Some(style) = panel_style_ms {
+                if status_y < buffer.height {
+                    let text_end = (x + line_chars.len()).min(buffer.width);
+                    for cell_x in 0..buffer.width {
+                        let idx = status_y * buffer.width + cell_x;
+                        match buffer.color_mode {
+                            crate::cli::ColorMode::TrueColor => {
+                                buffer.cells[idx].bg_color_rgb = Some(style.status_bar_bg);
+                                if cell_x >= x && cell_x < text_end {
+                                    buffer.cells[idx].fg_color_rgb = Some(style.text_primary);
+                                }
+                            }
+                            _ => {
+                                buffer.cells[idx].bg_color_256 =
+                                    Some(palette::rgb_to_256(style.status_bar_bg));
+                                if cell_x >= x && cell_x < text_end {
+                                    buffer.cells[idx].fg_color_256 =
+                                        Some(palette::rgb_to_256(style.text_primary));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             for (col, fg) in &color_overrides {
                 let cell_x = x + col;
                 if cell_x < buffer.width && status_y < buffer.height {
