@@ -1663,7 +1663,7 @@ impl Args {
                 ));
             }
         }
-        if self.time_scale < 0.1 || self.time_scale > 10.0 {
+        if !(0.1..=10.0).contains(&self.time_scale) {
             return Err(format!(
                 "time_scale must be between 0.1 and 10.0, got {}",
                 self.time_scale

@@ -24,16 +24,6 @@ pub struct Cell {
     pub bottom_right: f32,
 }
 
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-/// Helper struct for multi-species rendering (unused in current simple downsampler).
-pub struct MultiSpeciesCell {
-    /// Total brightness.
-    pub brightness: f32,
-    /// Dominant species index.
-    pub species_index: usize,
-}
-
 impl DownsampledFrame {
     /// Creates a new, empty downsampled frame.
     pub fn new(width: usize, height: usize) -> Self {

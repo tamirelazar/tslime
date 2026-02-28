@@ -1,180 +1,231 @@
 use crate::cli::Palette;
 use crate::render::dither::DitherMode;
+use crate::render::palette::RgbColor;
+use crate::render::theme::PanelStyle;
 use crate::simulation::config::Attractor;
 use crate::simulation::config::MouseAttractor;
 use crate::simulation::config::Obstacle;
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
-/// Builder for creating box-drawn overlay windows with validated dimensions.
+pub use crate::render::panel::{
+    BorderConfig, ColumnLayout, Padding, PanelBuilder, PanelRow, PanelSize, RenderedOverlay,
+    RenderedTitleBox, TextAlignment, TitleAlignment,
+};
+
+// --- OverlayConfig ---
+
+/// Configuration for different overlay types.
 ///
-/// This ensures all lines fit within borders and padding, preventing width overflow.
-pub struct WindowBuilder {
-    width: usize,       // Total width including borders
-    padding: usize,     // Padding on each side (left/right)
-    inner_width: usize, // Calculated: width - 2*border - 2*padding
+/// Used primarily for color/style configuration by the renderer; panel
+/// construction now uses `PanelBuilder` directly.
+#[derive(Clone, Debug)]
+pub struct OverlayConfig {
+    /// Width of the overlay in characters (total, including border and padding)
+    pub width: usize,
+    /// Vertical padding (empty lines at top/bottom)
+    pub height_padding: usize,
+    /// Horizontal padding (spaces on left/right inside border)
+    pub width_padding: usize,
+    /// Text color (ANSI 256 index)
+    pub text_color_256: u8,
+    /// Background color (ANSI 256 index)
+    pub bg_color_256: u8,
+    /// Whether this overlay has a border
+    pub has_border: bool,
 }
 
-impl WindowBuilder {
-    /// Creates a new WindowBuilder with the specified total width and padding.
-    ///
-    /// # Arguments
-    /// * `width` - Total width including borders (e.g., 42 for a 42-char wide window)
-    /// * `padding` - Number of spaces padding on each side (typically 1)
-    ///
-    /// # Panics
-    /// Panics if width is too small for borders and padding (minimum: 2*border + 2*padding + 1)
-    pub fn new(width: usize, padding: usize) -> Self {
-        const BORDER_WIDTH: usize = 1;
-        let min_width = 2 * BORDER_WIDTH + 2 * padding + 1;
+impl OverlayConfig {
+    /// Help overlay configuration
+    pub const HELP: OverlayConfig = OverlayConfig {
+        width: 62,
+        height_padding: 1,
+        width_padding: 2,
+        text_color_256: 15,
+        bg_color_256: 236,
+        has_border: true,
+    };
 
-        if width < min_width {
-            panic!(
-                "Window width {} is too small for borders and padding (minimum: {})",
-                width, min_width
-            );
-        }
+    /// Controls overlay configuration
+    pub const CONTROLS: OverlayConfig = OverlayConfig {
+        width: 50,
+        height_padding: 1,
+        width_padding: 2,
+        text_color_256: 245,
+        bg_color_256: 236,
+        has_border: true,
+    };
 
-        let inner_width = width - 2 * BORDER_WIDTH - 2 * padding;
+    /// Stats overlay configuration
+    pub const STATS: OverlayConfig = OverlayConfig {
+        width: 32,
+        height_padding: 1,
+        width_padding: 2,
+        text_color_256: 245,
+        bg_color_256: 236,
+        has_border: true,
+    };
 
-        Self {
-            width,
-            padding,
-            inner_width,
-        }
-    }
+    /// Info overlay configuration
+    pub const INFO: OverlayConfig = OverlayConfig {
+        width: 28,
+        height_padding: 1,
+        width_padding: 1,
+        text_color_256: 245,
+        bg_color_256: 236,
+        has_border: true,
+    };
 
-    /// Returns the inner content width (excluding borders and padding)
-    pub fn inner_width(&self) -> usize {
-        self.inner_width
-    }
+    /// Preset comparison overlay configuration
+    pub const PRESET_COMPARISON: OverlayConfig = OverlayConfig {
+        width: 62,
+        height_padding: 1,
+        width_padding: 2,
+        text_color_256: 15,
+        bg_color_256: 236,
+        has_border: true,
+    };
 
-    /// Builds a window with content lines, validating all fit within inner width.
-    ///
-    /// # Arguments
-    /// * `title` - Optional title for top border (e.g., "HELP", "STATS")
-    /// * `content` - Content lines (must each be <= inner_width chars)
-    ///
-    /// # Returns
-    /// `Ok(Vec<String>)` with the complete window, or `Err(String)` if validation fails
-    pub fn build(&self, title: Option<&str>, content: &[String]) -> Result<Vec<String>, String> {
-        // Validate content lines
-        for (i, line) in content.iter().enumerate() {
-            let line_len = line.chars().count();
-            if line_len > self.inner_width {
-                return Err(format!(
-                    "Content line {} is too long ({} chars, max {}): '{}'",
-                    i, line_len, self.inner_width, line
-                ));
-            }
-        }
+    /// Config browser overlay configuration
+    pub const CONFIG_BROWSER: OverlayConfig = OverlayConfig {
+        width: 56,
+        height_padding: 1,
+        width_padding: 2,
+        text_color_256: 15,
+        bg_color_256: 236,
+        has_border: true,
+    };
 
-        let mut lines = Vec::with_capacity(content.len() + 2);
+    /// Config save overlay configuration
+    pub const CONFIG_SAVE: OverlayConfig = OverlayConfig {
+        width: 38,
+        height_padding: 1,
+        width_padding: 1,
+        text_color_256: 15,
+        bg_color_256: 236,
+        has_border: true,
+    };
 
-        // Top border
-        lines.push(self.build_top_border(title));
+    /// Keyboard hints overlay configuration
+    pub const KEYBOARD_HINTS: OverlayConfig = OverlayConfig {
+        width: 60,
+        height_padding: 1,
+        width_padding: 2,
+        text_color_256: 15,
+        bg_color_256: 236,
+        has_border: true,
+    };
 
-        // Content lines
-        for line in content {
-            lines.push(self.build_content_line(line));
-        }
+    /// Attractor help overlay configuration
+    pub const ATTRACTOR: OverlayConfig = OverlayConfig {
+        width: 42,
+        height_padding: 1,
+        width_padding: 1,
+        text_color_256: 15,
+        bg_color_256: 236,
+        has_border: true,
+    };
 
-        // Bottom border
-        lines.push(self.build_bottom_border());
+    /// Obstacle help overlay configuration
+    pub const OBSTACLE: OverlayConfig = OverlayConfig {
+        width: 42,
+        height_padding: 1,
+        width_padding: 1,
+        text_color_256: 15,
+        bg_color_256: 236,
+        has_border: true,
+    };
 
-        Ok(lines)
-    }
+    /// Mouse attractor help overlay configuration
+    pub const MOUSE_ATTRACTOR: OverlayConfig = OverlayConfig {
+        width: 46,
+        height_padding: 1,
+        width_padding: 1,
+        text_color_256: 15,
+        bg_color_256: 236,
+        has_border: true,
+    };
 
-    /// Builds the top border, optionally with a title.
-    fn build_top_border(&self, title: Option<&str>) -> String {
-        if let Some(title) = title {
-            let title_with_spaces = format!(" {} ", title);
-            let title_len = title_with_spaces.chars().count();
-            let remaining = self.width.saturating_sub(2 + title_len); // -2 for corners
-            let left_dashes = 1; // At least one dash after ╭
-            let right_dashes = remaining.saturating_sub(left_dashes);
+    /// Status bar overlay configuration
+    pub const STATUS: OverlayConfig = OverlayConfig {
+        width: 0,
+        height_padding: 1,
+        width_padding: 0,
+        text_color_256: 250,
+        bg_color_256: 234,
+        has_border: false,
+    };
 
-            format!(
-                "╭{}{}{}╮",
-                "─".repeat(left_dashes),
-                title_with_spaces,
-                "─".repeat(right_dashes)
-            )
-        } else {
-            format!("╭{}╮", "─".repeat(self.width - 2))
-        }
-    }
-
-    /// Builds a content line with borders and padding.
-    fn build_content_line(&self, content: &str) -> String {
-        let content_len = content.chars().count();
-        let padding_right = self.inner_width.saturating_sub(content_len);
-
-        format!(
-            "│{}{}{}{}│",
-            " ".repeat(self.padding),
-            content,
-            " ".repeat(padding_right),
-            " ".repeat(self.padding)
-        )
-    }
-
-    /// Builds the bottom border.
-    fn build_bottom_border(&self) -> String {
-        format!("╰{}╯", "─".repeat(self.width - 2))
-    }
-
-    /// Builds a separator line (for dividing sections within a window).
-    pub fn build_separator(&self) -> String {
-        format!("├{}┤", "─".repeat(self.width - 2))
-    }
+    /// Notification overlay configuration
+    pub const NOTIFICATION: OverlayConfig = OverlayConfig {
+        width: 0,
+        height_padding: 1,
+        width_padding: 0,
+        text_color_256: 15,
+        bg_color_256: 235,
+        has_border: false,
+    };
 }
 
-// --- END WindowBuilder ---
+// --- END OverlayConfig ---
 
 /// Overlay showing keyboard shortcuts.
 pub struct KeyboardHintsOverlay;
 
 impl KeyboardHintsOverlay {
-    /// Width of the keyboard hints window.
+    /// Total rendered width of the keyboard hints window.
     pub const WIDTH: usize = 60;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 54; // 60 - 2(border) - 2*2(padding)
 
     /// Builds the keyboard hints overlay content.
-    pub fn build_overlay() -> Vec<String> {
-        let builder = WindowBuilder::new(Self::WIDTH, 2);
-        let content = vec![
-            "".to_string(),
-            "SIMULATION                VISUALS".to_string(),
-            "p, Space : Pause          c, Shift+C : Palette".to_string(),
-            "r        : Restart        o          : Palette Shift".to_string(),
-            "q, Esc   : Quit           x          : Invert Palette".to_string(),
-            "+, -     : Time Scale     z          : Reverse Palette".to_string(),
-            "".to_string(),
-            "PRESETS                   POST-PROCESSING".to_string(),
-            "1-7      : Presets        d, D       : Dither Mode".to_string(),
-            "8        : Randomize      [, ]       : Dither Inten.".to_string(),
-            "0        : Defaults       b          : Auto Normalize".to_string(),
-            "                          v          : Motion Blur".to_string(),
-            "SYSTEM                    n, Shift+N : Max Brightness".to_string(),
-            "h        : Controls       m, M       : Intensity Map".to_string(),
-            "?, |     : Help/Info      f          : Fast Mode".to_string(),
-            "\\        : Stats          g          : Save PNG".to_string(),
-            "Tab      : Category       Ctrl+S     : Save Config".to_string(),
-            "                          Ctrl+L     : Load Config".to_string(),
-            "".to_string(),
-            "DETAILED CONTROLS (Use Shift to decrease values)".to_string(),
-            "A: Sensor Angle   J: Sensor Dist    T: Turn Angle".to_string(),
-            "S: Step Size      E: Decay Factor   I: Deposit Amt".to_string(),
-            "K: Diff Kernel    ;: Diff Sigma     L: Attractor Str".to_string(),
-            "W: Wind Dir       U: Terrain Type   Y: Terrain Str".to_string(),
-            ",: Mouse Mode".to_string(),
-            "".to_string(),
-            "Press any key to close this help".to_string(),
-        ];
+    pub fn build_overlay() -> RenderedOverlay {
+        use TextAlignment::Left;
 
-        builder
-            .build(Some("KEYBOARD SHORTCUTS"), &content)
-            .unwrap_or_default()
+        PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(1, 0, 4, 4))
+            .with_title("KEYBOARD SHORTCUTS")
+            .with_title_box()
+            .add_empty()
+            .add_single("SIMULATION                VISUALS", Left)
+            .add_single("p, Space : Pause          c, Shift+C : Palette", Left)
+            .add_single("r        : Restart        o          : Palette Shift", Left)
+            .add_single(
+                "q, Esc   : Quit           x          : Invert Palette",
+                Left,
+            )
+            .add_single(
+                "+, -     : Time Scale     z          : Reverse Palette",
+                Left,
+            )
+            .add_empty()
+            .add_single("PRESETS                   POST-PROCESSING", Left)
+            .add_single("1-7      : Presets        d, D       : Dither Mode", Left)
+            .add_single("8        : Randomize      [, ]       : Dither Inten.", Left)
+            .add_single(
+                "0        : Defaults       b          : Auto Normalize",
+                Left,
+            )
+            .add_single("                          v          : Motion Blur", Left)
+            .add_single(
+                "SYSTEM                    n, Shift+N : Max Brightness",
+                Left,
+            )
+            .add_single("h        : Controls       m, M       : Intensity Map", Left)
+            .add_single("?, |     : Help/Info       f          : Fast Mode", Left)
+            .add_single("\\        : Stats           g          : Save PNG", Left)
+            .add_single("Tab      : Category       Ctrl+S     : Save Config", Left)
+            .add_single("                          Ctrl+L     : Load Config", Left)
+            .add_empty()
+            .add_single("DETAILED CONTROLS (Use Shift to decrease values)", Left)
+            .add_single("A: Sensor Angle   J: Sensor Dist    T: Turn Angle", Left)
+            .add_single("S: Step Size      E: Decay Factor   I: Deposit Amt", Left)
+            .add_single("K: Diff Kernel    ;: Diff Sigma     L: Attractor Str", Left)
+            .add_single("W: Wind Dir       U: Terrain Type   Y: Terrain Str", Left)
+            .add_single(",: Mouse Mode", Left)
+            .add_empty()
+            .add_single("Press any key to close this help", Left)
+            .build_overlay()
     }
 
     /// Calculates center position for the overlay.
@@ -189,90 +240,102 @@ impl KeyboardHintsOverlay {
 pub struct PresetComparisonOverlay;
 
 impl PresetComparisonOverlay {
-    /// Width of the comparison window.
+    /// Total rendered width of the comparison window.
     pub const WIDTH: usize = 62;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 56; // 62 - 2(border) - 2*2(padding)
 
     /// Builds the comparison overlay showing modified parameters.
     pub fn build_overlay(
         current: &crate::terminal::control::RuntimeState,
         preset: Preset,
-    ) -> Vec<String> {
+    ) -> RenderedOverlay {
+        use TextAlignment::Left;
+
         let defaults = crate::terminal::control::DefaultValues::from_preset(preset);
-        let preset_name = preset_name(preset);
-        let builder = WindowBuilder::new(Self::WIDTH, 2);
+        let pname = preset_name(preset);
 
-        let mut content = vec![
-            "".to_string(),
-            "Parameter        │ Current      │ Preset Default".to_string(),
-            "──────────────────┼──────────────┼──────────────────────".to_string(),
-        ];
+        let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(1, 1, 2, 2))
+            .with_title(format!("PRESET COMPARISON: {}", pname))
+            .with_title_box()
+            .add_empty()
+            .add_single("Parameter        │ Current      │ Preset Default", Left)
+            .add_single(
+                "──────────────────┼──────────────┼──────────────────────",
+                Left,
+            );
 
-        let mut add_row = |name: &str, cur: String, def: String, modif: bool| {
-            let marker = if modif { "*" } else { " " };
-            content.push(format!(
-                "{} {:<16} │ {:<12} │ {:<18}",
-                marker, name, cur, def
-            ));
-        };
+        let add_row =
+            |b: PanelBuilder, name: &str, cur: String, def: String, modif: bool| -> PanelBuilder {
+                let marker = if modif { "⚙" } else { " " };
+                b.add_single(
+                    format!("{} {:<16} │ {:<12} │ {:<18}", marker, name, cur, def),
+                    Left,
+                )
+            };
 
-        add_row(
+        builder = add_row(
+            builder,
             "Sensor Angle",
             format!("{:.1}°", current.sensor_angle),
             format!("{:.1}°", defaults.sensor_angle),
             (current.sensor_angle - defaults.sensor_angle).abs() > 0.01,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Sensor Dist",
             format!("{:.1}px", current.sensor_distance),
             format!("{:.1}px", defaults.sensor_distance),
             (current.sensor_distance - defaults.sensor_distance).abs() > 0.01,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Turn Angle",
             format!("{:.1}°", current.turn_angle),
             format!("{:.1}°", defaults.turn_angle),
             (current.turn_angle - defaults.turn_angle).abs() > 0.01,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Step Size",
             format!("{:.1}px", current.step_size),
             format!("{:.1}px", defaults.step_size),
             (current.step_size - defaults.step_size).abs() > 0.01,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Decay Factor",
             format!("{:.3}x", current.decay_factor),
             format!("{:.3}x", defaults.decay_factor),
             (current.decay_factor - defaults.decay_factor).abs() > 0.001,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Deposit Amt",
             format!("{:.1}x", current.deposit_amount),
             format!("{:.1}x", defaults.deposit_amount),
             (current.deposit_amount - defaults.deposit_amount).abs() > 0.01,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Diff Sigma",
             format!("{:.2}x", current.diffusion_sigma),
             format!("{:.2}x", defaults.diffusion_sigma),
             (current.diffusion_sigma - defaults.diffusion_sigma).abs() > 0.01,
         );
-        add_row(
+        builder = add_row(
+            builder,
             "Max Bright",
             format!("{:.1}x", current.max_brightness),
             format!("{:.1}x", defaults.max_brightness),
             (current.max_brightness - defaults.max_brightness).abs() > 0.01,
         );
 
-        content.push("".to_string());
-        content.push("Press Enter to Apply Preset     Esc to Close".to_string());
-
         builder
-            .build(
-                Some(&format!("PRESET COMPARISON: {}", preset_name)),
-                &content,
-            )
-            .unwrap_or_default()
+            .add_empty()
+            .add_single("Press Enter to Apply Preset     Esc to Close", Left)
+            .build_overlay()
     }
 
     /// Calculates center position for the comparison overlay.
@@ -283,86 +346,59 @@ impl PresetComparisonOverlay {
     }
 }
 
-#[allow(dead_code)]
-/// Overlay shown during warmup phase.
-pub struct WarmupOverlay;
-
-#[allow(dead_code)]
-impl WarmupOverlay {
-    /// Builds the warmup status message.
-    pub fn build_overlay(frame_counter: usize, max_frames: usize) -> Vec<String> {
-        // Create a pulsing effect using sine wave
-        let progress = (frame_counter as f32 / 30.0 * std::f32::consts::PI)
-            .sin()
-            .abs();
-        let opacity = (progress * 10.0) as usize;
-
-        let dots = ".".repeat(opacity.min(3));
-        let message = format!("Press any key to begin{}", dots);
-        let frame_info = format!("Warmup: {}/{}", frame_counter, max_frames);
-
-        vec![message, frame_info]
-    }
-
-    /// Calculates position for warmup overlay (bottom center).
-    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
-        // Center horizontally, bottom third vertically
-        let y = (term_height * 2) / 3;
-        let x = term_width / 2;
-        (x, y)
-    }
-}
-
 /// Overlay for browsing saved configurations.
 pub struct ConfigBrowserOverlay;
 
 impl ConfigBrowserOverlay {
-    /// Width of the browser window.
+    /// Total rendered width of the browser window.
     pub const WIDTH: usize = 56;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 50; // 56 - 2(border) - 2*2(padding)
 
     /// Builds the configuration list overlay.
     pub fn build_overlay(
         configs: &[crate::config_manager::SavedConfig],
         selected_index: usize,
-    ) -> Vec<String> {
-        let builder = WindowBuilder::new(Self::WIDTH, 2);
-        let mut content = Vec::new();
+    ) -> RenderedOverlay {
+        use TextAlignment::Left;
+
+        let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(1, 1, 2, 2))
+            .with_title("SAVED CONFIGURATIONS")
+            .with_title_box();
 
         if configs.is_empty() {
-            content.push("".to_string());
-            content.push("No saved configurations".to_string());
-            content.push("".to_string());
-            content.push("Press Ctrl+S to save current settings".to_string());
-            content.push("".to_string());
+            builder = builder
+                .add_empty()
+                .add_single("No saved configurations", Left)
+                .add_empty()
+                .add_single("Press Ctrl+S to save current settings", Left)
+                .add_empty();
         } else {
-            content.push("".to_string());
+            builder = builder.add_empty();
             for (i, config) in configs.iter().enumerate().take(9) {
                 let num = i + 1;
                 let selected_marker = if i == selected_index { "›" } else { " " };
                 let name = &config.name;
                 let palette = &config.palette;
                 let pop = config.population / 1000;
-
                 let line = format!(
                     "{}{} {} - {} - {}k agents",
                     selected_marker, num, name, palette, pop,
                 );
-                content.push(line);
+                builder = builder.add_single(line, Left);
             }
 
             if configs.len() > 9 {
-                content.push(format!("... and {} more", configs.len() - 9));
+                builder = builder.add_single(format!("... and {} more", configs.len() - 9), Left);
             }
 
-            content.push("".to_string());
-            content.push("↑/↓: Navigate  Enter: Load  Del: Delete".to_string());
+            builder = builder
+                .add_empty()
+                .add_single("↑/↓: Navigate  Enter: Load  Del: Delete", Left);
         }
 
-        content.push("Esc: Cancel".to_string());
-
-        builder
-            .build(Some("SAVED CONFIGURATIONS"), &content)
-            .unwrap_or_default()
+        builder.add_single("Esc: Cancel", Left).build_overlay()
     }
 
     /// Calculates center position for the browser overlay.
@@ -377,26 +413,119 @@ impl ConfigBrowserOverlay {
 pub struct ConfigSaveOverlay;
 
 impl ConfigSaveOverlay {
+    /// Total rendered width.
+    const TOTAL_WIDTH: usize = 38;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 34; // 38 - 2(border) - 2*1(padding)
+
     /// Builds the save dialog overlay.
-    pub fn build_overlay(name_input: &str) -> Vec<String> {
-        let builder = WindowBuilder::new(38, 1);
-        let content = vec![
-            "".to_string(),
-            format!("Name: {:<25}", name_input),
-            "".to_string(),
-            "Enter: Save    Esc: Cancel".to_string(),
-        ];
-        builder
-            .build(Some("SAVE CONFIGURATION"), &content)
-            .unwrap_or_default()
+    pub fn build_overlay(name_input: &str) -> RenderedOverlay {
+        use TextAlignment::Left;
+
+        PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(0, 0, 1, 1))
+            .with_title("SAVE CONFIGURATION")
+            .with_title_box()
+            .add_empty()
+            .add_single(format!("Name: {:<25}", name_input), Left)
+            .add_empty()
+            .add_single("Enter: Save    Esc: Cancel", Left)
+            .build_overlay()
     }
 
     /// Calculates center position for the save dialog.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
-        let x = (term_width.saturating_sub(38)) / 2;
+        let x = (term_width.saturating_sub(Self::TOTAL_WIDTH)) / 2;
         let y = (term_height.saturating_sub(5)) / 2;
         (x, y)
     }
+}
+
+pub use crate::terminal::control::NotificationLevel;
+
+/// Formats a notification string with an icon prefix for the given level.
+///
+/// Example output: `"✓  Config saved"` for `NotificationLevel::Success`.
+pub fn format_notification(text: &str, level: NotificationLevel) -> String {
+    format!("{}  {}", level.icon(), text)
+}
+
+/// Builds a two-line notification toast panel with an accent-colored border.
+///
+/// The panel shows:
+/// - Line 1: `"{icon}  {LEVEL}  {message}"` with icon+level label in the level's accent color
+/// - Border characters colored with the theme's accent color for the notification level
+///
+/// Level labels: Info → "INFO", Success → "DONE", Warning → "WARN", Error → "ERR!"
+pub fn build_notification_panel(
+    msg: &str,
+    level: NotificationLevel,
+    panel_style: &PanelStyle,
+) -> RenderedOverlay {
+    let level_label = match level {
+        NotificationLevel::Info => "INFO",
+        NotificationLevel::Success => "DONE",
+        NotificationLevel::Warning => "WARN",
+        NotificationLevel::Error => "ERR!",
+    };
+    let content = format!("{}  {}  {}", level.icon(), level_label, msg);
+    let cw = content.chars().count();
+    let accent = match level {
+        NotificationLevel::Info => panel_style.accent_info,
+        NotificationLevel::Success => panel_style.accent_success,
+        NotificationLevel::Warning => panel_style.accent_warning,
+        NotificationLevel::Error => panel_style.accent_error,
+    };
+    let mut overlay = PanelBuilder::new(cw, None)
+        .with_padding(Padding::COMPACT)
+        .with_border_color(accent)
+        .add_single(content, TextAlignment::Left)
+        .build_overlay();
+    overlay.rich_lines = Some(build_notification_rich_lines(&overlay.lines, accent));
+    overlay
+}
+
+/// Applies per-character color overrides to a notification panel.
+///
+/// Colors:
+/// - All border characters (`█`, `▀`, `▄`) → accent foreground
+/// - Icon + level label prefix on the content line → accent foreground
+#[allow(clippy::type_complexity)]
+fn build_notification_rich_lines(
+    lines: &[String],
+    accent: RgbColor,
+) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
+    lines
+        .iter()
+        .enumerate()
+        .map(|(line_idx, line)| {
+            let chars: Vec<char> = line.chars().collect();
+            chars
+                .iter()
+                .enumerate()
+                .map(|(i, &c)| {
+                    let fg = if matches!(c, '█' | '▀' | '▄') {
+                        // Border characters: color with accent
+                        Some(accent)
+                    } else if line_idx == 1 {
+                        // Content line: positions 0-1 are border+padding, position 2 onwards is content.
+                        // Content format: "{icon}  {LABEL}  {message}"
+                        // icon = 1 char, 2 spaces, label = 4 chars → 7 chars total prefix
+                        // Panel layout: border(1) + pad(1) + content... so icon starts at char 2
+                        // Color positions 2 through 8 (icon + 2 spaces + 4-char label)
+                        if (2..=8).contains(&i) {
+                            Some(accent)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    (c, fg, None)
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// Utilities for rendering overlay elements (status line, help lists).
@@ -406,6 +535,15 @@ impl OverlayRenderer {
     #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
     /// Builds the status bar string displayed at the bottom of the screen.
+    ///
+    /// Uses `▸` as a segment separator for a clean powerline-inspired look.
+    /// Segments are added in priority order; lower-priority segments are omitted
+    /// when the terminal is too narrow to fit them.
+    ///
+    /// Layout (left to right):
+    /// ```text
+    ///   PRESET  ▸  1.0×  ▸  PALETTE  ▸  50k  [Z Y]  ⏸ PAUSED  ·  ? help
+    /// ```
     pub fn build_status_line(
         _is_paused: bool,
         preset: Preset,
@@ -417,65 +555,153 @@ impl OverlayRenderer {
         diffusion_kernel: Option<&str>,
         can_undo: bool,
         can_redo: bool,
-    ) -> String {
+        accent: Option<RgbColor>,
+    ) -> (String, Vec<(usize, RgbColor)>) {
+        const SEP: &str = "  ▸  ";
+        let mut color_overrides: Vec<(usize, RgbColor)> = Vec::new();
+
+        // Theme colors for status bar chrome (GRUVBOX-matching hardcoded values)
+        let muted = RgbColor {
+            r: 102,
+            g: 92,
+            b: 84,
+        };
+        let accent_success = RgbColor {
+            r: 184,
+            g: 187,
+            b: 38,
+        }; // green for undo ↺
+        let accent_info = RgbColor {
+            r: 131,
+            g: 165,
+            b: 152,
+        }; // teal for redo ↻ and ?
+
         let preset_text = preset_name(preset);
         let palette_text = palette_name(palette);
-        let time_text = format!("{:.1}x", time_scale);
+        let time_text = format!("{:.1}×", time_scale);
 
-        let undo_redo_text = if can_undo || can_redo {
-            format!(
-                " [{}{}]",
-                if can_undo { "Z" } else { " " },
-                if can_redo { "Y" } else { " " }
-            )
-        } else {
-            "".to_string()
-        };
+        // Core left-side segments (always visible)
+        let mut left = format!("  {}{}{}  ", preset_text, SEP, time_text);
 
-        let dither_text = match dither_mode {
-            DitherMode::None => "".to_string(),
-            DitherMode::Ordered { intensity, .. } => format!(" D:{:.1}x", intensity),
-            DitherMode::ErrorDiffusion { .. } => " ED".to_string(),
-            DitherMode::Hybrid { intensity, .. } => format!(" H:{:.1}x", intensity),
-        };
-
-        let paused_text = if _is_paused { " [PAUSED]" } else { "" };
-        let help_text = if width >= 100 { " ? for help" } else { "" };
-
-        // Build components with priority for truncation
-        let mut status = format!("{} │ {}", preset_text, time_text);
-
-        // Add palette if space permits
-        if width >= 50 {
-            status.push_str(&format!(" │ {}", palette_text));
+        // Add palette swatch + name if space permits
+        if width >= 52 {
+            left.push_str("▸  ");
+            // Color swatch: two block chars tinted with the palette accent
+            if let Some(accent_color) = accent {
+                let swatch_start = left.chars().count();
+                left.push_str("▨ ");
+                color_overrides.push((swatch_start, accent_color));
+                color_overrides.push((swatch_start + 1, accent_color));
+            }
+            left.push_str(&format!("{}  ", palette_text));
         }
 
-        // Add population if provided and space permits
+        // Add population if space permits
         if let Some(pop) = population {
-            if width >= 70 {
-                let pop_k = pop / 1000;
-                status.push_str(&format!(" │ {}k", pop_k));
+            if width >= 68 {
+                left.push_str(&format!("▸  {}k  ", pop / 1000));
             }
         }
 
-        // Add diffusion kernel if provided and space permits
+        // Add diffusion kernel if space permits
         if let Some(kernel) = diffusion_kernel {
-            if width >= 90 {
-                status.push_str(&format!(" │ {}", kernel));
+            if width >= 88 {
+                left.push_str(&format!("▸  {}  ", kernel));
             }
         }
 
-        // Add dither if present
-        if !dither_text.is_empty() && width >= 60 {
-            status.push_str(&dither_text);
+        // Add dither mode if active and space permits
+        let dither_segment = match dither_mode {
+            DitherMode::None => None,
+            DitherMode::Ordered { intensity, .. } => Some(format!("D {:.1}×", intensity)),
+            DitherMode::ErrorDiffusion { .. } => Some("ED".to_string()),
+            DitherMode::Hybrid { intensity, .. } => Some(format!("H {:.1}×", intensity)),
+        };
+        if let Some(ref d) = dither_segment {
+            if width >= 60 {
+                left.push_str(&format!("▸  {}  ", d));
+            }
         }
 
-        // Always add paused and help at the end
-        status.push_str(&undo_redo_text);
-        status.push_str(paused_text);
-        status.push_str(help_text);
+        // Color all ▸ separator characters in the left segment with muted color
+        let separator_positions: Vec<usize> = left
+            .chars()
+            .enumerate()
+            .filter_map(|(i, c)| if c == '▸' { Some(i) } else { None })
+            .collect();
+        for pos in &separator_positions {
+            color_overrides.push((*pos, muted));
+        }
 
-        status
+        // Right-side status indicators
+        let mut right = String::new();
+        let mut paused_offset_in_right: Option<usize> = None;
+        let mut undo_offset_in_right: Option<usize> = None;
+        let mut redo_offset_in_right: Option<usize> = None;
+        let mut help_q_offset_in_right: Option<usize> = None;
+
+        if can_undo || can_redo {
+            if can_undo {
+                undo_offset_in_right = Some(right.chars().count());
+            }
+            right.push_str(if can_undo { "↺" } else { "·" });
+            right.push(' ');
+            if can_redo {
+                redo_offset_in_right = Some(right.chars().count());
+            }
+            right.push_str(if can_redo { "↻" } else { "·" });
+            right.push_str("  ");
+        }
+
+        if _is_paused {
+            paused_offset_in_right = Some(right.chars().count());
+            right.push_str("⏸ PAUSED  ");
+        }
+
+        if width >= 100 {
+            help_q_offset_in_right = Some(right.chars().count());
+            right.push_str("? help  ");
+        }
+
+        // Combine: left segments + right-aligned indicators
+        let combined_len = left.chars().count() + right.chars().count();
+        let result = if combined_len <= width {
+            // Pad between left and right
+            let gap = width.saturating_sub(combined_len);
+            let right_start = left.chars().count() + gap;
+
+            // Color ↺ (undo) in accent_success
+            if let Some(off) = undo_offset_in_right {
+                color_overrides.push((right_start + off, accent_success));
+            }
+            // Color ↻ (redo) in accent_info
+            if let Some(off) = redo_offset_in_right {
+                color_overrides.push((right_start + off, accent_info));
+            }
+            // Color ? in accent_info
+            if let Some(off) = help_q_offset_in_right {
+                color_overrides.push((right_start + off, accent_info));
+            }
+            // Color ⏸ PAUSED with amber
+            if let Some(paused_off) = paused_offset_in_right {
+                let global_start = right_start + paused_off;
+                let amber = RgbColor {
+                    r: 215,
+                    g: 153,
+                    b: 33,
+                };
+                for i in 0.."⏸ PAUSED".chars().count() {
+                    color_overrides.push((global_start + i, amber));
+                }
+            }
+            format!("{}{}{}", left, " ".repeat(gap), right)
+        } else {
+            // No room to right-align; just return the left part
+            left
+        };
+
+        (result, color_overrides)
     }
 
     #[allow(dead_code)]
@@ -501,8 +727,10 @@ impl OverlayRenderer {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
         if !attractors.is_empty() {
-            let builder = WindowBuilder::new(42, 1);
-            let mut content = Vec::new();
+            // ATTRACTOR config: WIDTH=42, padding=1 → CONTENT_WIDTH=38
+            let mut builder = PanelBuilder::new(38, None)
+                .with_padding(Padding::new(0, 0, 1, 1))
+                .with_title("ATTRACTORS");
 
             for (i, attractor) in attractors.iter().enumerate() {
                 let kind = if attractor.strength > 0.0 {
@@ -511,22 +739,21 @@ impl OverlayRenderer {
                     "repel"
                 };
                 let strength = attractor.strength.abs();
-                content.push(format!(
-                    "{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x",
-                    i + 1,
-                    attractor.x as i32,
-                    attractor.y as i32,
-                    kind,
-                    strength,
-                ));
+                builder = builder.add_single(
+                    format!(
+                        "{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x",
+                        i + 1,
+                        attractor.x as i32,
+                        attractor.y as i32,
+                        kind,
+                        strength,
+                    ),
+                    TextAlignment::Left,
+                );
             }
 
             lines.push(String::new());
-            lines.extend(
-                builder
-                    .build(Some("ATTRACTORS"), &content)
-                    .unwrap_or_default(),
-            );
+            lines.extend(builder.build());
         }
 
         lines
@@ -538,35 +765,33 @@ impl OverlayRenderer {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
         if !obstacles.is_empty() {
-            let builder = WindowBuilder::new(42, 1);
-            let mut content = Vec::new();
+            // OBSTACLE config: WIDTH=42, padding=1 → CONTENT_WIDTH=38
+            let mut builder = PanelBuilder::new(38, None)
+                .with_padding(Padding::new(0, 0, 1, 1))
+                .with_title("OBSTACLES");
 
             for (i, obstacle) in obstacles.iter().enumerate() {
-                match obstacle {
-                    Obstacle::Circle { x, y, radius } => {
-                        content.push(format!(
-                            "{:2}: circle ({:>4},{:>4}) r: {:>4.1}px",
-                            i + 1,
-                            *x as i32,
-                            *y as i32,
-                            radius,
-                        ));
-                    }
+                let line = match obstacle {
+                    Obstacle::Circle { x, y, radius } => format!(
+                        "{:2}: circle ({:>4},{:>4}) r: {:>4.1}px",
+                        i + 1,
+                        *x as i32,
+                        *y as i32,
+                        radius,
+                    ),
                     Obstacle::Rect {
                         x,
                         y,
                         width,
                         height,
-                    } => {
-                        content.push(format!(
-                            "{:2}: rect  ({:>4},{:>4}) {:>4.1}x{:>4.1}px",
-                            i + 1,
-                            *x as i32,
-                            *y as i32,
-                            width,
-                            height,
-                        ));
-                    }
+                    } => format!(
+                        "{:2}: rect  ({:>4},{:>4}) {:>4.1}x{:>4.1}px",
+                        i + 1,
+                        *x as i32,
+                        *y as i32,
+                        width,
+                        height,
+                    ),
                     Obstacle::Image {
                         path,
                         x: _,
@@ -580,23 +805,20 @@ impl OverlayRenderer {
                             .file_name()
                             .and_then(|n| n.to_str())
                             .unwrap_or(path);
-                        content.push(format!(
+                        format!(
                             "{:2}: image {:>15} {:>3}x{:>3}px",
                             i + 1,
                             &filename[..filename.len().min(15)],
                             width,
                             height,
-                        ));
+                        )
                     }
-                }
+                };
+                builder = builder.add_single(line, TextAlignment::Left);
             }
 
             lines.push(String::new());
-            lines.extend(
-                builder
-                    .build(Some("OBSTACLES"), &content)
-                    .unwrap_or_default(),
-            );
+            lines.extend(builder.build());
         }
 
         lines
@@ -613,8 +835,10 @@ impl OverlayRenderer {
         let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
 
         if !mouse_attractors.is_empty() {
-            let builder = WindowBuilder::new(46, 1);
-            let mut content = Vec::new();
+            // MOUSE_ATTRACTOR config: WIDTH=46, padding=1 → CONTENT_WIDTH=42
+            let mut builder = PanelBuilder::new(42, None)
+                .with_padding(Padding::new(0, 0, 1, 1))
+                .with_title("MOUSE ATTRACTORS");
 
             for (i, ma) in mouse_attractors.iter().enumerate() {
                 let kind = if ma.strength > 0.0 {
@@ -628,23 +852,22 @@ impl OverlayRenderer {
                 } else {
                     "expired".to_string()
                 };
-                content.push(format!(
-                    "{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x {:>7}",
-                    i + 1,
-                    ma.x as i32,
-                    ma.y as i32,
-                    kind,
-                    ma.strength.abs(),
-                    remaining_str,
-                ));
+                builder = builder.add_single(
+                    format!(
+                        "{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x {:>7}",
+                        i + 1,
+                        ma.x as i32,
+                        ma.y as i32,
+                        kind,
+                        ma.strength.abs(),
+                        remaining_str,
+                    ),
+                    TextAlignment::Left,
+                );
             }
 
             lines.push(String::new());
-            lines.extend(
-                builder
-                    .build(Some("MOUSE ATTRACTORS"), &content)
-                    .unwrap_or_default(),
-            );
+            lines.extend(builder.build());
         }
 
         lines
@@ -662,7 +885,7 @@ impl OverlayRenderer {
             return true;
         }
         let target_len = attractor_lines[0].chars().count();
-        // Skip potential title/border differences if needed, but WindowBuilder should be consistent
+        // Skip potential title/border differences if needed, but PanelBuilder should be consistent
         attractor_lines
             .iter()
             .all(|line| line.chars().count() == target_len)
@@ -767,26 +990,13 @@ mod tests {
     }
 
     #[test]
-    fn test_window_builder_content_too_long() {
-        let builder = WindowBuilder::new(20, 1);
-        let content = vec!["this line is definitely too long for the builder".to_string()];
-        let result = builder.build(None, &content);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_window_builder_too_small() {
-        let _ = WindowBuilder::new(2, 1);
-    }
-
-    #[test]
-    fn test_window_builder_separator() {
-        let builder = WindowBuilder::new(10, 1);
-        let sep = builder.build_separator();
-        assert!(sep.starts_with('├'));
-        assert!(sep.ends_with('┤'));
-        assert_eq!(sep.chars().count(), 10);
+    fn test_panel_builder_separator() {
+        let panel = PanelBuilder::new(8, None).with_padding(Padding::new(0, 0, 1, 1));
+        let sep = panel.render_separator_line();
+        assert!(sep.starts_with('█'));
+        assert!(sep.ends_with('█'));
+        // total_width = 1 + 1 + 8 + 1 + 1 = 12
+        assert_eq!(sep.chars().count(), 12);
     }
 
     #[test]
@@ -797,19 +1007,12 @@ mod tests {
     }
 
     #[test]
-    fn test_warmup_overlay() {
-        let lines = WarmupOverlay::build_overlay(10, 100);
-        assert_eq!(lines.len(), 2);
-        assert!(lines[1].contains("10/100"));
-        let (x, y) = WarmupOverlay::calculate_position(100, 90);
-        assert_eq!(x, 50);
-        assert_eq!(y, 60);
-    }
-
-    #[test]
     fn test_config_browser_overlay_empty() {
         let lines = ConfigBrowserOverlay::build_overlay(&[], 0);
-        assert!(lines.iter().any(|l| l.contains("No saved configurations")));
+        assert!(lines
+            .lines
+            .iter()
+            .any(|l| l.contains("No saved configurations")));
         let (x, _y) = ConfigBrowserOverlay::calculate_position(100, 100);
         assert_eq!(x, 22);
     }
@@ -817,7 +1020,7 @@ mod tests {
     #[test]
     fn test_config_save_overlay() {
         let lines = ConfigSaveOverlay::build_overlay("test");
-        assert!(lines.iter().any(|l| l.contains("test")));
+        assert!(lines.lines.iter().any(|l| l.contains("test")));
         let (x, _y) = ConfigSaveOverlay::calculate_position(100, 100);
         assert_eq!(x, 31);
     }
@@ -871,8 +1074,10 @@ mod tests {
     }
 }
 
+const SPARKLINE_CHARS: [char; 8] = [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
 fn build_sparkline(history: &std::collections::VecDeque<f32>, min: f32, max: f32) -> String {
-    let chars = [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let chars = SPARKLINE_CHARS;
     let mut sparkline = String::with_capacity(20);
 
     // Fill with empty if history is small
@@ -893,12 +1098,107 @@ fn build_sparkline(history: &std::collections::VecDeque<f32>, min: f32, max: f32
     format!("{:<20}", sparkline)
 }
 
+/// Generates per-cell color overrides for the stats overlay rich rendering.
+///
+/// Colors:
+/// - FPS number: green (≥55 fps), amber (≥25 fps), red (< 25 fps)
+/// - Sparkline bars: gradient from muted gray → `accent` based on bar height
+fn generate_stats_rich_lines(
+    lines: &[String],
+    fps: f32,
+    accent: RgbColor,
+    panel_style: &PanelStyle,
+) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
+    let muted = panel_style.muted;
+    let fps_color = if fps >= 55.0 {
+        panel_style.accent_fps_good
+    } else if fps >= 25.0 {
+        panel_style.accent_fps_warn
+    } else {
+        panel_style.accent_error
+    };
+
+    lines
+        .iter()
+        .map(|line| {
+            let chars: Vec<char> = line.chars().collect();
+            let n = chars.len();
+            // Content starts at col 3 (border=1, padding.left=2)
+            let content_start = 3.min(n);
+            let content_end = n.saturating_sub(3);
+
+            // Detect sparkline row: all non-space content chars are sparkline chars
+            let is_sparkline = content_start < content_end
+                && chars[content_start..content_end]
+                    .iter()
+                    .all(|&c| matches!(c, ' ' | '▂' | '▃' | '▄' | '▅' | '▆' | '▇' | '█'));
+
+            // Detect FPS row: content starts with "FPS:"
+            let is_fps_row =
+                content_start < n && chars[content_start..].starts_with(&['F', 'P', 'S', ':']);
+
+            if is_sparkline {
+                chars
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &c)| {
+                        let fg = if i >= content_start && i < content_end {
+                            let spark_idx = SPARKLINE_CHARS.iter().position(|&sc| sc == c);
+                            if let Some(idx) = spark_idx {
+                                if idx == 0 {
+                                    None
+                                } else {
+                                    let t = idx as f32 / (SPARKLINE_CHARS.len() - 1) as f32;
+                                    let r = (muted.r as f32
+                                        + (accent.r as f32 - muted.r as f32) * t)
+                                        as u8;
+                                    let g = (muted.g as f32
+                                        + (accent.g as f32 - muted.g as f32) * t)
+                                        as u8;
+                                    let b = (muted.b as f32
+                                        + (accent.b as f32 - muted.b as f32) * t)
+                                        as u8;
+                                    Some(RgbColor { r, g, b })
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        (c, fg, None)
+                    })
+                    .collect()
+            } else if is_fps_row {
+                // Format: "FPS: {:>11.0} ({:>4.0})" — fps value occupies cols 5..16
+                chars
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &c)| {
+                        let col = i.saturating_sub(content_start);
+                        let fg = if col >= 5 && col < 16 && (c.is_ascii_digit() || c == '.') {
+                            Some(fps_color)
+                        } else {
+                            None
+                        };
+                        (c, fg, None)
+                    })
+                    .collect()
+            } else {
+                chars.iter().map(|&c| (c, None, None)).collect()
+            }
+        })
+        .collect()
+}
+
 /// Overlay showing real-time statistics.
 pub struct StatsOverlay;
 
 impl StatsOverlay {
-    /// Width of the stats window.
+    /// Total rendered width of the stats window.
     pub const WIDTH: usize = 32;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 26; // 32 - 2(border) - 2*2(padding)
 
     #[allow(clippy::too_many_arguments)]
     /// Builds the stats overlay content.
@@ -923,7 +1223,11 @@ impl StatsOverlay {
         fps_history: &std::collections::VecDeque<f32>,
         entropy_history: &std::collections::VecDeque<f32>,
         density_history: &std::collections::VecDeque<f32>,
-    ) -> Vec<String> {
+        accent: RgbColor,
+        panel_style: &PanelStyle,
+    ) -> RenderedOverlay {
+        use TextAlignment::Left;
+
         let trail_percent = if trail_capacity > 0.0 {
             (trail_sum / trail_capacity * 100.0).min(99.9)
         } else {
@@ -937,53 +1241,47 @@ impl StatsOverlay {
         let entropy_spark = build_sparkline(entropy_history, 0.0, 8.0);
         let density_spark = build_sparkline(density_history, 0.0, 1.0);
 
-        let builder = WindowBuilder::new(Self::WIDTH, 2);
-        let content = vec![
-            format!("Agents:   {:>15}", agent_count),
-            format!("Trail:    {:>14.1}%", trail_percent),
-            format!("{:<26}", density_spark),
-            format!("Trail Max: {:>13.2}x", trail_max),
-            format!("Entropy:   {:>15.2}", entropy),
-            format!("{:<26}", entropy_spark),
-            format!("FPS: {:>11.0} ({:>4.0})", fps, avg_fps),
-            format!("{:<26}", fps_spark),
-            format!("Frames:    {:>15}", frame_count),
-            format!("Time:      {:>15}", elapsed_str),
-        ];
+        let mut overlay = PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(2, 0, 2, 2))
+            .with_title("STATS")
+            .with_title_box()
+            // Simulation stats
+            .add_single(format!("Agents:   {:>15}", agent_count), Left)
+            .add_single(format!("Trail:    {:>14.1}%", trail_percent), Left)
+            .add_single(format!("{:<26}", density_spark), Left)
+            .add_single(format!("Trail Max: {:>13.2}x", trail_max), Left)
+            .add_single(format!("Entropy:   {:>15.2}", entropy), Left)
+            .add_single(format!("{:<26}", entropy_spark), Left)
+            .add_single(format!("FPS: {:>11.0} ({:>4.0})", fps, avg_fps), Left)
+            .add_single(format!("{:<26}", fps_spark), Left)
+            .add_single(format!("Frames:    {:>15}", frame_count), Left)
+            .add_single(format!("Time:      {:>15}", elapsed_str), Left)
+            .add_empty()
+            // Section separator
+            .add_separator()
+            // System stats
+            .add_single(format!("Grid:     {:>15}", grid_str), Left)
+            .add_single(format!("Attractor: {:>13}", attractor_count), Left)
+            .add_single(format!("Obstacle:  {:>13}", obstacle_count), Left)
+            .add_single(format!("Species:   {:>14}", species_count), Left)
+            .add_single(format!("Memory:    {:>11.1} MB", memory_mb), Left)
+            .add_single(format!("CPU:       {:>14.0}%", cpu_percent), Left)
+            .build_overlay();
 
-        let mut lines = builder
-            .build(Some("STATS"), &content)
-            .unwrap_or_else(|e| vec![format!("Error: {}", e)]);
-
-        if lines.len() > 1 {
-            lines.pop();
-            lines.push(builder.build_separator());
-
-            let system_content = vec![
-                format!("Grid:     {:>15}", grid_str),
-                format!("Attractor: {:>13}", attractor_count),
-                format!("Obstacle:  {:>13}", obstacle_count),
-                format!("Species:   {:>14}", species_count),
-                format!("Memory:    {:>11.1} MB", memory_mb),
-                format!("CPU:       {:>14.0}%", cpu_percent),
-            ];
-
-            for line in system_content {
-                lines.push(builder.build_content_line(&line));
-            }
-            lines.push(builder.build_bottom_border());
-        }
-
-        lines
+        overlay.rich_lines = Some(generate_stats_rich_lines(
+            &overlay.lines,
+            fps,
+            accent,
+            panel_style,
+        ));
+        overlay
     }
 
-    /// Calculates the X position for the stats overlay (top-right).
-    pub fn calculate_x_position(term_width: usize) -> usize {
-        if term_width > Self::WIDTH + 2 {
-            term_width.saturating_sub(Self::WIDTH + 2)
-        } else {
-            1
-        }
+    /// Calculates centered position for the stats overlay.
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
+        let y = (term_height.saturating_sub(24)) / 2;
+        (x, y)
     }
 
     /// Calculates entropy of the trail map for complexity analysis.
@@ -1030,8 +1328,10 @@ impl StatsOverlay {
 pub struct InfoOverlay;
 
 impl InfoOverlay {
-    /// Width of the info window.
+    /// Total rendered width of the info window.
     pub const WIDTH: usize = 28;
+    /// Content width (inner drawable area).
+    const CONTENT_WIDTH: usize = 22; // 28 - 2(border) - 2*2(padding)
 
     #[allow(clippy::too_many_arguments)]
     /// Builds the info overlay content.
@@ -1051,20 +1351,23 @@ impl InfoOverlay {
         auto_reset: bool,
         _auto_reset_threshold: f32,
         _auto_reset_duration: usize,
-    ) -> Vec<String> {
+    ) -> RenderedOverlay {
+        use TextAlignment::Left;
+
         let resolution_str = format!("{}x{}", sim_width, sim_height);
         let term_str = format!("{}x{}", term_width, term_height);
         let simd_str = if simd_enabled { "On" } else { "Off" };
 
-        let builder = WindowBuilder::new(Self::WIDTH, 1);
-        let mut content = vec![
-            format!("Res:       {:>13}", resolution_str),
-            format!("Term:      {:>13}", term_str),
-            format!("Init:      {:>13}", init_mode),
-            format!("Color:     {:>13}", color_mode),
-            format!("Char:      {:>13}", charset),
-            format!("SIMD:      {:>13}", simd_str),
-        ];
+        let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(2, 0, 2, 2))
+            .with_title("INFO")
+            .with_title_box()
+            .add_single(format!("Res:       {:>13}", resolution_str), Left)
+            .add_single(format!("Term:      {:>13}", term_str), Left)
+            .add_single(format!("Init:      {:>13}", init_mode), Left)
+            .add_single(format!("Color:     {:>13}", color_mode), Left)
+            .add_single(format!("Char:      {:>13}", charset), Left)
+            .add_single(format!("SIMD:      {:>13}", simd_str), Left);
 
         if let Some(food) = food_source {
             let food_name = std::path::Path::new(food)
@@ -1076,27 +1379,25 @@ impl InfoOverlay {
             } else {
                 food_name
             };
-            content.push(format!("Food:      {:>13}", truncated));
+            builder = builder.add_single(format!("Food:      {:>13}", truncated), Left);
         }
 
         if warmup_frames > 0 {
-            content.push(format!("Warm:      {:>6} frames", warmup_frames));
+            builder = builder.add_single(format!("Warm:      {:>6} frames", warmup_frames), Left);
         }
 
         if auto_reset {
-            content.push(format!("Auto:      {:>13}", "On"));
+            builder = builder.add_single(format!("Auto:      {:>13}", "On"), Left);
         }
 
-        builder.build(Some("INFO"), &content).unwrap_or_default()
+        builder.build_overlay()
     }
 
-    /// Calculates X position for the info overlay.
-    pub fn calculate_x_position(term_width: usize) -> usize {
-        if term_width > Self::WIDTH + 2 {
-            term_width.saturating_sub(Self::WIDTH + 2)
-        } else {
-            1
-        }
+    /// Calculates centered position for the info overlay.
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
+        let y = (term_height.saturating_sub(17)) / 2;
+        (x, y)
     }
 }
 
@@ -1116,21 +1417,54 @@ fn format_elapsed_time(seconds: f32) -> String {
 #[cfg(test)]
 mod stats_tests {
     use super::*;
+    use crate::render::theme::GRUVBOX_DARK;
 
     #[test]
     fn test_stats_overlay_format() {
         let history = std::collections::VecDeque::from(vec![0.5f32; 20]);
         let lines = StatsOverlay::build_overlay(
-            50000, 1234567.0, 8000000.0, 8.5, 5.5, 30.0, 28.5, 1234, 125.5, 400, 400, 3, 1, 2,
-            12.5, 85.0, 80, &history, &history, &history,
+            50000,
+            1234567.0,
+            8000000.0,
+            8.5,
+            5.5,
+            30.0,
+            28.5,
+            1234,
+            125.5,
+            400,
+            400,
+            3,
+            1,
+            2,
+            12.5,
+            85.0,
+            80,
+            &history,
+            &history,
+            &history,
+            RgbColor {
+                r: 57,
+                g: 211,
+                b: 83,
+            },
+            &GRUVBOX_DARK,
         );
 
-        assert!(!lines.is_empty());
-        assert!(lines[0].starts_with('╭'));
-        assert!(lines.last().unwrap().starts_with('╰'));
+        assert!(!lines.lines.is_empty());
+        // Solid-block borders
+        assert!(
+            lines.lines[0].starts_with('█'),
+            "Top border should start with solid block █, got: {}",
+            lines.lines[0]
+        );
+        assert!(
+            lines.lines.last().unwrap().starts_with('█'),
+            "Bottom border should start with solid block █"
+        );
 
         // All lines should be exactly WIDTH chars
-        for (i, line) in lines.iter().enumerate() {
+        for (i, line) in lines.lines.iter().enumerate() {
             assert_eq!(
                 line.chars().count(),
                 StatsOverlay::WIDTH,
@@ -1145,21 +1479,48 @@ mod stats_tests {
 
     #[test]
     fn test_stats_overlay_position() {
-        assert_eq!(StatsOverlay::calculate_x_position(80), 46);
-        assert_eq!(StatsOverlay::calculate_x_position(120), 86);
-        assert_eq!(StatsOverlay::calculate_x_position(24), 1);
+        let (x, y) = StatsOverlay::calculate_position(80, 40);
+        assert_eq!(x, 24);
+        assert_eq!(y, 8);
+        let (x2, y2) = StatsOverlay::calculate_position(120, 50);
+        assert_eq!(x2, 44);
+        assert_eq!(y2, 13);
     }
 
     #[test]
     fn test_stats_overlay_with_zero_values() {
         let history = std::collections::VecDeque::new();
         let lines = StatsOverlay::build_overlay(
-            0, 0.0, 1000000.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 400, 400, 0, 0, 0, 0.0, 0.0, 80,
-            &history, &history, &history,
+            0,
+            0.0,
+            1000000.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            400,
+            400,
+            0,
+            0,
+            0,
+            0.0,
+            0.0,
+            80,
+            &history,
+            &history,
+            &history,
+            RgbColor {
+                r: 57,
+                g: 211,
+                b: 83,
+            },
+            &GRUVBOX_DARK,
         );
 
-        assert!(!lines.is_empty());
-        assert!(lines.iter().any(|l| l.contains("0.0%")));
+        assert!(!lines.lines.is_empty());
+        assert!(lines.lines.iter().any(|l| l.contains("0.0%")));
     }
 
     #[test]
@@ -1222,12 +1583,20 @@ mod info_tests {
             0,
         );
 
-        assert!(!lines.is_empty());
-        assert!(lines[0].starts_with('╭'));
-        assert!(lines.last().unwrap().starts_with('╰'));
+        assert!(!lines.lines.is_empty());
+        // Solid-block borders
+        assert!(
+            lines.lines[0].starts_with('█'),
+            "Top border should start with solid block █, got: {}",
+            lines.lines[0]
+        );
+        assert!(
+            lines.lines.last().unwrap().starts_with('█'),
+            "Bottom border should start with solid block █"
+        );
 
         // All lines should be exactly WIDTH chars
-        for (i, line) in lines.iter().enumerate() {
+        for (i, line) in lines.lines.iter().enumerate() {
             assert_eq!(
                 line.chars().count(),
                 InfoOverlay::WIDTH,
@@ -1260,10 +1629,10 @@ mod info_tests {
             300,
         );
 
-        assert!(!lines.is_empty());
+        assert!(!lines.lines.is_empty());
 
         // All lines should be exactly WIDTH chars
-        for (i, line) in lines.iter().enumerate() {
+        for (i, line) in lines.lines.iter().enumerate() {
             assert_eq!(
                 line.chars().count(),
                 InfoOverlay::WIDTH,
@@ -1276,16 +1645,19 @@ mod info_tests {
         }
 
         // Should contain optional fields
-        assert!(lines.iter().any(|l| l.contains("Food")));
-        assert!(lines.iter().any(|l| l.contains("Warm")));
-        assert!(lines.iter().any(|l| l.contains("Auto")));
+        assert!(lines.lines.iter().any(|l| l.contains("Food")));
+        assert!(lines.lines.iter().any(|l| l.contains("Warm")));
+        assert!(lines.lines.iter().any(|l| l.contains("Auto")));
     }
 
     #[test]
     fn test_info_overlay_position() {
-        assert_eq!(InfoOverlay::calculate_x_position(80), 50);
-        assert_eq!(InfoOverlay::calculate_x_position(120), 90);
-        assert_eq!(InfoOverlay::calculate_x_position(28), 1);
+        let (x, y) = InfoOverlay::calculate_position(80, 40);
+        assert_eq!(x, 26);
+        assert_eq!(y, 11);
+        let (x2, y2) = InfoOverlay::calculate_position(120, 50);
+        assert_eq!(x2, 46);
+        assert_eq!(y2, 16);
     }
 }
 
@@ -1298,7 +1670,7 @@ mod status_line_tests {
 
     #[test]
     fn test_status_line_narrow_terminal_40_cols() {
-        let status = OverlayRenderer::build_status_line(
+        let (status, _) = OverlayRenderer::build_status_line(
             false,
             Preset::Organic,
             1.0,
@@ -1309,17 +1681,18 @@ mod status_line_tests {
             Some("Mean3x3"),
             false,
             false,
+            None,
         );
         // At 40 cols: should only have preset and time
         assert!(status.contains("Organic"));
-        assert!(status.contains("1.0x"));
+        assert!(status.contains("1.0×"));
         // Should not have palette or population (too narrow)
         assert!(!status.contains("50k"));
     }
 
     #[test]
     fn test_status_line_medium_terminal_80_cols() {
-        let status = OverlayRenderer::build_status_line(
+        let (status, _) = OverlayRenderer::build_status_line(
             false,
             Preset::Network,
             2.5,
@@ -1330,10 +1703,11 @@ mod status_line_tests {
             Some("Mean3x3"),
             false,
             false,
+            None,
         );
         // At 80 cols: should have preset, time, palette, and population
         assert!(status.contains("Network"));
-        assert!(status.contains("2.5x"));
+        assert!(status.contains("2.5×"));
         assert!(status.contains("Heat"));
         assert!(status.contains("50k"));
         // Should not have diffusion kernel (needs 90+)
@@ -1344,7 +1718,7 @@ mod status_line_tests {
 
     #[test]
     fn test_status_line_wide_terminal_120_cols() {
-        let status = OverlayRenderer::build_status_line(
+        let (status, _) = OverlayRenderer::build_status_line(
             false,
             Preset::Exploratory,
             1.5,
@@ -1355,19 +1729,20 @@ mod status_line_tests {
             Some("Gaussian"),
             false,
             false,
+            None,
         );
         // At 120 cols: should have everything including help
         assert!(status.contains("Exploratory"));
-        assert!(status.contains("1.5x"));
+        assert!(status.contains("1.5×"));
         assert!(status.contains("Ocean"));
         assert!(status.contains("30k"));
         assert!(status.contains("Gaussian"));
-        assert!(status.contains("? for help"));
+        assert!(status.contains("?"));
     }
 
     #[test]
     fn test_status_line_paused() {
-        let status = OverlayRenderer::build_status_line(
+        let (status, colors) = OverlayRenderer::build_status_line(
             true,
             Preset::Organic,
             1.0,
@@ -1378,13 +1753,21 @@ mod status_line_tests {
             Some("Mean3x3"),
             false,
             false,
+            None,
         );
-        assert!(status.contains("[PAUSED]"));
+        assert!(status.contains("⏸ PAUSED"));
+        // PAUSED should have amber color overrides
+        let amber = RgbColor {
+            r: 215,
+            g: 153,
+            b: 33,
+        };
+        assert!(colors.iter().any(|(_, c)| *c == amber));
     }
 
     #[test]
     fn test_status_line_with_dither() {
-        let status = OverlayRenderer::build_status_line(
+        let (status, _) = OverlayRenderer::build_status_line(
             false,
             Preset::Organic,
             1.0,
@@ -1398,13 +1781,14 @@ mod status_line_tests {
             Some("Mean3x3"),
             false,
             false,
+            None,
         );
-        assert!(status.contains("D:0.5"));
+        assert!(status.contains("D 0.5×"));
     }
 
     #[test]
     fn test_status_line_without_optional_params() {
-        let status = OverlayRenderer::build_status_line(
+        let (status, _) = OverlayRenderer::build_status_line(
             false,
             Preset::Organic,
             1.0,
@@ -1415,23 +1799,33 @@ mod status_line_tests {
             None,
             false,
             false,
+            None,
         );
         // Should still work without population or diffusion kernel
         assert!(status.contains("Organic"));
-        assert!(status.contains("1.0x"));
+        assert!(status.contains("1.0×"));
     }
 
     #[test]
     fn test_keyboard_hints_overlay_format() {
         let hints_lines = KeyboardHintsOverlay::build_overlay();
 
-        for line in &hints_lines {
-            assert!(line.starts_with('│') || line.starts_with('╭') || line.starts_with('╰'));
-            assert!(line.ends_with('│') || line.ends_with('╮') || line.ends_with('╯'));
+        // Solid-block borders
+        for line in &hints_lines.lines {
+            assert!(
+                line.starts_with('█') || line.starts_with('▀') || line.starts_with('▄'),
+                "Line should start with solid block char, got: {}",
+                line
+            );
+            assert!(
+                line.ends_with('█') || line.ends_with('▀') || line.ends_with('▄'),
+                "Line should end with solid block char, got: {}",
+                line
+            );
         }
 
         // All lines should be KeyboardHintsOverlay::WIDTH chars wide
-        for line in &hints_lines {
+        for line in &hints_lines.lines {
             assert_eq!(
                 line.chars().count(),
                 KeyboardHintsOverlay::WIDTH,
@@ -1461,14 +1855,15 @@ mod status_line_tests {
         state.sensor_angle = 90.0; // Changed from default
 
         let lines = PresetComparisonOverlay::build_overlay(&state, Preset::Organic);
-        assert!(!lines.is_empty());
+        assert!(!lines.lines.is_empty());
         let content_lines = lines
+            .lines
             .iter()
             .filter(|l| l.contains("Sensor Angle"))
             .collect::<Vec<_>>();
         assert!(!content_lines.is_empty());
-        // Should show modified marker *
-        assert!(content_lines[0].contains('*'));
+        // Should show modified marker ⚙
+        assert!(content_lines[0].contains('⚙'));
     }
 
     #[test]
@@ -1505,7 +1900,7 @@ mod status_line_tests {
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
-        assert!(lines.iter().any(|l| l.contains("Test Config")));
-        assert!(lines.iter().any(|l| l.contains("10k agents")));
+        assert!(lines.lines.iter().any(|l| l.contains("Test Config")));
+        assert!(lines.lines.iter().any(|l| l.contains("10k agents")));
     }
 }

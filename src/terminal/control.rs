@@ -2,6 +2,7 @@ use crate::cli::Palette;
 use crate::render::charset::Charset;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::IntensityMapping;
+use crate::render::theme::{PanelStyle, ALL_THEMES, GRUVBOX_DARK};
 use crate::simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType, Wind};
 use crossterm::event::KeyEvent;
 use rand::Rng;
@@ -83,6 +84,70 @@ impl PaletteShiftSpeed {
             PaletteShiftSpeed::Slow => 5.0,
             PaletteShiftSpeed::Medium => 15.0,
             PaletteShiftSpeed::Fast => 45.0,
+        }
+    }
+}
+
+/// Urgency level for toast notifications.
+///
+/// Controls the icon prefix and accent color of a notification.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NotificationLevel {
+    /// Neutral informational message (teal accent).
+    Info,
+    /// Positive confirmation (green accent).
+    Success,
+    /// Non-critical caution (amber accent).
+    Warning,
+    /// Critical error (red accent).
+    Error,
+}
+
+impl NotificationLevel {
+    /// Returns a single-character icon prefix for the notification.
+    pub fn icon(self) -> &'static str {
+        match self {
+            NotificationLevel::Info => "ℹ",
+            NotificationLevel::Success => "✓",
+            NotificationLevel::Warning => "⚠",
+            NotificationLevel::Error => "✗",
+        }
+    }
+
+    /// Returns the ANSI 256-color index for this level's accent background.
+    pub fn bg_color_256(self) -> u8 {
+        match self {
+            NotificationLevel::Info => 23,    // Dark teal
+            NotificationLevel::Success => 22, // Dark green
+            NotificationLevel::Warning => 94, // Dark amber/orange
+            NotificationLevel::Error => 52,   // Dark red
+        }
+    }
+
+    /// Returns an RGB accent color for this level.
+    pub fn accent_rgb(self) -> crate::render::palette::RgbColor {
+        use crate::render::palette::RgbColor;
+        match self {
+            NotificationLevel::Info => RgbColor {
+                r: 69,
+                g: 192,
+                b: 191,
+            }, // aqua
+            NotificationLevel::Success => RgbColor {
+                r: 142,
+                g: 192,
+                b: 124,
+            }, // green
+            NotificationLevel::Warning => RgbColor {
+                r: 215,
+                g: 153,
+                b: 33,
+            }, // amber
+            NotificationLevel::Error => RgbColor {
+                r: 251,
+                g: 73,
+                b: 52,
+            }, // red bright
         }
     }
 }
@@ -246,6 +311,10 @@ pub enum ControlAction {
     Undo,
     /// Redo last undone change.
     Redo,
+    /// Cycle to next UI theme.
+    CycleTheme,
+    /// Cycle to previous UI theme.
+    CycleThemeReverse,
     /// No action.
     None,
 }
@@ -448,8 +517,8 @@ pub struct RuntimeState {
     pub show_stats: bool,
     /// Show info overlay.
     pub show_info: bool,
-    /// Current notification message.
-    pub notification: Option<(String, std::time::Instant)>,
+    /// Current notification message with timestamp and severity level.
+    pub notification: Option<(String, std::time::Instant, NotificationLevel)>,
     /// Frame counter for entropy collapse detection.
     pub collapse_frame_counter: usize,
     /// Warmup frame counter.
@@ -473,9 +542,9 @@ pub struct RuntimeState {
     /// CLI overrides for custom parameters (stored when launched with CLI args).
     pub cli_overrides: Option<SimConfig>,
     /// Undo history stack.
-    pub undo_stack: Vec<ParameterState>,
+    pub undo_stack: std::collections::VecDeque<ParameterState>,
     /// Redo history stack.
-    pub redo_stack: Vec<ParameterState>,
+    pub redo_stack: std::collections::VecDeque<ParameterState>,
     /// Time of last undo checkpoint.
     pub last_checkpoint_time: std::time::Instant,
     /// Recent FPS history.
@@ -484,6 +553,35 @@ pub struct RuntimeState {
     pub entropy_history: std::collections::VecDeque<f32>,
     /// Recent density history.
     pub density_history: std::collections::VecDeque<f32>,
+    /// Current panel theme/style.
+    pub panel_style: PanelStyle,
+    /// Index into `ALL_THEMES` for the active UI theme.
+    pub theme_index: usize,
+    /// Currently focused overlay type.
+    pub focused_overlay: Option<OverlayType>,
+    /// Whether shift key is currently held down.
+    pub shift_held: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+/// Types of overlays that can be displayed.
+pub enum OverlayType {
+    /// Help overlay.
+    Help,
+    /// Controls overlay.
+    Controls,
+    /// Stats overlay.
+    Stats,
+    /// Info overlay.
+    Info,
+    /// Config browser overlay.
+    ConfigBrowser,
+    /// Config save dialog overlay.
+    ConfigSave,
+    /// Preset comparison overlay.
+    PresetComparison,
+    /// Keyboard hints overlay.
+    KeyboardHints,
 }
 
 impl RuntimeState {
@@ -568,12 +666,16 @@ impl RuntimeState {
             config_save_name_input: String::new(),
             default_values,
             cli_overrides: Some(cli_config.clone()),
-            undo_stack: Vec::with_capacity(50),
-            redo_stack: Vec::with_capacity(50),
+            undo_stack: std::collections::VecDeque::with_capacity(50),
+            redo_stack: std::collections::VecDeque::with_capacity(50),
             last_checkpoint_time: std::time::Instant::now(),
             fps_history: std::collections::VecDeque::with_capacity(20),
             entropy_history: std::collections::VecDeque::with_capacity(20),
             density_history: std::collections::VecDeque::with_capacity(20),
+            panel_style: GRUVBOX_DARK,
+            theme_index: 0,
+            focused_overlay: None,
+            shift_held: false,
         }
     }
 
@@ -632,15 +734,15 @@ impl RuntimeState {
         }
 
         let current = self.capture_parameter_state();
-        if let Some(last) = self.undo_stack.last() {
+        if let Some(last) = self.undo_stack.back() {
             if last == &current {
                 return;
             }
         }
 
-        self.undo_stack.push(current);
+        self.undo_stack.push_back(current);
         if self.undo_stack.len() > 50 {
-            self.undo_stack.remove(0);
+            self.undo_stack.pop_front();
         }
         self.redo_stack.clear();
         self.last_checkpoint_time = std::time::Instant::now();
@@ -649,9 +751,9 @@ impl RuntimeState {
     /// Forces creation of an undo checkpoint regardless of time.
     pub fn force_checkpoint(&mut self) {
         let current = self.capture_parameter_state();
-        self.undo_stack.push(current);
+        self.undo_stack.push_back(current);
         if self.undo_stack.len() > 50 {
-            self.undo_stack.remove(0);
+            self.undo_stack.pop_front();
         }
         self.redo_stack.clear();
         self.last_checkpoint_time = std::time::Instant::now();
@@ -664,9 +766,9 @@ impl RuntimeState {
         }
 
         let current = self.capture_parameter_state();
-        self.redo_stack.push(current);
+        self.redo_stack.push_back(current);
 
-        let previous = self.undo_stack.pop().unwrap();
+        let previous = self.undo_stack.pop_back().unwrap();
         self.apply_parameter_state(previous.clone());
         Some(previous)
     }
@@ -678,9 +780,9 @@ impl RuntimeState {
         }
 
         let current = self.capture_parameter_state();
-        self.undo_stack.push(current);
+        self.undo_stack.push_back(current);
 
-        let next = self.redo_stack.pop().unwrap();
+        let next = self.redo_stack.pop_back().unwrap();
         self.apply_parameter_state(next.clone());
         Some(next)
     }
@@ -692,12 +794,22 @@ impl RuntimeState {
 
     /// Toggles the controls overlay.
     pub fn toggle_controls(&mut self) {
-        self.show_controls = !self.show_controls;
+        if self.show_controls {
+            self.show_controls = false;
+        } else {
+            self.close_all_overlays();
+            self.show_controls = true;
+        }
     }
 
     /// Toggles the keyboard shortcuts overlay.
     pub fn toggle_keyboard_hints(&mut self) {
-        self.show_keyboard_hints = !self.show_keyboard_hints;
+        if self.show_keyboard_hints {
+            self.show_keyboard_hints = false;
+        } else {
+            self.close_all_overlays();
+            self.show_keyboard_hints = true;
+        }
     }
 
     /// Toggles the preset comparison overlay.
@@ -705,6 +817,7 @@ impl RuntimeState {
         if self.show_preset_comparison && self.comparison_preset == preset {
             self.show_preset_comparison = false;
         } else {
+            self.close_all_overlays();
             self.show_preset_comparison = true;
             self.comparison_preset = preset;
         }
@@ -717,6 +830,8 @@ impl RuntimeState {
             || self.show_preset_comparison
             || self.show_stats
             || self.show_info
+            || self.show_config_browser
+            || self.show_config_save_dialog
     }
 
     /// Closes all open overlay windows.
@@ -726,6 +841,35 @@ impl RuntimeState {
         self.show_preset_comparison = false;
         self.show_stats = false;
         self.show_info = false;
+        self.show_config_browser = false;
+        self.show_config_save_dialog = false;
+        self.focused_overlay = None;
+    }
+
+    /// Updates the focused overlay based on currently open overlays.
+    pub fn update_focused_overlay(&mut self) {
+        self.focused_overlay = if self.show_keyboard_hints {
+            Some(OverlayType::KeyboardHints)
+        } else if self.show_preset_comparison {
+            Some(OverlayType::PresetComparison)
+        } else if self.show_config_save_dialog {
+            Some(OverlayType::ConfigSave)
+        } else if self.show_config_browser {
+            Some(OverlayType::ConfigBrowser)
+        } else if self.show_controls {
+            Some(OverlayType::Controls)
+        } else if self.show_info {
+            Some(OverlayType::Info)
+        } else if self.show_stats {
+            Some(OverlayType::Stats)
+        } else {
+            None
+        };
+    }
+
+    /// Returns whether the given overlay type is currently focused.
+    pub fn is_overlay_focused(&self, overlay: OverlayType) -> bool {
+        self.focused_overlay == Some(overlay)
     }
 
     /// Cycles through control categories.
@@ -1095,12 +1239,22 @@ impl RuntimeState {
 
     /// Toggles statistics overlay.
     pub fn toggle_stats(&mut self) {
-        self.show_stats = !self.show_stats;
+        if self.show_stats {
+            self.show_stats = false;
+        } else {
+            self.close_all_overlays();
+            self.show_stats = true;
+        }
     }
 
     /// Toggles info overlay.
     pub fn toggle_info(&mut self) {
-        self.show_info = !self.show_info;
+        if self.show_info {
+            self.show_info = false;
+        } else {
+            self.close_all_overlays();
+            self.show_info = true;
+        }
     }
 
     /// Resets all parameters to default values.
@@ -1191,14 +1345,19 @@ impl RuntimeState {
         self.max_brightness = rng.gen_range(10.0..40.0);
     }
 
-    /// Shows a temporary notification message.
+    /// Shows a temporary notification message at Info level.
     pub fn show_notification(&mut self, message: String) {
-        self.notification = Some((message, std::time::Instant::now()));
+        self.notification = Some((message, std::time::Instant::now(), NotificationLevel::Info));
+    }
+
+    /// Shows a temporary notification with an explicit severity level.
+    pub fn show_notification_with_level(&mut self, message: String, level: NotificationLevel) {
+        self.notification = Some((message, std::time::Instant::now(), level));
     }
 
     /// Updates notification state (clears expired notifications).
     pub fn update_notifications(&mut self) {
-        if let Some((_, time)) = self.notification {
+        if let Some((_, time, _)) = self.notification {
             if time.elapsed().as_secs() >= 3 {
                 self.notification = None;
             }
@@ -1207,7 +1366,34 @@ impl RuntimeState {
 
     /// Returns the current notification message if any.
     pub fn current_notification(&self) -> Option<&String> {
-        self.notification.as_ref().map(|(msg, _)| msg)
+        self.notification.as_ref().map(|(msg, _, _)| msg)
+    }
+
+    /// Returns the current notification message and level if any.
+    pub fn current_notification_full(&self) -> Option<(&str, NotificationLevel)> {
+        self.notification
+            .as_ref()
+            .map(|(msg, _, level)| (msg.as_str(), *level))
+    }
+
+    /// Cycles to the next UI theme.
+    pub fn cycle_theme(&mut self) {
+        self.theme_index = (self.theme_index + 1) % ALL_THEMES.len();
+        self.panel_style = ALL_THEMES[self.theme_index].style();
+    }
+
+    /// Cycles to the previous UI theme.
+    pub fn cycle_theme_reverse(&mut self) {
+        self.theme_index = self
+            .theme_index
+            .checked_sub(1)
+            .unwrap_or(ALL_THEMES.len() - 1);
+        self.panel_style = ALL_THEMES[self.theme_index].style();
+    }
+
+    /// Returns the display name of the current UI theme.
+    pub fn current_theme_name(&self) -> &'static str {
+        ALL_THEMES[self.theme_index].name()
     }
 
     /// Checks if the simulation is in the warmup phase.
@@ -1306,6 +1492,8 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('^') => ControlAction::ComparePreset(Preset::Moss),
         KeyCode::Char('&') => ControlAction::ComparePreset(Preset::Zen),
         KeyCode::Char('8') => ControlAction::RandomizeParams,
+        KeyCode::Char('9') => ControlAction::CycleTheme,
+        KeyCode::Char('*') => ControlAction::CycleThemeReverse,
         KeyCode::Char('+') | KeyCode::Char('=') => ControlAction::AdjustTimeScale(0.5),
         KeyCode::Char('-') | KeyCode::Char('_') => ControlAction::AdjustTimeScale(-0.5),
         KeyCode::Char('C') if key_event.modifiers.contains(KeyModifiers::SHIFT) => {

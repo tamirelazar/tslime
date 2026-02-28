@@ -75,7 +75,6 @@ impl FrameTimer {
 
     /// Create a new frame timer with specified FPS, delay, and time scale.
     pub fn with_time_scale(fps: usize, frame_delay_seconds: f32, time_scale: f32) -> Self {
-        let _target_frame_time = Duration::from_secs_f64(1.0 / fps as f64);
         let frame_delay = Duration::from_secs_f32(frame_delay_seconds);
 
         Self {
