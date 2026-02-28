@@ -23,9 +23,11 @@ pub struct ControlsOverlay;
 
 impl ControlsOverlay {
     /// Total rendered width of the controls overlay window.
-    pub const WIDTH: usize = 50;
+    pub const WIDTH: usize = 55;
     /// Content width (inner drawable area).
-    const CONTENT_WIDTH: usize = 44; // 50 - 2(border) - 2*2(padding)
+    const CONTENT_WIDTH: usize = 49; // 55 - 2(border) - 2*2(padding)
+    const LABEL_WIDTH: usize = 18;
+    const VALUE_WIDTH: usize = 9;
     /// Total number of control categories.
     pub const TOTAL_CATEGORIES: usize = 6;
 
@@ -51,7 +53,7 @@ impl ControlsOverlay {
     /// Calculates centered position for the controls overlay.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
-        let y = (term_height.saturating_sub(20)) / 2;
+        let y = (term_height.saturating_sub(24)) / 2;
         (x, y)
     }
 
@@ -91,7 +93,7 @@ impl ControlsOverlay {
         use TextAlignment::Left;
 
         // Visual tab strip showing all 6 categories; active one is marked with ●.
-        // Short names kept to 3-4 chars so all 6 fit in the 44-char content area.
+        // Short names kept to 3-4 chars so all 6 fit in the 49-char content area.
         let tab_labels = ["SIM", "ENV", "APP", "POST", "PERF", "SYS"];
         let tab_bar: String = tab_labels
             .iter()
@@ -102,8 +104,12 @@ impl ControlsOverlay {
                 format!("{}{} {}", sep, marker, lbl)
             })
             .collect();
-        // Pad tab bar to CONTENT_WIDTH (44 chars)
-        let tab_bar = format!("{:<width$}", tab_bar, width = Self::CONTENT_WIDTH);
+        // Center tab bar within CONTENT_WIDTH (49 chars)
+        let tab_bar = format!(
+            "{:^width$}",
+            format!(" {}", tab_bar),
+            width = Self::CONTENT_WIDTH
+        );
 
         // Helper: returns "*" when a float param differs from its default, else " ".
         let mod_marker = |current: f32, default: f32, eps: f32| {
@@ -124,22 +130,33 @@ impl ControlsOverlay {
         };
 
         // Helper: builds a row with an 8-char mini progress bar.
-        // Format: "{marker} {key:<3}  {label:<13}  {bar:8}  {value}"
+        // Format: "{marker} {key:<3}  {label:<LABEL_WIDTH>}  {bar:8}  {value:>VALUE_WIDTH}"
         let param_row = |marker: &str, key: &str, label: &str, bar: String, value: String| {
-            format!("{} {:<3}  {:<13}  {}  {}", marker, key, label, bar, value)
+            format!(
+                "{} {:<3}  {:<label_w$}  {}  {:>value_w$}",
+                marker,
+                key,
+                label,
+                bar,
+                value,
+                label_w = Self::LABEL_WIDTH,
+                value_w = Self::VALUE_WIDTH
+            )
         };
 
         // Title no longer includes the "[N/6]" counter — the tab bar makes it redundant.
         let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
-            .with_padding(Padding::new(1, 1, 2, 2))
+            .with_padding(Padding::new(2, 0, 2, 2))
             .with_title("CONTROLS")
             .with_title_box()
             .add_single(tab_bar, Left)
+            .add_empty()
             .add_separator();
 
         builder = match category_idx {
             // ── Category 0: Simulation Core ──────────────────────────────────
             0 => builder
+                .add_empty()
                 .add_single(
                     param_row(
                         mod_marker(sensor_angle, defaults.sensor_angle, 0.01),
@@ -209,14 +226,15 @@ impl ControlsOverlay {
                         format!("{:.1}×", time_scale),
                     ),
                     Left,
-                ),
+                )
+                .add_empty(),
             // ── Category 1: Forces & Environment ─────────────────────────────
             1 => {
                 let kernel_name = match diffusion_kernel {
                     DiffusionKernel::Mean3x3 => "Mean3x3",
                     DiffusionKernel::Gaussian => "Gaussian",
                 };
-                let mut b = builder.add_single(
+                let mut b = builder.add_empty().add_single(
                     param_row(
                         mod_marker_enum(&diffusion_kernel, &defaults.diffusion_kernel),
                         "K",
@@ -307,7 +325,7 @@ impl ControlsOverlay {
                         Left,
                     );
                 }
-                b
+                b.add_empty()
             }
             // ── Category 2: Appearance ────────────────────────────────────────
             2 => {
@@ -328,6 +346,7 @@ impl ControlsOverlay {
                     "────────"
                 };
                 builder
+                    .add_empty()
                     .add_single(
                         param_row(
                             " ",
@@ -368,6 +387,7 @@ impl ControlsOverlay {
                         ),
                         Left,
                     )
+                    .add_empty()
             }
             // ── Category 3: Post-Processing ───────────────────────────────────
             3 => {
@@ -383,6 +403,7 @@ impl ControlsOverlay {
                     "────────"
                 };
                 builder
+                    .add_empty()
                     .add_single(
                         param_row(
                             " ",
@@ -427,6 +448,7 @@ impl ControlsOverlay {
                         ),
                         Left,
                     )
+                    .add_empty()
             }
             // ── Category 4: Performance ───────────────────────────────────────
             4 => {
@@ -436,6 +458,7 @@ impl ControlsOverlay {
                     "────────"
                 };
                 builder
+                    .add_empty()
                     .add_single(
                         param_row(
                             " ",
@@ -452,13 +475,15 @@ impl ControlsOverlay {
                             "─",
                             "Population",
                             "────────".to_string(),
-                            format!("{}k (fixed)", population / 1000),
+                            format!("{}k", population / 1000),
                         ),
                         Left,
                     )
+                    .add_empty()
             }
             // ── Category 5: System ────────────────────────────────────────────
             5 => builder
+                .add_empty()
                 .add_single(
                     param_row(
                         " ",
@@ -488,14 +513,19 @@ impl ControlsOverlay {
                         "Params".to_string(),
                     ),
                     Left,
-                ),
+                )
+                .add_empty(),
             _ => builder,
         };
 
         let mut overlay = builder
             .add_separator()
             .add_single(
-                "  * modified  ─ CLI-only  Tab: next  Esc: close".to_string(),
+                format!(
+                    "{:<width$}",
+                    "  * modified  ─ CLI-only  Tab: next  Esc: close",
+                    width = Self::CONTENT_WIDTH
+                ),
                 Left,
             )
             .build_overlay();

@@ -183,7 +183,7 @@ impl KeyboardHintsOverlay {
         use TextAlignment::Left;
 
         PanelBuilder::new(Self::CONTENT_WIDTH, None)
-            .with_padding(Padding::new(1, 1, 2, 2))
+            .with_padding(Padding::new(1, 0, 4, 4))
             .with_title("KEYBOARD SHORTCUTS")
             .with_title_box()
             .add_empty()
@@ -1124,7 +1124,7 @@ impl StatsOverlay {
         let density_spark = build_sparkline(density_history, 0.0, 1.0);
 
         let mut overlay = PanelBuilder::new(Self::CONTENT_WIDTH, None)
-            .with_padding(Padding::new(1, 1, 2, 2))
+            .with_padding(Padding::new(2, 0, 2, 2))
             .with_title("STATS")
             .with_title_box()
             // Simulation stats
@@ -1138,6 +1138,7 @@ impl StatsOverlay {
             .add_single(format!("{:<26}", fps_spark), Left)
             .add_single(format!("Frames:    {:>15}", frame_count), Left)
             .add_single(format!("Time:      {:>15}", elapsed_str), Left)
+            .add_empty()
             // Section separator
             .add_separator()
             // System stats
@@ -1207,7 +1208,7 @@ impl InfoOverlay {
     /// Total rendered width of the info window.
     pub const WIDTH: usize = 28;
     /// Content width (inner drawable area).
-    const CONTENT_WIDTH: usize = 24; // 28 - 2(border) - 2*1(padding)
+    const CONTENT_WIDTH: usize = 22; // 28 - 2(border) - 2*2(padding)
 
     #[allow(clippy::too_many_arguments)]
     /// Builds the info overlay content.
@@ -1235,7 +1236,7 @@ impl InfoOverlay {
         let simd_str = if simd_enabled { "On" } else { "Off" };
 
         let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
-            .with_padding(Padding::new(1, 1, 1, 1))
+            .with_padding(Padding::new(2, 0, 2, 2))
             .with_title("INFO")
             .with_title_box()
             .add_single(format!("Res:       {:>13}", resolution_str), Left)
