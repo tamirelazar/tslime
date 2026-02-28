@@ -532,6 +532,8 @@ pub struct RuntimeState {
     pub theme_index: usize,
     /// Currently focused overlay type.
     pub focused_overlay: Option<OverlayType>,
+    /// Whether shift key is currently held down.
+    pub shift_held: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -626,6 +628,7 @@ impl RuntimeState {
             panel_style: GRUVBOX_DARK,
             theme_index: 0,
             focused_overlay: None,
+            shift_held: false,
         }
     }
 

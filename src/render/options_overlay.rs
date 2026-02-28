@@ -91,6 +91,7 @@ impl ControlsOverlay {
         accent: RgbColor,
         theme_name: &str,
         panel_style: &PanelStyle,
+        shift_held: bool,
     ) -> crate::render::panel::RenderedOverlay {
         use TextAlignment::Left;
 
@@ -530,22 +531,23 @@ impl ControlsOverlay {
             _ => builder,
         };
 
+        let tab_hint = " < TAB > ";
+        let esc_hint = "ESC";
+        let footer_main = "  ⚙ modified  ─ CLI-only  ";
+
         let mut overlay = builder
             .add_separator()
-            .add_single(
-                format!(
-                    "{:<width$}",
-                    "  ⚙ modified  ─ CLI-only  Tab: next  Esc: close",
-                    width = Self::CONTENT_WIDTH
-                ),
-                Left,
-            )
+            .add_single(footer_main.to_string(), TextAlignment::Center)
+            .add_empty()
+            .add_single(tab_hint.to_string(), TextAlignment::Center)
+            .add_single(esc_hint.to_string(), TextAlignment::Center)
             .build_overlay();
         overlay.rich_lines = Some(generate_controls_rich_lines(
             &overlay.lines,
             accent,
             category_idx,
             panel_style,
+            shift_held,
         ));
         overlay
     }
@@ -560,11 +562,13 @@ impl ControlsOverlay {
 /// - Muted colour to empty bar chars (`░`) at the same positions.
 ///
 /// Also colors tab indicators (●/○) and the active tab name in the tab strip with accent color.
+/// Colors TAB direction arrows (`<` and `>`) with accent color in the footer.
 fn generate_controls_rich_lines(
     lines: &[String],
     accent: RgbColor,
     category_idx: usize,
     panel_style: &PanelStyle,
+    _shift_held: bool,
 ) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
     let modified_color = panel_style.accent_modified;
     let muted_color = panel_style.muted;
@@ -638,23 +642,42 @@ fn generate_controls_rich_lines(
                     .get(3..47.min(n))
                     .map_or(false, |s| s.iter().any(|&c| c != ' '));
 
-            // Detect the controls footer line: "  ⚙ modified  ─ CLI-only  ..."
+            // Detect the controls footer lines
             let line_str: String = chars.iter().collect();
-            let is_controls_footer = line_str.contains("CLI-only") && line_str.contains("modified");
+            let is_main_footer = line_str.contains("CLI-only") && line_str.contains("modified");
+            let is_tab_footer = line_str.contains("< TAB >");
+            let is_esc_footer = line_str == "ESC";
 
-            if is_controls_footer {
+            if is_main_footer {
                 return chars
                     .iter()
-                    .enumerate()
-                    .map(|(i, &c)| {
-                        let fg = match i {
-                            5 => Some(modified_color), // Orange gear
-                            17 => Some(light_red),     // Light red dash
+                    .map(|&c| {
+                        let fg = match c {
+                            '⚙' => Some(modified_color),
+                            '─' => Some(light_red),
                             _ => None,
                         };
                         (c, fg, None)
                     })
                     .collect();
+            }
+
+            if is_tab_footer {
+                return chars
+                    .iter()
+                    .map(|&c| {
+                        let fg = if c == '<' || c == '>' {
+                            Some(accent)
+                        } else {
+                            None
+                        };
+                        (c, fg, None)
+                    })
+                    .collect();
+            }
+
+            if is_esc_footer {
+                return chars.iter().map(|&c| (c, None, None)).collect();
             }
 
             // Detect CLI-only parameter rows (currently just Population)
@@ -756,6 +779,7 @@ mod tests {
             },
             "GruvboxDark",
             &GRUVBOX_DARK,
+            false,
         );
 
         assert!(
@@ -815,6 +839,7 @@ mod tests {
                 },
                 "GruvboxDark",
                 &GRUVBOX_DARK,
+                false,
             );
 
             // All lines should be exactly WIDTH chars wide
@@ -882,6 +907,7 @@ mod tests {
             },
             "GruvboxDark",
             &GRUVBOX_DARK,
+            false,
         );
 
         // The title box shows "CONTROLS" (no longer includes [N/6]; the tab bar does that).
@@ -978,6 +1004,7 @@ fn test_options_overlay_renders_all_categories() {
             },
             "GruvboxDark",
             &GRUVBOX_DARK,
+            false,
         );
 
         assert!(
@@ -1036,6 +1063,7 @@ fn test_options_overlay_renders_all_categories() {
         },
         "GruvboxDark",
         &GRUVBOX_DARK,
+        false,
     );
     assert!(sim_overlay
         .lines
@@ -1090,6 +1118,7 @@ fn test_options_overlay_renders_all_categories() {
         },
         "GruvboxDark",
         &GRUVBOX_DARK,
+        false,
     );
     assert!(env_overlay
         .lines
@@ -1157,6 +1186,7 @@ fn test_options_overlay_shows_live_parameter_values() {
         },
         "GruvboxDark",
         &GRUVBOX_DARK,
+        false,
     );
 
     assert!(
@@ -1231,6 +1261,7 @@ fn test_options_overlay_format() {
             },
             "GruvboxDark",
             &GRUVBOX_DARK,
+            false,
         );
 
         // Solid-block borders

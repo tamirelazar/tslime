@@ -1545,6 +1545,7 @@ pub fn run_simulation(
                 ui_accent,
                 runtime_state.current_theme_name(),
                 &runtime_state.panel_style,
+                runtime_state.shift_held,
             ))
         } else {
             None
@@ -1896,6 +1897,14 @@ pub fn run_simulation(
         for event in events {
             match event {
                 Event::Key(key_event) => {
+                    // Track shift key state - only update on key press to avoid resetting on release
+                    use crossterm::event::KeyEventKind;
+                    if key_event.kind == KeyEventKind::Press {
+                        use crossterm::event::KeyModifiers;
+                        runtime_state.shift_held =
+                            key_event.modifiers.contains(KeyModifiers::SHIFT);
+                    }
+
                     // Skip warmup on any key press
                     if in_warmup {
                         runtime_state.warmup_counter = args.warmup_frames; // Skip to end
