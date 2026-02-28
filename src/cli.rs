@@ -833,6 +833,21 @@ pub struct Args {
     pub points: bool,
 
     #[arg(
+        long = "half-block-dual",
+        alias = "hbd",
+        help = "Use dual-color half-block mode (▀ with independent fg/bg colors for true 2× vertical color resolution)"
+    )]
+    /// Dual-color half-block mode for maximum color fidelity.
+    pub half_block_dual: bool,
+
+    #[arg(
+        long = "sculpted",
+        help = "Sculpted mode: solid interior blocks with shape-aware outline characters"
+    )]
+    /// Sculpted charset mode with smooth outline rendering.
+    pub sculpted: bool,
+
+    #[arg(
         long = "plain-output",
         help = "Output plain text without ANSI color codes (for frame capture)"
     )]
@@ -1278,6 +1293,15 @@ pub struct Args {
     pub ascii_chars: Option<String>,
 
     #[arg(
+        long = "ascii-contrast",
+        value_name = "FLOAT",
+        default_value = "1.5",
+        help = "Shape-vector ASCII contrast exponent (1.0 = none, 1.5 = default, 3.0 = strong edge enhancement)"
+    )]
+    /// Contrast exponent for shape-vector ASCII rendering.
+    pub ascii_contrast: f32,
+
+    #[arg(
         long = "bg-color",
         alias = "bg",
         value_name = "HEX",
@@ -1481,6 +1505,8 @@ impl Args {
             config.diffusion_sigma = sigma;
         }
 
+        config.time_scale = self.time_scale;
+
         if self.fps >= 60 && self.diffusion_kernel.is_none() && self.diffusion_sigma.is_none() {
             config.diffusion_kernel = crate::simulation::config::DiffusionKernel::Gaussian;
             config.diffusion_sigma = 0.5;
@@ -1558,6 +1584,7 @@ impl Args {
     }
 
     /// Validates arguments for correctness and safety bounds.
+    #[allow(clippy::manual_range_contains)]
     pub fn validate(&self) -> Result<(), String> {
         // Resolution bounds - prevent excessive memory allocation
         if self.resolution.width < 10 || self.resolution.width > 2000 {
@@ -1763,6 +1790,8 @@ impl Default for Args {
             quadrant: false,
             shade: false,
             points: false,
+            half_block_dual: false,
+            sculpted: false,
             plain_output: false,
             verbose: false,
             reverse_palette: false,
@@ -1822,6 +1851,7 @@ impl Default for Args {
             grid_opacity: 0.15,
             grid_adaptive: false,
             ascii_chars: None,
+            ascii_contrast: 1.5,
             random: false,
             explain: false,
             completions: None,

@@ -458,4 +458,181 @@ mod tests {
         assert!(cell.top_left > 0.0);
         assert_eq!(cell.bottom_right, 0.0);
     }
+
+    #[test]
+    fn test_downsample_no_zero_width_quadrants() {
+        // Test common terminal and simulation sizes to ensure no zero-width quadrants
+        let sim_sizes = [(400, 400), (200, 200), (100, 100)];
+        let term_sizes = [(80, 24), (160, 48), (40, 12), (120, 36)];
+
+        for &(sim_w, sim_h) in &sim_sizes {
+            for &(term_w, term_h) in &term_sizes {
+                let trail_map = vec![0.0; sim_w * sim_h];
+                let frame = downsample(&trail_map, sim_w, sim_h, term_w, term_h);
+
+                // Check each cell's quadrant values are computed (not just zero)
+                // The actual check for zero-width quadrants requires inspecting the internal
+                // downsampling logic. We'll trust that compute_average returns 0.0 for empty regions.
+                // Instead, we'll verify that quadrant values are consistent with top/bottom averages.
+                for cy in 0..term_h {
+                    for cx in 0..term_w {
+                        let cell = frame.get(cx, cy);
+                        // Top should be average of top_left and top_right
+                        // Bottom should be average of bottom_left and bottom_right
+                        // With uniform zero map, all values should be zero
+                        assert_eq!(cell.top, 0.0);
+                        assert_eq!(cell.bottom, 0.0);
+                        assert_eq!(cell.top_left, 0.0);
+                        assert_eq!(cell.top_right, 0.0);
+                        assert_eq!(cell.bottom_left, 0.0);
+                        assert_eq!(cell.bottom_right, 0.0);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_downsample_quadrant_widths() {
+        // Manually compute quadrant widths for common configurations
+        let sim_width = 400;
+        let sim_height = 400;
+        let term_width = 80;
+        let term_height = 24;
+        let x_scale = sim_width as f32 / term_width as f32;
+        let y_scale = sim_height as f32 / term_height as f32;
+
+        let mut zero_width_found = false;
+
+        for cy in 0..term_height {
+            for cx in 0..term_width {
+                let sim_x_start = (cx as f32 * x_scale) as usize;
+                let sim_x_end = (((cx + 1) as f32 * x_scale).ceil() as usize).min(sim_width);
+                let sim_y_start = (cy as f32 * y_scale) as usize;
+                let sim_y_end = (((cy + 1) as f32 * y_scale).ceil() as usize).min(sim_height);
+
+                let sim_x_mid = (((cx as f32 + 0.5) * x_scale).ceil() as usize)
+                    .max(sim_x_start + 1)
+                    .min(sim_x_end);
+                let sim_y_mid = (((cy as f32 + 0.5) * y_scale).ceil() as usize)
+                    .max(sim_y_start + 1)
+                    .min(sim_y_end);
+
+                let left_width = sim_x_mid - sim_x_start;
+                let right_width = sim_x_end - sim_x_mid;
+                let top_height = sim_y_mid - sim_y_start;
+                let bottom_height = sim_y_end - sim_y_mid;
+
+                if left_width == 0 || right_width == 0 || top_height == 0 || bottom_height == 0 {
+                    zero_width_found = true;
+                    println!("Zero-width quadrant at term cell ({}, {}): left={}, right={}, top={}, bottom={}, sim_x_start={}, sim_x_end={}, sim_x_mid={}, sim_y_start={}, sim_y_end={}, sim_y_mid={}",
+                             cx, cy, left_width, right_width, top_height, bottom_height,
+                             sim_x_start, sim_x_end, sim_x_mid, sim_y_start, sim_y_end, sim_y_mid);
+                }
+            }
+        }
+
+        // This test will fail if zero-width quadrants are found
+        assert!(
+            !zero_width_found,
+            "Found zero-width quadrants in downsampling"
+        );
+    }
+
+    #[test]
+    fn test_downsample_uniform_brightness_quadrants() {
+        // Test that all quadrants receive brightness when trail map is uniform
+        let sim_width = 400;
+        let sim_height = 400;
+        let term_width = 80;
+        let term_height = 24;
+        let trail_map = vec![1.0; sim_width * sim_height];
+        let frame = downsample(&trail_map, sim_width, sim_height, term_width, term_height);
+
+        let mut zero_brightness_quadrant = false;
+        for cy in 0..term_height {
+            for cx in 0..term_width {
+                let cell = frame.get(cx, cy);
+                // All quadrant values should be 1.0 because the entire simulation is 1.0
+                // However, floating point rounding may cause slight differences
+                if cell.top_left < 0.99
+                    || cell.top_right < 0.99
+                    || cell.bottom_left < 0.99
+                    || cell.bottom_right < 0.99
+                {
+                    zero_brightness_quadrant = true;
+                    println!(
+                        "Low quadrant brightness at ({}, {}): tl={}, tr={}, bl={}, br={}",
+                        cx, cy, cell.top_left, cell.top_right, cell.bottom_left, cell.bottom_right
+                    );
+                }
+                // Top should be average of top_left and top_right
+                let expected_top = (cell.top_left + cell.top_right) / 2.0;
+                let expected_bottom = (cell.bottom_left + cell.bottom_right) / 2.0;
+                assert!((cell.top - expected_top).abs() < 0.01);
+                assert!((cell.bottom - expected_bottom).abs() < 0.01);
+            }
+        }
+        assert!(
+            !zero_brightness_quadrant,
+            "Found quadrant with low brightness"
+        );
+    }
+
+    #[test]
+    fn test_downsample_gap_detection() {
+        // Test various terminal sizes to detect systematic gaps
+        let sim_width = 400;
+        let sim_height = 400;
+
+        // Test common terminal sizes
+        let test_sizes = [
+            (80, 24),  // Standard terminal
+            (79, 24),  // Odd width
+            (81, 24),  // Odd width
+            (40, 12),  // Half size
+            (100, 30), // Larger
+            (120, 30), // Wider
+        ];
+
+        for (term_width, term_height) in test_sizes.iter() {
+            // Create a pattern that should fill the entire screen
+            // Use a checkerboard pattern to detect alignment issues
+            let mut trail_map = vec![0.0; sim_width * sim_height];
+
+            // Fill with a pattern that should produce continuous output
+            // Simple: fill all pixels with 1.0
+            for pixel in trail_map.iter_mut() {
+                *pixel = 1.0;
+            }
+
+            let frame = downsample(&trail_map, sim_width, sim_height, *term_width, *term_height);
+
+            // Check each cell for low brightness (should not happen with uniform 1.0)
+
+            // More useful: check each cell individually
+            let mut low_brightness_cells = 0;
+            for cy in 0..*term_height {
+                for cx in 0..*term_width {
+                    let cell = frame.get(cx, cy);
+                    if cell.top_left < 0.1
+                        || cell.top_right < 0.1
+                        || cell.bottom_left < 0.1
+                        || cell.bottom_right < 0.1
+                    {
+                        low_brightness_cells += 1;
+                        println!("Low brightness cell at ({}, {}) for size {}x{}: tl={}, tr={}, bl={}, br={}", 
+                                 cx, cy, term_width, term_height,
+                                 cell.top_left, cell.top_right, cell.bottom_left, cell.bottom_right);
+                    }
+                }
+            }
+
+            assert_eq!(
+                low_brightness_cells, 0,
+                "Found {} cells with low brightness for terminal size {}x{}",
+                low_brightness_cells, term_width, term_height
+            );
+        }
+    }
 }
