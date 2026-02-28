@@ -1256,13 +1256,47 @@ impl TerminalRenderer {
             if let Some(tb) = &overlay.title_box {
                 let mini_x = x + 1 + tb.col_offset;
                 let mini_y = y.saturating_sub(1);
-                let badge_fg = palette::rgb_to_256(accent);
+                let badge_fg = palette::rgb_to_256(palette::RgbColor {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                });
                 if panel_bg.is_some() {
                     buf.draw_text_overlay_with_panel(
                         &tb.lines, mini_x, mini_y, badge_fg, bg, panel_bg, None, 0,
                     );
                 } else {
                     buf.draw_text_overlay(&tb.lines, mini_x, mini_y, badge_fg, bg);
+                }
+                // Apply accent color to border chars
+                let num_lines = tb.lines.len();
+                for (line_idx, line) in tb.lines.iter().enumerate() {
+                    let width = line.chars().count();
+                    if width < 2 {
+                        continue;
+                    }
+                    // Top and bottom borders: color all columns
+                    // Middle lines: color only first and last column (vertical borders)
+                    let cols_to_color: Vec<usize> = if line_idx == 0 || line_idx == num_lines - 1 {
+                        (0..width).collect()
+                    } else {
+                        vec![0, width - 1]
+                    };
+                    for col in cols_to_color {
+                        let cell_x = mini_x + col;
+                        let cell_y = mini_y + line_idx;
+                        if cell_x < buf.width && cell_y < buf.height {
+                            let idx = cell_y * buf.width + cell_x;
+                            match buf.color_mode {
+                                crate::cli::ColorMode::TrueColor => {
+                                    buf.cells[idx].fg_color_rgb = Some(accent)
+                                }
+                                _ => {
+                                    buf.cells[idx].fg_color_256 = Some(palette::rgb_to_256(accent))
+                                }
+                            }
+                        }
+                    }
                 }
             }
         };
@@ -1494,7 +1528,11 @@ impl TerminalRenderer {
             if let Some(tb) = &overlay.title_box {
                 let mini_x = x + 1 + tb.col_offset;
                 let mini_y = y.saturating_sub(1);
-                let badge_fg = palette::rgb_to_256(accent);
+                let badge_fg = palette::rgb_to_256(palette::RgbColor {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                });
                 buf.draw_text_overlay(
                     &tb.lines,
                     mini_x,
@@ -1502,6 +1540,36 @@ impl TerminalRenderer {
                     badge_fg,
                     Some(config.bg_color_256),
                 );
+                // Apply accent color to border chars
+                let num_lines = tb.lines.len();
+                for (line_idx, line) in tb.lines.iter().enumerate() {
+                    let width = line.chars().count();
+                    if width < 2 {
+                        continue;
+                    }
+                    // Top and bottom borders: color all columns
+                    // Middle lines: color only first and last column (vertical borders)
+                    let cols_to_color: Vec<usize> = if line_idx == 0 || line_idx == num_lines - 1 {
+                        (0..width).collect()
+                    } else {
+                        vec![0, width - 1]
+                    };
+                    for col in cols_to_color {
+                        let cell_x = mini_x + col;
+                        let cell_y = mini_y + line_idx;
+                        if cell_x < buf.width && cell_y < buf.height {
+                            let idx = cell_y * buf.width + cell_x;
+                            match buf.color_mode {
+                                crate::cli::ColorMode::TrueColor => {
+                                    buf.cells[idx].fg_color_rgb = Some(accent)
+                                }
+                                _ => {
+                                    buf.cells[idx].fg_color_256 = Some(palette::rgb_to_256(accent))
+                                }
+                            }
+                        }
+                    }
+                }
             }
         };
 
