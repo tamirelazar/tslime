@@ -93,23 +93,22 @@ impl ControlsOverlay {
         use TextAlignment::Left;
 
         // Visual tab strip showing all 6 categories; active one is marked with ●.
-        // Short names kept to 3-4 chars so all 6 fit in the 49-char content area.
-        let tab_labels = ["SIM", "ENV", "APP", "POST", "PERF", "SYS"];
-        let tab_bar: String = tab_labels
-            .iter()
-            .enumerate()
-            .map(|(i, &lbl)| {
-                let marker = if i == category_idx { '●' } else { '○' };
-                let sep = if i == 0 { "" } else { "  " };
-                format!("{}{} {}", sep, marker, lbl)
-            })
-            .collect();
-        // Center tab bar within CONTENT_WIDTH (49 chars)
-        let tab_bar = format!(
-            "{:^width$}",
-            format!(" {}", tab_bar),
-            width = Self::CONTENT_WIDTH
-        );
+        // Short names kept to 3 chars so all 6 fit in the 49-char content area.
+        // Indicators are CENTERED ABOVE their labels (stacked vertically).
+        let tab_labels = ["SIM", "ENV", "APP", "PST", "PRF", "SYS"];
+        let mut indicator_parts: Vec<String> = Vec::new();
+        let mut label_parts: Vec<String> = Vec::new();
+        for (i, lbl) in tab_labels.iter().enumerate() {
+            let marker = if i == category_idx { '●' } else { '○' };
+            let indicator = format!("{:^width$}", marker, width = lbl.len());
+            indicator_parts.push(indicator);
+            label_parts.push(lbl.to_string());
+        }
+        let indicator_line = indicator_parts.join("  ");
+        let label_line = label_parts.join("  ");
+        // Center both lines within CONTENT_WIDTH (49 chars)
+        let indicator_line = format!("{:^width$}", indicator_line, width = Self::CONTENT_WIDTH);
+        let label_line = format!("{:^width$}", label_line, width = Self::CONTENT_WIDTH);
 
         // Helper: returns "*" when a float param differs from its default, else " ".
         let mod_marker = |current: f32, default: f32, eps: f32| {
@@ -149,7 +148,8 @@ impl ControlsOverlay {
             .with_padding(Padding::new(2, 0, 2, 2))
             .with_title("CONTROLS")
             .with_title_box()
-            .add_single(tab_bar, Left)
+            .add_single(indicator_line, Left)
+            .add_single(label_line, Left)
             .add_empty()
             .add_separator();
 
@@ -541,6 +541,8 @@ impl ControlsOverlay {
 /// - `accent_modified` colour to the `*` modification marker at col 3.
 /// - Accent colour to filled bar chars (`█`/`▪`) at cols 25–32.
 /// - Muted colour to empty bar chars (`░`) at the same positions.
+///
+/// Also colors tab indicators (●/○) in the tab strip with accent color.
 fn generate_controls_rich_lines(
     lines: &[String],
     accent: RgbColor,
@@ -553,6 +555,22 @@ fn generate_controls_rich_lines(
         .map(|line| {
             let chars: Vec<char> = line.chars().collect();
             let n = chars.len();
+
+            // Check if this is the indicator line (contains ● or ○)
+            let is_indicator_line = chars.iter().any(|&c| c == '●' || c == '○');
+
+            if is_indicator_line {
+                return chars
+                    .iter()
+                    .map(|&c| {
+                        let fg = match c {
+                            '●' | '○' => Some(accent),
+                            _ => None,
+                        };
+                        (c, fg, None)
+                    })
+                    .collect();
+            }
 
             // A param row: marker at col 3 (' ' or '*'), space at col 4,
             // col 5 is not another '*' (distinguishes from the "  * modified…" footer),
@@ -576,7 +594,7 @@ fn generate_controls_rich_lines(
                     let fg = match i {
                         3 if c == '*' => Some(modified_color),
                         5..=7 => Some(accent),
-                        25..=32 => match c {
+                        27..=38 => match c {
                             '█' | '▪' => Some(accent),
                             '░' => Some(muted_color),
                             _ => None,
