@@ -439,6 +439,50 @@ impl ConfigSaveOverlay {
     }
 }
 
+/// Urgency level for toast notifications.
+///
+/// Controls the icon prefix and background color of a notification.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NotificationLevel {
+    /// Neutral informational message (cyan accent).
+    Info,
+    /// Positive confirmation (green accent).
+    Success,
+    /// Non-critical caution (amber accent).
+    Warning,
+    /// Critical error (red accent).
+    Error,
+}
+
+impl NotificationLevel {
+    /// Returns a single-character icon prefix for the notification.
+    pub fn icon(self) -> &'static str {
+        match self {
+            NotificationLevel::Info => "ℹ",
+            NotificationLevel::Success => "✓",
+            NotificationLevel::Warning => "⚠",
+            NotificationLevel::Error => "✗",
+        }
+    }
+
+    /// Returns the ANSI 256-color index for this level's accent background.
+    pub fn bg_color_256(self) -> u8 {
+        match self {
+            NotificationLevel::Info => 23,    // Dark teal
+            NotificationLevel::Success => 22, // Dark green
+            NotificationLevel::Warning => 94, // Dark amber/orange
+            NotificationLevel::Error => 52,   // Dark red
+        }
+    }
+}
+
+/// Formats a notification string with an icon prefix for the given level.
+///
+/// Example output: `"✓  Config saved"` for `NotificationLevel::Success`.
+pub fn format_notification(text: &str, level: NotificationLevel) -> String {
+    format!("{}  {}", level.icon(), text)
+}
+
 /// Utilities for rendering overlay elements (status line, help lists).
 pub struct OverlayRenderer;
 
@@ -446,6 +490,15 @@ impl OverlayRenderer {
     #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
     /// Builds the status bar string displayed at the bottom of the screen.
+    ///
+    /// Uses `▸` as a segment separator for a clean powerline-inspired look.
+    /// Segments are added in priority order; lower-priority segments are omitted
+    /// when the terminal is too narrow to fit them.
+    ///
+    /// Layout (left to right):
+    /// ```text
+    ///   PRESET  ▸  1.0×  ▸  PALETTE  ▸  50k  [Z Y]  ⏸ PAUSED  ·  ? help
+    /// ```
     pub fn build_status_line(
         _is_paused: bool,
         preset: Preset,
@@ -458,64 +511,74 @@ impl OverlayRenderer {
         can_undo: bool,
         can_redo: bool,
     ) -> String {
+        const SEP: &str = "  ▸  ";
+
         let preset_text = preset_name(preset);
         let palette_text = palette_name(palette);
-        let time_text = format!("{:.1}x", time_scale);
+        let time_text = format!("{:.1}×", time_scale);
 
-        let undo_redo_text = if can_undo || can_redo {
-            format!(
-                " [{}{}]",
-                if can_undo { "Z" } else { " " },
-                if can_redo { "Y" } else { " " }
-            )
-        } else {
-            "".to_string()
-        };
-
-        let dither_text = match dither_mode {
-            DitherMode::None => "".to_string(),
-            DitherMode::Ordered { intensity, .. } => format!(" D:{:.1}x", intensity),
-            DitherMode::ErrorDiffusion { .. } => " ED".to_string(),
-            DitherMode::Hybrid { intensity, .. } => format!(" H:{:.1}x", intensity),
-        };
-
-        let paused_text = if _is_paused { " [PAUSED]" } else { "" };
-        let help_text = if width >= 100 { " ? for help" } else { "" };
-
-        // Build components with priority for truncation
-        let mut status = format!("{} │ {}", preset_text, time_text);
+        // Core left-side segments (always visible)
+        let mut left = format!("  {}{}{}  ", preset_text, SEP, time_text);
 
         // Add palette if space permits
-        if width >= 50 {
-            status.push_str(&format!(" │ {}", palette_text));
+        if width >= 52 {
+            left.push_str(&format!("▸  {}  ", palette_text));
         }
 
-        // Add population if provided and space permits
+        // Add population if space permits
         if let Some(pop) = population {
-            if width >= 70 {
-                let pop_k = pop / 1000;
-                status.push_str(&format!(" │ {}k", pop_k));
+            if width >= 68 {
+                left.push_str(&format!("▸  {}k  ", pop / 1000));
             }
         }
 
-        // Add diffusion kernel if provided and space permits
+        // Add diffusion kernel if space permits
         if let Some(kernel) = diffusion_kernel {
-            if width >= 90 {
-                status.push_str(&format!(" │ {}", kernel));
+            if width >= 88 {
+                left.push_str(&format!("▸  {}  ", kernel));
             }
         }
 
-        // Add dither if present
-        if !dither_text.is_empty() && width >= 60 {
-            status.push_str(&dither_text);
+        // Add dither mode if active and space permits
+        let dither_segment = match dither_mode {
+            DitherMode::None => None,
+            DitherMode::Ordered { intensity, .. } => Some(format!("D {:.1}×", intensity)),
+            DitherMode::ErrorDiffusion { .. } => Some("ED".to_string()),
+            DitherMode::Hybrid { intensity, .. } => Some(format!("H {:.1}×", intensity)),
+        };
+        if let Some(ref d) = dither_segment {
+            if width >= 60 {
+                left.push_str(&format!("▸  {}  ", d));
+            }
         }
 
-        // Always add paused and help at the end
-        status.push_str(&undo_redo_text);
-        status.push_str(paused_text);
-        status.push_str(help_text);
+        // Right-side status indicators
+        let mut right = String::new();
 
-        status
+        if can_undo || can_redo {
+            let z = if can_undo { "Z" } else { "·" };
+            let y = if can_redo { "Y" } else { "·" };
+            right.push_str(&format!("[{} {}]  ", z, y));
+        }
+
+        if _is_paused {
+            right.push_str("⏸ PAUSED  ");
+        }
+
+        if width >= 100 {
+            right.push_str("?  help  ");
+        }
+
+        // Combine: left segments + right-aligned indicators
+        let combined_len = left.chars().count() + right.chars().count();
+        if combined_len <= width {
+            // Pad between left and right
+            let gap = width.saturating_sub(combined_len);
+            format!("{}{}{}", left, " ".repeat(gap), right)
+        } else {
+            // No room to right-align; just return the left part
+            left
+        }
     }
 
     #[allow(dead_code)]
@@ -807,8 +870,8 @@ mod tests {
     fn test_panel_builder_separator() {
         let panel = PanelBuilder::new(8, None).with_padding(Padding::new(0, 0, 1, 1));
         let sep = panel.render_separator_line();
-        assert!(sep.starts_with('█'));
-        assert!(sep.ends_with('█'));
+        assert!(sep.starts_with('├'));
+        assert!(sep.ends_with('┤'));
         // total_width = 1 + 1 + 8 + 1 + 1 = 12
         assert_eq!(sep.chars().count(), 12);
     }
@@ -1137,15 +1200,15 @@ mod stats_tests {
         );
 
         assert!(!lines.lines.is_empty());
-        // Solid block borders
+        // Box-drawing borders
         assert!(
-            lines.lines[0].starts_with('█'),
-            "Top border should start with solid block █, got: {}",
+            lines.lines[0].starts_with('╭'),
+            "Top border should start with rounded corner ╭, got: {}",
             lines.lines[0]
         );
         assert!(
-            lines.lines.last().unwrap().starts_with('█'),
-            "Bottom border should start with solid block █"
+            lines.lines.last().unwrap().starts_with('╰'),
+            "Bottom border should start with rounded corner ╰"
         );
 
         // All lines should be exactly WIDTH chars
@@ -1245,15 +1308,15 @@ mod info_tests {
         );
 
         assert!(!lines.lines.is_empty());
-        // Solid block borders
+        // Box-drawing borders
         assert!(
-            lines.lines[0].starts_with('█'),
-            "Top border should start with █, got: {}",
+            lines.lines[0].starts_with('╭'),
+            "Top border should start with rounded corner ╭, got: {}",
             lines.lines[0]
         );
         assert!(
-            lines.lines.last().unwrap().starts_with('█'),
-            "Bottom border should start with █"
+            lines.lines.last().unwrap().starts_with('╰'),
+            "Bottom border should start with rounded corner ╰"
         );
 
         // All lines should be exactly WIDTH chars
@@ -1345,7 +1408,7 @@ mod status_line_tests {
         );
         // At 40 cols: should only have preset and time
         assert!(status.contains("Organic"));
-        assert!(status.contains("1.0x"));
+        assert!(status.contains("1.0×"));
         // Should not have palette or population (too narrow)
         assert!(!status.contains("50k"));
     }
@@ -1366,7 +1429,7 @@ mod status_line_tests {
         );
         // At 80 cols: should have preset, time, palette, and population
         assert!(status.contains("Network"));
-        assert!(status.contains("2.5x"));
+        assert!(status.contains("2.5×"));
         assert!(status.contains("Heat"));
         assert!(status.contains("50k"));
         // Should not have diffusion kernel (needs 90+)
@@ -1391,11 +1454,11 @@ mod status_line_tests {
         );
         // At 120 cols: should have everything including help
         assert!(status.contains("Exploratory"));
-        assert!(status.contains("1.5x"));
+        assert!(status.contains("1.5×"));
         assert!(status.contains("Ocean"));
         assert!(status.contains("30k"));
         assert!(status.contains("Gaussian"));
-        assert!(status.contains("? for help"));
+        assert!(status.contains("?"));
     }
 
     #[test]
@@ -1412,7 +1475,7 @@ mod status_line_tests {
             false,
             false,
         );
-        assert!(status.contains("[PAUSED]"));
+        assert!(status.contains("⏸ PAUSED"));
     }
 
     #[test]
@@ -1432,7 +1495,7 @@ mod status_line_tests {
             false,
             false,
         );
-        assert!(status.contains("D:0.5"));
+        assert!(status.contains("D 0.5×"));
     }
 
     #[test]
@@ -1451,23 +1514,23 @@ mod status_line_tests {
         );
         // Should still work without population or diffusion kernel
         assert!(status.contains("Organic"));
-        assert!(status.contains("1.0x"));
+        assert!(status.contains("1.0×"));
     }
 
     #[test]
     fn test_keyboard_hints_overlay_format() {
         let hints_lines = KeyboardHintsOverlay::build_overlay();
 
-        // Solid block borders
+        // Box-drawing borders
         for line in &hints_lines.lines {
             assert!(
-                line.starts_with('▀') || line.starts_with('█') || line.starts_with('▄'),
-                "Line should start with solid block char, got: {}",
+                line.starts_with('╭') || line.starts_with('│') || line.starts_with('╰'),
+                "Line should start with box-drawing char, got: {}",
                 line
             );
             assert!(
-                line.ends_with('▀') || line.ends_with('█') || line.ends_with('▄'),
-                "Line should end with solid block char, got: {}",
+                line.ends_with('╮') || line.ends_with('│') || line.ends_with('╯'),
+                "Line should end with box-drawing char, got: {}",
                 line
             );
         }
