@@ -11,9 +11,10 @@ use crate::render;
 use crate::simulation;
 use crate::terminal;
 
-use crate::cli::{Args, ColorMode, Mode};
+use crate::cli::{Args, ColorMode, Mode, Palette};
 use crate::export::GifExporter;
 use crate::export::WebmExporter;
+use crate::palette_manager;
 use crate::render::adaptive_brightness::AdaptiveBrightness;
 use crate::render::charset::Charset;
 use crate::render::dither::DitherMode;
@@ -26,6 +27,8 @@ use crate::render::overlay::{
     StatsOverlay, TextAlignment,
 };
 use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
+use crate::render::palette_editor::{PaletteEditorOverlay, PaletteEditorState};
+use crate::render::RichLine;
 use crate::simulation::config::{
     Attractor, DiffusionKernel, InitMode, Preset, SimConfig, TerrainType,
 };
@@ -1287,6 +1290,7 @@ pub fn run_simulation(
     runtime_state.dither_mode = dither_mode;
     runtime_state.show_stats = args.stats;
     renderer.set_dither_mode(dither_mode);
+    let mut palette_editor_state: Option<PaletteEditorState> = None;
 
     // Initialize food persistence
     if args.food_persist && init_mode == InitMode::Food {
@@ -1513,6 +1517,20 @@ pub fn run_simulation(
             };
         let (preset_comparison_x, preset_comparison_y) = if preset_comparison_lines.is_some() {
             PresetComparisonOverlay::calculate_position(term_width as usize, term_height as usize)
+        } else {
+            (0, 0)
+        };
+
+        let palette_editor_lines: Option<Vec<RichLine>> = runtime_state
+            .show_palette_editor
+            .then(|| {
+                palette_editor_state
+                    .as_ref()
+                    .map(PaletteEditorOverlay::build_overlay)
+            })
+            .flatten();
+        let (palette_editor_x, palette_editor_y) = if palette_editor_lines.is_some() {
+            PaletteEditorOverlay::calculate_position(term_width as usize, term_height as usize)
         } else {
             (0, 0)
         };
@@ -1886,6 +1904,9 @@ pub fn run_simulation(
                 preset_comparison_lines
                     .as_ref()
                     .map(|v| (v, preset_comparison_x, preset_comparison_y)),
+                palette_editor_lines
+                    .as_ref()
+                    .map(|v| (v.as_slice(), palette_editor_x, palette_editor_y)),
                 Some(&runtime_state.panel_style),
                 runtime_state.focused_overlay,
             )?;
@@ -1911,6 +1932,9 @@ pub fn run_simulation(
                 preset_comparison_lines
                     .as_ref()
                     .map(|v| (v, preset_comparison_x, preset_comparison_y)),
+                palette_editor_lines
+                    .as_ref()
+                    .map(|v| (v.as_slice(), palette_editor_x, palette_editor_y)),
                 Some(&runtime_state.panel_style),
                 runtime_state.focused_overlay,
             )?;
@@ -2128,6 +2152,213 @@ pub fn run_simulation(
                             }
                             _ => continue,
                         }
+                    }
+
+                    // Handle palette editor input (intercept keys while editor is open)
+                    if runtime_state.show_palette_editor {
+                        use crossterm::event::{KeyCode, KeyModifiers};
+
+                        if palette_editor_state.is_none() {
+                            let current_palette = runtime_state.current_palette(&palette_list);
+                            palette_editor_state = Some(PaletteEditorState::new(&current_palette));
+                        }
+
+                        if let Some(ref mut state) = palette_editor_state {
+                            match key_event.code {
+                                KeyCode::Esc => {
+                                    match state.mode {
+                                        crate::render::palette_editor::EditorMode::SaveDialog => {
+                                            state.save_name_input.clear();
+                                            state.mode =
+                                                crate::render::palette_editor::EditorMode::Editing;
+                                        }
+                                        crate::render::palette_editor::EditorMode::LoadDialog => {
+                                            state.mode =
+                                                crate::render::palette_editor::EditorMode::Editing;
+                                        }
+                                        crate::render::palette_editor::EditorMode::Editing => {
+                                            let original =
+                                                Palette::Custom(state.original_colors.to_vec());
+                                            renderer.set_palette(original);
+                                            runtime_state.show_palette_editor = false;
+                                            palette_editor_state = None;
+                                        }
+                                    }
+                                    continue;
+                                }
+                                KeyCode::Left => {
+                                    state.select_prev_color();
+                                    continue;
+                                }
+                                KeyCode::Right => {
+                                    state.select_next_color();
+                                    continue;
+                                }
+                                KeyCode::Up => {
+                                    if matches!(
+                                        state.mode,
+                                        crate::render::palette_editor::EditorMode::LoadDialog
+                                    ) {
+                                        if state.saved_palette_index > 0 {
+                                            state.saved_palette_index -= 1;
+                                        }
+                                    } else {
+                                        match state.selected_component {
+                                            crate::render::palette_editor::EditorComponent::Hue => state.adjust_hue(5.0),
+                                            crate::render::palette_editor::EditorComponent::Saturation => state.adjust_saturation(0.05),
+                                            crate::render::palette_editor::EditorComponent::Value => state.adjust_value(0.05),
+                                            _ => {}
+                                        }
+                                        renderer
+                                            .set_palette(Palette::Custom(state.colors.to_vec()));
+                                    }
+                                    continue;
+                                }
+                                KeyCode::Down => {
+                                    if matches!(
+                                        state.mode,
+                                        crate::render::palette_editor::EditorMode::LoadDialog
+                                    ) {
+                                        if state.saved_palette_index + 1
+                                            < state.saved_palettes_list.len()
+                                        {
+                                            state.saved_palette_index += 1;
+                                        }
+                                    } else {
+                                        match state.selected_component {
+                                            crate::render::palette_editor::EditorComponent::Hue => state.adjust_hue(-5.0),
+                                            crate::render::palette_editor::EditorComponent::Saturation => state.adjust_saturation(-0.05),
+                                            crate::render::palette_editor::EditorComponent::Value => state.adjust_value(-0.05),
+                                            _ => {}
+                                        }
+                                        renderer
+                                            .set_palette(Palette::Custom(state.colors.to_vec()));
+                                    }
+                                    continue;
+                                }
+                                KeyCode::Char('v') | KeyCode::Char('V') => {
+                                    state.selected_component =
+                                        crate::render::palette_editor::EditorComponent::Value;
+                                    continue;
+                                }
+                                KeyCode::Char('r') | KeyCode::Char('R') => {
+                                    state.reset_to_original();
+                                    renderer.set_palette(Palette::Custom(state.colors.to_vec()));
+                                    continue;
+                                }
+                                KeyCode::Tab => {
+                                    state.selected_component = state.selected_component.next();
+                                    continue;
+                                }
+                                KeyCode::Char('s') | KeyCode::Char('S') => {
+                                    if key_event.modifiers.contains(KeyModifiers::CONTROL) {
+                                        state.mode =
+                                            crate::render::palette_editor::EditorMode::SaveDialog;
+                                    } else if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                                        state.adjust_saturation(0.1);
+                                        renderer
+                                            .set_palette(Palette::Custom(state.colors.to_vec()));
+                                    } else {
+                                        state.selected_component = crate::render::palette_editor::EditorComponent::Saturation;
+                                    }
+                                    continue;
+                                }
+                                KeyCode::Char('l') | KeyCode::Char('L') => {
+                                    if let Ok(palettes) = palette_manager::list_palettes() {
+                                        state.saved_palettes_list = palettes;
+                                        state.saved_palette_index = 0;
+                                    }
+                                    state.mode =
+                                        crate::render::palette_editor::EditorMode::LoadDialog;
+                                    continue;
+                                }
+                                KeyCode::Enter => {
+                                    match state.mode {
+                                        crate::render::palette_editor::EditorMode::Editing => {
+                                            runtime_state.show_palette_editor = false;
+                                            runtime_state.show_notification(
+                                                "Custom palette applied".to_string(),
+                                            );
+                                            palette_editor_state = None;
+                                        }
+                                        crate::render::palette_editor::EditorMode::SaveDialog => {
+                                            if !state.save_name_input.is_empty() {
+                                                let palette = palette_manager::SavedPalette::new(
+                                                    state.save_name_input.clone(),
+                                                    state.colors,
+                                                );
+                                                match palette_manager::save_palette(palette) {
+                                                    Ok(_) => {
+                                                        runtime_state.show_notification(format!(
+                                                            "Palette '{}' saved",
+                                                            state.save_name_input
+                                                        ));
+                                                        runtime_state.saved_palette_name =
+                                                            Some(state.save_name_input.clone());
+                                                    }
+                                                    Err(e) => runtime_state.show_notification(
+                                                        format!("Failed to save: {}", e),
+                                                    ),
+                                                }
+                                            }
+                                            state.save_name_input.clear();
+                                            state.mode =
+                                                crate::render::palette_editor::EditorMode::Editing;
+                                        }
+                                        crate::render::palette_editor::EditorMode::LoadDialog => {
+                                            if let Some(palette) = state
+                                                .saved_palettes_list
+                                                .get(state.saved_palette_index)
+                                            {
+                                                state.colors = palette.to_rgb_colors();
+                                                state.original_colors = palette.to_rgb_colors();
+                                                state.base_palette_name = palette.name.clone();
+                                                state.is_modified = false;
+                                                runtime_state.saved_palette_name =
+                                                    Some(palette.name.clone());
+                                                runtime_state.show_notification(
+                                                    "Palette loaded".to_string(),
+                                                );
+                                                renderer.set_palette(Palette::Custom(
+                                                    state.colors.to_vec(),
+                                                ));
+                                            }
+                                            state.mode =
+                                                crate::render::palette_editor::EditorMode::Editing;
+                                        }
+                                    }
+                                    continue;
+                                }
+                                KeyCode::Char(c)
+                                    if !key_event.modifiers.contains(KeyModifiers::CONTROL) =>
+                                {
+                                    if matches!(
+                                        state.mode,
+                                        crate::render::palette_editor::EditorMode::SaveDialog
+                                    ) {
+                                        if state.save_name_input.len() < 24 {
+                                            state.save_name_input.push(c);
+                                        }
+                                        continue;
+                                    }
+                                }
+                                KeyCode::Backspace => {
+                                    if matches!(
+                                        state.mode,
+                                        crate::render::palette_editor::EditorMode::SaveDialog
+                                    ) {
+                                        state.save_name_input.pop();
+                                        continue;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        if let Some(ref state) = palette_editor_state {
+                            renderer.set_palette(Palette::Custom(state.colors.to_vec()));
+                        }
+                        continue;
                     }
 
                     if InputPoller::is_exit_key(&key_event) {
@@ -2605,6 +2836,16 @@ pub fn run_simulation(
                                 "Theme: {}",
                                 runtime_state.current_theme_name()
                             ));
+                        }
+                        ControlAction::ShowPaletteEditor => {
+                            runtime_state.show_palette_editor = !runtime_state.show_palette_editor;
+                            if runtime_state.show_palette_editor {
+                                let current_palette = runtime_state.current_palette(&palette_list);
+                                palette_editor_state =
+                                    Some(PaletteEditorState::new(&current_palette));
+                            } else {
+                                palette_editor_state = None;
+                            }
                         }
                         ControlAction::None => {}
                     }
