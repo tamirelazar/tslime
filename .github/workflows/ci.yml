@@ -109,6 +109,54 @@ jobs:
         name: ${{ matrix.asset_name }}
         path: target/release/${{ matrix.artifact_name }}
 
+  gui-build:
+    name: GUI Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+        include:
+          - os: macos-latest
+            artifact_name: tslime
+            asset_name: tslime-gui-macos
+          - os: windows-latest
+            artifact_name: tslime.exe
+            asset_name: tslime-gui-windows.exe
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-gui-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-gui-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-gui-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build GUI binary
+      run: cargo build --release --features gui --verbose
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.asset_name }}
+        path: target/release/${{ matrix.artifact_name }}
+
   benchmarks:
     name: Benchmarks
     runs-on: ubuntu-latest
