@@ -4,7 +4,8 @@ fn main() -> io::Result<()> {
     #[cfg(feature = "gui")]
     {
         use std::io::IsTerminal;
-        if !std::io::stdin().is_terminal() {
+        let is_gui_child = std::env::var_os("TSLIME_GUI_CHILD").is_some();
+        if !is_gui_child && !std::io::stdin().is_terminal() {
             return tslime::gui::run();
         }
     }

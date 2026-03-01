@@ -13,6 +13,10 @@ use std::io;
 
 /// Entry point: launch the iced window hosting a PTY-backed terminal.
 pub fn run() -> io::Result<()> {
+    // Mark child processes so they skip GUI detection and run in TUI mode.
+    // Called before iced starts any threads, so no concurrent env access.
+    std::env::set_var("TSLIME_GUI_CHILD", "1");
+
     iced::application(App::new, App::update, App::view)
         .title(App::title)
         .window_size(Size::new(1200.0, 800.0))
