@@ -1,270 +1,25 @@
 use crate::cli::Palette;
-use crate::render::palette::{hsv_to_rgb, interpolate_gradient, rgb_to_hsv, HsvColor, RgbColor};
+use crate::render::palette::{
+    hsv_to_rgb, interpolate_gradient, rgb_to_hsv, GradientStop, HsvColor, RgbColor,
+};
+use crate::render::panel::{Padding, PanelBuilder, RenderedOverlay, TextAlignment};
 
 /// Number of colors in the palette gradient.
 pub const PALETTE_COLOR_COUNT: usize = 11;
 
-// ─── Rich cell types ──────────────────────────────────────────────────────────
+/// Number of spaces between keybind and label columns in the keybind section.
+/// Set this to adjust column spacing in the Palette Editor keybinds panel.
+pub const KEYBIND_LABEL_GAP: usize = 3;
 
-/// A single terminal cell that carries per-cell color data.
-///
-/// `fg` / `bg` of `None` means "use the overlay's default color".
-#[derive(Clone, Debug)]
-pub struct RichCell {
-    /// The character to display.
-    pub ch: char,
-    /// Foreground color (None = default overlay fg).
-    pub fg: Option<RgbColor>,
-    /// Background color (None = default overlay bg).
-    pub bg: Option<RgbColor>,
-}
+/// Inner content width (between box borders + single space padding on each side).
+const INNER_W: usize = 52;
 
-/// A line of rich cells (per-cell color data).
-pub type RichLine = Vec<RichCell>;
+/// Column offset from the start of an overlay line to the first content character.
+/// With Padding::COMPACT (left=1) and a border: border(1) + padding.left(1) = 2.
+const CONTENT_OFFSET: usize = 2;
 
-// ─── Helper builders ─────────────────────────────────────────────────────────
-
-/// Convert a plain string to a `RichLine` with fixed fg/bg (for borders and labels).
-fn rich_text(s: &str, fg: Option<RgbColor>, bg: Option<RgbColor>) -> RichLine {
-    s.chars().map(|ch| RichCell { ch, fg, bg }).collect()
-}
-
-/// Build a gradient strip: each cell is '█' with bg = interpolated color.
-fn build_gradient_strip(colors: &[RgbColor; PALETTE_COLOR_COUNT], width: usize) -> RichLine {
-    let stops: Vec<crate::render::palette::GradientStop> = colors
-        .iter()
-        .enumerate()
-        .map(|(i, &color)| crate::render::palette::GradientStop {
-            position: i as f32 / (PALETTE_COLOR_COUNT - 1) as f32,
-            color,
-        })
-        .collect();
-
-    (0..width)
-        .map(|i| {
-            let t = i as f32 / (width - 1).max(1) as f32;
-            let color = interpolate_gradient(&stops, t);
-            RichCell {
-                ch: '█',
-                fg: Some(color),
-                bg: Some(color),
-            }
-        })
-        .collect()
-}
-
-/// Build a swatch row: 11 colored blocks, selected one wrapped with `[` `]`.
-fn build_swatches(
-    colors: &[RgbColor; PALETTE_COLOR_COUNT],
-    selected: usize,
-    width: usize,
-) -> RichLine {
-    let mut line: RichLine = Vec::new();
-
-    // We render each swatch as 4 chars:  " ██ " or "[██]"
-    // That's 11 * 4 = 44 chars base. Pad to `width`.
-    for (i, &color) in colors.iter().enumerate() {
-        if i == selected {
-            line.push(RichCell {
-                ch: '[',
-                fg: None,
-                bg: None,
-            });
-            line.push(RichCell {
-                ch: '█',
-                fg: Some(color),
-                bg: Some(color),
-            });
-            line.push(RichCell {
-                ch: '█',
-                fg: Some(color),
-                bg: Some(color),
-            });
-            line.push(RichCell {
-                ch: ']',
-                fg: None,
-                bg: None,
-            });
-        } else {
-            line.push(RichCell {
-                ch: ' ',
-                fg: None,
-                bg: None,
-            });
-            line.push(RichCell {
-                ch: '█',
-                fg: Some(color),
-                bg: Some(color),
-            });
-            line.push(RichCell {
-                ch: '█',
-                fg: Some(color),
-                bg: Some(color),
-            });
-            line.push(RichCell {
-                ch: ' ',
-                fg: None,
-                bg: None,
-            });
-        }
-    }
-
-    // Pad or truncate to exactly `width`
-    line.truncate(width);
-    while line.len() < width {
-        line.push(RichCell {
-            ch: ' ',
-            fg: None,
-            bg: None,
-        });
-    }
-    line
-}
-
-/// Build index label row below swatches: " 1  2  3 … 11"
-fn build_swatch_labels(width: usize) -> RichLine {
-    let mut s = String::new();
-    for i in 1..=PALETTE_COLOR_COUNT {
-        if i < 10 {
-            s.push_str(&format!(" {:1}  ", i));
-        } else {
-            s.push_str(&format!("{:2}  ", i));
-        }
-    }
-    let mut line = rich_text(&s, None, None);
-    line.truncate(width);
-    while line.len() < width {
-        line.push(RichCell {
-            ch: ' ',
-            fg: None,
-            bg: None,
-        });
-    }
-    line
-}
-
-/// Build a hue rainbow bar: cell i has bg = HSV(hue=i/width*360, s=1, v=1).
-fn build_hue_bar(width: usize) -> RichLine {
-    (0..width)
-        .map(|i| {
-            let h = i as f32 / width as f32 * 360.0;
-            let color = hsv_to_rgb(HsvColor { h, s: 1.0, v: 1.0 });
-            RichCell {
-                ch: '█',
-                fg: Some(color),
-                bg: Some(color),
-            }
-        })
-        .collect()
-}
-
-/// Build a saturation bar: left=grey, right=full color at given hue/value.
-fn build_sat_bar(width: usize, hue: f32, val: f32) -> RichLine {
-    (0..width)
-        .map(|i| {
-            let s = i as f32 / (width - 1).max(1) as f32;
-            let color = hsv_to_rgb(HsvColor { h: hue, s, v: val });
-            RichCell {
-                ch: '█',
-                fg: Some(color),
-                bg: Some(color),
-            }
-        })
-        .collect()
-}
-
-/// Build a value bar: left=black, right=full brightness at given hue/saturation.
-fn build_val_bar(width: usize, hue: f32, sat: f32) -> RichLine {
-    (0..width)
-        .map(|i| {
-            let v = i as f32 / (width - 1).max(1) as f32;
-            let color = hsv_to_rgb(HsvColor { h: hue, s: sat, v });
-            RichCell {
-                ch: '█',
-                fg: Some(color),
-                bg: Some(color),
-            }
-        })
-        .collect()
-}
-
-/// Build a cursor indicator row: plain `^` at `cursor_frac` position.
-fn build_cursor_row(width: usize, cursor_frac: f32) -> RichLine {
-    let pos = ((cursor_frac * (width - 1) as f32).round() as usize).min(width - 1);
-    (0..width)
-        .map(|i| {
-            let ch = if i == pos { '^' } else { ' ' };
-            RichCell {
-                ch,
-                fg: None,
-                bg: None,
-            }
-        })
-        .collect()
-}
-
-/// Pad a RichLine to exactly `width` cells using a space with no color.
-fn pad_line(mut line: RichLine, width: usize) -> RichLine {
-    line.truncate(width);
-    while line.len() < width {
-        line.push(RichCell {
-            ch: ' ',
-            fg: None,
-            bg: None,
-        });
-    }
-    line
-}
-
-/// Wrap a content RichLine in box-drawing borders "║ <content> ║".
-fn box_row(inner: RichLine) -> RichLine {
-    let mut row = vec![
-        RichCell {
-            ch: '║',
-            fg: None,
-            bg: None,
-        },
-        RichCell {
-            ch: ' ',
-            fg: None,
-            bg: None,
-        },
-    ];
-    row.extend(inner);
-    row.push(RichCell {
-        ch: ' ',
-        fg: None,
-        bg: None,
-    });
-    row.push(RichCell {
-        ch: '║',
-        fg: None,
-        bg: None,
-    });
-    row
-}
-
-/// Build a full-width box border string as a RichLine.
-fn box_border(width: usize, left: char, fill: char, right: char) -> RichLine {
-    let mut row = vec![RichCell {
-        ch: left,
-        fg: None,
-        bg: None,
-    }];
-    for _ in 0..width {
-        row.push(RichCell {
-            ch: fill,
-            fg: None,
-            bg: None,
-        });
-    }
-    row.push(RichCell {
-        ch: right,
-        fg: None,
-        bg: None,
-    });
-    row
-}
+/// Length of the HSV slider track in characters.
+const TRACK_LEN: usize = 38;
 
 // ─── Component enum ──────────────────────────────────────────────────────────
 
@@ -325,7 +80,7 @@ pub enum EditorMode {
 pub struct PaletteEditorState {
     /// Current editor mode (Editing, SaveDialog, LoadDialog).
     pub mode: EditorMode,
-    /// Index of the currently selected color (0-10).
+    /// Index of the currently selected color (0-10 = individual stop, 11 = ALL).
     pub selected_color_index: usize,
     /// Currently selected HSV component being edited.
     pub selected_component: EditorComponent,
@@ -365,36 +120,98 @@ impl PaletteEditorState {
         }
     }
 
-    /// Get the HSV color of the currently selected color.
+    /// True when the special "ALL" slot is selected (index == PALETTE_COLOR_COUNT).
+    pub fn is_all_selected(&self) -> bool {
+        self.selected_color_index == PALETTE_COLOR_COUNT
+    }
+
+    /// Circular mean hue, linear mean sat/val across all stops.
+    fn average_hsv(&self) -> HsvColor {
+        let mut sin_sum = 0.0f32;
+        let mut cos_sum = 0.0f32;
+        let mut s_sum = 0.0f32;
+        let mut v_sum = 0.0f32;
+        for &color in &self.colors {
+            let hsv = rgb_to_hsv(color);
+            let h_rad = hsv.h.to_radians();
+            sin_sum += h_rad.sin();
+            cos_sum += h_rad.cos();
+            s_sum += hsv.s;
+            v_sum += hsv.v;
+        }
+        let n = PALETTE_COLOR_COUNT as f32;
+        let avg_h = sin_sum.atan2(cos_sum).to_degrees();
+        let avg_h = if avg_h < 0.0 { avg_h + 360.0 } else { avg_h };
+        HsvColor {
+            h: avg_h,
+            s: s_sum / n,
+            v: v_sum / n,
+        }
+    }
+
+    /// Get the HSV color of the currently selected color (average when ALL selected).
     pub fn current_hsv(&self) -> HsvColor {
-        rgb_to_hsv(self.colors[self.selected_color_index])
+        if self.is_all_selected() {
+            self.average_hsv()
+        } else {
+            rgb_to_hsv(self.colors[self.selected_color_index])
+        }
     }
 
-    /// Set the RGB color of the currently selected color.
+    /// Set the RGB color of the currently selected color (no-op when ALL selected).
     pub fn set_current_color(&mut self, rgb: RgbColor) {
-        self.colors[self.selected_color_index] = rgb;
-        self.is_modified = true;
+        if self.selected_color_index < PALETTE_COLOR_COUNT {
+            self.colors[self.selected_color_index] = rgb;
+            self.is_modified = true;
+        }
     }
 
-    /// Adjust the hue of the currently selected color.
+    /// Adjust the hue of the selected color(s) by `delta` degrees.
     pub fn adjust_hue(&mut self, delta: f32) {
-        let mut hsv = self.current_hsv();
-        hsv.h = (hsv.h + delta + 360.0) % 360.0;
-        self.set_current_color(hsv_to_rgb(hsv));
+        if self.is_all_selected() {
+            for i in 0..PALETTE_COLOR_COUNT {
+                let mut hsv = rgb_to_hsv(self.colors[i]);
+                hsv.h = (hsv.h + delta + 360.0) % 360.0;
+                self.colors[i] = hsv_to_rgb(hsv);
+            }
+            self.is_modified = true;
+        } else {
+            let mut hsv = rgb_to_hsv(self.colors[self.selected_color_index]);
+            hsv.h = (hsv.h + delta + 360.0) % 360.0;
+            self.set_current_color(hsv_to_rgb(hsv));
+        }
     }
 
-    /// Adjust the saturation of the currently selected color.
+    /// Adjust the saturation of the selected color(s) by `delta`.
     pub fn adjust_saturation(&mut self, delta: f32) {
-        let mut hsv = self.current_hsv();
-        hsv.s = (hsv.s + delta).clamp(0.0, 1.0);
-        self.set_current_color(hsv_to_rgb(hsv));
+        if self.is_all_selected() {
+            for i in 0..PALETTE_COLOR_COUNT {
+                let mut hsv = rgb_to_hsv(self.colors[i]);
+                hsv.s = (hsv.s + delta).clamp(0.0, 1.0);
+                self.colors[i] = hsv_to_rgb(hsv);
+            }
+            self.is_modified = true;
+        } else {
+            let mut hsv = rgb_to_hsv(self.colors[self.selected_color_index]);
+            hsv.s = (hsv.s + delta).clamp(0.0, 1.0);
+            self.set_current_color(hsv_to_rgb(hsv));
+        }
     }
 
-    /// Adjust the value/brightness of the currently selected color.
+    /// Adjust the value/brightness of the selected color(s) by `delta`.
     pub fn adjust_value(&mut self, delta: f32) {
-        let mut hsv = self.current_hsv();
-        hsv.v = (hsv.v + delta).clamp(0.0, 1.0);
-        self.set_current_color(hsv_to_rgb(hsv));
+        if self.is_all_selected() {
+            for i in 0..PALETTE_COLOR_COUNT {
+                let mut hsv = rgb_to_hsv(self.colors[i]);
+                hsv.v = (hsv.v + delta).clamp(0.0, 1.0);
+                self.colors[i] = hsv_to_rgb(hsv);
+            }
+            self.is_modified = true;
+        } else {
+            let mut hsv = rgb_to_hsv(self.colors[self.selected_color_index]);
+            hsv.v = (hsv.v + delta).clamp(0.0, 1.0);
+            self.set_current_color(hsv_to_rgb(hsv));
+        }
     }
 
     /// Adjust the currently selected component by `delta`.
@@ -413,15 +230,15 @@ impl PaletteEditorState {
         self.is_modified = false;
     }
 
-    /// Select the next color in the palette.
+    /// Select the next color in the palette (wraps through ALL slot at index 11).
     pub fn select_next_color(&mut self) {
-        self.selected_color_index = (self.selected_color_index + 1) % PALETTE_COLOR_COUNT;
+        self.selected_color_index = (self.selected_color_index + 1) % (PALETTE_COLOR_COUNT + 1);
     }
 
-    /// Select the previous color in the palette.
+    /// Select the previous color in the palette (wraps back through ALL slot).
     pub fn select_prev_color(&mut self) {
         self.selected_color_index = if self.selected_color_index == 0 {
-            PALETTE_COLOR_COUNT - 1
+            PALETTE_COLOR_COUNT // wraps back to ALL slot
         } else {
             self.selected_color_index - 1
         };
@@ -452,24 +269,310 @@ fn get_palette_colors(palette: &Palette) -> [RgbColor; PALETTE_COLOR_COUNT] {
     colors
 }
 
+// ─── Private content builders ─────────────────────────────────────────────────
+
+/// Build the stop selector row: 11 color slots + 1 ALL slot, each 4 chars wide.
+/// Returns 48 chars (12 × 4) for centering within INNER_W.
+fn build_swatches_str(selected: usize) -> String {
+    let mut s = String::with_capacity(48);
+    for i in 0..PALETTE_COLOR_COUNT {
+        if i == selected {
+            s.push_str("[◆] ");
+        } else {
+            s.push_str(" ◆  ");
+        }
+    }
+    if selected == PALETTE_COLOR_COUNT {
+        s.push_str("[○] ");
+    } else {
+        s.push_str(" ○  ");
+    }
+    s
+}
+
+/// Build the stop index label row: " 1   2  … 11  ALL", returns 48 chars for centering.
+fn build_swatch_labels_str() -> String {
+    let mut s = String::with_capacity(48);
+    for i in 1..=PALETTE_COLOR_COUNT {
+        if i < 10 {
+            s.push_str(&format!(" {i}  "));
+        } else {
+            s.push_str(&format!("{i}  "));
+        }
+    }
+    s.push_str("ALL ");
+    s
+}
+
+/// Build hex code string for centering.
+fn build_hex_str(rgb: RgbColor) -> String {
+    format!("#{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b)
+}
+
+/// Build HSV slider label (with arrows if active).
+fn build_slider_label(is_active: bool, comp: char, value_str: &str) -> String {
+    if is_active {
+        format!("◀ {} {} ▶", comp, value_str)
+    } else {
+        format!("  {} {}  ", comp, value_str)
+    }
+}
+
+/// Build HSV slider bar (38 chars with ◆ cursor).
+fn build_slider_bar(frac: f32) -> String {
+    let cursor_pos =
+        ((frac.clamp(0.0, 1.0) * (TRACK_LEN - 1) as f32).round() as usize).min(TRACK_LEN - 1);
+    (0..TRACK_LEN)
+        .map(|i| if i == cursor_pos { '◆' } else { '█' })
+        .collect()
+}
+
+/// Build per-cell color overrides for the editing overlay.
+///
+/// New layout (16 rows, 0-indexed):
+/// 0  top border
+/// 1  gradient strip    ← ▄ with fg=color(t), bg=color(t+Δ)
+/// 2  empty
+/// 3  stop selector     ← ◆ diamonds colored by stop color
+/// 4  swatch labels
+/// 5  empty
+/// 6  color info        ← ◆ swatch colored by stop color
+/// 7  separator
+/// 8  H slider          ← rainbow track, ◆ in white on colored bg
+/// 9  S slider          ← sat gradient track
+/// 10 V slider          ← val gradient track
+/// 11 empty
+/// 12 separator
+/// 13 hint row 1
+/// 14 hint row 2
+/// 15 bottom border
+#[allow(clippy::type_complexity)]
+fn build_editor_rich_lines(
+    state: &PaletteEditorState,
+    lines: &[String],
+    hsv: HsvColor,
+    text_primary: RgbColor,
+    accent: RgbColor,
+) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
+    let mut rich: Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> = lines
+        .iter()
+        .map(|l| l.chars().map(|c| (c, None, None)).collect())
+        .collect();
+
+    let rgb_for_display = if state.is_all_selected() {
+        hsv_to_rgb(hsv)
+    } else {
+        state.colors[state.selected_color_index]
+    };
+
+    let stops: Vec<GradientStop> = state
+        .colors
+        .iter()
+        .enumerate()
+        .map(|(i, &color)| GradientStop {
+            position: i as f32 / (PALETTE_COLOR_COUNT - 1) as f32,
+            color,
+        })
+        .collect();
+
+    // Line 3: centered stops — shift column offset by +2 for centering
+    if rich.len() > 3 {
+        for i in 0..PALETTE_COLOR_COUNT {
+            let col = CONTENT_OFFSET + 2 + i * 4 + 1;
+            if col < rich[3].len() {
+                rich[3][col].1 = Some(state.colors[i]);
+            }
+        }
+        let all_col = CONTENT_OFFSET + 2 + PALETTE_COLOR_COUNT * 4 + 1;
+        if all_col < rich[3].len() {
+            let all_color = if state.is_all_selected() {
+                RgbColor {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                }
+            } else {
+                RgbColor {
+                    r: 140,
+                    g: 140,
+                    b: 140,
+                }
+            };
+            rich[3][all_col].1 = Some(all_color);
+        }
+    }
+
+    // Line 6: hex code — centered
+    if rich.len() > 6 {
+        let hex_start = CONTENT_OFFSET + (INNER_W - 7) / 2;
+        for i in 0..7 {
+            if hex_start + i < rich[6].len() {
+                rich[6][hex_start + i].1 = Some(rgb_for_display);
+            }
+        }
+    }
+
+    // Color hint keys (lines 20-26) with accent color
+    // Special case: line 20 is "← select →", accent both arrow characters
+    if rich.len() > 20 {
+        let arrow_line = &mut rich[20];
+        for (_idx, (c, fg, _bg)) in arrow_line.iter_mut().enumerate() {
+            if *c == '←' || *c == '→' {
+                *fg = Some(accent);
+            }
+        }
+    }
+    // Special case: line 21 is "↑ adjust ↓", accent both arrow characters
+    if rich.len() > 21 {
+        let arrow_line = &mut rich[21];
+        for (_idx, (c, fg, _bg)) in arrow_line.iter_mut().enumerate() {
+            if *c == '↑' || *c == '↓' {
+                *fg = Some(accent);
+            }
+        }
+    }
+    // Line 22: accent "Tab" and arrows on the single centered line
+    if rich.len() > 22 {
+        let tab_line = &mut rich[22];
+        let tab_word = "Tab";
+        let line_str: String = tab_line.iter().map(|(c, _, _)| *c).collect();
+        // Accent "Tab" plus 2 chars to the left
+        if let Some(tab_pos) = line_str.find(tab_word) {
+            let accent_start = tab_pos.saturating_sub(2);
+            let accent_end = (tab_pos + tab_word.len()).min(tab_line.len());
+            for col in accent_start..accent_end {
+                tab_line[col].1 = Some(accent);
+            }
+        }
+        // Accent all arrows "→" in the line
+        for (_idx, (c, fg, _bg)) in tab_line.iter_mut().enumerate() {
+            if *c == '→' {
+                *fg = Some(accent);
+            }
+        }
+        // If you want to accent the spaces between "Tab" and "H" as well, modify here (not requested).
+    }
+    // Remaining color keys: accent color for centered lines
+    let key_patterns = ["r", "Enter", "Ctrl+S", "Esc"];
+    let hint_line_indices = [23, 24, 25, 26];
+    for (i, &line_idx) in hint_line_indices.iter().enumerate() {
+        if line_idx < rich.len() && i < key_patterns.len() {
+            let pattern = key_patterns[i];
+            let line_str: String = rich[line_idx].iter().map(|(c, _, _)| *c).collect();
+            if let Some(start_pos) = line_str.find(pattern) {
+                // Only accent the key substring, NOT any left padding
+                for col in start_pos..(start_pos + pattern.len()).min(rich[line_idx].len()) {
+                    rich[line_idx][col].1 = Some(accent);
+                }
+            }
+        }
+    }
+
+    // H bar (line 11): hue gradient, apply current S/V
+    let h_cursor = ((hsv.h / 360.0) * (TRACK_LEN - 1) as f32).round() as usize;
+    if rich.len() > 11 {
+        let h_start = CONTENT_OFFSET + 7; // centered offset
+        for i in 0..TRACK_LEN {
+            let col = h_start + i;
+            if col < rich[11].len() {
+                let h = i as f32 / (TRACK_LEN - 1) as f32 * 360.0;
+                let color = hsv_to_rgb(HsvColor {
+                    h,
+                    s: hsv.s,
+                    v: hsv.v,
+                });
+                if i == h_cursor {
+                    rich[11][col] = ('◆', Some(text_primary), Some(color));
+                } else {
+                    rich[11][col] = ('█', Some(color), Some(color));
+                }
+            }
+        }
+    }
+
+    // S bar (line 14)
+    let s_cursor = (hsv.s * (TRACK_LEN - 1) as f32).round() as usize;
+    if rich.len() > 14 {
+        let s_start = CONTENT_OFFSET + 7;
+        for i in 0..TRACK_LEN {
+            let col = s_start + i;
+            if col < rich[14].len() {
+                let s = i as f32 / (TRACK_LEN - 1) as f32;
+                let color = hsv_to_rgb(HsvColor {
+                    h: hsv.h,
+                    s,
+                    v: hsv.v,
+                });
+                if i == s_cursor {
+                    rich[14][col] = ('◆', Some(text_primary), Some(color));
+                } else {
+                    rich[14][col] = ('█', Some(color), Some(color));
+                }
+            }
+        }
+    }
+
+    // V bar (line 17)
+    let v_cursor = (hsv.v * (TRACK_LEN - 1) as f32).round() as usize;
+    if rich.len() > 17 {
+        let v_start = CONTENT_OFFSET + 7;
+        for i in 0..TRACK_LEN {
+            let col = v_start + i;
+            if col < rich[17].len() {
+                let v = i as f32 / (TRACK_LEN - 1) as f32;
+                let color = hsv_to_rgb(HsvColor {
+                    h: hsv.h,
+                    s: hsv.s,
+                    v,
+                });
+                if i == v_cursor {
+                    rich[17][col] = ('◆', Some(text_primary), Some(color));
+                } else {
+                    rich[17][col] = ('█', Some(color), Some(color));
+                }
+            }
+        }
+    }
+
+    // Gradient strip (line 28)
+    if rich.len() > 28 {
+        for i in 0..INNER_W {
+            let col = CONTENT_OFFSET + i;
+            if col < rich[28].len() {
+                let t = i as f32 / (INNER_W - 1).max(1) as f32;
+                let t_next = (t + 1.5 / INNER_W as f32).min(1.0);
+                let fg_color = interpolate_gradient(&stops, t);
+                let bg_color = interpolate_gradient(&stops, t_next);
+                rich[28][col] = ('▄', Some(fg_color), Some(bg_color));
+            }
+        }
+    }
+
+    rich
+}
+
 // ─── Overlay renderer ────────────────────────────────────────────────────────
 
 /// Overlay renderer for the palette editor.
 pub struct PaletteEditorOverlay;
 
-/// Inner content width (between box borders + single space padding on each side).
-const INNER_W: usize = 52;
-
 impl PaletteEditorOverlay {
-    /// Total width of the overlay in characters (including box borders).
-    pub const WIDTH: usize = INNER_W + 4; // "║ " + content + " ║"
-    /// Total height of the overlay in characters.
-    pub const HEIGHT: usize = 22;
+    /// Total width of the overlay in characters (including border and padding).
+    /// border(1) + padding.left(1) + INNER_W(52) + padding.right(1) + border(1) = 56
+    pub const WIDTH: usize = INNER_W + 4;
 
-    /// Build the overlay lines for the current editor state.
-    pub fn build_overlay(state: &PaletteEditorState) -> Vec<RichLine> {
+    /// Total height of the overlay in characters (all 9 items implemented).
+    /// top_border(1) + 28 content rows + bottom_border(1) = 30
+    pub const HEIGHT: usize = 30;
+
+    /// Build the overlay for the current editor state.
+    pub fn build_overlay(
+        state: &PaletteEditorState,
+        panel_style: &crate::render::theme::PanelStyle,
+        accent: RgbColor,
+    ) -> RenderedOverlay {
         match state.mode {
-            EditorMode::Editing => Self::build_editing_overlay(state),
+            EditorMode::Editing => Self::build_editing_overlay(state, panel_style, accent),
             EditorMode::SaveDialog => Self::build_save_dialog_overlay(state),
             EditorMode::LoadDialog => {
                 Self::build_load_dialog_overlay(state, &state.saved_palettes_list)
@@ -477,186 +580,131 @@ impl PaletteEditorOverlay {
         }
     }
 
-    fn build_editing_overlay(state: &PaletteEditorState) -> Vec<RichLine> {
+    fn build_editing_overlay(
+        state: &PaletteEditorState,
+        panel_style: &crate::render::theme::PanelStyle,
+        accent: RgbColor,
+    ) -> RenderedOverlay {
         let hsv = state.current_hsv();
-        let rgb = state.colors[state.selected_color_index];
-
-        // ── Row builders ────────────────────────────────────────────────────
-        let top_border = box_border(INNER_W + 2, '╔', '═', '╗');
-        let sep_border = box_border(INNER_W + 2, '╠', '═', '╣');
-        let bot_border = box_border(INNER_W + 2, '╚', '═', '╝');
-
-        let blank_row = box_row(pad_line(Vec::new(), INNER_W));
-
-        // Title row
-        let title_str = "PALETTE EDITOR";
-        let pad_l = (INNER_W.saturating_sub(title_str.len())) / 2;
-        let pad_r = INNER_W.saturating_sub(title_str.len() + pad_l);
-        let title_line = pad_line(
-            rich_text(
-                &format!("{}{}{}", " ".repeat(pad_l), title_str, " ".repeat(pad_r)),
-                None,
-                None,
-            ),
-            INNER_W,
-        );
-        let title_row = box_row(title_line);
-
-        // Gradient strip (interpolated across full inner width)
-        let strip = pad_line(build_gradient_strip(&state.colors, INNER_W), INNER_W);
-        let strip_row = box_row(strip);
-
-        // Swatches + labels
-        let swatches = build_swatches(&state.colors, state.selected_color_index, INNER_W);
-        let swatch_row = box_row(swatches);
-        let labels = build_swatch_labels(INNER_W);
-        let labels_row = box_row(labels);
-
-        // Color info row: large swatch block + RGB values
-        let color_info_str = format!(
-            "Color {:2}    ██  R:{:3} G:{:3} B:{:3}",
-            state.selected_color_index + 1,
-            rgb.r,
-            rgb.g,
-            rgb.b
-        );
-        let mut color_info_line: RichLine = Vec::new();
-        // Label part
-        let label_part = format!("Color {:2}    ", state.selected_color_index + 1);
-        color_info_line.extend(rich_text(&label_part, None, None));
-        // Color swatch (2 block chars with the current color)
-        color_info_line.push(RichCell {
-            ch: '█',
-            fg: Some(rgb),
-            bg: Some(rgb),
-        });
-        color_info_line.push(RichCell {
-            ch: '█',
-            fg: Some(rgb),
-            bg: Some(rgb),
-        });
-        // RGB values
-        let rgb_part = format!("  R:{:3} G:{:3} B:{:3}", rgb.r, rgb.g, rgb.b);
-        color_info_line.extend(rich_text(&rgb_part, None, None));
-        let _ = color_info_str; // suppress unused warning
-        let color_row = box_row(pad_line(color_info_line, INNER_W));
-
-        // Hue label + bar + cursor
-        let hue_label = format!("  Hue   {:6.1}°", hsv.h);
-        let hue_label_row = box_row(pad_line(rich_text(&hue_label, None, None), INNER_W));
-        let hue_bar = pad_line(build_hue_bar(INNER_W), INNER_W);
-        let hue_bar_row = box_row(hue_bar);
-        let hue_cursor_frac = hsv.h / 360.0;
-        let hue_cursor = if state.selected_component == EditorComponent::Hue {
-            pad_line(build_cursor_row(INNER_W, hue_cursor_frac), INNER_W)
+        let rgb_for_display = if state.is_all_selected() {
+            hsv_to_rgb(hsv)
         } else {
-            pad_line(rich_text(&" ".repeat(INNER_W), None, None), INNER_W)
+            state.colors[state.selected_color_index]
         };
-        let hue_cursor_row = box_row(hue_cursor);
 
-        // Saturation label + bar + cursor
-        let sat_label = format!("  Sat   {:.2}", hsv.s);
-        let sat_label_row = box_row(pad_line(rich_text(&sat_label, None, None), INNER_W));
-        let sat_bar = pad_line(build_sat_bar(INNER_W, hsv.h, hsv.v), INNER_W);
-        let sat_bar_row = box_row(sat_bar);
-        let sat_cursor = if state.selected_component == EditorComponent::Saturation {
-            pad_line(build_cursor_row(INNER_W, hsv.s), INNER_W)
-        } else {
-            pad_line(rich_text(&" ".repeat(INNER_W), None, None), INNER_W)
-        };
-        let sat_cursor_row = box_row(sat_cursor);
+        let gradient_str = "▄".repeat(INNER_W);
+        let swatches_str = build_swatches_str(state.selected_color_index);
+        let labels_str = build_swatch_labels_str();
+        let hex_str = build_hex_str(rgb_for_display);
 
-        // Value label + bar + cursor
-        let val_label = format!("  Val   {:.2}", hsv.v);
-        let val_label_row = box_row(pad_line(rich_text(&val_label, None, None), INNER_W));
-        let val_bar = pad_line(build_val_bar(INNER_W, hsv.h, hsv.s), INNER_W);
-        let val_bar_row = box_row(val_bar);
-        let val_cursor = if state.selected_component == EditorComponent::Value {
-            pad_line(build_cursor_row(INNER_W, hsv.v), INNER_W)
-        } else {
-            pad_line(rich_text(&" ".repeat(INNER_W), None, None), INNER_W)
-        };
-        let val_cursor_row = box_row(val_cursor);
+        let h_active = state.selected_component == EditorComponent::Hue;
+        let s_active = state.selected_component == EditorComponent::Saturation;
+        let v_active = state.selected_component == EditorComponent::Value;
 
-        // Key hint rows
-        let hint1 = "  ←/→: Stop  ↑/↓: Adjust  Tab: H→S→V  R: Reset";
-        let hint2 = "  Enter: Apply & Close   Ctrl+S: Save   Esc: Discard";
-        let hint1_row = box_row(pad_line(rich_text(hint1, None, None), INNER_W));
-        let hint2_row = box_row(pad_line(rich_text(hint2, None, None), INNER_W));
+        let h_label = build_slider_label(h_active, 'H', &format!("{:.1}°", hsv.h));
+        let h_bar = build_slider_bar(hsv.h / 360.0);
+        let s_label = build_slider_label(s_active, 'S', &format!("{:.2}", hsv.s));
+        let s_bar = build_slider_bar(hsv.s);
+        let v_label = build_slider_label(v_active, 'V', &format!("{:.2}", hsv.v));
+        let v_bar = build_slider_bar(hsv.v);
 
-        vec![
-            top_border,         // 0  ╔══╗
-            title_row,          // 1  ║ PALETTE EDITOR ║
-            sep_border.clone(), // 2  ╠══╣
-            strip_row,          // 3  gradient strip
-            blank_row.clone(),  // 4
-            swatch_row,         // 5  swatches
-            labels_row,         // 6  index labels
-            blank_row.clone(),  // 7
-            color_row,          // 8  Color N  ██  R:xxx G:xxx B:xxx
-            blank_row.clone(),  // 9
-            hue_label_row,      // 10 Hue 240.0°
-            hue_bar_row,        // 11 rainbow bar
-            hue_cursor_row,     // 12 cursor
-            sat_label_row,      // 13 Sat 0.78
-            sat_bar_row,        // 14 saturation bar
-            sat_cursor_row,     // 15 cursor
-            val_label_row,      // 16 Val 0.92
-            val_bar_row,        // 17 value bar
-            val_cursor_row,     // 18 cursor
-            sep_border,         // 19 ╠══╣
-            hint1_row,          // 20 key hints
-            hint2_row,          // 21 key hints
-            bot_border,         // 22 ╚══╝
-        ]
+        // First line is special: centered "← select →"
+        let first_hint_line = "← select →";
+        // Second line is also special: centered "↑ adjust ↓"
+        let second_hint_line = "↑ adjust ↓";
+        // Remaining hints for column alignment (without previous "↑/↓      adjust value")
+        // Single centered hint instead of two columns for Tab
+        let tab_hint_line = "Tab   H → S → V";
+        let hints = [
+            ("r", "reset"),
+            ("Enter", "apple"),
+            ("Ctrl+S", "save palette"),
+            ("Esc", "discard"),
+        ];
+        // For single-line, centered hints block—no manual pad, PanelBuilder will center.
+        let key_label_lines: Vec<String> = hints
+            .iter()
+            .map(|(key, label)| format!("{key} {label}"))
+            .collect();
+
+        let mut overlay = PanelBuilder::new(INNER_W, None)
+            .with_padding(Padding::COMPACT)
+            .with_title("PALETTE EDITOR")
+            .with_title_box()
+            .add_empty() // line 1
+            .add_empty() // line 2
+            .add_single(swatches_str, TextAlignment::Center) // line 3
+            .add_single(labels_str, TextAlignment::Center) // line 4
+            .add_empty() // line 5
+            .add_single(hex_str, TextAlignment::Center) // line 6
+            .add_empty() // line 7
+            .add_separator() // line 8
+            .add_empty() // line 9
+            .add_single(h_label, TextAlignment::Center) // line 10
+            .add_single(h_bar, TextAlignment::Center) // line 11
+            .add_empty() // line 12
+            .add_single(s_label, TextAlignment::Center) // line 13
+            .add_single(s_bar, TextAlignment::Center) // line 14
+            .add_empty() // line 15
+            .add_single(v_label, TextAlignment::Center) // line 16
+            .add_single(v_bar, TextAlignment::Center) // line 17
+            .add_empty() // line 18
+            .add_separator() // line 19
+            // Add the special centered keybind line
+            .add_single(first_hint_line.to_string(), TextAlignment::Center) // line 20
+            // Add the up/down centered keybind line
+            .add_single(second_hint_line.to_string(), TextAlignment::Center) // line 21
+            // Add single centered Tab H → S → V line
+            .add_single(tab_hint_line.to_string(), TextAlignment::Center) // line 22
+            // Add remaining keybind lines (no Tab) left-aligned
+            .add_single(key_label_lines[0].clone(), TextAlignment::Center) // line 23
+            .add_single(key_label_lines[1].clone(), TextAlignment::Center) // line 24
+            .add_single(key_label_lines[2].clone(), TextAlignment::Center) // line 25
+            .add_single(key_label_lines[3].clone(), TextAlignment::Center) // line 26
+            .add_separator() // line 27
+            .add_single(gradient_str, TextAlignment::Left) // line 28
+            .build_overlay();
+
+        overlay.rich_lines = Some(build_editor_rich_lines(
+            state,
+            &overlay.lines,
+            hsv,
+            panel_style.text_primary,
+            accent,
+        ));
+        overlay
     }
 
-    fn build_save_dialog_overlay(state: &PaletteEditorState) -> Vec<RichLine> {
-        let inner_w = 38usize;
-        let top = box_border(inner_w + 2, '╔', '═', '╗');
-        let sep = box_border(inner_w + 2, '╠', '═', '╣');
-        let bot = box_border(inner_w + 2, '╚', '═', '╝');
-        let blank = box_row(pad_line(Vec::new(), inner_w));
-
-        let title_row = box_row(pad_line(rich_text("   SAVE PALETTE", None, None), inner_w));
+    fn build_save_dialog_overlay(state: &PaletteEditorState) -> RenderedOverlay {
         let name_str = format!("Name: {:<25}", state.save_name_input);
-        let name_row = box_row(pad_line(rich_text(&name_str, None, None), inner_w));
-        let hint_row = box_row(pad_line(
-            rich_text("  Enter: Save    Esc: Cancel", None, None),
-            inner_w,
-        ));
 
-        vec![
-            top,
-            title_row,
-            sep,
-            blank.clone(),
-            name_row,
-            blank,
-            hint_row,
-            bot,
-        ]
+        PanelBuilder::new(38, None)
+            .with_padding(Padding::COMPACT)
+            .with_title("SAVE PALETTE")
+            .with_title_box()
+            .add_empty()
+            .add_single(name_str, TextAlignment::Left)
+            .add_empty()
+            .add_single(
+                "  Enter: Save    Esc: Cancel".to_string(),
+                TextAlignment::Left,
+            )
+            .build_overlay()
     }
 
     fn build_load_dialog_overlay(
         state: &PaletteEditorState,
         saved_palettes: &[crate::palette_manager::SavedPalette],
-    ) -> Vec<RichLine> {
-        let inner_w = 38usize;
-        let top = box_border(inner_w + 2, '╔', '═', '╗');
-        let sep = box_border(inner_w + 2, '╠', '═', '╣');
-        let bot = box_border(inner_w + 2, '╚', '═', '╝');
-        let blank = box_row(pad_line(Vec::new(), inner_w));
-
-        let title_row = box_row(pad_line(rich_text("   LOAD PALETTE", None, None), inner_w));
-
-        let mut lines = vec![top, title_row, sep, blank.clone()];
+    ) -> RenderedOverlay {
+        let mut builder = PanelBuilder::new(38, None)
+            .with_padding(Padding::COMPACT)
+            .with_title("LOAD PALETTE")
+            .with_title_box()
+            .add_empty();
 
         if saved_palettes.is_empty() {
-            lines.push(box_row(pad_line(
-                rich_text("  No saved palettes yet", None, None),
-                inner_w,
-            )));
+            builder =
+                builder.add_single("  No saved palettes yet".to_string(), TextAlignment::Left);
         } else {
             for (i, palette) in saved_palettes.iter().enumerate().take(8) {
                 let marker = if i == state.saved_palette_index {
@@ -670,27 +718,26 @@ impl PaletteEditorOverlay {
                     &palette.name
                 };
                 let entry = format!(" {} {:2}. {}", marker, i + 1, truncated);
-                lines.push(box_row(pad_line(rich_text(&entry, None, None), inner_w)));
+                builder = builder.add_single(entry, TextAlignment::Left);
             }
         }
 
-        lines.push(blank);
-        lines.push(box_row(pad_line(
-            rich_text("  ↑/↓: Select  Enter: Load", None, None),
-            inner_w,
-        )));
-        lines.push(box_row(pad_line(
-            rich_text("  Esc: Cancel", None, None),
-            inner_w,
-        )));
-        lines.push(bot);
-        lines
+        builder
+            .add_empty()
+            .add_single(
+                "  ↑/↓: Select  Enter: Load".to_string(),
+                TextAlignment::Left,
+            )
+            .add_single("  Esc: Cancel".to_string(), TextAlignment::Left)
+            .build_overlay()
     }
 
     /// Calculate the centered position for the overlay.
+    ///
+    /// Adds 1 to y so the title box drawn at y-1 stays on screen.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
-        let y = (term_height.saturating_sub(Self::HEIGHT)) / 2;
+        let y = (term_height.saturating_sub(Self::HEIGHT + 1)) / 2 + 1;
         (x, y)
     }
 }
@@ -717,15 +764,71 @@ mod tests {
         state.select_prev_color();
         assert_eq!(state.selected_color_index, 0);
 
+        // Wraps back to ALL slot (index 11) from 0.
         state.select_prev_color();
-        assert_eq!(state.selected_color_index, PALETTE_COLOR_COUNT - 1);
+        assert_eq!(state.selected_color_index, PALETTE_COLOR_COUNT);
+    }
+
+    #[test]
+    fn test_color_navigation_wraps_forward_through_all() {
+        let mut state = PaletteEditorState::new(&Palette::Forest);
+        // Navigate forward through all 11 color stops to the ALL slot.
+        for _ in 0..PALETTE_COLOR_COUNT {
+            state.select_next_color();
+        }
+        assert_eq!(state.selected_color_index, PALETTE_COLOR_COUNT); // ALL slot
+
+        // One more wraps back to 0.
+        state.select_next_color();
+        assert_eq!(state.selected_color_index, 0);
+    }
+
+    #[test]
+    fn test_is_all_selected() {
+        let mut state = PaletteEditorState::new(&Palette::Forest);
+        assert!(!state.is_all_selected());
+
+        state.selected_color_index = PALETTE_COLOR_COUNT;
+        assert!(state.is_all_selected());
+    }
+
+    #[test]
+    fn test_all_selected_adjust_applies_to_all_stops() {
+        let mut state = PaletteEditorState::new(&Palette::Forest);
+        let original_colors = state.colors;
+
+        state.selected_color_index = PALETTE_COLOR_COUNT; // ALL slot
+        state.adjust_hue(90.0);
+
+        assert!(state.is_modified);
+        // Every stop should have changed.
+        for i in 0..PALETTE_COLOR_COUNT {
+            assert_ne!(
+                state.colors[i], original_colors[i],
+                "Stop {} should have changed after ALL hue adjust",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_average_hsv_calculation() {
+        let mut state = PaletteEditorState::new(&Palette::Forest);
+
+        // Set all colors to pure red (hue=0, sat=1, val=1).
+        for color in state.colors.iter_mut() {
+            *color = RgbColor { r: 255, g: 0, b: 0 };
+        }
+
+        let avg = state.average_hsv();
+        assert!(avg.s > 0.9, "Average saturation should be ~1.0");
+        assert!(avg.v > 0.9, "Average value should be ~1.0");
     }
 
     #[test]
     fn test_hsv_adjustment() {
         let mut state = PaletteEditorState::new(&Palette::Forest);
 
-        // Set a known color
         state.colors[0] = RgbColor { r: 255, g: 0, b: 0 }; // Pure red
         let original_hue = state.current_hsv().h;
         assert!(
@@ -737,8 +840,7 @@ mod tests {
         assert!(state.is_modified);
 
         let new_hue = state.current_hsv().h;
-        let expected = 10.0;
-        let diff = (new_hue - expected).abs();
+        let diff = (new_hue - 10.0).abs();
         assert!(
             diff < 1.0,
             "hue should change by ~10 degrees: new={}, diff={}",
@@ -785,26 +887,98 @@ mod tests {
     #[test]
     fn test_build_overlay_produces_lines() {
         let state = PaletteEditorState::new(&Palette::Forest);
-        let lines = PaletteEditorOverlay::build_overlay(&state);
-        assert!(!lines.is_empty());
-        // Each line should have WIDTH cells
-        for (i, line) in lines.iter().enumerate() {
+        let panel_style = crate::render::theme::GRUVBOX_DARK;
+        let accent =
+            crate::render::palette::palette_accent_color(&Palette::Forest, false, false, 0.0, None);
+        let overlay = PaletteEditorOverlay::build_overlay(&state, &panel_style, accent);
+        assert!(!overlay.lines.is_empty());
+        for (i, line) in overlay.lines.iter().enumerate() {
             assert_eq!(
-                line.len(),
+                line.chars().count(),
                 PaletteEditorOverlay::WIDTH,
-                "Line {} has wrong width: {}",
+                "Line {} has wrong width: {} ('{}')",
                 i,
-                line.len()
+                line.chars().count(),
+                line
             );
         }
     }
 
     #[test]
-    fn test_rich_text() {
-        let line = rich_text("abc", None, None);
-        assert_eq!(line.len(), 3);
-        assert_eq!(line[0].ch, 'a');
-        assert_eq!(line[1].ch, 'b');
-        assert_eq!(line[2].ch, 'c');
+    fn test_build_overlay_height() {
+        let state = PaletteEditorState::new(&Palette::Forest);
+        let panel_style = crate::render::theme::GRUVBOX_DARK;
+        let accent =
+            crate::render::palette::palette_accent_color(&Palette::Forest, false, false, 0.0, None);
+        let overlay = PaletteEditorOverlay::build_overlay(&state, &panel_style, accent);
+        assert_eq!(overlay.lines.len(), PaletteEditorOverlay::HEIGHT);
+    }
+
+    #[test]
+    fn test_swatches_str_width() {
+        let s = build_swatches_str(0);
+        assert_eq!(s.chars().count(), 48); // 12 × 4 for centering
+    }
+
+    #[test]
+    fn test_swatches_str_all_selected_width() {
+        let s = build_swatches_str(PALETTE_COLOR_COUNT); // ALL slot
+        assert_eq!(s.chars().count(), 48);
+    }
+
+    #[test]
+    fn test_swatch_labels_str_width() {
+        let s = build_swatch_labels_str();
+        assert_eq!(s.chars().count(), 48);
+    }
+
+    #[test]
+    fn test_hex_str_width() {
+        let rgb = RgbColor {
+            r: 255,
+            g: 128,
+            b: 0,
+        };
+        let s = build_hex_str(rgb);
+        assert_eq!(s.chars().count(), 7); // #rrggbb
+    }
+
+    #[test]
+    fn test_slider_label_width() {
+        let s = build_slider_label(true, 'H', "180.0°");
+        assert!(s.chars().count() > 0);
+    }
+
+    #[test]
+    fn test_slider_bar_width() {
+        let s = build_slider_bar(0.5);
+        assert_eq!(s.chars().count(), TRACK_LEN);
+    }
+
+    #[test]
+    fn test_slider_bar_cursor_position() {
+        let s = build_slider_bar(0.0);
+        assert!(s.starts_with('◆'));
+        let s = build_slider_bar(1.0);
+        assert!(s.ends_with('◆'));
+    }
+
+    #[test]
+    fn test_build_overlay_all_selected() {
+        let mut state = PaletteEditorState::new(&Palette::Forest);
+        state.selected_color_index = PALETTE_COLOR_COUNT; // ALL slot
+        let panel_style = crate::render::theme::GRUVBOX_DARK;
+        let accent =
+            crate::render::palette::palette_accent_color(&Palette::Forest, false, false, 0.0, None);
+        let overlay = PaletteEditorOverlay::build_overlay(&state, &panel_style, accent);
+        assert_eq!(overlay.lines.len(), PaletteEditorOverlay::HEIGHT);
+        for (i, line) in overlay.lines.iter().enumerate() {
+            assert_eq!(
+                line.chars().count(),
+                PaletteEditorOverlay::WIDTH,
+                "Line {} has wrong width in ALL mode",
+                i
+            );
+        }
     }
 }

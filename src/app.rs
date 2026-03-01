@@ -28,7 +28,6 @@ use crate::render::overlay::{
 };
 use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
 use crate::render::palette_editor::{PaletteEditorOverlay, PaletteEditorState};
-use crate::render::RichLine;
 use crate::simulation::config::{
     Attractor, DiffusionKernel, InitMode, Preset, SimConfig, TerrainType,
 };
@@ -1521,15 +1520,22 @@ pub fn run_simulation(
             (0, 0)
         };
 
-        let palette_editor_lines: Option<Vec<RichLine>> = runtime_state
+        let accent = palette_accent_color(
+            &runtime_state.current_palette(&palette_list),
+            runtime_state.reverse_palette,
+            runtime_state.invert_palette,
+            0.0,
+            Some(&runtime_state.intensity_mapping),
+        );
+        let palette_editor_overlay: Option<RenderedOverlay> = runtime_state
             .show_palette_editor
             .then(|| {
-                palette_editor_state
-                    .as_ref()
-                    .map(PaletteEditorOverlay::build_overlay)
+                palette_editor_state.as_ref().map(|s| {
+                    PaletteEditorOverlay::build_overlay(s, &runtime_state.panel_style, accent)
+                })
             })
             .flatten();
-        let (palette_editor_x, palette_editor_y) = if palette_editor_lines.is_some() {
+        let (palette_editor_x, palette_editor_y) = if palette_editor_overlay.is_some() {
             PaletteEditorOverlay::calculate_position(term_width as usize, term_height as usize)
         } else {
             (0, 0)
@@ -1904,9 +1910,9 @@ pub fn run_simulation(
                 preset_comparison_lines
                     .as_ref()
                     .map(|v| (v, preset_comparison_x, preset_comparison_y)),
-                palette_editor_lines
+                palette_editor_overlay
                     .as_ref()
-                    .map(|v| (v.as_slice(), palette_editor_x, palette_editor_y)),
+                    .map(|v| (v, palette_editor_x, palette_editor_y)),
                 Some(&runtime_state.panel_style),
                 runtime_state.focused_overlay,
             )?;
@@ -1932,9 +1938,9 @@ pub fn run_simulation(
                 preset_comparison_lines
                     .as_ref()
                     .map(|v| (v, preset_comparison_x, preset_comparison_y)),
-                palette_editor_lines
+                palette_editor_overlay
                     .as_ref()
-                    .map(|v| (v.as_slice(), palette_editor_x, palette_editor_y)),
+                    .map(|v| (v, palette_editor_x, palette_editor_y)),
                 Some(&runtime_state.panel_style),
                 runtime_state.focused_overlay,
             )?;
@@ -1953,6 +1959,17 @@ pub fn run_simulation(
                         use crossterm::event::KeyModifiers;
                         runtime_state.shift_held =
                             key_event.modifiers.contains(KeyModifiers::SHIFT);
+                    }
+
+                    // GLOBAL EXIT HANDLING -- always allow 'q' to quit regardless of overlay
+                    if InputPoller::is_exit_key(&key_event) {
+                        should_exit = true;
+                        break;
+                    }
+                    let action = handle_key_event(&key_event);
+                    if let ControlAction::Quit = action {
+                        should_exit = true;
+                        break;
                     }
 
                     // Skip warmup on any key press
@@ -2838,7 +2855,7 @@ pub fn run_simulation(
                             ));
                         }
                         ControlAction::ShowPaletteEditor => {
-                            runtime_state.show_palette_editor = !runtime_state.show_palette_editor;
+                            runtime_state.toggle_palette_editor();
                             if runtime_state.show_palette_editor {
                                 let current_palette = runtime_state.current_palette(&palette_list);
                                 palette_editor_state =

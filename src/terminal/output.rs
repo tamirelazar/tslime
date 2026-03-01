@@ -17,7 +17,6 @@ use crate::render::palette::IntensityMapping;
 use crate::render::palette::RgbColor;
 use crate::render::panel::RenderedOverlay;
 use crate::render::theme::PanelStyle;
-use crate::render::RichLine;
 use crossterm::{execute, Command};
 use std::fmt;
 use std::io::{self, Stdout};
@@ -410,48 +409,6 @@ impl FrameBuffer {
                         _ => self.cells[idx].bg_color_256 = Some(palette::rgb_to_256(bg)),
                     }
                 }
-            }
-        }
-    }
-
-    /// Draw a palette editor overlay (uses `RichCell` grid with per-cell fg/bg).
-    pub fn draw_palette_editor_overlay(
-        &mut self,
-        lines: &[RichLine],
-        start_x: usize,
-        start_y: usize,
-        default_fg: RgbColor,
-        default_bg: Option<RgbColor>,
-    ) {
-        for (dy, line) in lines.iter().enumerate() {
-            let y = start_y + dy;
-            if y >= self.height {
-                break;
-            }
-            for (dx, cell) in line.iter().enumerate() {
-                let x = start_x + dx;
-                if x >= self.width {
-                    break;
-                }
-                let fg = cell.fg.unwrap_or(default_fg);
-                let bg = cell.bg.or(default_bg);
-                let idx = y * self.width + x;
-                self.cells[idx] = match self.color_mode {
-                    ColorMode::TrueColor => Cell {
-                        char: cell.ch,
-                        fg_color_256: None,
-                        bg_color_256: None,
-                        fg_color_rgb: Some(fg),
-                        bg_color_rgb: bg,
-                    },
-                    _ => Cell {
-                        char: cell.ch,
-                        fg_color_256: Some(palette::rgb_to_256(fg)),
-                        bg_color_256: bg.map(palette::rgb_to_256),
-                        fg_color_rgb: None,
-                        bg_color_rgb: None,
-                    },
-                };
             }
         }
     }
@@ -1442,7 +1399,7 @@ impl TerminalRenderer {
         config_save_lines: Option<(&RenderedOverlay, usize, usize)>,
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
-        palette_editor_lines: Option<(&[RichLine], usize, usize)>,
+        palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
         panel_style: Option<&crate::render::theme::PanelStyle>,
         _focused_overlay: Option<crate::terminal::control::OverlayType>,
     ) -> io::Result<()> {
@@ -1730,18 +1687,8 @@ impl TerminalRenderer {
         }
 
         // Palette editor overlay (modal, on top)
-        if let Some((lines, x, y)) = palette_editor_lines {
-            let default_fg = RgbColor {
-                r: 220,
-                g: 220,
-                b: 220,
-            };
-            let default_bg = Some(RgbColor {
-                r: 30,
-                g: 30,
-                b: 30,
-            });
-            buffer.draw_palette_editor_overlay(lines, x, y, default_fg, default_bg);
+        if let Some((overlay, x, y)) = palette_editor_overlay {
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::PALETTE_EDITOR);
         }
 
         execute!(self.stdout, &buffer)
@@ -1767,7 +1714,7 @@ impl TerminalRenderer {
         config_save_lines: Option<(&RenderedOverlay, usize, usize)>,
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
-        palette_editor_lines: Option<(&[RichLine], usize, usize)>,
+        palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
         panel_style_ms: Option<&crate::render::theme::PanelStyle>,
         _focused_overlay: Option<crate::terminal::control::OverlayType>,
     ) -> io::Result<()> {
@@ -2069,18 +2016,8 @@ impl TerminalRenderer {
         }
 
         // Palette editor overlay (modal, on top)
-        if let Some((lines, x, y)) = palette_editor_lines {
-            let default_fg = RgbColor {
-                r: 220,
-                g: 220,
-                b: 220,
-            };
-            let default_bg = Some(RgbColor {
-                r: 30,
-                g: 30,
-                b: 30,
-            });
-            buffer.draw_palette_editor_overlay(lines, x, y, default_fg, default_bg);
+        if let Some((overlay, x, y)) = palette_editor_overlay {
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::PALETTE_EDITOR);
         }
 
         execute!(self.stdout, &buffer)
@@ -2752,6 +2689,7 @@ mod tests {
             10,
             10,
             1.0,
+            None,
             None,
             None,
             None,

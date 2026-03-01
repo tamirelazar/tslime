@@ -840,6 +840,7 @@ impl RuntimeState {
             || self.show_info
             || self.show_config_browser
             || self.show_config_save_dialog
+            || self.show_palette_editor
     }
 
     /// Closes all open overlay windows.
@@ -851,7 +852,18 @@ impl RuntimeState {
         self.show_info = false;
         self.show_config_browser = false;
         self.show_config_save_dialog = false;
+        self.show_palette_editor = false;
         self.focused_overlay = None;
+    }
+
+    /// Toggles palette editor (mutually exclusive with other overlays).
+    pub fn toggle_palette_editor(&mut self) {
+        if self.show_palette_editor {
+            self.show_palette_editor = false;
+        } else {
+            self.close_all_overlays();
+            self.show_palette_editor = true;
+        }
     }
 
     /// Updates the focused overlay based on currently open overlays.

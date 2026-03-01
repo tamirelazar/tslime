@@ -22,5 +22,3 @@ pub mod palette_editor;
 pub mod panel;
 /// Theme/color scheme definitions.
 pub mod theme;
-
-pub use palette_editor::{RichCell, RichLine};
