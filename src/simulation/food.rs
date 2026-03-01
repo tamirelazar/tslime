@@ -3,8 +3,37 @@
 //! This module provides functionality to load images and convert them into
 //! brightness maps (grayscale values) that can act as food sources for agents.
 
+use crate::food_image::FOOD_IMAGE_PNG;
 use image::io::Reader as ImageReader;
 use std::path::Path;
+
+/// Load an image from bytes and convert it to a scaled grayscale brightness map.
+///
+/// This is used for the embedded default food image.
+///
+/// # Arguments
+///
+/// * `bytes` - The image data as bytes.
+/// * `target_width` - The width of the simulation grid.
+/// * `target_height` - The height of the simulation grid.
+/// * `invert` - Whether to invert the brightness values (dark becomes light).
+/// * `scale` - Scale factor for the image relative to the target dimensions.
+///
+/// # Returns
+///
+/// A `Vec<f32>` representing the brightness map in row-major order, or an error string.
+pub fn load_image_from_memory(
+    bytes: &[u8],
+    target_width: usize,
+    target_height: usize,
+    invert: bool,
+    scale: f32,
+) -> Result<Vec<f32>, String> {
+    let img =
+        image::load_from_memory(bytes).map_err(|e| format!("Failed to decode image: {}", e))?;
+
+    process_image(img, target_width, target_height, invert, scale)
+}
 
 /// Load an image and convert it to a scaled grayscale brightness map.
 ///
@@ -40,9 +69,30 @@ pub fn load_image_grayscale(
         .decode()
         .map_err(|e| format!("Failed to decode image: {}", e))?;
 
-    let _ = img.width() as usize;
-    let _ = img.height() as usize;
+    process_image(img, target_width, target_height, invert, scale)
+}
 
+/// Load the embedded default food image.
+///
+/// This is the preferred way to load the food image as it works in both
+/// development and bundled app scenarios.
+pub fn load_default_food_image(
+    target_width: usize,
+    target_height: usize,
+    invert: bool,
+    scale: f32,
+) -> Result<Vec<f32>, String> {
+    load_image_from_memory(FOOD_IMAGE_PNG, target_width, target_height, invert, scale)
+}
+
+/// Common image processing logic for both file and memory loaded images.
+fn process_image(
+    img: image::DynamicImage,
+    target_width: usize,
+    target_height: usize,
+    invert: bool,
+    scale: f32,
+) -> Result<Vec<f32>, String> {
     let scaled_width = (target_width as f32 * scale) as usize;
     let scaled_height = (target_height as f32 * scale) as usize;
 
@@ -134,8 +184,8 @@ mod tests {
     }
 
     #[test]
-    fn test_load_image_grayscale_success() {
-        let result = load_image_grayscale("assets/tslime_logo.png", 10, 10, false, 1.0);
+    fn test_load_image_from_memory_success() {
+        let result = load_image_from_memory(FOOD_IMAGE_PNG, 10, 10, false, 1.0);
         assert!(result.is_ok());
         let map = result.unwrap();
         assert_eq!(map.len(), 100);

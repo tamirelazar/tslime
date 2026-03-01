@@ -18,7 +18,7 @@ pub mod trail_map;
 use crate::simulation::agent::Agent;
 use crate::simulation::agent::NoiseWrapper;
 use crate::simulation::config::{InitMode, SimConfig};
-use crate::simulation::food::{get_brightness_at, load_image_grayscale};
+use crate::simulation::food::{get_brightness_at, load_default_food_image, load_image_grayscale};
 use crate::simulation::trail_map::TrailMap;
 use rand::Rng as RandRng;
 use rand::SeedableRng;
@@ -467,18 +467,31 @@ impl Simulation {
         food_image_invert: bool,
         food_image_scale: f32,
     ) {
-        let brightness_map = match load_image_grayscale(
-            food_path,
-            width,
-            height,
-            food_image_invert,
-            food_image_scale,
-        ) {
-            Ok(map) => map,
-            Err(e) => {
-                eprintln!("Warning: Failed to load food image '{}': {}", food_path, e);
-                eprintln!("Falling back to random initialization");
-                return Self::init_random(rng, width, height, agents, population, species_id);
+        // Use embedded default food image for standard initialization,
+        // or load from custom path if user specified one.
+        let brightness_map = if food_path == "assets/tslime_logo.png" {
+            match load_default_food_image(width, height, food_image_invert, food_image_scale) {
+                Ok(map) => map,
+                Err(e) => {
+                    eprintln!("Warning: Failed to load embedded food image: {}", e);
+                    eprintln!("Falling back to random initialization");
+                    return Self::init_random(rng, width, height, agents, population, species_id);
+                }
+            }
+        } else {
+            match load_image_grayscale(
+                food_path,
+                width,
+                height,
+                food_image_invert,
+                food_image_scale,
+            ) {
+                Ok(map) => map,
+                Err(e) => {
+                    eprintln!("Warning: Failed to load food image '{}': {}", food_path, e);
+                    eprintln!("Falling back to random initialization");
+                    return Self::init_random(rng, width, height, agents, population, species_id);
+                }
             }
         };
 
@@ -853,11 +866,19 @@ impl Simulation {
         strength: f32,
         brightness_threshold: f32,
     ) -> Vec<crate::simulation::config::Attractor> {
-        let brightness_map =
+        // Use embedded default food image for standard initialization,
+        // or load from custom path if user specified one.
+        let brightness_map = if food_path == "assets/tslime_logo.png" {
+            match load_default_food_image(width, height, food_invert, food_scale) {
+                Ok(map) => map,
+                Err(_) => return Vec::new(),
+            }
+        } else {
             match load_image_grayscale(food_path, width, height, food_invert, food_scale) {
                 Ok(map) => map,
                 Err(_) => return Vec::new(),
-            };
+            }
+        };
 
         let mut attractors = Vec::new();
 

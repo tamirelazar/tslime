@@ -54,5 +54,12 @@ pub mod simulation;
 /// Terminal handling (input, output, raw mode).
 pub mod terminal;
 
+/// Embedded GUI terminal window (iced_term) for double-click launch.
+#[cfg(feature = "gui")]
+pub mod gui;
+
+/// Embedded food image data.
+mod food_image;
+
 // Re-export commonly used types
 pub use simulation::Simulation;
