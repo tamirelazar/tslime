@@ -788,7 +788,7 @@ pub struct Args {
     #[arg(
         long = "palette",
         value_name = "NAME",
-        default_value = "forest",
+        default_value = "moss",
         help = "Color palette (organic, heat, ocean, mono, forest, neon, warm, vibrant, legiblemono, slime, mold, fungus, swamp, moss, cosmic, ethereal) or custom: \"#rrggbb,#rrggbb,...\" (2-11 colors)"
     )]
     /// Color palette name or definition.
@@ -888,7 +888,7 @@ pub struct Args {
     #[arg(
         long = "intensity-mapping",
         value_name = "MODE",
-        default_value = "linear",
+        default_value = "log",
         help = "Intensity-to-color mapping (linear, log, exp, sqrt, square, sigmoid, smoothstep, quantize, perlin, split)"
     )]
     /// Intensity mapping mode for non-linear color distribution.

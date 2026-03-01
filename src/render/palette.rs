@@ -526,7 +526,7 @@ impl IntensityMapping {
 
 impl Default for IntensityMapping {
     fn default() -> Self {
-        Self::linear()
+        Self::logarithmic(10.0)
     }
 }
 

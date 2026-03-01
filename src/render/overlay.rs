@@ -464,22 +464,14 @@ pub fn format_notification(text: &str, level: NotificationLevel) -> String {
 /// Builds a two-line notification toast panel with an accent-colored border.
 ///
 /// The panel shows:
-/// - Line 1: `"{icon}  {LEVEL}  {message}"` with icon+level label in the level's accent color
+/// - Line 1: `"{icon}  {message}"` with icon in the level's accent color
 /// - Border characters colored with the theme's accent color for the notification level
-///
-/// Level labels: Info → "INFO", Success → "DONE", Warning → "WARN", Error → "ERR!"
 pub fn build_notification_panel(
     msg: &str,
     level: NotificationLevel,
     panel_style: &PanelStyle,
 ) -> RenderedOverlay {
-    let level_label = match level {
-        NotificationLevel::Info => "INFO",
-        NotificationLevel::Success => "DONE",
-        NotificationLevel::Warning => "WARN",
-        NotificationLevel::Error => "ERR!",
-    };
-    let content = format!("{}  {}  {}", level.icon(), level_label, msg);
+    let content = format!(" {}  {} ", level.icon(), msg);
     let cw = content.chars().count();
     let accent = match level {
         NotificationLevel::Info => panel_style.accent_info,
@@ -500,7 +492,7 @@ pub fn build_notification_panel(
 ///
 /// Colors:
 /// - All border characters (`█`, `▀`, `▄`) → accent foreground
-/// - Icon + level label prefix on the content line → accent foreground
+/// - Icon prefix on the content line → accent foreground
 #[allow(clippy::type_complexity)]
 fn build_notification_rich_lines(
     lines: &[String],
@@ -520,11 +512,9 @@ fn build_notification_rich_lines(
                         Some(accent)
                     } else if line_idx == 1 {
                         // Content line: positions 0-1 are border+padding, position 2 onwards is content.
-                        // Content format: "{icon}  {LABEL}  {message}"
-                        // icon = 1 char, 2 spaces, label = 4 chars → 7 chars total prefix
-                        // Panel layout: border(1) + pad(1) + content... so icon starts at char 2
-                        // Color positions 2 through 8 (icon + 2 spaces + 4-char label)
-                        if (2..=8).contains(&i) {
+                        // Content format: " {icon}  {message}"
+                        // icon = 1 char at position 3 (border(1) + pad(1) + space(1) = 3)
+                        if i == 3 {
                             Some(accent)
                         } else {
                             None

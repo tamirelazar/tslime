@@ -23,8 +23,7 @@ use crate::render::grid::{GridRenderer, GridStyle};
 use crate::render::options_overlay::ControlsOverlay;
 use crate::render::overlay::{
     build_notification_panel, ConfigBrowserOverlay, ConfigSaveOverlay, InfoOverlay,
-    KeyboardHintsOverlay, Padding, PanelBuilder, PresetComparisonOverlay, RenderedOverlay,
-    StatsOverlay, TextAlignment,
+    KeyboardHintsOverlay, PresetComparisonOverlay, RenderedOverlay, StatsOverlay,
 };
 use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
 use crate::render::palette_editor::{PaletteEditorOverlay, PaletteEditorState};
@@ -34,7 +33,7 @@ use crate::simulation::config::{
 use crate::simulation::Simulation;
 use crate::terminal::control::{
     charset_name, handle_key_event, num_palettes, ControlAction, MouseInteractionMode,
-    NotificationLevel, PaletteShiftSpeed, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
+    PaletteShiftSpeed, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
 };
 use crate::terminal::detection::{log_capabilities, TerminalCapabilities};
 use crate::terminal::input::{InputPoller, MouseEventType};
@@ -185,7 +184,7 @@ pub fn print_parameter_explanations() {
     println!("\n\nRENDERING & DISPLAY");
     println!("─────────────────────────────────────────────────────────────────────────");
 
-    println!("\n  --palette <NAME> (default: forest)");
+    println!("\n  --palette <NAME> (default: moss)");
     println!("    Color scheme for rendering trails.");
     println!("    Available: organic, heat, ocean, mono, forest, neon, warm, vibrant,");
     println!("               legiblemono, slime, mold, fungus, swamp, moss, cosmic, ethereal");
@@ -1239,7 +1238,7 @@ pub fn run_simulation(
     });
 
     let initial_preset = args.preset.unwrap_or(Preset::Organic);
-    let initial_palette = args.palette().unwrap_or(cli::Palette::Forest);
+    let initial_palette = args.palette().unwrap_or(cli::Palette::Moss);
     let palette_list = [
         cli::Palette::Organic,
         cli::Palette::Heat,
@@ -1625,29 +1624,9 @@ pub fn run_simulation(
             None
         };
 
-        // Notification at bottom center (or warmup message during warmup)
-        let notification_overlay: Option<RenderedOverlay> = if in_warmup {
-            let progress = (runtime_state.warmup_counter as f32 / 30.0 * std::f32::consts::PI)
-                .sin()
-                .abs();
-            let opacity = (progress * 3.0) as usize;
-            let dots = ".".repeat(opacity.min(3));
-            let msg = format!("Press any key to begin{}", dots);
-            let content = format!("{}  {}", NotificationLevel::Info.icon(), msg);
-            let cw = content.chars().count();
-            Some(
-                PanelBuilder::new(cw, None)
-                    .with_padding(Padding::COMPACT)
-                    .add_single(content, TextAlignment::Left)
-                    .build_overlay(),
-            )
-        } else {
-            runtime_state
-                .current_notification_full()
-                .map(|(msg, level)| {
-                    build_notification_panel(msg, level, &runtime_state.panel_style)
-                })
-        };
+        let notification_overlay: Option<RenderedOverlay> = runtime_state
+            .current_notification_full()
+            .map(|(msg, level)| build_notification_panel(msg, level, &runtime_state.panel_style));
         let notification_data = notification_overlay.as_ref().map(|overlay| {
             let outer_w = overlay.lines.first().map_or(0, |l| l.chars().count());
             let notif_x = if outer_w < term_width as usize {
@@ -1975,7 +1954,6 @@ pub fn run_simulation(
                     // Skip warmup on any key press
                     if in_warmup {
                         runtime_state.warmup_counter = args.warmup_frames; // Skip to end
-                        continue; // Don't process the key event during warmup
                     }
 
                     // Close keyboard hints on any key press
@@ -2610,6 +2588,16 @@ pub fn run_simulation(
                         }
                         ControlAction::CycleWindDirection => {
                             runtime_state.cycle_wind_direction();
+                            let mut new_config = sim.config().clone();
+                            new_config.wind = runtime_state.wind_direction.to_wind();
+                            sim.update_config(new_config);
+                            runtime_state.show_notification(format!(
+                                "Wind: {}",
+                                runtime_state.wind_direction.name()
+                            ));
+                        }
+                        ControlAction::CycleWindDirectionReverse => {
+                            runtime_state.cycle_wind_direction_reverse();
                             let mut new_config = sim.config().clone();
                             new_config.wind = runtime_state.wind_direction.to_wind();
                             sim.update_config(new_config);
