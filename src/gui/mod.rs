@@ -4,7 +4,10 @@
 //! Finder/Explorer). Spawns the tslime binary itself inside a PTY so the child
 //! process sees a real TTY and runs in normal TUI mode.
 
-use iced::{window, Font, Length, Size, Subscription, Task, Theme};
+mod fonts;
+
+use crate::gui::fonts::FIRA_CODE_NERD_FONT;
+use iced::{window, Length, Size, Subscription, Task, Theme};
 use iced_term::TerminalView;
 use std::io;
 
@@ -16,6 +19,9 @@ pub fn run() -> io::Result<()> {
         .decorations(false)
         .resizable(true)
         .subscription(App::subscription)
+        .font(include_bytes!(
+            "../../assets/fonts/FiraCodeNerdFont-Regular.ttf"
+        ))
         .run()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
 }
@@ -43,8 +49,8 @@ impl App {
         let settings = iced_term::settings::Settings {
             font: iced_term::settings::FontSettings {
                 size: 14.0,
-                scale_factor: 1.35, // ~35% extra line height, matching Ghostty config
-                font_type: Font::with_name("Fira Base Nerd Font"),
+                scale_factor: 1.20, // ~35% extra line height, matching Ghostty config
+                font_type: FIRA_CODE_NERD_FONT,
             },
             theme: iced_term::settings::ThemeSettings::new(Box::new(gruvbox_material_dark())),
             backend: iced_term::settings::BackendSettings {

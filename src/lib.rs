@@ -58,5 +58,8 @@ pub mod terminal;
 #[cfg(feature = "gui")]
 pub mod gui;
 
+/// Embedded food image data.
+mod food_image;
+
 // Re-export commonly used types
 pub use simulation::Simulation;
