@@ -45,7 +45,7 @@ impl Charset {
         } else if args.ascii {
             Charset::Ascii
         } else {
-            Charset::HalfBlock
+            Charset::HalfBlockDual
         }
     }
 
@@ -1100,7 +1100,7 @@ mod tests {
             braille: false,
             ..Default::default()
         };
-        assert_eq!(Charset::from_args(&args), Charset::HalfBlock);
+        assert_eq!(Charset::from_args(&args), Charset::HalfBlockDual);
     }
 
     #[test]

@@ -522,7 +522,7 @@ mod tests {
             diffusion_kernel: "mean3x3".to_string(),
             diffusion_sigma: 1.0,
             palette: "forest".to_string(),
-            charset: "halfblock".to_string(),
+            charset: "halfblockdual".to_string(),
             reverse_palette: false,
             invert_palette: false,
             warmup_frames: 60,

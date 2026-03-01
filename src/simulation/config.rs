@@ -713,16 +713,16 @@ impl Default for SimConfig {
             species_configs: vec![SpeciesConfig::default()],
             separate_species_trails: false,
             use_simd: true,
-            food_image_path: None,
-            food_image_invert: false,
-            food_image_scale: 1.0,
+            food_image_path: Some("assets/tslime_logo.png".to_string()),
+            food_image_invert: true,
+            food_image_scale: 0.5,
             obstacles: Vec::new(),
             obstacle_masks: Vec::new(),
             wind: None,
             terrain: TerrainType::None,
             terrain_strength: 1.0,
             background_color: None,
-            preferred_init_mode: None,
+            preferred_init_mode: Some(InitMode::Food),
         }
     }
 }
