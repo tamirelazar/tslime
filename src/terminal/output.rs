@@ -17,7 +17,7 @@ use crate::render::palette::IntensityMapping;
 use crate::render::palette::RgbColor;
 use crate::render::panel::RenderedOverlay;
 use crate::render::theme::PanelStyle;
-use crate::render::{RichCell, RichLine};
+use crate::render::RichLine;
 use crossterm::{execute, Command};
 use std::fmt;
 use std::io::{self, Stdout};
@@ -1547,7 +1547,7 @@ impl TerminalRenderer {
                             x: usize,
                             y: usize,
                             config: &OverlayConfig| {
-            let (fg, bg, panel_bg, border_col, _w) = get_overlay_colors(config, panel_style);
+            let (fg, bg, panel_bg, _border_col, _w) = get_overlay_colors(config, panel_style);
             if panel_bg.is_some() {
                 buf.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, None, 0);
             } else {

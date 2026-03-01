@@ -2962,7 +2962,7 @@ fn rgb_array_to_gradient_stops<const N: usize>(colors: &[RgbColor; N]) -> Vec<Gr
 }
 
 /// Get gradient stops for a palette (supports continuous interpolation)
-fn get_gradient_stops(palette: &Palette) -> Vec<GradientStop> {
+pub(crate) fn get_gradient_stops(palette: &Palette) -> Vec<GradientStop> {
     match palette {
         Palette::Custom(colors) => {
             // For custom palettes, create evenly spaced stops
