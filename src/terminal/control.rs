@@ -265,6 +265,8 @@ pub enum ControlAction {
     CycleMouseMode,
     /// Cycle wind direction.
     CycleWindDirection,
+    /// Cycle wind direction in reverse.
+    CycleWindDirectionReverse,
     /// Adjust terrain strength.
     AdjustTerrainStrength(f32),
     /// Cycle terrain type.
@@ -650,8 +652,8 @@ impl RuntimeState {
             palette_shift_speed: PaletteShiftSpeed::Off,
             invert_palette: false,
             reverse_palette: false,
-            intensity_mapping,
-            intensity_mapping_index: 0,
+            intensity_mapping: intensity_mapping.clone(),
+            intensity_mapping_index: Self::find_intensity_mapping_index(&intensity_mapping),
             show_stats: false,
             show_info: false,
             notification: None,
@@ -923,6 +925,17 @@ impl RuntimeState {
         ("Perlin", || IntensityMapping::perlin(0.15, 4.0, 42)),
     ];
 
+    /// Finds the index of a given intensity mapping by comparing with presets.
+    /// Returns 0 if no match found (falls back to Linear).
+    fn find_intensity_mapping_index(mapping: &IntensityMapping) -> usize {
+        for (i, (_, factory)) in Self::INTENSITY_MAPPINGS.iter().enumerate() {
+            if &factory() == mapping {
+                return i;
+            }
+        }
+        0
+    }
+
     /// Cycles through the available intensity mapping presets.
     pub fn cycle_intensity_mapping(&mut self, reverse: bool) {
         let count = Self::INTENSITY_MAPPINGS.len();
@@ -1084,7 +1097,7 @@ impl RuntimeState {
     /// Adjusts step size.
     pub fn adjust_step_size(&mut self, delta: f32) -> bool {
         self.checkpoint();
-        let new_value = (self.step_size + delta).clamp(0.5, 5.0);
+        let new_value = (self.step_size + delta).clamp(0.1, 5.0);
         let at_bound = (new_value - self.step_size).abs() < 0.01;
         self.step_size = new_value;
         at_bound
@@ -1158,6 +1171,22 @@ impl RuntimeState {
             WindDirection::Southwest => WindDirection::West,
             WindDirection::West => WindDirection::Northwest,
             WindDirection::Northwest => WindDirection::None,
+        };
+    }
+
+    /// Cycles wind direction in reverse.
+    pub fn cycle_wind_direction_reverse(&mut self) {
+        self.force_checkpoint();
+        self.wind_direction = match self.wind_direction {
+            WindDirection::None => WindDirection::Northwest,
+            WindDirection::North => WindDirection::None,
+            WindDirection::Northeast => WindDirection::North,
+            WindDirection::East => WindDirection::Northeast,
+            WindDirection::Southeast => WindDirection::East,
+            WindDirection::South => WindDirection::Southeast,
+            WindDirection::Southwest => WindDirection::South,
+            WindDirection::West => WindDirection::Southwest,
+            WindDirection::Northwest => WindDirection::West,
         };
     }
 
@@ -1535,9 +1564,9 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         }
         KeyCode::Char('S') | KeyCode::Char('s') => {
             if key_event.modifiers.contains(KeyModifiers::SHIFT) {
-                ControlAction::AdjustStepSize(-0.5)
+                ControlAction::AdjustStepSize(-0.1)
             } else {
-                ControlAction::AdjustStepSize(0.5)
+                ControlAction::AdjustStepSize(0.1)
             }
         }
         KeyCode::Char('E') | KeyCode::Char('e') => {
@@ -1570,7 +1599,8 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
             }
         }
         KeyCode::Char(',') | KeyCode::Char('<') => ControlAction::CycleMouseMode,
-        KeyCode::Char('W') | KeyCode::Char('w') => ControlAction::CycleWindDirection,
+        KeyCode::Char('W') => ControlAction::CycleWindDirectionReverse,
+        KeyCode::Char('w') => ControlAction::CycleWindDirection,
         KeyCode::Char('Y') | KeyCode::Char('y') => {
             if key_event.modifiers.contains(KeyModifiers::SHIFT) {
                 ControlAction::AdjustTerrainStrength(-0.5)

@@ -1542,11 +1542,15 @@ impl TerminalRenderer {
             if let Some(tb) = &overlay.title_box {
                 let mini_x = x + 1 + tb.col_offset;
                 let mini_y = y.saturating_sub(1);
-                let badge_fg = palette::rgb_to_256(palette::RgbColor {
-                    r: 255,
-                    g: 255,
-                    b: 255,
-                });
+                let badge_fg = if let Some(style) = panel_style {
+                    palette::rgb_to_256(style.text_primary)
+                } else {
+                    palette::rgb_to_256(palette::RgbColor {
+                        r: 255,
+                        g: 255,
+                        b: 255,
+                    })
+                };
                 if panel_bg.is_some() {
                     buf.draw_text_overlay_with_panel(
                         &tb.lines, mini_x, mini_y, badge_fg, bg, panel_bg, None, 0,
@@ -1866,11 +1870,15 @@ impl TerminalRenderer {
             if let Some(tb) = &overlay.title_box {
                 let mini_x = x + 1 + tb.col_offset;
                 let mini_y = y.saturating_sub(1);
-                let badge_fg = palette::rgb_to_256(palette::RgbColor {
-                    r: 255,
-                    g: 255,
-                    b: 255,
-                });
+                let badge_fg = if let Some(style) = panel_style_ms {
+                    palette::rgb_to_256(style.text_primary)
+                } else {
+                    palette::rgb_to_256(palette::RgbColor {
+                        r: 255,
+                        g: 255,
+                        b: 255,
+                    })
+                };
                 buf.draw_text_overlay(
                     &tb.lines,
                     mini_x,
