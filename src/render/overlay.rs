@@ -98,7 +98,7 @@ impl OverlayConfig {
 
     /// Keyboard hints overlay configuration
     pub const KEYBOARD_HINTS: OverlayConfig = OverlayConfig {
-        width: 60,
+        width: 88,
         height_padding: 1,
         width_padding: 2,
         text_color_256: 15,
@@ -174,65 +174,165 @@ pub struct KeyboardHintsOverlay;
 
 impl KeyboardHintsOverlay {
     /// Total rendered width of the keyboard hints window.
-    pub const WIDTH: usize = 64;
+    pub const WIDTH: usize = 88;
     /// Content width (inner drawable area).
-    const CONTENT_WIDTH: usize = 54; // 64 - 2(border) - 2*4(padding)
+    const CONTENT_WIDTH: usize = 74; // 88 - 2(border) - 6(pad-L) - 6(pad-R)
 
     /// Builds the keyboard hints overlay content.
-    pub fn build_overlay() -> RenderedOverlay {
+    pub fn build_overlay(accent: RgbColor) -> RenderedOverlay {
         use TextAlignment::Left;
 
-        PanelBuilder::new(Self::CONTENT_WIDTH, None)
-            .with_padding(Padding::new(1, 0, 4, 4))
-            .with_title("KEYBOARD SHORTCUTS")
+        let thin_sep = "─".repeat(Self::CONTENT_WIDTH);
+
+        let mut overlay = PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_columns(ColumnLayout::TwoEqual)
+            .with_padding(Padding::new(2, 2, 6, 6))
+            .with_title("KEYBOARD REFERENCE")
             .with_title_box()
-            .add_empty()
-            .add_single("SIMULATION                VISUALS", Left)
-            .add_single("Space    : Pause          c, Shift+C : Palette", Left)
-            .add_single("p        : Palette Editor", Left)
-            .add_single("r        : Restart        o          : Palette Shift", Left)
-            .add_single(
-                "q, Esc   : Quit           x          : Invert Palette",
+            .add_two_col("SIMULATION", "SYSTEM", Left, Left)
+            .add_two_col(
+                "Space      Pause / Resume",
+                "Ctrl+S     Save config",
+                Left,
                 Left,
             )
-            .add_single(
-                "+, -     : Time Scale     z          : Reverse Palette",
+            .add_two_col("r          Restart", "Ctrl+L     Load config", Left, Left)
+            .add_two_col(
+                "1 \u{2013} 7      Select preset",
+                "Ctrl+Z     Undo",
+                Left,
+                Left,
+            )
+            .add_two_col(
+                "Shift+1\u{2013}7  Compare preset",
+                "Ctrl+Y     Redo",
+                Left,
+                Left,
+            )
+            .add_two_col(
+                "p          Palette editor",
+                "q / Esc    Quit / close",
+                Left,
                 Left,
             )
             .add_empty()
-            .add_single("PRESETS                   POST-PROCESSING", Left)
-            .add_single("1-7      : Presets        d, D       : Dither Mode", Left)
-            .add_single("8        : Randomize      [, ]       : Dither Inten.", Left)
-            .add_single(
-                "0        : Defaults       b          : Auto Normalize",
+            .add_single(thin_sep, Left)
+            .add_empty()
+            .add_two_col("OVERLAYS", "POST-PROCESSING", Left, Left)
+            .add_two_col(
+                "h          Controls panel",
+                "m / M      Intensity map",
+                Left,
                 Left,
             )
-            .add_single("                          v          : Motion Blur", Left)
-            .add_single(
-                "SYSTEM                    n, Shift+N : Max Brightness",
+            .add_two_col(
+                "?          Keyboard hints",
+                "[ / ]      Dither strength",
+                Left,
                 Left,
             )
-            .add_single("h        : Controls       m, M       : Intensity Map", Left)
-            .add_single("?        : Help            f          : Fast Mode", Left)
-            .add_single("\\, |     : Dashboard       g          : Save PNG", Left)
-            .add_single("Tab      : Category       Ctrl+S     : Save Config", Left)
-            .add_single("                          Ctrl+L     : Load Config", Left)
-            .add_empty()
-            .add_single("DETAILED CONTROLS (Use Shift to decrease values)", Left)
-            .add_single("A: Sensor Angle   J: Sensor Dist    T: Turn Angle", Left)
-            .add_single("S: Step Size      E: Decay Factor   I: Deposit Amt", Left)
-            .add_single("K: Diff Kernel    ;: Diff Sigma     L: Attractor Str", Left)
-            .add_single("W: Wind Dir       U: Terrain Type   Y: Terrain Str", Left)
-            .add_single(",: Mouse Mode", Left)
-            .add_empty()
-            .add_single("Press any key to close this help", Left)
-            .build_overlay()
+            .add_two_col(
+                "\\ / |      Dashboard",
+                "9 / *      Cycle theme",
+                Left,
+                Left,
+            )
+            .add_two_col("Tab        Cycle category", "", Left, Left)
+            .build_overlay();
+        overlay.rich_lines = Some(Self::generate_rich_lines(&overlay.lines, accent));
+        overlay
+    }
+
+    /// Generates per-cell colour data: keybind tokens coloured with the accent colour.
+    fn generate_rich_lines(lines: &[String], accent: RgbColor) -> Vec<Vec<RichCell>> {
+        // Layout constants: 1 border + 6 padding = content starts at char index 7.
+        const CONTENT_START: usize = 7;
+        let col_width = Self::CONTENT_WIDTH / 2; // 37
+
+        lines
+            .iter()
+            .map(|line| {
+                let chars: Vec<char> = line.chars().collect();
+                let n = chars.len();
+
+                // Top border (█▀…), block separator (█▀…), and bottom border (█▄…):
+                // all start with █ and have ▀ or ▄ as the second character.
+                if chars.first() == Some(&'█')
+                    && chars.get(1).map(|&c| c == '▀' || c == '▄').unwrap_or(false)
+                {
+                    return chars.iter().map(|&c| (c, None, None)).collect();
+                }
+
+                // Empty content rows: everything between the border █ chars is spaces.
+                let inner_all_spaces = chars
+                    .get(1..n.saturating_sub(1))
+                    .map(|s| s.iter().all(|&c| c == ' '))
+                    .unwrap_or(true);
+                if inner_all_spaces {
+                    return chars.iter().map(|&c| (c, None, None)).collect();
+                }
+
+                // Thin separator row: first content char (after border + padding) is ─.
+                if chars.get(CONTENT_START) == Some(&'─') {
+                    return chars.iter().map(|&c| (c, None, None)).collect();
+                }
+
+                // Regular content row: colour the key token in each column.
+                let mut rich: Vec<RichCell> = chars.iter().map(|&c| (c, None, None)).collect();
+
+                for col_idx in 0..2 {
+                    let col_start = CONTENT_START + col_idx * col_width;
+                    let col_end = (col_start + col_width).min(n);
+                    if col_start >= n {
+                        break;
+                    }
+
+                    let col_chars = &chars[col_start..col_end];
+                    let col_text: String = col_chars.iter().collect();
+                    let trimmed = col_text.trim_start();
+
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+
+                    // Section headers are all-uppercase (e.g. "SIMULATION", "POST-PROCESSING").
+                    let first_word = trimmed.split_whitespace().next().unwrap_or("");
+                    let is_header = !first_word.is_empty()
+                        && first_word.chars().all(|c| c.is_uppercase() || c == '-');
+                    if is_header {
+                        continue;
+                    }
+
+                    // The key is the text up to the first run of two or more spaces.
+                    let indent = col_text.chars().count() - trimmed.chars().count();
+                    let key_len = Self::key_char_len(trimmed);
+                    let abs_start = col_start + indent;
+                    let abs_end = (abs_start + key_len).min(n);
+                    for cell in rich.iter_mut().take(abs_end).skip(abs_start) {
+                        cell.1 = Some(accent);
+                    }
+                }
+
+                rich
+            })
+            .collect()
+    }
+
+    /// Returns the char length of the key token: everything before the first double-space run.
+    fn key_char_len(text: &str) -> usize {
+        let chars: Vec<char> = text.chars().collect();
+        for (i, window) in chars.windows(2).enumerate() {
+            if window[0] == ' ' && window[1] == ' ' {
+                return i;
+            }
+        }
+        chars.len()
     }
 
     /// Calculates center position for the overlay.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
-        let y = (term_height.saturating_sub(30)) / 2;
+        let y = (term_height.saturating_sub(20)) / 2;
         (x, y)
     }
 }
@@ -990,7 +1090,7 @@ mod tests {
     fn test_keyboard_hints_position() {
         let (x, y) = KeyboardHintsOverlay::calculate_position(100, 100);
         assert_eq!(x, (100 - KeyboardHintsOverlay::WIDTH) / 2);
-        assert_eq!(y, 35);
+        assert_eq!(y, (100usize.saturating_sub(20)) / 2);
     }
 
     #[test]
@@ -1915,7 +2015,11 @@ mod status_line_tests {
 
     #[test]
     fn test_keyboard_hints_overlay_format() {
-        let hints_lines = KeyboardHintsOverlay::build_overlay();
+        let hints_lines = KeyboardHintsOverlay::build_overlay(RgbColor {
+            r: 180,
+            g: 220,
+            b: 100,
+        });
 
         // Solid-block borders
         for line in &hints_lines.lines {

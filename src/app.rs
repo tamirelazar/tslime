@@ -1493,19 +1493,6 @@ pub fn run_simulation(
         // Help lines are no longer used (deprecated), passing None to renderer
         // The renderer handles None gracefully by skipping the overlay
 
-        // Build keyboard hints overlay (? key)
-        let keyboard_hints_lines: Option<RenderedOverlay> =
-            if runtime_state.show_keyboard_hints && !runtime_state.show_dashboard {
-                Some(KeyboardHintsOverlay::build_overlay())
-            } else {
-                None
-            };
-        let (keyboard_hints_x, keyboard_hints_y) = if keyboard_hints_lines.is_some() {
-            KeyboardHintsOverlay::calculate_position(term_width as usize, term_height as usize)
-        } else {
-            (0, 0)
-        };
-
         // Build preset comparison overlay (Shift+1-7 keys)
         let preset_comparison_lines: Option<RenderedOverlay> =
             if runtime_state.show_preset_comparison && !runtime_state.show_dashboard {
@@ -1555,6 +1542,19 @@ pub fn run_simulation(
             hue_offset,
             Some(&runtime_state.intensity_mapping),
         );
+
+        // Build keyboard hints overlay (? key)
+        let keyboard_hints_lines: Option<RenderedOverlay> =
+            if runtime_state.show_keyboard_hints && !runtime_state.show_dashboard {
+                Some(KeyboardHintsOverlay::build_overlay(ui_accent))
+            } else {
+                None
+            };
+        let (keyboard_hints_x, keyboard_hints_y) = if keyboard_hints_lines.is_some() {
+            KeyboardHintsOverlay::calculate_position(term_width as usize, term_height as usize)
+        } else {
+            (0, 0)
+        };
 
         // Build controls overlay (h key)
         let controls_lines: Option<RenderedOverlay> =
