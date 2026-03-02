@@ -2115,3 +2115,151 @@ mod status_line_tests {
         assert!(lines.lines.iter().any(|l| l.contains("10k agents")));
     }
 }
+
+// --- PauseOverlay ---
+
+/// VCR-style pause screen: logo rendered in palette colors + blinking badge.
+pub struct PauseOverlay;
+
+impl PauseOverlay {
+    /// Build a logo overlay using sculpted quadrant characters with dual-color.
+    ///
+    /// Uses `map_sculpted_outline` (16 block elements + 4 triangle fills) for
+    /// shape fidelity, with independent fg/bg per cell. The `brightness_map`
+    /// must be `(logo_w * 2) x (logo_h * 2)` pixels (2×2 quadrants per cell).
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_logo(
+        brightness_map: &[f32],
+        logo_w: usize,
+        logo_h: usize,
+        palette: Palette,
+        reverse: bool,
+        invert: bool,
+        hue_shift: f32,
+        mapping: Option<&crate::render::palette::IntensityMapping>,
+    ) -> RenderedOverlay {
+        use crate::render::charset::map_quadrant;
+        use crate::render::palette::map_brightness_rgb;
+
+        const THRESHOLD: f32 = 0.12;
+
+        let pixel_w = logo_w * 2;
+        let mut rich_lines: Vec<Vec<RichCell>> = Vec::with_capacity(logo_h);
+        let mut lines: Vec<String> = Vec::with_capacity(logo_h);
+
+        for row in 0..logo_h {
+            let mut rich_row: Vec<RichCell> = Vec::with_capacity(logo_w);
+            let mut line = String::with_capacity(logo_w * 3);
+            for col in 0..logo_w {
+                // Sample 2×2 quadrants
+                let tl_idx = (row * 2) * pixel_w + col * 2;
+                let tr_idx = tl_idx + 1;
+                let bl_idx = (row * 2 + 1) * pixel_w + col * 2;
+                let br_idx = bl_idx + 1;
+
+                let tl_raw = brightness_map.get(tl_idx).copied().unwrap_or(0.0);
+                let tr_raw = brightness_map.get(tr_idx).copied().unwrap_or(0.0);
+                let bl_raw = brightness_map.get(bl_idx).copied().unwrap_or(0.0);
+                let br_raw = brightness_map.get(br_idx).copied().unwrap_or(0.0);
+
+                // Apply intensity mapping to pixel values before thresholding
+                // so log/exp/perlin etc. affect shape and visibility
+                let tl = if let Some(m) = mapping {
+                    m.apply(tl_raw.clamp(0.0, 1.0))
+                } else {
+                    tl_raw
+                };
+                let tr = if let Some(m) = mapping {
+                    m.apply(tr_raw.clamp(0.0, 1.0))
+                } else {
+                    tr_raw
+                };
+                let bl = if let Some(m) = mapping {
+                    m.apply(bl_raw.clamp(0.0, 1.0))
+                } else {
+                    bl_raw
+                };
+                let br = if let Some(m) = mapping {
+                    m.apply(br_raw.clamp(0.0, 1.0))
+                } else {
+                    br_raw
+                };
+
+                // Count "on" quadrants and accumulate brightness
+                let vals = [tl, tr, bl, br];
+                let mut total_brightness: f32 = 0.0;
+                let mut on_count: u32 = 0;
+                for &v in &vals {
+                    if v > THRESHOLD {
+                        total_brightness += v;
+                        on_count += 1;
+                    }
+                }
+
+                if on_count == 0 {
+                    // Fully transparent — dimmed sim shows through
+                    rich_row.push((' ', None, None));
+                    line.push(' ');
+                } else {
+                    let ch = map_quadrant(tl, tr, bl, br, THRESHOLD);
+                    let avg = total_brightness / on_count as f32;
+                    // Pass None for mapping here — already applied above
+                    let fg_color =
+                        map_brightness_rgb(avg, palette.clone(), reverse, invert, hue_shift, None);
+
+                    if on_count == 4 {
+                        // Full block — both fg and bg colored
+                        rich_row.push((ch, Some(fg_color), Some(fg_color)));
+                    } else {
+                        // Partial — fg colored, bg transparent
+                        rich_row.push((ch, Some(fg_color), None));
+                    }
+                    line.push(ch);
+                }
+            }
+            rich_lines.push(rich_row);
+            lines.push(line);
+        }
+
+        // Trim empty rows from top and bottom so centering works on visible content
+        let is_empty_row = |row: &Vec<RichCell>| row.iter().all(|&(ch, _, _)| ch == ' ');
+        let first_nonempty = rich_lines
+            .iter()
+            .position(|r| !is_empty_row(r))
+            .unwrap_or(0);
+        let last_nonempty = rich_lines
+            .iter()
+            .rposition(|r| !is_empty_row(r))
+            .unwrap_or(rich_lines.len().saturating_sub(1));
+        let rich_lines = rich_lines[first_nonempty..=last_nonempty].to_vec();
+        let lines = lines[first_nonempty..=last_nonempty].to_vec();
+
+        RenderedOverlay {
+            lines,
+            title_box: None,
+            rich_lines: Some(rich_lines),
+        }
+    }
+
+    /// Build a blinking "⏸ PAUSED" badge.
+    ///
+    /// `visible` controls whether the badge text is shown (for blink effect).
+    pub fn build_badge(visible: bool) -> RenderedOverlay {
+        let content = if visible {
+            "  ⏸  PAUSED  "
+        } else {
+            "              "
+        };
+        let accent = RgbColor {
+            r: 220,
+            g: 180,
+            b: 60,
+        };
+        let rich_row: Vec<RichCell> = content.chars().map(|c| (c, Some(accent), None)).collect();
+        RenderedOverlay {
+            lines: vec![content.to_string()],
+            title_box: None,
+            rich_lines: Some(vec![rich_row]),
+        }
+    }
+}

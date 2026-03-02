@@ -390,12 +390,16 @@ impl FrameBuffer {
             if y >= self.height {
                 break;
             }
-            for (dx, &(_, fg_override, bg_override)) in row.iter().enumerate() {
+            for (dx, &(ch, fg_override, bg_override)) in row.iter().enumerate() {
                 let x = start_x + dx;
                 if x >= self.width {
                     break;
                 }
                 let idx = y * self.width + x;
+                // Write character (space = transparent, let sim show through)
+                if ch != ' ' {
+                    self.cells[idx].char = ch;
+                }
                 if let Some(fg) = fg_override {
                     match self.color_mode {
                         ColorMode::TrueColor => self.cells[idx].fg_color_rgb = Some(fg),
@@ -1119,6 +1123,65 @@ impl FrameBuffer {
         output
     }
 
+    /// Darken all cells and add scanlines for VCR freeze-frame look.
+    ///
+    /// Called after `from_downsampled` when the simulation is paused.
+    /// - All cells: multiply RGB by `DIM` (~0.22)
+    /// - Even rows: multiply again by `SCANLINE` (~0.6) to create CRT scanline effect
+    pub fn apply_vcr_pause_effect(&mut self, frame_counter: u64) {
+        const DIM: f32 = 0.40;
+        const SCANLINE_DARK: f32 = 0.55; // even rows get this multiplier on top of DIM
+        const NOISE_AMOUNT: f32 = 0.08; // ±8% brightness jitter
+
+        for y in 0..self.height {
+            let scanline = if y % 2 == 0 { SCANLINE_DARK } else { 1.0 };
+            let base_factor = DIM * scanline;
+            for x in 0..self.width {
+                // Deterministic noise from position + frame
+                let hash = ((x as u64).wrapping_mul(2654435761)
+                    ^ (y as u64).wrapping_mul(2246822519)
+                    ^ frame_counter) as u32;
+                let noise = ((hash % 256) as f32 / 255.0 - 0.5) * 2.0 * NOISE_AMOUNT;
+                let factor = (base_factor + noise).clamp(0.05, 0.6);
+
+                let idx = y * self.width + x;
+                let cell = &mut self.cells[idx];
+                if let Some(c) = cell.fg_color_rgb {
+                    cell.fg_color_rgb = Some(RgbColor {
+                        r: (c.r as f32 * factor) as u8,
+                        g: (c.g as f32 * factor) as u8,
+                        b: (c.b as f32 * factor) as u8,
+                    });
+                }
+                if let Some(c) = cell.bg_color_rgb {
+                    cell.bg_color_rgb = Some(RgbColor {
+                        r: (c.r as f32 * factor) as u8,
+                        g: (c.g as f32 * factor) as u8,
+                        b: (c.b as f32 * factor) as u8,
+                    });
+                }
+                if let Some(c) = cell.fg_color_256 {
+                    let rgb = palette::ANSI_256_TO_RGB[c as usize];
+                    let dimmed = RgbColor {
+                        r: (rgb.r as f32 * factor) as u8,
+                        g: (rgb.g as f32 * factor) as u8,
+                        b: (rgb.b as f32 * factor) as u8,
+                    };
+                    cell.fg_color_256 = Some(palette::rgb_to_256(dimmed));
+                }
+                if let Some(c) = cell.bg_color_256 {
+                    let rgb = palette::ANSI_256_TO_RGB[c as usize];
+                    let dimmed = RgbColor {
+                        r: (rgb.r as f32 * factor) as u8,
+                        g: (rgb.g as f32 * factor) as u8,
+                        b: (rgb.b as f32 * factor) as u8,
+                    };
+                    cell.bg_color_256 = Some(palette::rgb_to_256(dimmed));
+                }
+            }
+        }
+    }
+
     /// Get the raw RGB values for all pixels in the frame buffer.
     ///
     /// Useful for exporting the frame to an image file.
@@ -1388,6 +1451,9 @@ impl TerminalRenderer {
         &mut self,
         downsampled: &[DownsampleCell],
         max_trail_value: f32,
+        pause_frame: Option<u64>,
+        pause_logo_overlay: Option<(&RenderedOverlay, usize, usize)>,
+        pause_badge_overlay: Option<(&RenderedOverlay, usize, usize)>,
         controls_lines: Option<(&RenderedOverlay, usize, usize)>,
         status_line: StatusLineData,
         notification_line: Option<(&RenderedOverlay, usize, usize)>,
@@ -1427,6 +1493,11 @@ impl TerminalRenderer {
             self.background_color,
             self.ascii_contrast,
         );
+
+        // Apply VCR freeze-frame dim+scanline effect when paused
+        if let Some(fc) = pause_frame {
+            buffer.apply_vcr_pause_effect(fc);
+        }
 
         // Apply grid rendering if enabled
         if let Some(mut grid) = grid_renderer.cloned() {
@@ -1590,6 +1661,18 @@ impl TerminalRenderer {
             }
         };
 
+        // Pause logo overlay (drawn first so status/controls appear on top)
+        if let Some((overlay, x, y)) = pause_logo_overlay {
+            if let Some(ref rich) = overlay.rich_lines {
+                buffer.draw_rich_overlay(rich, x, y);
+            }
+        }
+
+        // Pause badge overlay
+        if let Some((overlay, x, y)) = pause_badge_overlay {
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::NOTIFICATION);
+        }
+
         // Controls overlay at top-left
         if let Some((overlay, x, y)) = controls_lines {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONTROLS);
@@ -1701,6 +1784,9 @@ impl TerminalRenderer {
         sim_width: usize,
         sim_height: usize,
         max_trail_value: f32,
+        pause_frame: Option<u64>,
+        pause_logo_overlay: Option<(&RenderedOverlay, usize, usize)>,
+        pause_badge_overlay: Option<(&RenderedOverlay, usize, usize)>,
         controls_lines: Option<(&RenderedOverlay, usize, usize)>,
         status_line: StatusLineData,
         notification_line: Option<(&RenderedOverlay, usize, usize)>,
@@ -1778,6 +1864,11 @@ impl TerminalRenderer {
                     buffer.cells[i] = *cell;
                 }
             }
+        }
+
+        // Apply VCR freeze-frame dim+scanline effect when paused
+        if let Some(fc) = pause_frame {
+            buffer.apply_vcr_pause_effect(fc);
         }
 
         // Apply grid rendering if enabled
@@ -1917,6 +2008,18 @@ impl TerminalRenderer {
                 }
             }
         };
+
+        // Pause logo overlay (drawn first so status/controls appear on top)
+        if let Some((overlay, x, y)) = pause_logo_overlay {
+            if let Some(ref rich) = overlay.rich_lines {
+                buffer.draw_rich_overlay(rich, x, y);
+            }
+        }
+
+        // Pause badge overlay
+        if let Some((overlay, x, y)) = pause_badge_overlay {
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::NOTIFICATION);
+        }
 
         // Controls overlay at top-left
         if let Some((overlay, x, y)) = controls_lines {
@@ -2684,6 +2787,9 @@ mod tests {
             10,
             10,
             1.0,
+            None,
+            None,
+            None,
             None,
             None,
             None,

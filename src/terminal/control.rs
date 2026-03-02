@@ -565,6 +565,11 @@ pub struct RuntimeState {
     pub focused_overlay: Option<OverlayType>,
     /// Whether shift key is currently held down.
     pub shift_held: bool,
+    /// Cached logo brightness map for VCR pause effect: (logo_w, pixel_h, data).
+    /// Invalidated when `logo_w` changes (terminal resize).
+    pub pause_logo_cache: Option<(usize, usize, Vec<f32>)>,
+    /// Frame counter used for badge blink while paused.
+    pub pause_frame_counter: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -679,6 +684,8 @@ impl RuntimeState {
             theme_index: 0,
             focused_overlay: None,
             shift_held: false,
+            pause_logo_cache: None,
+            pause_frame_counter: 0,
         }
     }
 

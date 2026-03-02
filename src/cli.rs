@@ -922,6 +922,33 @@ pub struct Args {
     pub intensity_mapping_levels: u8,
 
     #[arg(
+        long = "perlin-strength",
+        value_name = "FLOAT",
+        default_value = "0.2",
+        help = "Perlin noise amplitude/strength (0.0–1.0, default: 0.2)"
+    )]
+    /// Amplitude for perlin intensity mapping (affects both sim and logo).
+    pub perlin_strength: f32,
+
+    #[arg(
+        long = "logo-mapping",
+        value_name = "MODE",
+        default_value = "log",
+        help = "Intensity mapping for pause logo (linear, log, exp, sqrt, square, sigmoid, smoothstep, quantize, perlin, split, sim=use sim mapping)"
+    )]
+    /// Intensity mapping for the pause logo. Defaults to "log".
+    pub logo_mapping: String,
+
+    #[arg(
+        long = "logo-mapping-base",
+        value_name = "FLOAT",
+        default_value = "4.0",
+        help = "Base for logo log/exp mapping (default: 4.0)"
+    )]
+    /// Base for the logo's logarithmic/exponential mapping.
+    pub logo_mapping_base: f32,
+
+    #[arg(
         long = "trail-history",
         value_name = "INT",
         default_value = "0",
@@ -1424,7 +1451,7 @@ impl Args {
             ),
             "smoothstep" => Ok(IntensityMapping::smoothstep()),
             "quantize" => Ok(IntensityMapping::quantize(self.intensity_mapping_levels)),
-            "perlin" => Ok(IntensityMapping::perlin(0.2, 5.0, 42)),
+            "perlin" => Ok(IntensityMapping::perlin(self.perlin_strength, 5.0, 42)),
             "split" => Ok(IntensityMapping::linear_log_split(
                 self.intensity_mapping_base,
             )),
@@ -1432,6 +1459,60 @@ impl Args {
                 "Invalid intensity mapping: {}",
                 self.intensity_mapping
             )),
+        }
+    }
+
+    /// Parses the logo intensity mapping. Returns `None` for "sim" (use sim's mapping).
+    pub fn logo_mapping(&self) -> Result<Option<crate::render::palette::IntensityMapping>, String> {
+        use crate::render::palette::{IntensityMapping, MappingFunction};
+
+        match self.logo_mapping.to_lowercase().as_str() {
+            "sim" => Ok(None),
+            "linear" => Ok(Some(IntensityMapping::linear())),
+            "log" | "logarithmic" => {
+                Ok(Some(IntensityMapping::logarithmic(self.logo_mapping_base)))
+            }
+            "exp" | "exponential" => {
+                Ok(Some(IntensityMapping::exponential(self.logo_mapping_base)))
+            }
+            "sqrt" | "squareroot" => Ok(Some(
+                IntensityMapping::new(vec![crate::render::palette::MappingSegment {
+                    start: 0.0,
+                    end: 1.0,
+                    function: MappingFunction::SquareRoot,
+                }])
+                .unwrap(),
+            )),
+            "square" => Ok(Some(
+                IntensityMapping::new(vec![crate::render::palette::MappingSegment {
+                    start: 0.0,
+                    end: 1.0,
+                    function: MappingFunction::Square,
+                }])
+                .unwrap(),
+            )),
+            "power" | "gamma" => Ok(Some(IntensityMapping::power(self.intensity_mapping_gamma))),
+            "sigmoid" => Ok(Some(
+                IntensityMapping::new(vec![crate::render::palette::MappingSegment {
+                    start: 0.0,
+                    end: 1.0,
+                    function: MappingFunction::Sigmoid { steepness: 6.0 },
+                }])
+                .unwrap(),
+            )),
+            "smoothstep" => Ok(Some(IntensityMapping::smoothstep())),
+            "quantize" => Ok(Some(IntensityMapping::quantize(
+                self.intensity_mapping_levels,
+            ))),
+            "perlin" => Ok(Some(IntensityMapping::perlin(
+                self.perlin_strength,
+                5.0,
+                42,
+            ))),
+            "split" => Ok(Some(IntensityMapping::linear_log_split(
+                self.logo_mapping_base,
+            ))),
+            _ => Err(format!("Invalid logo mapping: {}", self.logo_mapping)),
         }
     }
 
@@ -1801,6 +1882,9 @@ impl Default for Args {
             intensity_mapping_base: 10.0,
             intensity_mapping_gamma: 2.2,
             intensity_mapping_levels: 8,
+            perlin_strength: 0.2,
+            logo_mapping: "log".to_string(),
+            logo_mapping_base: 4.0,
             trail_history: 0,
             motion_blur: false,
             auto_normalize: false,

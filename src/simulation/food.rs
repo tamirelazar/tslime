@@ -35,6 +35,41 @@ pub fn load_image_from_memory(
     process_image(img, target_width, target_height, invert, scale)
 }
 
+/// Load an image from bytes for display purposes (logo overlay).
+///
+/// Uses Lanczos3 filtering for high-quality downscaling, unlike `load_image_from_memory`
+/// which uses Nearest-neighbor (suitable for food source gradients but not visual rendering).
+pub fn load_logo_from_memory(
+    bytes: &[u8],
+    target_width: usize,
+    target_height: usize,
+    invert: bool,
+) -> Result<Vec<f32>, String> {
+    let img =
+        image::load_from_memory(bytes).map_err(|e| format!("Failed to decode image: {}", e))?;
+
+    let resized = img.resize_exact(
+        target_width as u32,
+        target_height as u32,
+        image::imageops::FilterType::Lanczos3,
+    );
+
+    let grayscale: Vec<f32> = resized
+        .to_luma8()
+        .pixels()
+        .map(|p| {
+            let brightness = p[0] as f32 / 255.0;
+            if invert {
+                1.0 - brightness
+            } else {
+                brightness
+            }
+        })
+        .collect();
+
+    Ok(grayscale)
+}
+
 /// Load an image and convert it to a scaled grayscale brightness map.
 ///
 /// The image is resized to fit within the target dimensions while maintaining aspect ratio,
