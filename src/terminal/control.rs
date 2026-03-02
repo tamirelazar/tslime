@@ -317,6 +317,8 @@ pub enum ControlAction {
     CycleTheme,
     /// Cycle to previous UI theme.
     CycleThemeReverse,
+    /// Show palette editor.
+    ShowPaletteEditor,
     /// No action.
     None,
 }
@@ -519,6 +521,10 @@ pub struct RuntimeState {
     pub show_stats: bool,
     /// Show info overlay.
     pub show_info: bool,
+    /// Show palette editor overlay.
+    pub show_palette_editor: bool,
+    /// Saved palette name (if loaded from saved palette).
+    pub saved_palette_name: Option<String>,
     /// Current notification message with timestamp and severity level.
     pub notification: Option<(String, std::time::Instant, NotificationLevel)>,
     /// Frame counter for entropy collapse detection.
@@ -656,6 +662,8 @@ impl RuntimeState {
             intensity_mapping_index: Self::find_intensity_mapping_index(&intensity_mapping),
             show_stats: false,
             show_info: false,
+            show_palette_editor: false,
+            saved_palette_name: None,
             notification: None,
             collapse_frame_counter: 0,
             warmup_counter: 0,
@@ -834,6 +842,7 @@ impl RuntimeState {
             || self.show_info
             || self.show_config_browser
             || self.show_config_save_dialog
+            || self.show_palette_editor
     }
 
     /// Closes all open overlay windows.
@@ -845,7 +854,18 @@ impl RuntimeState {
         self.show_info = false;
         self.show_config_browser = false;
         self.show_config_save_dialog = false;
+        self.show_palette_editor = false;
         self.focused_overlay = None;
+    }
+
+    /// Toggles palette editor (mutually exclusive with other overlays).
+    pub fn toggle_palette_editor(&mut self) {
+        if self.show_palette_editor {
+            self.show_palette_editor = false;
+        } else {
+            self.close_all_overlays();
+            self.show_palette_editor = true;
+        }
     }
 
     /// Updates the focused overlay based on currently open overlays.
@@ -1504,7 +1524,8 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
     }
 
     match key_event.code {
-        KeyCode::Char('p') | KeyCode::Char('P') | KeyCode::Char(' ') => ControlAction::TogglePause,
+        KeyCode::Char(' ') => ControlAction::TogglePause,
+        KeyCode::Char('p') | KeyCode::Char('P') => ControlAction::ShowPaletteEditor,
         KeyCode::Char('r') | KeyCode::Char('R') => ControlAction::Restart,
         KeyCode::Char('1') => ControlAction::SetPreset(Preset::Network),
         KeyCode::Char('2') => ControlAction::SetPreset(Preset::Exploratory),

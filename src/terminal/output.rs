@@ -1399,6 +1399,7 @@ impl TerminalRenderer {
         config_save_lines: Option<(&RenderedOverlay, usize, usize)>,
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
+        palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
         panel_style: Option<&crate::render::theme::PanelStyle>,
         _focused_overlay: Option<crate::terminal::control::OverlayType>,
     ) -> io::Result<()> {
@@ -1503,7 +1504,7 @@ impl TerminalRenderer {
                             x: usize,
                             y: usize,
                             config: &OverlayConfig| {
-            let (fg, bg, panel_bg, border_col, _w) = get_overlay_colors(config, panel_style);
+            let (fg, bg, panel_bg, _border_col, _w) = get_overlay_colors(config, panel_style);
             if panel_bg.is_some() {
                 buf.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, None, 0);
             } else {
@@ -1689,6 +1690,11 @@ impl TerminalRenderer {
             );
         }
 
+        // Palette editor overlay (modal, on top)
+        if let Some((overlay, x, y)) = palette_editor_overlay {
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::PALETTE_EDITOR);
+        }
+
         execute!(self.stdout, &buffer)
     }
 
@@ -1712,6 +1718,7 @@ impl TerminalRenderer {
         config_save_lines: Option<(&RenderedOverlay, usize, usize)>,
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
+        palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
         panel_style_ms: Option<&crate::render::theme::PanelStyle>,
         _focused_overlay: Option<crate::terminal::control::OverlayType>,
     ) -> io::Result<()> {
@@ -2014,6 +2021,11 @@ impl TerminalRenderer {
                 y,
                 &OverlayConfig::PRESET_COMPARISON,
             );
+        }
+
+        // Palette editor overlay (modal, on top)
+        if let Some((overlay, x, y)) = palette_editor_overlay {
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::PALETTE_EDITOR);
         }
 
         execute!(self.stdout, &buffer)
@@ -2685,6 +2697,7 @@ mod tests {
             10,
             10,
             1.0,
+            None,
             None,
             None,
             None,

@@ -165,6 +165,16 @@ impl OverlayConfig {
         bg_color_256: 235,
         has_border: false,
     };
+
+    /// Palette editor overlay configuration
+    pub const PALETTE_EDITOR: OverlayConfig = OverlayConfig {
+        width: 56,
+        height_padding: 0,
+        width_padding: 1,
+        text_color_256: 15,
+        bg_color_256: 236,
+        has_border: true,
+    };
 }
 
 // --- END OverlayConfig ---
@@ -188,7 +198,8 @@ impl KeyboardHintsOverlay {
             .with_title_box()
             .add_empty()
             .add_single("SIMULATION                VISUALS", Left)
-            .add_single("p, Space : Pause          c, Shift+C : Palette", Left)
+            .add_single("Space    : Pause          c, Shift+C : Palette", Left)
+            .add_single("p        : Palette Editor", Left)
             .add_single("r        : Restart        o          : Palette Shift", Left)
             .add_single(
                 "q, Esc   : Quit           x          : Invert Palette",

@@ -16,6 +16,8 @@ pub mod options_overlay;
 pub mod overlay;
 /// Color palette definitions and conversions.
 pub mod palette;
+/// Interactive palette editor for custom color schemes.
+pub mod palette_editor;
 /// Panel styling and theme definitions.
 pub mod panel;
 /// Theme/color scheme definitions.
