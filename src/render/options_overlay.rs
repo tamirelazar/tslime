@@ -1,5 +1,5 @@
 use crate::render::palette::RgbColor;
-use crate::render::panel::{Padding, PanelBuilder, TextAlignment};
+use crate::render::panel::{Padding, PanelBuilder, RichCell, TextAlignment};
 use crate::render::theme::PanelStyle;
 use crate::simulation::config::DiffusionKernel;
 use crate::simulation::config::TerrainType;
@@ -580,7 +580,7 @@ fn generate_controls_rich_lines(
     category_idx: usize,
     panel_style: &PanelStyle,
     _shift_held: bool,
-) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
+) -> Vec<Vec<RichCell>> {
     let modified_color = panel_style.accent_modified;
     let muted_color = panel_style.muted;
     let tab_labels = ["SIM", "ENV", "APP", "PST", "PRF", "SYS"];
@@ -651,7 +651,7 @@ fn generate_controls_rich_lines(
                 && !matches!(chars.get(5), Some('⚙'))
                 && chars
                     .get(3..47.min(n))
-                    .map_or(false, |s| s.iter().any(|&c| c != ' '));
+                    .is_some_and(|s| s.iter().any(|&c| c != ' '));
 
             // Detect the controls footer lines
             let line_str: String = chars.iter().collect();
@@ -692,9 +692,9 @@ fn generate_controls_rich_lines(
             }
 
             // Detect CLI-only parameter rows (currently just Population)
-            let is_cli_only_row = chars.get(10..20).map_or(false, |s| {
-                s.iter().collect::<String>().contains("Population")
-            });
+            let is_cli_only_row = chars
+                .get(10..20)
+                .is_some_and(|s| s.iter().collect::<String>().contains("Population"));
 
             if !is_param_row {
                 return chars.iter().map(|&c| (c, None, None)).collect();

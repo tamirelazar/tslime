@@ -1383,6 +1383,9 @@ mod tests {
                     count: 100,
                     ..Default::default()
                 }],
+                // Override food path to None so Food mode falls back to random,
+                // ensuring exactly 100 agents regardless of embedded image coverage.
+                food_image_path: None,
                 ..Default::default()
             };
             let sim = Simulation::new(100, 100, config, 42, mode, 0);

@@ -74,10 +74,8 @@ fn get_palettes_path() -> Result<PathBuf, String> {
 
     let config_dir = PathBuf::from(home).join(CONFIG_DIR);
 
-    if !config_dir.exists() {
-        fs::create_dir_all(&config_dir)
-            .map_err(|e| format!("Failed to create config directory: {}", e))?;
-    }
+    fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config directory: {}", e))?;
 
     Ok(config_dir.join(PALETTES_FILE))
 }

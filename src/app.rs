@@ -26,7 +26,9 @@ use crate::render::overlay::{
     KeyboardHintsOverlay, PresetComparisonOverlay, RenderedOverlay, StatsOverlay,
 };
 use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
-use crate::render::palette_editor::{PaletteEditorOverlay, PaletteEditorState};
+use crate::render::palette_editor::{
+    EditorComponent, EditorMode, PaletteEditorOverlay, PaletteEditorState,
+};
 use crate::simulation::config::{
     Attractor, DiffusionKernel, InitMode, Preset, SimConfig, TerrainType,
 };
@@ -1520,7 +1522,7 @@ pub fn run_simulation(
         };
 
         let accent = palette_accent_color(
-            &runtime_state.current_palette(&palette_list),
+            &current_palette,
             runtime_state.reverse_palette,
             runtime_state.invert_palette,
             0.0,
@@ -2162,16 +2164,14 @@ pub fn run_simulation(
                             match key_event.code {
                                 KeyCode::Esc => {
                                     match state.mode {
-                                        crate::render::palette_editor::EditorMode::SaveDialog => {
+                                        EditorMode::SaveDialog => {
                                             state.save_name_input.clear();
-                                            state.mode =
-                                                crate::render::palette_editor::EditorMode::Editing;
+                                            state.mode = EditorMode::Editing;
                                         }
-                                        crate::render::palette_editor::EditorMode::LoadDialog => {
-                                            state.mode =
-                                                crate::render::palette_editor::EditorMode::Editing;
+                                        EditorMode::LoadDialog => {
+                                            state.mode = EditorMode::Editing;
                                         }
-                                        crate::render::palette_editor::EditorMode::Editing => {
+                                        EditorMode::Editing => {
                                             let original =
                                                 Palette::Custom(state.original_colors.to_vec());
                                             renderer.set_palette(original);
@@ -2190,19 +2190,17 @@ pub fn run_simulation(
                                     continue;
                                 }
                                 KeyCode::Up => {
-                                    if matches!(
-                                        state.mode,
-                                        crate::render::palette_editor::EditorMode::LoadDialog
-                                    ) {
+                                    if matches!(state.mode, EditorMode::LoadDialog) {
                                         if state.saved_palette_index > 0 {
                                             state.saved_palette_index -= 1;
                                         }
                                     } else {
                                         match state.selected_component {
-                                            crate::render::palette_editor::EditorComponent::Hue => state.adjust_hue(5.0),
-                                            crate::render::palette_editor::EditorComponent::Saturation => state.adjust_saturation(0.05),
-                                            crate::render::palette_editor::EditorComponent::Value => state.adjust_value(0.05),
-                                            _ => {}
+                                            EditorComponent::Hue => state.adjust_hue(5.0),
+                                            EditorComponent::Saturation => {
+                                                state.adjust_saturation(0.05)
+                                            }
+                                            EditorComponent::Value => state.adjust_value(0.05),
                                         }
                                         renderer
                                             .set_palette(Palette::Custom(state.colors.to_vec()));
@@ -2210,10 +2208,7 @@ pub fn run_simulation(
                                     continue;
                                 }
                                 KeyCode::Down => {
-                                    if matches!(
-                                        state.mode,
-                                        crate::render::palette_editor::EditorMode::LoadDialog
-                                    ) {
+                                    if matches!(state.mode, EditorMode::LoadDialog) {
                                         if state.saved_palette_index + 1
                                             < state.saved_palettes_list.len()
                                         {
@@ -2221,10 +2216,11 @@ pub fn run_simulation(
                                         }
                                     } else {
                                         match state.selected_component {
-                                            crate::render::palette_editor::EditorComponent::Hue => state.adjust_hue(-5.0),
-                                            crate::render::palette_editor::EditorComponent::Saturation => state.adjust_saturation(-0.05),
-                                            crate::render::palette_editor::EditorComponent::Value => state.adjust_value(-0.05),
-                                            _ => {}
+                                            EditorComponent::Hue => state.adjust_hue(-5.0),
+                                            EditorComponent::Saturation => {
+                                                state.adjust_saturation(-0.05)
+                                            }
+                                            EditorComponent::Value => state.adjust_value(-0.05),
                                         }
                                         renderer
                                             .set_palette(Palette::Custom(state.colors.to_vec()));
@@ -2232,8 +2228,7 @@ pub fn run_simulation(
                                     continue;
                                 }
                                 KeyCode::Char('v') | KeyCode::Char('V') => {
-                                    state.selected_component =
-                                        crate::render::palette_editor::EditorComponent::Value;
+                                    state.selected_component = EditorComponent::Value;
                                     continue;
                                 }
                                 KeyCode::Char('r') | KeyCode::Char('R') => {
@@ -2247,14 +2242,13 @@ pub fn run_simulation(
                                 }
                                 KeyCode::Char('s') | KeyCode::Char('S') => {
                                     if key_event.modifiers.contains(KeyModifiers::CONTROL) {
-                                        state.mode =
-                                            crate::render::palette_editor::EditorMode::SaveDialog;
+                                        state.mode = EditorMode::SaveDialog;
                                     } else if key_event.modifiers.contains(KeyModifiers::SHIFT) {
                                         state.adjust_saturation(0.1);
                                         renderer
                                             .set_palette(Palette::Custom(state.colors.to_vec()));
                                     } else {
-                                        state.selected_component = crate::render::palette_editor::EditorComponent::Saturation;
+                                        state.selected_component = EditorComponent::Saturation;
                                     }
                                     continue;
                                 }
@@ -2263,20 +2257,19 @@ pub fn run_simulation(
                                         state.saved_palettes_list = palettes;
                                         state.saved_palette_index = 0;
                                     }
-                                    state.mode =
-                                        crate::render::palette_editor::EditorMode::LoadDialog;
+                                    state.mode = EditorMode::LoadDialog;
                                     continue;
                                 }
                                 KeyCode::Enter => {
                                     match state.mode {
-                                        crate::render::palette_editor::EditorMode::Editing => {
+                                        EditorMode::Editing => {
                                             runtime_state.show_palette_editor = false;
                                             runtime_state.show_notification(
                                                 "Custom palette applied".to_string(),
                                             );
                                             palette_editor_state = None;
                                         }
-                                        crate::render::palette_editor::EditorMode::SaveDialog => {
+                                        EditorMode::SaveDialog => {
                                             if !state.save_name_input.is_empty() {
                                                 let palette = palette_manager::SavedPalette::new(
                                                     state.save_name_input.clone(),
@@ -2297,10 +2290,9 @@ pub fn run_simulation(
                                                 }
                                             }
                                             state.save_name_input.clear();
-                                            state.mode =
-                                                crate::render::palette_editor::EditorMode::Editing;
+                                            state.mode = EditorMode::Editing;
                                         }
-                                        crate::render::palette_editor::EditorMode::LoadDialog => {
+                                        EditorMode::LoadDialog => {
                                             if let Some(palette) = state
                                                 .saved_palettes_list
                                                 .get(state.saved_palette_index)
@@ -2318,8 +2310,7 @@ pub fn run_simulation(
                                                     state.colors.to_vec(),
                                                 ));
                                             }
-                                            state.mode =
-                                                crate::render::palette_editor::EditorMode::Editing;
+                                            state.mode = EditorMode::Editing;
                                         }
                                     }
                                     continue;
@@ -2327,10 +2318,7 @@ pub fn run_simulation(
                                 KeyCode::Char(c)
                                     if !key_event.modifiers.contains(KeyModifiers::CONTROL) =>
                                 {
-                                    if matches!(
-                                        state.mode,
-                                        crate::render::palette_editor::EditorMode::SaveDialog
-                                    ) {
+                                    if matches!(state.mode, EditorMode::SaveDialog) {
                                         if state.save_name_input.len() < 24 {
                                             state.save_name_input.push(c);
                                         }
@@ -2338,10 +2326,7 @@ pub fn run_simulation(
                                     }
                                 }
                                 KeyCode::Backspace => {
-                                    if matches!(
-                                        state.mode,
-                                        crate::render::palette_editor::EditorMode::SaveDialog
-                                    ) {
+                                    if matches!(state.mode, EditorMode::SaveDialog) {
                                         state.save_name_input.pop();
                                         continue;
                                     }

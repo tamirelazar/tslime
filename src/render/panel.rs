@@ -1,6 +1,10 @@
 use super::palette::RgbColor;
 use super::theme::PanelStyle;
 
+/// A single character cell with optional foreground and background color overrides.
+/// Used in rich overlay rendering for per-cell colorization.
+pub type RichCell = (char, Option<RgbColor>, Option<RgbColor>);
+
 /// Text alignment within a column or cell.
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub enum TextAlignment {
@@ -321,7 +325,7 @@ pub struct RenderedOverlay {
     /// *character* (not byte): `(char, fg_override, bg_override)`. When present the renderer
     /// will call `draw_rich_overlay` after `draw_text_overlay` so that specific cells can be
     /// coloured individually (key bindings, progress bars, palette swatches, …).
-    pub rich_lines: Option<Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>>>,
+    pub rich_lines: Option<Vec<Vec<RichCell>>>,
 }
 
 /// A 3-line mini panel (top border, content, bottom border) used as a floating title box.

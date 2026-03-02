@@ -15,7 +15,11 @@ use crate::render::overlay::OverlayConfig;
 use crate::render::palette;
 use crate::render::palette::IntensityMapping;
 use crate::render::palette::RgbColor;
-use crate::render::panel::RenderedOverlay;
+use crate::render::panel::{RenderedOverlay, RichCell};
+
+/// Status line data: (text, x_position, colored_spans).
+/// Each span is `(column_offset, color)`.
+type StatusLineData = Option<(String, usize, Vec<(usize, RgbColor)>)>;
 use crate::render::theme::PanelStyle;
 use crossterm::{execute, Command};
 use std::fmt;
@@ -380,12 +384,7 @@ impl FrameBuffer {
     /// Only cells whose override is `Some(…)` are modified; the underlying character and
     /// the existing `bg_color` from a previous `draw_text_overlay` call are preserved for
     /// cells whose override is `None`.
-    pub fn draw_rich_overlay(
-        &mut self,
-        rich: &[Vec<(char, Option<RgbColor>, Option<RgbColor>)>],
-        start_x: usize,
-        start_y: usize,
-    ) {
+    pub fn draw_rich_overlay(&mut self, rich: &[Vec<RichCell>], start_x: usize, start_y: usize) {
         for (dy, row) in rich.iter().enumerate() {
             let y = start_y + dy;
             if y >= self.height {
@@ -1390,7 +1389,7 @@ impl TerminalRenderer {
         downsampled: &[DownsampleCell],
         max_trail_value: f32,
         controls_lines: Option<(&RenderedOverlay, usize, usize)>,
-        status_line: Option<(String, usize, Vec<(usize, RgbColor)>)>,
+        status_line: StatusLineData,
         notification_line: Option<(&RenderedOverlay, usize, usize)>,
         stats_lines: Option<(&RenderedOverlay, usize, usize)>,
         info_lines: Option<(&RenderedOverlay, usize, usize)>,
@@ -1709,7 +1708,7 @@ impl TerminalRenderer {
         sim_height: usize,
         max_trail_value: f32,
         controls_lines: Option<(&RenderedOverlay, usize, usize)>,
-        status_line: Option<(String, usize, Vec<(usize, RgbColor)>)>,
+        status_line: StatusLineData,
         notification_line: Option<(&RenderedOverlay, usize, usize)>,
         stats_lines: Option<(&RenderedOverlay, usize, usize)>,
         info_lines: Option<(&RenderedOverlay, usize, usize)>,

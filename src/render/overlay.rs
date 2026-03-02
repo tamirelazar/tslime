@@ -10,7 +10,7 @@ use crate::terminal::control::{palette_name, preset_name};
 
 pub use crate::render::panel::{
     BorderConfig, ColumnLayout, Padding, PanelBuilder, PanelRow, PanelSize, RenderedOverlay,
-    RenderedTitleBox, TextAlignment, TitleAlignment,
+    RenderedTitleBox, RichCell, TextAlignment, TitleAlignment,
 };
 
 // --- OverlayConfig ---
@@ -184,9 +184,9 @@ pub struct KeyboardHintsOverlay;
 
 impl KeyboardHintsOverlay {
     /// Total rendered width of the keyboard hints window.
-    pub const WIDTH: usize = 60;
+    pub const WIDTH: usize = 64;
     /// Content width (inner drawable area).
-    const CONTENT_WIDTH: usize = 54; // 60 - 2(border) - 2*2(padding)
+    const CONTENT_WIDTH: usize = 54; // 64 - 2(border) - 2*4(padding)
 
     /// Builds the keyboard hints overlay content.
     pub fn build_overlay() -> RenderedOverlay {
@@ -493,11 +493,7 @@ pub fn build_notification_panel(
 /// Colors:
 /// - All border characters (`█`, `▀`, `▄`) → accent foreground
 /// - Icon prefix on the content line → accent foreground
-#[allow(clippy::type_complexity)]
-fn build_notification_rich_lines(
-    lines: &[String],
-    accent: RgbColor,
-) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
+fn build_notification_rich_lines(lines: &[String], accent: RgbColor) -> Vec<Vec<RichCell>> {
     lines
         .iter()
         .enumerate()
@@ -1003,7 +999,7 @@ mod tests {
     #[test]
     fn test_keyboard_hints_position() {
         let (x, y) = KeyboardHintsOverlay::calculate_position(100, 100);
-        assert_eq!(x, 20);
+        assert_eq!(x, (100 - KeyboardHintsOverlay::WIDTH) / 2);
         assert_eq!(y, 35);
     }
 
@@ -1109,7 +1105,7 @@ fn generate_stats_rich_lines(
     fps: f32,
     accent: RgbColor,
     panel_style: &PanelStyle,
-) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
+) -> Vec<Vec<RichCell>> {
     let muted = panel_style.muted;
     let fps_color = if fps >= 55.0 {
         panel_style.accent_fps_good
@@ -1177,7 +1173,7 @@ fn generate_stats_rich_lines(
                     .enumerate()
                     .map(|(i, &c)| {
                         let col = i.saturating_sub(content_start);
-                        let fg = if col >= 5 && col < 16 && (c.is_ascii_digit() || c == '.') {
+                        let fg = if (5..16).contains(&col) && (c.is_ascii_digit() || c == '.') {
                             Some(fps_color)
                         } else {
                             None

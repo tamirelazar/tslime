@@ -2,7 +2,7 @@ use crate::cli::Palette;
 use crate::render::palette::{
     hsv_to_rgb, interpolate_gradient, rgb_to_hsv, GradientStop, HsvColor, RgbColor,
 };
-use crate::render::panel::{Padding, PanelBuilder, RenderedOverlay, TextAlignment};
+use crate::render::panel::{Padding, PanelBuilder, RenderedOverlay, RichCell, TextAlignment};
 
 /// Number of colors in the palette gradient.
 pub const PALETTE_COLOR_COUNT: usize = 11;
@@ -32,10 +32,6 @@ pub enum EditorComponent {
     Saturation,
     /// Value/brightness component (0-1).
     Value,
-    /// Color selector (choosing which color to edit).
-    ColorSelector,
-    /// Save dialog for naming and saving palettes.
-    SaveDialog,
 }
 
 impl EditorComponent {
@@ -45,7 +41,6 @@ impl EditorComponent {
             Self::Hue => Self::Saturation,
             Self::Saturation => Self::Value,
             Self::Value => Self::Hue,
-            other => other,
         }
     }
 
@@ -55,7 +50,6 @@ impl EditorComponent {
             Self::Hue => Self::Value,
             Self::Saturation => Self::Hue,
             Self::Value => Self::Saturation,
-            other => other,
         }
     }
 }
@@ -166,52 +160,35 @@ impl PaletteEditorState {
         }
     }
 
-    /// Adjust the hue of the selected color(s) by `delta` degrees.
-    pub fn adjust_hue(&mut self, delta: f32) {
+    /// Adjust all colors (or the selected one) using `f` to modify the HSV value.
+    fn adjust_hsv<F: Fn(&mut HsvColor)>(&mut self, f: F) {
         if self.is_all_selected() {
             for i in 0..PALETTE_COLOR_COUNT {
                 let mut hsv = rgb_to_hsv(self.colors[i]);
-                hsv.h = (hsv.h + delta + 360.0) % 360.0;
+                f(&mut hsv);
                 self.colors[i] = hsv_to_rgb(hsv);
             }
             self.is_modified = true;
         } else {
             let mut hsv = rgb_to_hsv(self.colors[self.selected_color_index]);
-            hsv.h = (hsv.h + delta + 360.0) % 360.0;
+            f(&mut hsv);
             self.set_current_color(hsv_to_rgb(hsv));
         }
+    }
+
+    /// Adjust the hue of the selected color(s) by `delta` degrees.
+    pub fn adjust_hue(&mut self, delta: f32) {
+        self.adjust_hsv(|hsv| hsv.h = (hsv.h + delta + 360.0) % 360.0);
     }
 
     /// Adjust the saturation of the selected color(s) by `delta`.
     pub fn adjust_saturation(&mut self, delta: f32) {
-        if self.is_all_selected() {
-            for i in 0..PALETTE_COLOR_COUNT {
-                let mut hsv = rgb_to_hsv(self.colors[i]);
-                hsv.s = (hsv.s + delta).clamp(0.0, 1.0);
-                self.colors[i] = hsv_to_rgb(hsv);
-            }
-            self.is_modified = true;
-        } else {
-            let mut hsv = rgb_to_hsv(self.colors[self.selected_color_index]);
-            hsv.s = (hsv.s + delta).clamp(0.0, 1.0);
-            self.set_current_color(hsv_to_rgb(hsv));
-        }
+        self.adjust_hsv(|hsv| hsv.s = (hsv.s + delta).clamp(0.0, 1.0));
     }
 
     /// Adjust the value/brightness of the selected color(s) by `delta`.
     pub fn adjust_value(&mut self, delta: f32) {
-        if self.is_all_selected() {
-            for i in 0..PALETTE_COLOR_COUNT {
-                let mut hsv = rgb_to_hsv(self.colors[i]);
-                hsv.v = (hsv.v + delta).clamp(0.0, 1.0);
-                self.colors[i] = hsv_to_rgb(hsv);
-            }
-            self.is_modified = true;
-        } else {
-            let mut hsv = rgb_to_hsv(self.colors[self.selected_color_index]);
-            hsv.v = (hsv.v + delta).clamp(0.0, 1.0);
-            self.set_current_color(hsv_to_rgb(hsv));
-        }
+        self.adjust_hsv(|hsv| hsv.v = (hsv.v + delta).clamp(0.0, 1.0));
     }
 
     /// Adjust the currently selected component by `delta`.
@@ -220,7 +197,6 @@ impl PaletteEditorState {
             EditorComponent::Hue => self.adjust_hue(delta * 360.0),
             EditorComponent::Saturation => self.adjust_saturation(delta),
             EditorComponent::Value => self.adjust_value(delta),
-            _ => {}
         }
     }
 
@@ -304,11 +280,6 @@ fn build_swatch_labels_str() -> String {
     s
 }
 
-/// Build hex code string for centering.
-fn build_hex_str(rgb: RgbColor) -> String {
-    format!("#{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b)
-}
-
 /// Build HSV slider label (with arrows if active).
 fn build_slider_label(is_active: bool, comp: char, value_str: &str) -> String {
     if is_active {
@@ -346,7 +317,6 @@ fn build_slider_bar(frac: f32) -> String {
 /// 13 hint row 1
 /// 14 hint row 2
 /// 15 bottom border
-#[allow(clippy::type_complexity)]
 fn build_editor_rich_lines(
     state: &PaletteEditorState,
     lines: &[String],
@@ -354,17 +324,11 @@ fn build_editor_rich_lines(
     text_primary: RgbColor,
     accent: RgbColor,
     panel_bg: RgbColor,
-) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
-    let mut rich: Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> = lines
+) -> Vec<Vec<RichCell>> {
+    let mut rich: Vec<Vec<RichCell>> = lines
         .iter()
         .map(|l| l.chars().map(|c| (c, None, None)).collect())
         .collect();
-
-    let rgb_for_display = if state.is_all_selected() {
-        hsv_to_rgb(hsv)
-    } else {
-        state.colors[state.selected_color_index]
-    };
 
     let stops: Vec<GradientStop> = state
         .colors
@@ -589,11 +553,6 @@ impl PaletteEditorOverlay {
         accent: RgbColor,
     ) -> RenderedOverlay {
         let hsv = state.current_hsv();
-        let rgb_for_display = if state.is_all_selected() {
-            hsv_to_rgb(hsv)
-        } else {
-            state.colors[state.selected_color_index]
-        };
 
         let gradient_str = "▄".repeat(INNER_W);
         let swatches_str = build_swatches_str(state.selected_color_index);
@@ -929,6 +888,10 @@ mod tests {
     fn test_swatch_labels_str_width() {
         let s = build_swatch_labels_str();
         assert_eq!(s.chars().count(), 48);
+    }
+
+    fn build_hex_str(rgb: RgbColor) -> String {
+        format!("#{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b)
     }
 
     #[test]
