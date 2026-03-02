@@ -299,10 +299,8 @@ pub enum ControlAction {
     CycleOptionsCategory,
     /// Cycle controls category backward.
     CycleOptionsCategoryReverse,
-    /// Toggle statistics overlay.
-    ToggleStats,
-    /// Toggle info overlay.
-    ToggleInfo,
+    /// Toggle dashboard overlay (merged stats + info).
+    ToggleDashboard,
     /// Show configuration browser.
     ShowConfigBrowser,
     /// Show configuration save dialog.
@@ -517,10 +515,8 @@ pub struct RuntimeState {
     pub intensity_mapping: IntensityMapping,
     /// Index of current intensity mapping preset.
     pub intensity_mapping_index: usize,
-    /// Show stats overlay.
-    pub show_stats: bool,
-    /// Show info overlay.
-    pub show_info: bool,
+    /// Show dashboard overlay (merged stats + info).
+    pub show_dashboard: bool,
     /// Show palette editor overlay.
     pub show_palette_editor: bool,
     /// Saved palette name (if loaded from saved palette).
@@ -578,10 +574,8 @@ pub enum OverlayType {
     Help,
     /// Controls overlay.
     Controls,
-    /// Stats overlay.
-    Stats,
-    /// Info overlay.
-    Info,
+    /// Dashboard overlay (merged stats + info).
+    Dashboard,
     /// Config browser overlay.
     ConfigBrowser,
     /// Config save dialog overlay.
@@ -660,8 +654,7 @@ impl RuntimeState {
             reverse_palette: false,
             intensity_mapping: intensity_mapping.clone(),
             intensity_mapping_index: Self::find_intensity_mapping_index(&intensity_mapping),
-            show_stats: false,
-            show_info: false,
+            show_dashboard: false,
             show_palette_editor: false,
             saved_palette_name: None,
             notification: None,
@@ -679,9 +672,9 @@ impl RuntimeState {
             undo_stack: std::collections::VecDeque::with_capacity(50),
             redo_stack: std::collections::VecDeque::with_capacity(50),
             last_checkpoint_time: std::time::Instant::now(),
-            fps_history: std::collections::VecDeque::with_capacity(20),
-            entropy_history: std::collections::VecDeque::with_capacity(20),
-            density_history: std::collections::VecDeque::with_capacity(20),
+            fps_history: std::collections::VecDeque::with_capacity(60),
+            entropy_history: std::collections::VecDeque::with_capacity(60),
+            density_history: std::collections::VecDeque::with_capacity(60),
             panel_style: GRUVBOX_DARK,
             theme_index: 0,
             focused_overlay: None,
@@ -838,8 +831,7 @@ impl RuntimeState {
         self.show_controls
             || self.show_keyboard_hints
             || self.show_preset_comparison
-            || self.show_stats
-            || self.show_info
+            || self.show_dashboard
             || self.show_config_browser
             || self.show_config_save_dialog
             || self.show_palette_editor
@@ -850,8 +842,7 @@ impl RuntimeState {
         self.show_controls = false;
         self.show_keyboard_hints = false;
         self.show_preset_comparison = false;
-        self.show_stats = false;
-        self.show_info = false;
+        self.show_dashboard = false;
         self.show_config_browser = false;
         self.show_config_save_dialog = false;
         self.show_palette_editor = false;
@@ -880,10 +871,8 @@ impl RuntimeState {
             Some(OverlayType::ConfigBrowser)
         } else if self.show_controls {
             Some(OverlayType::Controls)
-        } else if self.show_info {
-            Some(OverlayType::Info)
-        } else if self.show_stats {
-            Some(OverlayType::Stats)
+        } else if self.show_dashboard {
+            Some(OverlayType::Dashboard)
         } else {
             None
         };
@@ -1286,23 +1275,13 @@ impl RuntimeState {
         self.reverse_palette = !self.reverse_palette;
     }
 
-    /// Toggles statistics overlay.
-    pub fn toggle_stats(&mut self) {
-        if self.show_stats {
-            self.show_stats = false;
+    /// Toggles dashboard overlay (merged stats + info).
+    pub fn toggle_dashboard(&mut self) {
+        if self.show_dashboard {
+            self.show_dashboard = false;
         } else {
             self.close_all_overlays();
-            self.show_stats = true;
-        }
-    }
-
-    /// Toggles info overlay.
-    pub fn toggle_info(&mut self) {
-        if self.show_info {
-            self.show_info = false;
-        } else {
-            self.close_all_overlays();
-            self.show_info = true;
+            self.show_dashboard = true;
         }
     }
 
@@ -1481,17 +1460,17 @@ impl RuntimeState {
     /// Updates statistics history buffers.
     pub fn update_history(&mut self, fps: f32, entropy: f32, density: f32) {
         self.fps_history.push_back(fps);
-        if self.fps_history.len() > 20 {
+        if self.fps_history.len() > 60 {
             self.fps_history.pop_front();
         }
 
         self.entropy_history.push_back(entropy);
-        if self.entropy_history.len() > 20 {
+        if self.entropy_history.len() > 60 {
             self.entropy_history.pop_front();
         }
 
         self.density_history.push_back(density);
-        if self.density_history.len() > 20 {
+        if self.density_history.len() > 60 {
             self.density_history.pop_front();
         }
     }
@@ -1645,8 +1624,8 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('X') | KeyCode::Char('x') => ControlAction::ToggleInvertPalette,
         KeyCode::Char('Z') | KeyCode::Char('z') => ControlAction::ToggleReversePalette,
         KeyCode::Char('0') => ControlAction::ResetToDefaults,
-        KeyCode::Char('\\') => ControlAction::ToggleStats,
-        KeyCode::Char('|') => ControlAction::ToggleInfo,
+        KeyCode::Char('\\') | KeyCode::Char('|') => ControlAction::ToggleDashboard,
+        KeyCode::Char('/') => ControlAction::ShowPaletteEditor,
         KeyCode::Char('`') => ControlAction::CycleCharset,
         KeyCode::Char('~') => ControlAction::CycleCharsetReverse,
         _ => ControlAction::None,
@@ -1795,7 +1774,7 @@ mod tests {
         assert!(state.any_overlay_open());
 
         state.show_controls = false;
-        state.show_stats = true;
+        state.show_dashboard = true;
         assert!(state.any_overlay_open());
     }
 
@@ -1804,12 +1783,12 @@ mod tests {
         let mut state = create_test_runtime_state();
 
         state.show_controls = true;
-        state.show_stats = true;
+        state.show_dashboard = true;
 
         state.close_all_overlays();
 
         assert!(!state.show_controls);
-        assert!(!state.show_stats);
+        assert!(!state.show_dashboard);
     }
 
     #[test]
@@ -2001,10 +1980,10 @@ mod tests {
         );
         state.update_history(60.0, 5.0, 0.5);
         assert_eq!(state.fps_history.len(), 1);
-        for _ in 0..25 {
+        for _ in 0..65 {
             state.update_history(60.0, 5.0, 0.5);
         }
-        assert_eq!(state.fps_history.len(), 20);
+        assert_eq!(state.fps_history.len(), 60);
     }
 
     #[test]
@@ -2042,7 +2021,7 @@ mod tests {
         assert!(!state.show_preset_comparison);
 
         assert!(!state.any_overlay_open());
-        state.show_info = true;
+        state.show_dashboard = true;
         assert!(state.any_overlay_open());
         state.close_all_overlays();
         assert!(!state.any_overlay_open());

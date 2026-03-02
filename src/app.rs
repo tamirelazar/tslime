@@ -22,8 +22,8 @@ use crate::render::downsample::downsample;
 use crate::render::grid::{GridRenderer, GridStyle};
 use crate::render::options_overlay::ControlsOverlay;
 use crate::render::overlay::{
-    build_notification_panel, ConfigBrowserOverlay, ConfigSaveOverlay, InfoOverlay,
-    KeyboardHintsOverlay, PresetComparisonOverlay, RenderedOverlay, StatsOverlay,
+    build_notification_panel, ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay,
+    KeyboardHintsOverlay, PresetComparisonOverlay, RenderedOverlay,
 };
 use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
 use crate::render::palette_editor::{
@@ -34,8 +34,8 @@ use crate::simulation::config::{
 };
 use crate::simulation::Simulation;
 use crate::terminal::control::{
-    charset_name, handle_key_event, num_palettes, ControlAction, MouseInteractionMode,
-    PaletteShiftSpeed, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
+    charset_name, handle_key_event, num_palettes, palette_name, preset_name, ControlAction,
+    MouseInteractionMode, PaletteShiftSpeed, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
 };
 use crate::terminal::detection::{log_capabilities, TerminalCapabilities};
 use crate::terminal::input::{InputPoller, MouseEventType};
@@ -1288,7 +1288,7 @@ pub fn run_simulation(
         &config,
     );
     runtime_state.dither_mode = dither_mode;
-    runtime_state.show_stats = args.stats;
+    runtime_state.show_dashboard = args.stats;
     renderer.set_dither_mode(dither_mode);
     let mut palette_editor_state: Option<PaletteEditorState> = None;
 
@@ -1494,11 +1494,12 @@ pub fn run_simulation(
         // The renderer handles None gracefully by skipping the overlay
 
         // Build keyboard hints overlay (? key)
-        let keyboard_hints_lines: Option<RenderedOverlay> = if runtime_state.show_keyboard_hints {
-            Some(KeyboardHintsOverlay::build_overlay())
-        } else {
-            None
-        };
+        let keyboard_hints_lines: Option<RenderedOverlay> =
+            if runtime_state.show_keyboard_hints && !runtime_state.show_dashboard {
+                Some(KeyboardHintsOverlay::build_overlay())
+            } else {
+                None
+            };
         let (keyboard_hints_x, keyboard_hints_y) = if keyboard_hints_lines.is_some() {
             KeyboardHintsOverlay::calculate_position(term_width as usize, term_height as usize)
         } else {
@@ -1507,7 +1508,7 @@ pub fn run_simulation(
 
         // Build preset comparison overlay (Shift+1-7 keys)
         let preset_comparison_lines: Option<RenderedOverlay> =
-            if runtime_state.show_preset_comparison {
+            if runtime_state.show_preset_comparison && !runtime_state.show_dashboard {
                 Some(PresetComparisonOverlay::build_overlay(
                     &runtime_state,
                     runtime_state.comparison_preset,
@@ -1528,8 +1529,8 @@ pub fn run_simulation(
             0.0,
             Some(&runtime_state.intensity_mapping),
         );
-        let palette_editor_overlay: Option<RenderedOverlay> = runtime_state
-            .show_palette_editor
+        let palette_editor_overlay: Option<RenderedOverlay> = (runtime_state.show_palette_editor
+            && !runtime_state.show_dashboard)
             .then(|| {
                 palette_editor_state.as_ref().map(|s| {
                     PaletteEditorOverlay::build_overlay(s, &runtime_state.panel_style, accent)
@@ -1556,49 +1557,50 @@ pub fn run_simulation(
         );
 
         // Build controls overlay (h key)
-        let controls_lines: Option<RenderedOverlay> = if runtime_state.show_controls {
-            Some(ControlsOverlay::build_overlay(
-                runtime_state.controls_category_idx,
-                runtime_state.sensor_angle,
-                runtime_state.sensor_distance,
-                runtime_state.turn_angle,
-                runtime_state.step_size,
-                runtime_state.decay_factor,
-                runtime_state.deposit_amount,
-                runtime_state.time_scale,
-                runtime_state.diffusion_kernel,
-                runtime_state.diffusion_sigma,
-                runtime_state.attractor_strength,
-                match runtime_state.mouse_mode {
-                    MouseInteractionMode::Disabled => "Disabled",
-                    MouseInteractionMode::Attract => "Attract",
-                    MouseInteractionMode::Repel => "Repel",
-                },
-                runtime_state.mouse_timeout,
-                runtime_state.wind_direction,
-                runtime_state.terrain_type,
-                runtime_state.terrain_strength,
-                runtime_state.auto_normalize,
-                runtime_state.motion_blur_frames,
-                runtime_state.max_brightness,
-                runtime_state.fast_mode_enabled,
-                runtime_state.current_palette(&ALL_PALETTES).name(),
-                charset_name(&runtime_state.current_charset()),
-                runtime_state.palette_shift_speed,
-                runtime_state.invert_palette,
-                runtime_state.reverse_palette,
-                runtime_state.dither_mode.name(),
-                term_width as usize,
-                runtime_state.default_values,
-                sim.agent_count(),
-                ui_accent,
-                runtime_state.current_theme_name(),
-                &runtime_state.panel_style,
-                runtime_state.shift_held,
-            ))
-        } else {
-            None
-        };
+        let controls_lines: Option<RenderedOverlay> =
+            if runtime_state.show_controls && !runtime_state.show_dashboard {
+                Some(ControlsOverlay::build_overlay(
+                    runtime_state.controls_category_idx,
+                    runtime_state.sensor_angle,
+                    runtime_state.sensor_distance,
+                    runtime_state.turn_angle,
+                    runtime_state.step_size,
+                    runtime_state.decay_factor,
+                    runtime_state.deposit_amount,
+                    runtime_state.time_scale,
+                    runtime_state.diffusion_kernel,
+                    runtime_state.diffusion_sigma,
+                    runtime_state.attractor_strength,
+                    match runtime_state.mouse_mode {
+                        MouseInteractionMode::Disabled => "Disabled",
+                        MouseInteractionMode::Attract => "Attract",
+                        MouseInteractionMode::Repel => "Repel",
+                    },
+                    runtime_state.mouse_timeout,
+                    runtime_state.wind_direction,
+                    runtime_state.terrain_type,
+                    runtime_state.terrain_strength,
+                    runtime_state.auto_normalize,
+                    runtime_state.motion_blur_frames,
+                    runtime_state.max_brightness,
+                    runtime_state.fast_mode_enabled,
+                    runtime_state.current_palette(&ALL_PALETTES).name(),
+                    charset_name(&runtime_state.current_charset()),
+                    runtime_state.palette_shift_speed,
+                    runtime_state.invert_palette,
+                    runtime_state.reverse_palette,
+                    runtime_state.dither_mode.name(),
+                    term_width as usize,
+                    runtime_state.default_values,
+                    sim.agent_count(),
+                    ui_accent,
+                    runtime_state.current_theme_name(),
+                    &runtime_state.panel_style,
+                    runtime_state.shift_held,
+                ))
+            } else {
+                None
+            };
 
         // Build status line (shown when any overlay visible or paused)
         let diffusion_kernel_name = match runtime_state.diffusion_kernel {
@@ -1640,8 +1642,8 @@ pub fn run_simulation(
             (overlay, notif_x, notif_y)
         });
 
-        // Stats overlay at top-right
-        let entropy = StatsOverlay::calculate_entropy(&blended_trail, 100);
+        // Dashboard overlay (merged stats + info)
+        let entropy = DashboardOverlay::calculate_entropy(&blended_trail, 100);
         let trail_sum: f32 = blended_trail.iter().sum();
         let trail_capacity = (sim.width() * sim.height()) as f32 * 10.0;
         let trail_density = if trail_capacity > 0.0 {
@@ -1652,7 +1654,7 @@ pub fn run_simulation(
 
         runtime_state.update_history(timer.current_fps() as f32, entropy, trail_density);
 
-        let stats_overlay: Option<RenderedOverlay> = if runtime_state.show_stats {
+        let dashboard_overlay: Option<RenderedOverlay> = if runtime_state.show_dashboard {
             let elapsed = start_time.elapsed().as_secs_f32();
             let trail_max = blended_trail.iter().fold(0.0f32, |m, &v| v.max(m));
             let memory_mb = memory_stats()
@@ -1661,38 +1663,6 @@ pub fn run_simulation(
             let frame_time_ms = timer.last_frame_ms();
             let cpu_percent = (frame_time_ms / 33.333) * 100.0;
 
-            Some(StatsOverlay::build_overlay(
-                sim.agent_count(),
-                trail_sum,
-                trail_capacity,
-                trail_max,
-                entropy,
-                timer.current_fps() as f32,
-                timer.average_fps() as f32,
-                timer.frame_count(),
-                elapsed,
-                sim.width(),
-                sim.height(),
-                sim.attractor_count(),
-                sim.obstacle_count(),
-                sim.species_count(),
-                memory_mb,
-                cpu_percent,
-                term_width as usize,
-                &runtime_state.fps_history,
-                &runtime_state.entropy_history,
-                &runtime_state.density_history,
-                ui_accent,
-                &runtime_state.panel_style,
-            ))
-        } else {
-            None
-        };
-        let (stats_x, stats_y) =
-            StatsOverlay::calculate_position(term_width as usize, term_height as usize);
-
-        // Info overlay (below stats)
-        let info_overlay: Option<RenderedOverlay> = if runtime_state.show_info {
             let init_mode_name = match init_mode {
                 InitMode::Random => "Random",
                 InitMode::CentralBurst => "Central",
@@ -1712,7 +1682,7 @@ pub fn run_simulation(
                 ColorMode::Bits256 => "256",
             };
 
-            let charset_name = match charset {
+            let charset_str = match charset {
                 Charset::HalfBlock => "HalfBlock",
                 Charset::HalfBlockDual => "HalfBlockDual",
                 Charset::Ascii => "ASCII",
@@ -1730,32 +1700,71 @@ pub fn run_simulation(
                 None
             };
 
-            Some(InfoOverlay::build_overlay(
+            let current_palette = ALL_PALETTES[runtime_state.palette_index].clone();
+            let pname = palette_name(current_palette.clone());
+            let prname = preset_name(runtime_state.current_preset);
+            let palette_colors: Vec<RgbColor> = (0..78)
+                .map(|i| {
+                    crate::render::palette::map_brightness_rgb(
+                        i as f32 / 77.0,
+                        current_palette.clone(),
+                        runtime_state.reverse_palette,
+                        runtime_state.invert_palette,
+                        0.0,
+                        None,
+                    )
+                })
+                .collect();
+
+            let current_config = sim.config();
+
+            Some(DashboardOverlay::build_overlay(
+                sim.agent_count(),
+                trail_sum,
+                trail_capacity,
+                trail_max,
+                entropy,
+                timer.current_fps() as f32,
+                timer.average_fps() as f32,
+                timer.frame_count(),
+                elapsed,
                 sim.width(),
                 sim.height(),
+                sim.attractor_count(),
+                sim.obstacle_count(),
+                sim.species_count(),
+                memory_mb,
+                cpu_percent,
+                runtime_state.is_paused,
+                prname,
+                pname,
+                &palette_colors,
                 term_width as usize,
                 term_height as usize,
                 init_mode_name,
                 color_mode_name,
-                charset_name,
+                charset_str,
                 !args.simd_off,
+                current_config.decay_factor,
+                current_config.sensor_angle,
+                seed,
                 &food_source,
                 args.warmup_frames,
-                args.warmup_brightness_multiplier,
-                args.warmup_decay,
                 args.auto_reset,
-                args.collapse_entropy_threshold,
-                args.collapse_duration_frames,
+                ui_accent,
+                &runtime_state.panel_style,
             ))
         } else {
             None
         };
 
-        let (info_x, info_y) =
-            InfoOverlay::calculate_position(term_width as usize, term_height as usize);
+        let (dashboard_x, dashboard_y) =
+            DashboardOverlay::calculate_position(term_width as usize, term_height as usize);
 
         // Config browser overlay
-        let config_browser_overlay: Option<RenderedOverlay> = if runtime_state.show_config_browser {
+        let config_browser_overlay: Option<RenderedOverlay> = if runtime_state.show_config_browser
+            && !runtime_state.show_dashboard
+        {
             match config_manager::list_configs() {
                 Ok(configs) => {
                     // Clamp selected index to valid range
@@ -1783,14 +1792,14 @@ pub fn run_simulation(
         };
 
         // Config save dialog overlay
-        let config_save_overlay: Option<RenderedOverlay> = if runtime_state.show_config_save_dialog
-        {
-            Some(ConfigSaveOverlay::build_overlay(
-                &runtime_state.config_save_name_input,
-            ))
-        } else {
-            None
-        };
+        let config_save_overlay: Option<RenderedOverlay> =
+            if runtime_state.show_config_save_dialog && !runtime_state.show_dashboard {
+                Some(ConfigSaveOverlay::build_overlay(
+                    &runtime_state.config_save_name_input,
+                ))
+            } else {
+                None
+            };
         let (config_save_x, config_save_y) = if config_save_overlay.is_some() {
             ConfigSaveOverlay::calculate_position(term_width as usize, term_height as usize)
         } else {
@@ -1876,8 +1885,9 @@ pub fn run_simulation(
                 controls_lines.as_ref().map(|v| (v, controls_x, controls_y)),
                 status_data,
                 notification_data,
-                stats_overlay.as_ref().map(|v| (v, stats_x, stats_y)),
-                info_overlay.as_ref().map(|v| (v, info_x, info_y)),
+                dashboard_overlay
+                    .as_ref()
+                    .map(|v| (v, dashboard_x, dashboard_y)),
                 grid_renderer.as_ref(),
                 config_browser_overlay
                     .as_ref()
@@ -1904,8 +1914,9 @@ pub fn run_simulation(
                 controls_lines.as_ref().map(|v| (v, controls_x, controls_y)),
                 status_data,
                 notification_data,
-                stats_overlay.as_ref().map(|v| (v, stats_x, stats_y)),
-                info_overlay.as_ref().map(|v| (v, info_x, info_y)),
+                dashboard_overlay
+                    .as_ref()
+                    .map(|v| (v, dashboard_x, dashboard_y)),
                 grid_renderer.as_ref(),
                 config_browser_overlay
                     .as_ref()
@@ -2237,7 +2248,9 @@ pub fn run_simulation(
                                     continue;
                                 }
                                 KeyCode::Tab => {
-                                    state.selected_component = state.selected_component.next();
+                                    // Transition to controls overlay
+                                    runtime_state.close_all_overlays();
+                                    runtime_state.show_controls = true;
                                     continue;
                                 }
                                 KeyCode::Char('s') | KeyCode::Char('S') => {
@@ -2313,6 +2326,15 @@ pub fn run_simulation(
                                             state.mode = EditorMode::Editing;
                                         }
                                     }
+                                    continue;
+                                }
+                                KeyCode::Char('\\')
+                                | KeyCode::Char('|')
+                                | KeyCode::Char('p')
+                                | KeyCode::Char('P')
+                                | KeyCode::Char('/') => {
+                                    // Transition to dashboard overlay
+                                    runtime_state.toggle_dashboard();
                                     continue;
                                 }
                                 KeyCode::Char(c)
@@ -2433,6 +2455,7 @@ pub fn run_simulation(
                             const TOTAL_CATEGORIES: usize = 6;
 
                             if !runtime_state.show_controls {
+                                runtime_state.close_all_overlays();
                                 runtime_state.show_controls = true;
                             } else if runtime_state.controls_category_idx == TOTAL_CATEGORIES - 1 {
                                 runtime_state.controls_category_idx = 0;
@@ -2444,6 +2467,7 @@ pub fn run_simulation(
                             const TOTAL_CATEGORIES: usize = 6;
 
                             if !runtime_state.show_controls {
+                                runtime_state.close_all_overlays();
                                 runtime_state.show_controls = true;
                             } else if runtime_state.controls_category_idx == 0 {
                                 runtime_state.controls_category_idx = TOTAL_CATEGORIES - 1;
@@ -2732,13 +2756,10 @@ pub fn run_simulation(
                             };
                             runtime_state.show_notification(notification.to_string());
                         }
-                        ControlAction::ToggleStats => {
-                            runtime_state.toggle_stats();
+                        ControlAction::ToggleDashboard => {
+                            runtime_state.toggle_dashboard();
                         }
                         ControlAction::SetIntensityMapping(_) => {}
-                        ControlAction::ToggleInfo => {
-                            runtime_state.toggle_info();
-                        }
                         ControlAction::ShowConfigBrowser => {
                             runtime_state.close_all_overlays();
                             runtime_state.show_config_browser = true;

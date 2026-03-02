@@ -1391,8 +1391,7 @@ impl TerminalRenderer {
         controls_lines: Option<(&RenderedOverlay, usize, usize)>,
         status_line: StatusLineData,
         notification_line: Option<(&RenderedOverlay, usize, usize)>,
-        stats_lines: Option<(&RenderedOverlay, usize, usize)>,
-        info_lines: Option<(&RenderedOverlay, usize, usize)>,
+        dashboard_lines: Option<(&RenderedOverlay, usize, usize)>,
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
         config_browser_lines: Option<(&RenderedOverlay, usize, usize)>,
         config_save_lines: Option<(&RenderedOverlay, usize, usize)>,
@@ -1653,14 +1652,9 @@ impl TerminalRenderer {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::NOTIFICATION);
         }
 
-        // Stats overlay
-        if let Some((overlay, x, y)) = stats_lines {
-            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::STATS);
-        }
-
-        // Info overlay
-        if let Some((overlay, x, y)) = info_lines {
-            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::INFO);
+        // Dashboard overlay
+        if let Some((overlay, x, y)) = dashboard_lines {
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::DASHBOARD);
         }
 
         // Config browser overlay (modal, on top)
@@ -1710,8 +1704,7 @@ impl TerminalRenderer {
         controls_lines: Option<(&RenderedOverlay, usize, usize)>,
         status_line: StatusLineData,
         notification_line: Option<(&RenderedOverlay, usize, usize)>,
-        stats_lines: Option<(&RenderedOverlay, usize, usize)>,
-        info_lines: Option<(&RenderedOverlay, usize, usize)>,
+        dashboard_lines: Option<(&RenderedOverlay, usize, usize)>,
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
         config_browser_lines: Option<(&RenderedOverlay, usize, usize)>,
         config_save_lines: Option<(&RenderedOverlay, usize, usize)>,
@@ -1986,14 +1979,9 @@ impl TerminalRenderer {
             draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::NOTIFICATION);
         }
 
-        // Stats overlay
-        if let Some((overlay, x, y)) = stats_lines {
-            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::STATS);
-        }
-
-        // Info overlay
-        if let Some((overlay, x, y)) = info_lines {
-            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::INFO);
+        // Dashboard overlay
+        if let Some((overlay, x, y)) = dashboard_lines {
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::DASHBOARD);
         }
 
         // Config browser overlay (modal, on top)
@@ -2708,8 +2696,8 @@ mod tests {
             None,
             None,
             None,
-            None,
         );
+
         assert!(result.is_ok());
     }
 

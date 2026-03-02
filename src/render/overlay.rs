@@ -56,21 +56,11 @@ impl OverlayConfig {
         has_border: true,
     };
 
-    /// Stats overlay configuration
-    pub const STATS: OverlayConfig = OverlayConfig {
-        width: 32,
+    /// Dashboard overlay configuration (merged stats + info, landscape layout).
+    pub const DASHBOARD: OverlayConfig = OverlayConfig {
+        width: 84,
         height_padding: 1,
         width_padding: 2,
-        text_color_256: 245,
-        bg_color_256: 236,
-        has_border: true,
-    };
-
-    /// Info overlay configuration
-    pub const INFO: OverlayConfig = OverlayConfig {
-        width: 28,
-        height_padding: 1,
-        width_padding: 1,
         text_color_256: 245,
         bg_color_256: 236,
         has_border: true,
@@ -223,8 +213,8 @@ impl KeyboardHintsOverlay {
                 Left,
             )
             .add_single("h        : Controls       m, M       : Intensity Map", Left)
-            .add_single("?, |     : Help/Info       f          : Fast Mode", Left)
-            .add_single("\\        : Stats           g          : Save PNG", Left)
+            .add_single("?        : Help            f          : Fast Mode", Left)
+            .add_single("\\, |     : Dashboard       g          : Save PNG", Left)
             .add_single("Tab      : Category       Ctrl+S     : Save Config", Left)
             .add_single("                          Ctrl+L     : Load Config", Left)
             .add_empty()
@@ -1071,215 +1061,18 @@ mod tests {
     }
 }
 
-const SPARKLINE_CHARS: [char; 8] = [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+/// Unified dashboard overlay combining stats and environment info in a landscape three-zone layout.
+pub struct DashboardOverlay;
 
-fn build_sparkline(history: &std::collections::VecDeque<f32>, min: f32, max: f32) -> String {
-    let chars = SPARKLINE_CHARS;
-    let mut sparkline = String::with_capacity(20);
-
-    // Fill with empty if history is small
-    for _ in 0..(20usize.saturating_sub(history.len())) {
-        sparkline.push(' ');
-    }
-
-    for &val in history {
-        let normalized = if max > min {
-            ((val - min) / (max - min)).clamp(0.0, 0.999)
-        } else {
-            0.0
-        };
-        let idx = (normalized * chars.len() as f32) as usize;
-        sparkline.push(chars[idx]);
-    }
-
-    format!("{:<20}", sparkline)
-}
-
-/// Generates per-cell color overrides for the stats overlay rich rendering.
-///
-/// Colors:
-/// - FPS number: green (≥55 fps), amber (≥25 fps), red (< 25 fps)
-/// - Sparkline bars: gradient from muted gray → `accent` based on bar height
-fn generate_stats_rich_lines(
-    lines: &[String],
-    fps: f32,
-    accent: RgbColor,
-    panel_style: &PanelStyle,
-) -> Vec<Vec<RichCell>> {
-    let muted = panel_style.muted;
-    let fps_color = if fps >= 55.0 {
-        panel_style.accent_fps_good
-    } else if fps >= 25.0 {
-        panel_style.accent_fps_warn
-    } else {
-        panel_style.accent_error
-    };
-
-    lines
-        .iter()
-        .map(|line| {
-            let chars: Vec<char> = line.chars().collect();
-            let n = chars.len();
-            // Content starts at col 3 (border=1, padding.left=2)
-            let content_start = 3.min(n);
-            let content_end = n.saturating_sub(3);
-
-            // Detect sparkline row: all non-space content chars are sparkline chars
-            let is_sparkline = content_start < content_end
-                && chars[content_start..content_end]
-                    .iter()
-                    .all(|&c| matches!(c, ' ' | '▂' | '▃' | '▄' | '▅' | '▆' | '▇' | '█'));
-
-            // Detect FPS row: content starts with "FPS:"
-            let is_fps_row =
-                content_start < n && chars[content_start..].starts_with(&['F', 'P', 'S', ':']);
-
-            if is_sparkline {
-                chars
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &c)| {
-                        let fg = if i >= content_start && i < content_end {
-                            let spark_idx = SPARKLINE_CHARS.iter().position(|&sc| sc == c);
-                            if let Some(idx) = spark_idx {
-                                if idx == 0 {
-                                    None
-                                } else {
-                                    let t = idx as f32 / (SPARKLINE_CHARS.len() - 1) as f32;
-                                    let r = (muted.r as f32
-                                        + (accent.r as f32 - muted.r as f32) * t)
-                                        as u8;
-                                    let g = (muted.g as f32
-                                        + (accent.g as f32 - muted.g as f32) * t)
-                                        as u8;
-                                    let b = (muted.b as f32
-                                        + (accent.b as f32 - muted.b as f32) * t)
-                                        as u8;
-                                    Some(RgbColor { r, g, b })
-                                }
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        };
-                        (c, fg, None)
-                    })
-                    .collect()
-            } else if is_fps_row {
-                // Format: "FPS: {:>11.0} ({:>4.0})" — fps value occupies cols 5..16
-                chars
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &c)| {
-                        let col = i.saturating_sub(content_start);
-                        let fg = if (5..16).contains(&col) && (c.is_ascii_digit() || c == '.') {
-                            Some(fps_color)
-                        } else {
-                            None
-                        };
-                        (c, fg, None)
-                    })
-                    .collect()
-            } else {
-                chars.iter().map(|&c| (c, None, None)).collect()
-            }
-        })
-        .collect()
-}
-
-/// Overlay showing real-time statistics.
-pub struct StatsOverlay;
-
-impl StatsOverlay {
-    /// Total rendered width of the stats window.
-    pub const WIDTH: usize = 32;
-    /// Content width (inner drawable area).
-    const CONTENT_WIDTH: usize = 26; // 32 - 2(border) - 2*2(padding)
-
-    #[allow(clippy::too_many_arguments)]
-    /// Builds the stats overlay content.
-    pub fn build_overlay(
-        agent_count: usize,
-        trail_sum: f32,
-        trail_capacity: f32,
-        trail_max: f32,
-        entropy: f32,
-        fps: f32,
-        avg_fps: f32,
-        frame_count: u64,
-        elapsed_seconds: f32,
-        grid_width: usize,
-        grid_height: usize,
-        attractor_count: usize,
-        obstacle_count: usize,
-        species_count: usize,
-        memory_mb: f32,
-        cpu_percent: f32,
-        _term_width: usize,
-        fps_history: &std::collections::VecDeque<f32>,
-        entropy_history: &std::collections::VecDeque<f32>,
-        density_history: &std::collections::VecDeque<f32>,
-        accent: RgbColor,
-        panel_style: &PanelStyle,
-    ) -> RenderedOverlay {
-        use TextAlignment::Left;
-
-        let trail_percent = if trail_capacity > 0.0 {
-            (trail_sum / trail_capacity * 100.0).min(99.9)
-        } else {
-            0.0
-        };
-
-        let elapsed_str = format_elapsed_time(elapsed_seconds);
-        let grid_str = format!("{}x{}", grid_width, grid_height);
-
-        let fps_spark = build_sparkline(fps_history, 0.0, 60.0);
-        let entropy_spark = build_sparkline(entropy_history, 0.0, 8.0);
-        let density_spark = build_sparkline(density_history, 0.0, 1.0);
-
-        let mut overlay = PanelBuilder::new(Self::CONTENT_WIDTH, None)
-            .with_padding(Padding::new(2, 0, 2, 2))
-            .with_title("STATS")
-            .with_title_box()
-            // Simulation stats
-            .add_single(format!("Agents:   {:>15}", agent_count), Left)
-            .add_single(format!("Trail:    {:>14.1}%", trail_percent), Left)
-            .add_single(format!("{:<26}", density_spark), Left)
-            .add_single(format!("Trail Max: {:>13.2}x", trail_max), Left)
-            .add_single(format!("Entropy:   {:>15.2}", entropy), Left)
-            .add_single(format!("{:<26}", entropy_spark), Left)
-            .add_single(format!("FPS: {:>11.0} ({:>4.0})", fps, avg_fps), Left)
-            .add_single(format!("{:<26}", fps_spark), Left)
-            .add_single(format!("Frames:    {:>15}", frame_count), Left)
-            .add_single(format!("Time:      {:>15}", elapsed_str), Left)
-            .add_empty()
-            // Section separator
-            .add_separator()
-            // System stats
-            .add_single(format!("Grid:     {:>15}", grid_str), Left)
-            .add_single(format!("Attractor: {:>13}", attractor_count), Left)
-            .add_single(format!("Obstacle:  {:>13}", obstacle_count), Left)
-            .add_single(format!("Species:   {:>14}", species_count), Left)
-            .add_single(format!("Memory:    {:>11.1} MB", memory_mb), Left)
-            .add_single(format!("CPU:       {:>14.0}%", cpu_percent), Left)
-            .build_overlay();
-
-        overlay.rich_lines = Some(generate_stats_rich_lines(
-            &overlay.lines,
-            fps,
-            accent,
-            panel_style,
-        ));
-        overlay
-    }
-
-    /// Calculates centered position for the stats overlay.
-    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
-        let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
-        let y = (term_height.saturating_sub(24)) / 2;
-        (x, y)
-    }
+impl DashboardOverlay {
+    /// Total rendered width of the dashboard window.
+    pub const WIDTH: usize = 84;
+    /// Content width (inner drawable area): 84 - 2(border) - 2*2(padding) = 78
+    const CONTENT_WIDTH: usize = 78;
+    /// Left column width within the two-column middle zone.
+    const LEFT_COL: usize = 37;
+    /// Right column width within the two-column middle zone.
+    const RIGHT_COL: usize = 38;
 
     /// Calculates entropy of the trail map for complexity analysis.
     pub fn calculate_entropy(trail_map: &[f32], sample_rate: usize) -> f32 {
@@ -1319,82 +1112,453 @@ impl StatsOverlay {
             0.0
         }
     }
-}
 
-/// Overlay showing general simulation info.
-pub struct InfoOverlay;
+    /// Builds a proportional progress bar string.
+    fn build_progress_bar(value: f32, max: f32, width: usize) -> String {
+        let filled = if max > 0.0 {
+            ((value / max).clamp(0.0, 1.0) * width as f32) as usize
+        } else {
+            0
+        };
+        let empty = width.saturating_sub(filled);
+        format!("{}{}", "█".repeat(filled), "░".repeat(empty))
+    }
 
-impl InfoOverlay {
-    /// Total rendered width of the info window.
-    pub const WIDTH: usize = 28;
-    /// Content width (inner drawable area).
-    const CONTENT_WIDTH: usize = 22; // 28 - 2(border) - 2*2(padding)
+    /// Builds a section header spanning the full content width.
+    fn build_section_header(label: &str, width: usize) -> String {
+        let prefix = format!(" ── {} ", label);
+        let dashes = width.saturating_sub(prefix.chars().count());
+        format!("{}{}", prefix, "─".repeat(dashes))
+    }
+
+    /// Builds a two-column row with a │ divider.
+    fn build_two_col_row(left: &str, right: &str) -> String {
+        let left_chars: usize = left.chars().count();
+        let right_chars: usize = right.chars().count();
+        let left_padded = if left_chars < Self::LEFT_COL {
+            format!("{}{}", left, " ".repeat(Self::LEFT_COL - left_chars))
+        } else {
+            left.chars().take(Self::LEFT_COL).collect()
+        };
+        let right_padded = if right_chars < Self::RIGHT_COL {
+            format!("{}{}", right, " ".repeat(Self::RIGHT_COL - right_chars))
+        } else {
+            right.chars().take(Self::RIGHT_COL).collect()
+        };
+        format!("{} │ {}", left_padded, right_padded)
+    }
+
+    /// Returns a status pill string for a boolean.
+    fn build_status(on: bool) -> &'static str {
+        if on {
+            "● On"
+        } else {
+            "○ Off"
+        }
+    }
 
     #[allow(clippy::too_many_arguments)]
-    /// Builds the info overlay content.
+    /// Builds the dashboard overlay content.
     pub fn build_overlay(
-        sim_width: usize,
-        sim_height: usize,
+        agent_count: usize,
+        trail_sum: f32,
+        trail_capacity: f32,
+        trail_max: f32,
+        entropy: f32,
+        fps: f32,
+        avg_fps: f32,
+        frame_count: u64,
+        elapsed_seconds: f32,
+        grid_width: usize,
+        grid_height: usize,
+        attractor_count: usize,
+        obstacle_count: usize,
+        species_count: usize,
+        memory_mb: f32,
+        cpu_percent: f32,
+        is_paused: bool,
+        preset_name: &str,
+        palette_name: &str,
+        palette_colors: &[RgbColor],
         term_width: usize,
         term_height: usize,
         init_mode: &str,
         color_mode: &str,
         charset: &str,
         simd_enabled: bool,
+        _decay_factor: f32,
+        _sensor_angle: f32,
+        seed: u64,
         food_source: &Option<String>,
-        warmup_frames: usize,
-        _warmup_brightness: f32,
-        _warmup_decay: f32,
+        _warmup_frames: usize,
         auto_reset: bool,
-        _auto_reset_threshold: f32,
-        _auto_reset_duration: usize,
+        accent: RgbColor,
+        panel_style: &PanelStyle,
     ) -> RenderedOverlay {
         use TextAlignment::Left;
 
-        let resolution_str = format!("{}x{}", sim_width, sim_height);
-        let term_str = format!("{}x{}", term_width, term_height);
-        let simd_str = if simd_enabled { "On" } else { "Off" };
+        let cw = Self::CONTENT_WIDTH;
 
-        let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
-            .with_padding(Padding::new(2, 0, 2, 2))
-            .with_title("INFO")
-            .with_title_box()
-            .add_single(format!("Res:       {:>13}", resolution_str), Left)
-            .add_single(format!("Term:      {:>13}", term_str), Left)
-            .add_single(format!("Init:      {:>13}", init_mode), Left)
-            .add_single(format!("Color:     {:>13}", color_mode), Left)
-            .add_single(format!("Char:      {:>13}", charset), Left)
-            .add_single(format!("SIMD:      {:>13}", simd_str), Left);
+        let trail_percent = if trail_capacity > 0.0 {
+            (trail_sum / trail_capacity * 100.0).min(99.9)
+        } else {
+            0.0
+        };
+        let elapsed_str = format_elapsed_time(elapsed_seconds);
 
-        if let Some(food) = food_source {
-            let food_name = std::path::Path::new(food)
+        // Progress bars
+        let fps_bar = Self::build_progress_bar(fps, 60.0, 32);
+        let trail_bar = Self::build_progress_bar(trail_percent, 100.0, 15);
+        let entropy_bar = Self::build_progress_bar(entropy, 8.0, 15);
+        let cpu_bar = Self::build_progress_bar(cpu_percent, 100.0, 15);
+        let mem_bar = Self::build_progress_bar(memory_mb, 100.0, 15);
+
+        let grid_str = format!("{}×{}", grid_width, grid_height);
+        let term_str = format!("{}×{}", term_width, term_height);
+        let seed_str = seed.to_string();
+        let food_str = food_source.as_ref().map(|f| {
+            std::path::Path::new(f)
                 .file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or(food);
-            let truncated = if food_name.len() > 12 {
-                &food_name[..12]
-            } else {
-                food_name
-            };
-            builder = builder.add_single(format!("Food:      {:>13}", truncated), Left);
+                .unwrap_or(f)
+                .to_string()
+        });
+
+        // Build line list
+        let mut lines: Vec<String> = Vec::new();
+
+        // ── PERFORMANCE ──
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_section_header("PERFORMANCE", cw)
+        ));
+        lines.push(format!("{:<cw$}", ""));
+        // FPS label + bar + values (paused-aware)
+        let fps_row = if is_paused {
+            format!("  FPS   {:<32}  PAUSED", "░".repeat(32))
+        } else {
+            format!("  FPS   {}  {:.0}  avg {:.0}", fps_bar, fps, avg_fps)
+        };
+        lines.push(format!("{:<cw$}", fps_row));
+        lines.push(format!("{:<cw$}", ""));
+
+        // ── ENVIRONMENT (left) ─── | ── SIMULATION (right) ──
+        let env_header = Self::build_section_header("ENVIRONMENT", Self::LEFT_COL);
+        let sim_header = Self::build_section_header("SIMULATION", Self::RIGHT_COL);
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_two_col_row(&env_header, &sim_header)
+        ));
+        lines.push(format!("{:<cw$}", ""));
+
+        // Preset | Trail bar
+        let trail_row = format!("  Trail   {}  {:.1}%", trail_bar, trail_percent);
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_two_col_row(
+                &format!("  Preset  {:>18}", Self::truncate(preset_name, 18)),
+                &trail_row
+            )
+        ));
+
+        // Palette | Entropy bar
+        let entropy_row = format!("  Entropy {}  {:.1}", entropy_bar, entropy);
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_two_col_row(
+                &format!("  Palette {:>18}", Self::truncate(palette_name, 18)),
+                &entropy_row
+            )
+        ));
+
+        // Grid | Agents
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_two_col_row(
+                &format!("  Grid    {:>18}", grid_str),
+                &format!("  Agents        {:>10}", Self::format_count(agent_count))
+            )
+        ));
+
+        // Term | Max Trail
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_two_col_row(
+                &format!("  Term    {:>18}", term_str),
+                &format!("  Max Trail     {:>7.2}×", trail_max)
+            )
+        ));
+
+        // Seed | Frames
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_two_col_row(
+                &format!("  Seed    {:>18}", Self::truncate(&seed_str, 18)),
+                &format!(
+                    "  Frames        {:>10}",
+                    Self::format_count(frame_count as usize)
+                )
+            )
+        ));
+
+        // Init | Time
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_two_col_row(
+                &format!("  Init    {:>18}", init_mode),
+                &format!("  Time          {:>10}", elapsed_str)
+            )
+        ));
+
+        // ── SYSTEM (full-width header) ──
+        lines.push(format!("{:<cw$}", ""));
+        lines.push(format!("{:<cw$}", Self::build_section_header("SYSTEM", cw)));
+        lines.push(format!("{:<cw$}", ""));
+
+        // CPU bar (left) | SIMD status (right)
+        let cpu_row = format!("  CPU   {}  {:.0}%", cpu_bar, cpu_percent);
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_two_col_row(
+                &cpu_row,
+                &format!("  SIMD          {:>10}", Self::build_status(simd_enabled))
+            )
+        ));
+
+        // Mem bar (left) | Auto Reset (right)
+        let mem_label = format!("{:.1} MB", memory_mb);
+        let mem_row = format!("  Mem   {}  {}", mem_bar, mem_label);
+        let auto_reset_right = format!("  Auto Reset    {:>10}", Self::build_status(auto_reset));
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_two_col_row(&mem_row, &auto_reset_right)
+        ));
+
+        // Color | Charset (always separate columns)
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_two_col_row(
+                &format!("  Color   {:>18}", Self::truncate(color_mode, 18)),
+                &format!("  Charset       {:>10}", Self::truncate(charset, 10))
+            )
+        ));
+
+        // Optional food source row
+        if let Some(food_display) = food_str.as_deref() {
+            lines.push(format!(
+                "{:<cw$}",
+                Self::build_two_col_row(
+                    &format!("  Food    {:>18}", Self::truncate(food_display, 18)),
+                    ""
+                )
+            ));
         }
 
-        if warmup_frames > 0 {
-            builder = builder.add_single(format!("Warm:      {:>6} frames", warmup_frames), Left);
+        // Extra info: species/attractors/obstacles (left) | empty (right)
+        if attractor_count > 0 || obstacle_count > 0 || species_count > 1 {
+            lines.push(format!(
+                "{:<cw$}",
+                Self::build_two_col_row(
+                    &format!(
+                        "  Spc:{} Att:{} Obs:{}",
+                        species_count, attractor_count, obstacle_count
+                    ),
+                    ""
+                )
+            ));
         }
 
-        if auto_reset {
-            builder = builder.add_single(format!("Auto:      {:>13}", "On"), Left);
+        // ── PALETTE strip ──
+        lines.push(format!("{:<cw$}", ""));
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_section_header("PALETTE", cw)
+        ));
+        // Palette gradient strip: 78 colored ▄ chars
+        let palette_strip: String = (0..cw).map(|_| '▄').collect();
+        lines.push(format!("{:<cw$}", palette_strip));
+
+        // Build the overlay via PanelBuilder using raw lines
+        let mut overlay = PanelBuilder::new(cw, None)
+            .with_padding(Padding::new(2, 0, 2, 2))
+            .with_title("DASHBOARD")
+            .with_title_box();
+
+        for line in &lines {
+            overlay = overlay.add_single(line.clone(), Left);
         }
 
-        builder.build_overlay()
+        let mut rendered = overlay.build_overlay();
+        rendered.rich_lines = Some(Self::generate_rich_lines(
+            &rendered.lines,
+            fps,
+            accent,
+            panel_style,
+            palette_colors,
+        ));
+        rendered
     }
 
-    /// Calculates centered position for the info overlay.
+    fn truncate(s: &str, max: usize) -> &str {
+        let len = s.chars().count();
+        if len <= max {
+            s
+        } else {
+            // Find the byte offset of the `max`-th character boundary
+            match s.char_indices().nth(max) {
+                Some((byte_pos, _)) => &s[..byte_pos],
+                None => s,
+            }
+        }
+    }
+
+    fn format_count(n: usize) -> String {
+        if n >= 1_000_000 {
+            format!("{:.1}M", n as f32 / 1_000_000.0)
+        } else if n >= 1_000 {
+            format!("{:.0}k", n as f32 / 1000.0)
+        } else {
+            format!("{}", n)
+        }
+    }
+
+    /// Calculates centered position for the dashboard overlay.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
-        let y = (term_height.saturating_sub(17)) / 2;
+        let y = (term_height.saturating_sub(27)) / 2;
         (x, y)
+    }
+
+    /// Generates per-cell color overrides for the dashboard rich rendering.
+    fn generate_rich_lines(
+        lines: &[String],
+        _fps: f32,
+        accent: RgbColor,
+        panel_style: &PanelStyle,
+        palette_colors: &[RgbColor],
+    ) -> Vec<Vec<RichCell>> {
+        let muted = panel_style.muted;
+        let text_secondary = panel_style.text_secondary;
+
+        lines
+            .iter()
+            .map(|line| {
+                let chars: Vec<char> = line.chars().collect();
+                let n = chars.len();
+                // Content starts at col 3 (border=1, padding.left=2)
+                let content_start = 3.min(n);
+                let content_end = n.saturating_sub(3);
+
+                // Border rows (top/bottom) have no space at col 1 — skip all coloring.
+                if n >= 2 && chars[1] != ' ' {
+                    return chars.iter().map(|&c| (c, None, None)).collect();
+                }
+
+                // Detect section header rows: contain " ── "
+                let is_section_header = {
+                    let s: String = chars[content_start.min(n)..content_end.min(n)]
+                        .iter()
+                        .collect();
+                    s.contains(" ── ")
+                };
+
+                // Detect palette strip: all content chars are '▄'
+                let is_palette_strip = content_start < content_end
+                    && chars[content_start..content_end].iter().all(|&c| c == '▄');
+
+                // Detect FPS row
+                let is_fps_row = content_start + 5 < n
+                    && chars[content_start + 2..].starts_with(&['F', 'P', 'S']);
+
+                // Detect divider row (contains '│' at approx col 40)
+                let divider_col = chars.iter().position(|&c| c == '│');
+
+                if is_palette_strip {
+                    // Per-char palette color from sampled gradient
+                    chars
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &c)| {
+                            let fg = if i >= content_start && i < content_end {
+                                let palette_idx = i - content_start;
+                                palette_colors.get(palette_idx).copied()
+                            } else {
+                                None
+                            };
+                            (c, fg, None)
+                        })
+                        .collect()
+                } else if is_section_header {
+                    chars
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &c)| {
+                            let fg = if i >= content_start && i < content_end {
+                                if matches!(c, '─' | ' ') {
+                                    Some(muted)
+                                } else {
+                                    Some(text_secondary)
+                                }
+                            } else {
+                                None
+                            };
+                            (c, fg, None)
+                        })
+                        .collect()
+                } else if is_fps_row {
+                    chars
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &c)| {
+                            let col = i.saturating_sub(content_start);
+                            // FPS value: digits after bar — "  FPS   [bar]  N  avg N"
+                            let fg = if i >= content_start
+                                && i < content_end
+                                && (8..52).contains(&col)
+                                && (c.is_ascii_digit() || c == '.')
+                            {
+                                Some(accent)
+                            } else if matches!(c, '█' | '░')
+                                && i >= content_start
+                                && i < content_end
+                            {
+                                // Progress bar coloring (accent fills, muted empties)
+                                if c == '█' {
+                                    Some(accent)
+                                } else {
+                                    Some(muted)
+                                }
+                            } else {
+                                None
+                            };
+                            (c, fg, None)
+                        })
+                        .collect()
+                } else {
+                    // Generic row: color divider, status dots, progress bars
+                    chars
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &c)| {
+                            let fg = if Some(i) == divider_col {
+                                Some(muted)
+                            } else if c == '●' {
+                                Some(accent)
+                            } else if c == '○' {
+                                Some(muted)
+                            } else if c == '█' && i >= content_start && i < content_end {
+                                Some(accent)
+                            } else if c == '░' && i >= content_start && i < content_end {
+                                Some(muted)
+                            } else {
+                                None
+                            };
+                            (c, fg, None)
+                        })
+                        .collect()
+                }
+            })
+            .collect()
     }
 }
 
@@ -1412,14 +1576,29 @@ fn format_elapsed_time(seconds: f32) -> String {
 }
 
 #[cfg(test)]
-mod stats_tests {
+mod dashboard_tests {
     use super::*;
     use crate::render::theme::GRUVBOX_DARK;
 
+    fn make_palette_colors() -> Vec<RgbColor> {
+        (0..78)
+            .map(|i| RgbColor {
+                r: i as u8 * 3,
+                g: 100,
+                b: 200,
+            })
+            .collect()
+    }
+
     #[test]
-    fn test_stats_overlay_format() {
-        let history = std::collections::VecDeque::from(vec![0.5f32; 20]);
-        let lines = StatsOverlay::build_overlay(
+    fn test_dashboard_overlay_format() {
+        let palette_colors = make_palette_colors();
+        let accent = RgbColor {
+            r: 57,
+            g: 211,
+            b: 83,
+        };
+        let rendered = DashboardOverlay::build_overlay(
             50000,
             1234567.0,
             8000000.0,
@@ -1436,94 +1615,127 @@ mod stats_tests {
             2,
             12.5,
             85.0,
-            80,
-            &history,
-            &history,
-            &history,
-            RgbColor {
-                r: 57,
-                g: 211,
-                b: 83,
-            },
+            false,
+            "Organic",
+            "Heat",
+            &palette_colors,
+            120,
+            40,
+            "Random",
+            "TrueColor",
+            "HalfBlock",
+            true,
+            0.90,
+            22.5,
+            123456789,
+            &None,
+            0,
+            false,
+            accent,
             &GRUVBOX_DARK,
         );
 
-        assert!(!lines.lines.is_empty());
+        assert!(!rendered.lines.is_empty());
         // Solid-block borders
         assert!(
-            lines.lines[0].starts_with('█'),
+            rendered.lines[0].starts_with('█'),
             "Top border should start with solid block █, got: {}",
-            lines.lines[0]
+            rendered.lines[0]
         );
         assert!(
-            lines.lines.last().unwrap().starts_with('█'),
+            rendered.lines.last().unwrap().starts_with('█'),
             "Bottom border should start with solid block █"
         );
 
         // All lines should be exactly WIDTH chars
-        for (i, line) in lines.lines.iter().enumerate() {
+        for (i, line) in rendered.lines.iter().enumerate() {
             assert_eq!(
                 line.chars().count(),
-                StatsOverlay::WIDTH,
+                DashboardOverlay::WIDTH,
                 "Line {} has wrong width: '{}' (expected {}, got {})",
                 i,
                 line,
-                StatsOverlay::WIDTH,
+                DashboardOverlay::WIDTH,
                 line.chars().count()
             );
         }
     }
 
     #[test]
-    fn test_stats_overlay_position() {
-        let (x, y) = StatsOverlay::calculate_position(80, 40);
-        assert_eq!(x, 24);
-        assert_eq!(y, 8);
-        let (x2, y2) = StatsOverlay::calculate_position(120, 50);
-        assert_eq!(x2, 44);
-        assert_eq!(y2, 13);
-    }
-
-    #[test]
-    fn test_stats_overlay_with_zero_values() {
-        let history = std::collections::VecDeque::new();
-        let lines = StatsOverlay::build_overlay(
-            0,
-            0.0,
-            1000000.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0,
-            0.0,
+    fn test_dashboard_overlay_contains_key_data() {
+        let palette_colors = make_palette_colors();
+        let accent = RgbColor {
+            r: 57,
+            g: 211,
+            b: 83,
+        };
+        let rendered = DashboardOverlay::build_overlay(
+            50000,
+            1234567.0,
+            8000000.0,
+            8.5,
+            5.5,
+            30.0,
+            28.5,
+            1234,
+            125.5,
             400,
             400,
             0,
             0,
+            1,
+            12.5,
+            85.0,
+            false,
+            "Organic",
+            "Heat",
+            &palette_colors,
+            120,
+            40,
+            "Random",
+            "TrueColor",
+            "HalfBlock",
+            true,
+            0.90,
+            22.5,
+            42,
+            &None,
             0,
-            0.0,
-            0.0,
-            80,
-            &history,
-            &history,
-            &history,
-            RgbColor {
-                r: 57,
-                g: 211,
-                b: 83,
-            },
+            false,
+            accent,
             &GRUVBOX_DARK,
         );
 
-        assert!(!lines.lines.is_empty());
-        assert!(lines.lines.iter().any(|l| l.contains("0.0%")));
+        let all_text: String = rendered.lines.join("\n");
+        assert!(
+            all_text.contains("PERFORMANCE"),
+            "Missing PERFORMANCE section"
+        );
+        assert!(
+            all_text.contains("ENVIRONMENT"),
+            "Missing ENVIRONMENT section"
+        );
+        assert!(
+            all_text.contains("SIMULATION"),
+            "Missing SIMULATION section"
+        );
+        assert!(all_text.contains("PALETTE"), "Missing PALETTE section");
+        assert!(all_text.contains("Organic"), "Missing preset name");
+        assert!(all_text.contains("Heat"), "Missing palette name");
+        assert!(all_text.contains("FPS"), "Missing FPS row");
+    }
+
+    #[test]
+    fn test_dashboard_overlay_position() {
+        let (x, y) = DashboardOverlay::calculate_position(120, 40);
+        assert_eq!(x, (120 - DashboardOverlay::WIDTH) / 2);
+        assert_eq!(y, (40usize.saturating_sub(27)) / 2);
     }
 
     #[test]
     fn test_entropy_calculation() {
         let uniform = vec![1.0; 40000];
-        let entropy_uniform = StatsOverlay::calculate_entropy(&uniform, 100);
+        let entropy_uniform = DashboardOverlay::calculate_entropy(&uniform, 100);
         assert!(
             entropy_uniform < 2.0,
             "uniform should have low entropy, got {}",
@@ -1531,7 +1743,7 @@ mod stats_tests {
         );
 
         let varied: Vec<f32> = (0..40000).map(|i| i as f32 / 400.0).collect();
-        let entropy_varied = StatsOverlay::calculate_entropy(&varied, 100);
+        let entropy_varied = DashboardOverlay::calculate_entropy(&varied, 100);
         assert!(
             entropy_varied > entropy_uniform,
             "varied ({}) should have higher entropy than uniform ({})",
@@ -1543,7 +1755,7 @@ mod stats_tests {
     #[test]
     fn test_entropy_empty_trail() {
         let empty: Vec<f32> = vec![];
-        let entropy = StatsOverlay::calculate_entropy(&empty, 10);
+        let entropy = DashboardOverlay::calculate_entropy(&empty, 10);
         assert_eq!(entropy, 0.0);
     }
 
@@ -1553,108 +1765,6 @@ mod stats_tests {
         assert_eq!(format_elapsed_time(90.0), "1:30");
         assert_eq!(format_elapsed_time(3661.0), "1:01:01");
         assert_eq!(format_elapsed_time(0.0), "0:00");
-    }
-}
-
-#[cfg(test)]
-mod info_tests {
-    use super::*;
-
-    #[test]
-    fn test_info_overlay_format() {
-        let lines = InfoOverlay::build_overlay(
-            400,
-            400,
-            80,
-            24,
-            "Random",
-            "TrueColor",
-            "HalfBlock",
-            false,
-            &None,
-            0,
-            1.0,
-            0.85,
-            false,
-            0.5,
-            0,
-        );
-
-        assert!(!lines.lines.is_empty());
-        // Solid-block borders
-        assert!(
-            lines.lines[0].starts_with('█'),
-            "Top border should start with solid block █, got: {}",
-            lines.lines[0]
-        );
-        assert!(
-            lines.lines.last().unwrap().starts_with('█'),
-            "Bottom border should start with solid block █"
-        );
-
-        // All lines should be exactly WIDTH chars
-        for (i, line) in lines.lines.iter().enumerate() {
-            assert_eq!(
-                line.chars().count(),
-                InfoOverlay::WIDTH,
-                "Line {} has wrong width: '{}' (expected {} chars, got {})",
-                i,
-                line,
-                InfoOverlay::WIDTH,
-                line.chars().count()
-            );
-        }
-    }
-
-    #[test]
-    fn test_info_overlay_with_optional_fields() {
-        let lines = InfoOverlay::build_overlay(
-            800,
-            600,
-            120,
-            40,
-            "Central",
-            "EightBit",
-            "ASCII",
-            true,
-            &Some("food.png".to_string()),
-            100,
-            1.5,
-            0.9,
-            true,
-            0.3,
-            300,
-        );
-
-        assert!(!lines.lines.is_empty());
-
-        // All lines should be exactly WIDTH chars
-        for (i, line) in lines.lines.iter().enumerate() {
-            assert_eq!(
-                line.chars().count(),
-                InfoOverlay::WIDTH,
-                "Line {} has wrong width: '{}' (expected {} chars, got {})",
-                i,
-                line,
-                InfoOverlay::WIDTH,
-                line.chars().count()
-            );
-        }
-
-        // Should contain optional fields
-        assert!(lines.lines.iter().any(|l| l.contains("Food")));
-        assert!(lines.lines.iter().any(|l| l.contains("Warm")));
-        assert!(lines.lines.iter().any(|l| l.contains("Auto")));
-    }
-
-    #[test]
-    fn test_info_overlay_position() {
-        let (x, y) = InfoOverlay::calculate_position(80, 40);
-        assert_eq!(x, 26);
-        assert_eq!(y, 11);
-        let (x2, y2) = InfoOverlay::calculate_position(120, 50);
-        assert_eq!(x2, 46);
-        assert_eq!(y2, 16);
     }
 }
 
