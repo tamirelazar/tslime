@@ -108,7 +108,7 @@ impl PaletteEditorState {
 
         Self {
             mode: EditorMode::Editing,
-            selected_color_index: 0,
+            selected_color_index: PALETTE_COLOR_COUNT,
             selected_component: EditorComponent::Hue,
             colors,
             original_colors: colors,
@@ -277,13 +277,13 @@ fn build_swatches_str(selected: usize) -> String {
     let mut s = String::with_capacity(48);
     for i in 0..PALETTE_COLOR_COUNT {
         if i == selected {
-            s.push_str("[◆] ");
+            s.push_str(" ◉  ");
         } else {
-            s.push_str(" ◆  ");
+            s.push_str(" ○  ");
         }
     }
     if selected == PALETTE_COLOR_COUNT {
-        s.push_str("[○] ");
+        s.push_str(" ◉  ");
     } else {
         s.push_str(" ○  ");
     }
@@ -353,6 +353,7 @@ fn build_editor_rich_lines(
     hsv: HsvColor,
     text_primary: RgbColor,
     accent: RgbColor,
+    panel_bg: RgbColor,
 ) -> Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> {
     let mut rich: Vec<Vec<(char, Option<RgbColor>, Option<RgbColor>)>> = lines
         .iter()
@@ -402,148 +403,150 @@ fn build_editor_rich_lines(
         }
     }
 
-    // Line 6: hex code — centered
-    if rich.len() > 6 {
-        let hex_start = CONTENT_OFFSET + (INNER_W - 7) / 2;
-        for i in 0..7 {
-            if hex_start + i < rich[6].len() {
-                rich[6][hex_start + i].1 = Some(rgb_for_display);
-            }
-        }
-    }
+    // Color hint keys (lines 18-24) with accent color.
 
-    // Color hint keys (lines 20-26) with accent color
-    // Special case: line 20 is "← select →", accent both arrow characters
-    if rich.len() > 20 {
-        let arrow_line = &mut rich[20];
-        for (_idx, (c, fg, _bg)) in arrow_line.iter_mut().enumerate() {
+    // Line 18: "← select →" — accent arrow characters
+    if rich.len() > 18 {
+        for (c, fg, _) in rich[18].iter_mut() {
             if *c == '←' || *c == '→' {
                 *fg = Some(accent);
             }
         }
     }
-    // Special case: line 21 is "↑ adjust ↓", accent both arrow characters
-    if rich.len() > 21 {
-        let arrow_line = &mut rich[21];
-        for (_idx, (c, fg, _bg)) in arrow_line.iter_mut().enumerate() {
+
+    // Line 19: "↑ adjust ↓" — accent arrow characters
+    if rich.len() > 19 {
+        for (c, fg, _) in rich[19].iter_mut() {
             if *c == '↑' || *c == '↓' {
                 *fg = Some(accent);
             }
         }
     }
-    // Line 22: accent "Tab" and arrows on the single centered line
-    if rich.len() > 22 {
-        let tab_line = &mut rich[22];
-        let tab_word = "Tab";
-        let line_str: String = tab_line.iter().map(|(c, _, _)| *c).collect();
-        // Accent "Tab" plus 2 chars to the left
-        if let Some(tab_pos) = line_str.find(tab_word) {
-            let accent_start = tab_pos.saturating_sub(2);
-            let accent_end = (tab_pos + tab_word.len()).min(tab_line.len());
-            for col in accent_start..accent_end {
+
+    // Line 20: "Tab  H → S → V" — accent "Tab" and "→" arrows.
+    // Search tab_line directly (char-indexed) to avoid the byte-vs-char mismatch
+    // that arises when line_str.find() returns a byte offset: the '│' border glyph
+    // is 3 bytes but 1 char, shifting all subsequent byte offsets by +2.
+    if rich.len() > 20 {
+        let tab_line = &mut rich[20];
+        let tab_pos = (0..tab_line.len().saturating_sub(2)).find(|&i| {
+            tab_line[i].0 == 'T' && tab_line[i + 1].0 == 'a' && tab_line[i + 2].0 == 'b'
+        });
+        if let Some(pos) = tab_pos {
+            for col in pos..(pos + 3).min(tab_line.len()) {
                 tab_line[col].1 = Some(accent);
             }
         }
-        // Accent all arrows "→" in the line
-        for (_idx, (c, fg, _bg)) in tab_line.iter_mut().enumerate() {
+        for (c, fg, _) in tab_line.iter_mut() {
             if *c == '→' {
                 *fg = Some(accent);
             }
         }
-        // If you want to accent the spaces between "Tab" and "H" as well, modify here (not requested).
     }
-    // Remaining color keys: accent color for centered lines
-    let key_patterns = ["r", "Enter", "Ctrl+S", "Esc"];
-    let hint_line_indices = [23, 24, 25, 26];
-    for (i, &line_idx) in hint_line_indices.iter().enumerate() {
-        if line_idx < rich.len() && i < key_patterns.len() {
-            let pattern = key_patterns[i];
-            let line_str: String = rich[line_idx].iter().map(|(c, _, _)| *c).collect();
-            if let Some(start_pos) = line_str.find(pattern) {
-                // Only accent the key substring, NOT any left padding
-                for col in start_pos..(start_pos + pattern.len()).min(rich[line_idx].len()) {
-                    rich[line_idx][col].1 = Some(accent);
+
+    // Lines 21-24: each line is "{key}  {label}" centered independently.
+    // Search for the key chars directly in the rich line (char-indexed) to avoid
+    // the byte-vs-char offset bug that byte-based string search would introduce.
+    let hint_keys = ["r", "Enter", "Ctrl+S", "Esc"];
+    for (i, &line_idx) in [21usize, 22, 23, 24].iter().enumerate() {
+        if line_idx >= rich.len() {
+            continue;
+        }
+        let key_chars: Vec<char> = hint_keys[i].chars().collect();
+        let key_len = key_chars.len();
+        let line = &mut rich[line_idx];
+        let pos = (0..line.len().saturating_sub(key_len.saturating_sub(1))).find(|&j| {
+            key_chars
+                .iter()
+                .enumerate()
+                .all(|(k, &c)| line.get(j + k).map(|(ch, _, _)| *ch == c).unwrap_or(false))
+        });
+        if let Some(pos) = pos {
+            for col in pos..pos + key_len {
+                if col < line.len() {
+                    line[col].1 = Some(accent);
                 }
             }
         }
     }
 
-    // H bar (line 11): hue gradient, apply current S/V
+    // H bar (line 9): hue gradient. Colors are intentionally muted (low S/V) so the
+    // light-shade character blends them further into the panel background.
     let h_cursor = ((hsv.h / 360.0) * (TRACK_LEN - 1) as f32).round() as usize;
-    if rich.len() > 11 {
+    if rich.len() > 9 {
         let h_start = CONTENT_OFFSET + 7; // centered offset
         for i in 0..TRACK_LEN {
             let col = h_start + i;
-            if col < rich[11].len() {
+            if col < rich[9].len() {
                 let h = i as f32 / (TRACK_LEN - 1) as f32 * 360.0;
                 let color = hsv_to_rgb(HsvColor {
                     h,
-                    s: hsv.s,
-                    v: hsv.v,
+                    s: 0.60,
+                    v: 0.70,
                 });
                 if i == h_cursor {
-                    rich[11][col] = ('◆', Some(text_primary), Some(color));
+                    rich[9][col] = ('▓', Some(text_primary), Some(color));
                 } else {
-                    rich[11][col] = ('█', Some(color), Some(color));
+                    rich[9][col] = ('░', Some(color), Some(panel_bg));
                 }
             }
         }
     }
 
-    // S bar (line 14)
+    // S bar (line 12): saturation gradient
     let s_cursor = (hsv.s * (TRACK_LEN - 1) as f32).round() as usize;
-    if rich.len() > 14 {
+    if rich.len() > 12 {
         let s_start = CONTENT_OFFSET + 7;
         for i in 0..TRACK_LEN {
             let col = s_start + i;
-            if col < rich[14].len() {
+            if col < rich[12].len() {
                 let s = i as f32 / (TRACK_LEN - 1) as f32;
                 let color = hsv_to_rgb(HsvColor {
                     h: hsv.h,
-                    s,
-                    v: hsv.v,
+                    s: s * 0.75,
+                    v: 0.65,
                 });
                 if i == s_cursor {
-                    rich[14][col] = ('◆', Some(text_primary), Some(color));
+                    rich[12][col] = ('▓', Some(text_primary), Some(color));
                 } else {
-                    rich[14][col] = ('█', Some(color), Some(color));
+                    rich[12][col] = ('░', Some(color), Some(panel_bg));
                 }
             }
         }
     }
 
-    // V bar (line 17)
+    // V bar (line 15): value gradient
     let v_cursor = (hsv.v * (TRACK_LEN - 1) as f32).round() as usize;
-    if rich.len() > 17 {
+    if rich.len() > 15 {
         let v_start = CONTENT_OFFSET + 7;
         for i in 0..TRACK_LEN {
             let col = v_start + i;
-            if col < rich[17].len() {
+            if col < rich[15].len() {
                 let v = i as f32 / (TRACK_LEN - 1) as f32;
                 let color = hsv_to_rgb(HsvColor {
                     h: hsv.h,
-                    s: hsv.s,
-                    v,
+                    s: 0.55,
+                    v: v * 0.80,
                 });
                 if i == v_cursor {
-                    rich[17][col] = ('◆', Some(text_primary), Some(color));
+                    rich[15][col] = ('▓', Some(text_primary), Some(color));
                 } else {
-                    rich[17][col] = ('█', Some(color), Some(color));
+                    rich[15][col] = ('░', Some(color), Some(panel_bg));
                 }
             }
         }
     }
 
-    // Gradient strip (line 28)
-    if rich.len() > 28 {
+    // Gradient strip (line 27)
+    if rich.len() > 27 {
         for i in 0..INNER_W {
             let col = CONTENT_OFFSET + i;
-            if col < rich[28].len() {
+            if col < rich[27].len() {
                 let t = i as f32 / (INNER_W - 1).max(1) as f32;
                 let t_next = (t + 1.5 / INNER_W as f32).min(1.0);
                 let fg_color = interpolate_gradient(&stops, t);
                 let bg_color = interpolate_gradient(&stops, t_next);
-                rich[28][col] = ('▄', Some(fg_color), Some(bg_color));
+                rich[27][col] = ('▄', Some(fg_color), Some(bg_color));
             }
         }
     }
@@ -561,9 +564,9 @@ impl PaletteEditorOverlay {
     /// border(1) + padding.left(1) + INNER_W(52) + padding.right(1) + border(1) = 56
     pub const WIDTH: usize = INNER_W + 4;
 
-    /// Total height of the overlay in characters (all 9 items implemented).
-    /// top_border(1) + 28 content rows + bottom_border(1) = 30
-    pub const HEIGHT: usize = 30;
+    /// Total height of the overlay in characters.
+    /// top_border(1) + 27 content rows + bottom_border(1) = 29
+    pub const HEIGHT: usize = 29;
 
     /// Build the overlay for the current editor state.
     pub fn build_overlay(
@@ -595,7 +598,6 @@ impl PaletteEditorOverlay {
         let gradient_str = "▄".repeat(INNER_W);
         let swatches_str = build_swatches_str(state.selected_color_index);
         let labels_str = build_swatch_labels_str();
-        let hex_str = build_hex_str(rgb_for_display);
 
         let h_active = state.selected_component == EditorComponent::Hue;
         let s_active = state.selected_component == EditorComponent::Saturation;
@@ -608,23 +610,19 @@ impl PaletteEditorOverlay {
         let v_label = build_slider_label(v_active, 'V', &format!("{:.2}", hsv.v));
         let v_bar = build_slider_bar(hsv.v);
 
-        // First line is special: centered "← select →"
         let first_hint_line = "← select →";
-        // Second line is also special: centered "↑ adjust ↓"
         let second_hint_line = "↑ adjust ↓";
-        // Remaining hints for column alignment (without previous "↑/↓      adjust value")
-        // Single centered hint instead of two columns for Tab
-        let tab_hint_line = "Tab   H → S → V";
+        let tab_hint_line = "Tab  H → S → V";
         let hints = [
             ("r", "reset"),
-            ("Enter", "apple"),
+            ("Enter", "apply"),
             ("Ctrl+S", "save palette"),
             ("Esc", "discard"),
         ];
-        // For single-line, centered hints block—no manual pad, PanelBuilder will center.
+        // Each line is centered independently as a single text block.
         let key_label_lines: Vec<String> = hints
             .iter()
-            .map(|(key, label)| format!("{key} {label}"))
+            .map(|(key, label)| format!("{key}  {label}"))
             .collect();
 
         let mut overlay = PanelBuilder::new(INNER_W, None)
@@ -636,33 +634,28 @@ impl PaletteEditorOverlay {
             .add_single(swatches_str, TextAlignment::Center) // line 3
             .add_single(labels_str, TextAlignment::Center) // line 4
             .add_empty() // line 5
-            .add_single(hex_str, TextAlignment::Center) // line 6
+            .add_separator() // line 6
             .add_empty() // line 7
-            .add_separator() // line 8
-            .add_empty() // line 9
-            .add_single(h_label, TextAlignment::Center) // line 10
-            .add_single(h_bar, TextAlignment::Center) // line 11
-            .add_empty() // line 12
-            .add_single(s_label, TextAlignment::Center) // line 13
-            .add_single(s_bar, TextAlignment::Center) // line 14
-            .add_empty() // line 15
-            .add_single(v_label, TextAlignment::Center) // line 16
-            .add_single(v_bar, TextAlignment::Center) // line 17
-            .add_empty() // line 18
-            .add_separator() // line 19
-            // Add the special centered keybind line
-            .add_single(first_hint_line.to_string(), TextAlignment::Center) // line 20
-            // Add the up/down centered keybind line
-            .add_single(second_hint_line.to_string(), TextAlignment::Center) // line 21
-            // Add single centered Tab H → S → V line
-            .add_single(tab_hint_line.to_string(), TextAlignment::Center) // line 22
-            // Add remaining keybind lines (no Tab) left-aligned
-            .add_single(key_label_lines[0].clone(), TextAlignment::Center) // line 23
-            .add_single(key_label_lines[1].clone(), TextAlignment::Center) // line 24
-            .add_single(key_label_lines[2].clone(), TextAlignment::Center) // line 25
-            .add_single(key_label_lines[3].clone(), TextAlignment::Center) // line 26
-            .add_separator() // line 27
-            .add_single(gradient_str, TextAlignment::Left) // line 28
+            .add_single(h_label, TextAlignment::Center) // line 8
+            .add_single(h_bar, TextAlignment::Center) // line 9
+            .add_empty() // line 10
+            .add_single(s_label, TextAlignment::Center) // line 11
+            .add_single(s_bar, TextAlignment::Center) // line 12
+            .add_empty() // line 13
+            .add_single(v_label, TextAlignment::Center) // line 14
+            .add_single(v_bar, TextAlignment::Center) // line 15
+            .add_empty() // line 16
+            .add_separator() // line 17
+            .add_single(first_hint_line.to_string(), TextAlignment::Center) // line 18
+            .add_single(second_hint_line.to_string(), TextAlignment::Center) // line 19
+            .add_single(tab_hint_line.to_string(), TextAlignment::Center) // line 20
+            .add_single(key_label_lines[0].clone(), TextAlignment::Center) // line 21
+            .add_single(key_label_lines[1].clone(), TextAlignment::Center) // line 22
+            .add_single(key_label_lines[2].clone(), TextAlignment::Center) // line 23
+            .add_single(key_label_lines[3].clone(), TextAlignment::Center) // line 24
+            .add_empty() // line 25
+            .add_separator() // line 26
+            .add_single(gradient_str, TextAlignment::Left) // line 27
             .build_overlay();
 
         overlay.rich_lines = Some(build_editor_rich_lines(
@@ -671,6 +664,7 @@ impl PaletteEditorOverlay {
             hsv,
             panel_style.text_primary,
             accent,
+            panel_style.bg_color,
         ));
         overlay
     }
@@ -749,7 +743,7 @@ mod tests {
     #[test]
     fn test_palette_editor_state_creation() {
         let state = PaletteEditorState::new(&Palette::Forest);
-        assert_eq!(state.selected_color_index, 0);
+        assert_eq!(state.selected_color_index, PALETTE_COLOR_COUNT);
         assert!(!state.is_modified);
         assert_eq!(state.mode, EditorMode::Editing);
     }
@@ -758,22 +752,25 @@ mod tests {
     fn test_color_navigation() {
         let mut state = PaletteEditorState::new(&Palette::Forest);
 
+        // Starting at ALL (index 11), next goes to 0
         state.select_next_color();
-        assert_eq!(state.selected_color_index, 1);
-
-        state.select_prev_color();
         assert_eq!(state.selected_color_index, 0);
 
-        // Wraps back to ALL slot (index 11) from 0.
+        // Prev from 0 wraps to ALL (11)
         state.select_prev_color();
         assert_eq!(state.selected_color_index, PALETTE_COLOR_COUNT);
+
+        // Prev from ALL (11) goes to 10
+        state.select_prev_color();
+        assert_eq!(state.selected_color_index, 10);
     }
 
     #[test]
     fn test_color_navigation_wraps_forward_through_all() {
         let mut state = PaletteEditorState::new(&Palette::Forest);
-        // Navigate forward through all 11 color stops to the ALL slot.
-        for _ in 0..PALETTE_COLOR_COUNT {
+        // Starting at ALL (index 11), navigate forward through all 12 positions
+        // (11 colors + 1 ALL slot) to return to ALL.
+        for _ in 0..(PALETTE_COLOR_COUNT + 1) {
             state.select_next_color();
         }
         assert_eq!(state.selected_color_index, PALETTE_COLOR_COUNT); // ALL slot
@@ -785,11 +782,12 @@ mod tests {
 
     #[test]
     fn test_is_all_selected() {
-        let mut state = PaletteEditorState::new(&Palette::Forest);
-        assert!(!state.is_all_selected());
-
-        state.selected_color_index = PALETTE_COLOR_COUNT;
+        let state = PaletteEditorState::new(&Palette::Forest);
         assert!(state.is_all_selected());
+
+        let mut state2 = PaletteEditorState::new(&Palette::Forest);
+        state2.selected_color_index = 0;
+        assert!(!state2.is_all_selected());
     }
 
     #[test]
@@ -829,6 +827,7 @@ mod tests {
     fn test_hsv_adjustment() {
         let mut state = PaletteEditorState::new(&Palette::Forest);
 
+        state.selected_color_index = 0;
         state.colors[0] = RgbColor { r: 255, g: 0, b: 0 }; // Pure red
         let original_hue = state.current_hsv().h;
         assert!(
