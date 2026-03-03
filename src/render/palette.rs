@@ -1904,13 +1904,9 @@ pub fn hex_to_rgb(hex: &str) -> Option<RgbColor> {
     Some(RgbColor { r, g, b })
 }
 
-/// Maps brightness to a color based on a base species color.
-///
-/// This generates a gradient from dark to the base color (modulated by brightness).
-/// Maps brightness to a color based on a base species color.
-///
-/// This generates a gradient from dark to the base color (modulated by brightness).
-pub fn map_species_brightness(brightness: f32, base_color: RgbColor, reverse: bool) -> u8 {
+/// Internal helper to compute HSV color from brightness and base color.
+/// Shared logic between map_species_brightness and map_species_brightness_rgb.
+fn compute_species_hsv(brightness: f32, base_color: RgbColor, reverse: bool) -> HsvColor {
     let hsv = rgb_to_hsv(base_color);
     let brightness = if reverse {
         1.0 - brightness
@@ -1928,36 +1924,25 @@ pub fn map_species_brightness(brightness: f32, base_color: RgbColor, reverse: bo
     let s = min_s + (max_s - min_s) * t;
     let v = min_v + (max_v - min_v) * t;
 
-    let final_hsv = HsvColor { h: hsv.h, s, v };
+    HsvColor { h: hsv.h, s, v }
+}
+
+/// Maps brightness to a color based on a base species color.
+///
+/// This generates a gradient from dark to the base color (modulated by brightness).
+pub fn map_species_brightness(brightness: f32, base_color: RgbColor, reverse: bool) -> u8 {
+    let final_hsv = compute_species_hsv(brightness, base_color, reverse);
     let final_rgb = hsv_to_rgb(final_hsv);
     rgb_to_256(final_rgb)
 }
 
-/// Maps brightness to an RGB color based on a base species color.
 /// Maps brightness to an RGB color based on a base species color.
 pub fn map_species_brightness_rgb(
     brightness: f32,
     base_color: RgbColor,
     reverse: bool,
 ) -> RgbColor {
-    let hsv = rgb_to_hsv(base_color);
-    let brightness = if reverse {
-        1.0 - brightness
-    } else {
-        brightness
-    };
-
-    let t = brightness.clamp(0.0, 1.0);
-
-    let min_s = 0.05;
-    let max_s = hsv.s.max(0.1);
-    let min_v = 0.08;
-    let max_v = (hsv.v * 0.9 + 0.1).min(0.95);
-
-    let s = min_s + (max_s - min_s) * t;
-    let v = min_v + (max_v - min_v) * t;
-
-    let final_hsv = HsvColor { h: hsv.h, s, v };
+    let final_hsv = compute_species_hsv(brightness, base_color, reverse);
     hsv_to_rgb(final_hsv)
 }
 

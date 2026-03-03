@@ -386,7 +386,7 @@ pub fn apply_random_config(
     sim.update_config(new_config);
 
     // Update renderer with new palette
-    renderer.set_palette(runtime_state.current_palette(palette_list));
+    renderer.set_palette(runtime_state.current_palette(&ALL_PALETTES));
 
     // Also update renderer brightness target
     *current_max_brightness = runtime_state.max_brightness;
@@ -1243,28 +1243,10 @@ pub fn run_simulation(
 
     let initial_preset = args.preset.unwrap_or(Preset::Organic);
     let initial_palette = args.palette().unwrap_or(cli::Palette::Moss);
-    let palette_list = [
-        cli::Palette::Organic,
-        cli::Palette::Heat,
-        cli::Palette::Ocean,
-        cli::Palette::Mono,
-        cli::Palette::Forest,
-        cli::Palette::Neon,
-        cli::Palette::Warm,
-        cli::Palette::Vibrant,
-        cli::Palette::LegibleMono,
-        cli::Palette::Slime,
-        cli::Palette::Mold,
-        cli::Palette::Fungus,
-        cli::Palette::Swamp,
-        cli::Palette::Moss,
-        cli::Palette::Cosmic,
-        cli::Palette::Ethereal,
-    ];
     let initial_palette_index = if let cli::Palette::Custom(_) = initial_palette {
         4 // Default to Forest for custom palettes
     } else {
-        palette_list
+        ALL_PALETTES
             .iter()
             .position(|p| *p == initial_palette)
             .unwrap_or(4)
@@ -1336,7 +1318,7 @@ pub fn run_simulation(
             &runtime_state,
             sim,
             &mut renderer,
-            &palette_list,
+            &ALL_PALETTES,
             &mut _current_max_brightness,
         );
     }
@@ -1474,7 +1456,7 @@ pub fn run_simulation(
             max_brightness *= multiplier;
         }
 
-        let current_palette = runtime_state.current_palette(&palette_list);
+        let current_palette = runtime_state.current_palette(&ALL_PALETTES);
 
         let shift_degrees = runtime_state.palette_shift_speed.degrees_per_second();
         let is_off = runtime_state.palette_shift_speed == PaletteShiftSpeed::Off;
@@ -2081,7 +2063,7 @@ pub fn run_simulation(
                                     let saved_config = config_manager::SavedConfig::from_runtime(
                                         runtime_state.config_save_name_input.clone(),
                                         sim.config(),
-                                        runtime_state.current_palette(&palette_list),
+                                        runtime_state.current_palette(&ALL_PALETTES),
                                         charset.clone(),
                                         args.reverse_palette,
                                         args.invert_palette,
@@ -2187,7 +2169,7 @@ pub fn run_simulation(
                                             Ok(_) => {
                                                 // Update renderer with new visual parameters
                                                 let new_palette =
-                                                    runtime_state.current_palette(&palette_list);
+                                                    runtime_state.current_palette(&ALL_PALETTES);
                                                 renderer.set_palette(new_palette);
                                                 renderer.set_invert_palette(
                                                     runtime_state.invert_palette,
@@ -2251,7 +2233,7 @@ pub fn run_simulation(
                         use crossterm::event::{KeyCode, KeyModifiers};
 
                         if palette_editor_state.is_none() {
-                            let current_palette = runtime_state.current_palette(&palette_list);
+                            let current_palette = runtime_state.current_palette(&ALL_PALETTES);
                             palette_editor_state = Some(PaletteEditorState::new(&current_palette));
                         }
 
@@ -2488,12 +2470,12 @@ pub fn run_simulation(
                         }
                         ControlAction::CyclePalette => {
                             runtime_state.cycle_palette(num_palettes());
-                            let new_palette = runtime_state.current_palette(&palette_list);
+                            let new_palette = runtime_state.current_palette(&ALL_PALETTES);
                             renderer.set_palette(new_palette);
                         }
                         ControlAction::CyclePaletteReverse => {
                             runtime_state.cycle_palette_reverse(num_palettes());
-                            let new_palette = runtime_state.current_palette(&palette_list);
+                            let new_palette = runtime_state.current_palette(&ALL_PALETTES);
                             renderer.set_palette(new_palette);
                         }
                         ControlAction::CycleCharset => {
@@ -2861,7 +2843,7 @@ pub fn run_simulation(
                                 &runtime_state,
                                 sim,
                                 &mut renderer,
-                                &palette_list,
+                                &ALL_PALETTES,
                                 &mut _current_max_brightness,
                             );
 
@@ -2883,7 +2865,7 @@ pub fn run_simulation(
                                 new_config.terrain_strength = runtime_state.terrain_strength;
                                 sim.update_config(new_config);
 
-                                renderer.set_palette(runtime_state.current_palette(&palette_list));
+                                renderer.set_palette(runtime_state.current_palette(&ALL_PALETTES));
                                 renderer.set_invert_palette(runtime_state.invert_palette);
                                 renderer.set_reverse_palette(runtime_state.reverse_palette);
                                 renderer.set_dither_mode(runtime_state.dither_mode);
@@ -2909,7 +2891,7 @@ pub fn run_simulation(
                                 new_config.terrain_strength = runtime_state.terrain_strength;
                                 sim.update_config(new_config);
 
-                                renderer.set_palette(runtime_state.current_palette(&palette_list));
+                                renderer.set_palette(runtime_state.current_palette(&ALL_PALETTES));
                                 renderer.set_invert_palette(runtime_state.invert_palette);
                                 renderer.set_reverse_palette(runtime_state.reverse_palette);
                                 renderer.set_dither_mode(runtime_state.dither_mode);
@@ -2936,7 +2918,7 @@ pub fn run_simulation(
                         ControlAction::ShowPaletteEditor => {
                             runtime_state.toggle_palette_editor();
                             if runtime_state.show_palette_editor {
-                                let current_palette = runtime_state.current_palette(&palette_list);
+                                let current_palette = runtime_state.current_palette(&ALL_PALETTES);
                                 palette_editor_state =
                                     Some(PaletteEditorState::new(&current_palette));
                             } else {

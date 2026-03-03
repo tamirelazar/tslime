@@ -67,6 +67,18 @@ impl Charset {
     }
 }
 
+/// List of all available charsets for cycling.
+/// This is the single source of truth for charset enumeration.
+pub const ALL_CHARSETS: [Charset; 7] = [
+    Charset::HalfBlock,
+    Charset::HalfBlockDual,
+    Charset::Ascii,
+    Charset::Braille,
+    Charset::Quadrant,
+    Charset::Shade,
+    Charset::Points,
+];
+
 const HALF_BLOCK_CHARS: [char; 9] = [
     ' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
     '\u{2588}',

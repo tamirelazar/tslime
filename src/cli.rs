@@ -2,6 +2,7 @@ use clap::Parser;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
+use crate::render::constants::intensity::PERLIN_SEED;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
@@ -103,6 +104,32 @@ impl Palette {
             Palette::Custom(_) => "Custom",
         }
     }
+}
+
+/// List of all available color palettes for cycling.
+/// This is the single source of truth for palette enumeration.
+pub const ALL_PALETTES: [Palette; 16] = [
+    Palette::Organic,
+    Palette::Heat,
+    Palette::Ocean,
+    Palette::Mono,
+    Palette::Forest,
+    Palette::Neon,
+    Palette::Warm,
+    Palette::Vibrant,
+    Palette::LegibleMono,
+    Palette::Slime,
+    Palette::Mold,
+    Palette::Fungus,
+    Palette::Swamp,
+    Palette::Moss,
+    Palette::Cosmic,
+    Palette::Ethereal,
+];
+
+/// Returns the number of available palettes.
+pub fn num_palettes() -> usize {
+    ALL_PALETTES.len()
 }
 
 #[derive(Debug, Clone)]
@@ -1451,7 +1478,11 @@ impl Args {
             ),
             "smoothstep" => Ok(IntensityMapping::smoothstep()),
             "quantize" => Ok(IntensityMapping::quantize(self.intensity_mapping_levels)),
-            "perlin" => Ok(IntensityMapping::perlin(self.perlin_strength, 5.0, 42)),
+            "perlin" => Ok(IntensityMapping::perlin(
+                self.perlin_strength,
+                5.0,
+                PERLIN_SEED,
+            )),
             "split" => Ok(IntensityMapping::linear_log_split(
                 self.intensity_mapping_base,
             )),
@@ -1507,7 +1538,7 @@ impl Args {
             "perlin" => Ok(Some(IntensityMapping::perlin(
                 self.perlin_strength,
                 5.0,
-                42,
+                PERLIN_SEED,
             ))),
             "split" => Ok(Some(IntensityMapping::linear_log_split(
                 self.logo_mapping_base,

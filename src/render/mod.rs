@@ -2,6 +2,8 @@
 pub mod adaptive_brightness;
 /// Character set definitions and mapping logic.
 pub mod charset;
+/// Centralized constants for rendering parameters.
+pub mod constants;
 /// Dithering algorithms (ordered, error diffusion).
 pub mod dither;
 /// Downsampling from simulation grid to terminal grid.

@@ -9,6 +9,23 @@ use rand_xoshiro::Xoshiro256PlusPlus as Rng;
 use std::f32::consts::PI;
 
 use super::config::{Attractor, Obstacle, TerrainType, Wind};
+use super::constants::steering::{
+    ATTRACTOR_MIN_DIST, ATTRACTOR_STRENGTH, FORCE_THRESHOLD, TERRAIN_NOISE_OFFSET,
+    TERRAIN_SCALE_SMOOTH, TERRAIN_SCALE_TURBULENT, TERRAIN_STRENGTH_MIXED, TERRAIN_STRENGTH_SMOOTH,
+    TERRAIN_STRENGTH_TURBULENT, WIND_MIN_STRENGTH, WIND_STEER_STRENGTH, WIND_STRENGTH_MULTIPLIER,
+};
+
+/// Normalizes an angle to the range [-PI, PI].
+#[inline]
+pub fn normalize_angle(mut angle: f32) -> f32 {
+    while angle > PI {
+        angle -= 2.0 * PI;
+    }
+    while angle < -PI {
+        angle += 2.0 * PI;
+    }
+    angle
+}
 
 /// Wrapper for Perlin noise generation used in terrain effects.
 pub struct NoiseWrapper {
@@ -144,8 +161,7 @@ impl Agent {
             let dy = attractor.y - self.y;
             let dist_sq = dx * dx + dy * dy;
 
-            let min_dist = 1.0;
-            let dist_sq = dist_sq.max(min_dist * min_dist);
+            let dist_sq = dist_sq.max(ATTRACTOR_MIN_DIST * ATTRACTOR_MIN_DIST);
 
             let force = attractor.strength * strength_multiplier / dist_sq.sqrt();
 
@@ -153,43 +169,22 @@ impl Agent {
             force_y += dy / dist_sq.sqrt() * force;
         }
 
-        if force_x.abs() > 0.001 || force_y.abs() > 0.001 {
+        if force_x.abs() > FORCE_THRESHOLD || force_y.abs() > FORCE_THRESHOLD {
             let target_heading = force_y.atan2(force_x);
-            let diff = target_heading - self.heading;
-
-            let mut normalized_diff = diff;
-            while normalized_diff > PI {
-                normalized_diff -= 2.0 * PI;
-            }
-            while normalized_diff < -PI {
-                normalized_diff += 2.0 * PI;
-            }
-
-            let steer_strength = 0.1;
-            self.heading += normalized_diff * steer_strength;
+            self.apply_steering(target_heading, ATTRACTOR_STRENGTH);
         }
     }
 
     /// Apply constant wind force to heading.
     pub fn apply_wind_force(&mut self, wind: Option<Wind>, strength_multiplier: f32) {
         if let Some(w) = wind {
-            let wind_strength = 0.05 * w.dx * strength_multiplier;
-            let wind_strength_y = 0.05 * w.dy * strength_multiplier;
+            let wind_strength = WIND_STRENGTH_MULTIPLIER * w.dx * strength_multiplier;
+            let wind_strength_y = WIND_STRENGTH_MULTIPLIER * w.dy * strength_multiplier;
 
-            if wind_strength.abs() > 0.0001 || wind_strength_y.abs() > 0.0001 {
+            if wind_strength.abs() > WIND_MIN_STRENGTH || wind_strength_y.abs() > WIND_MIN_STRENGTH
+            {
                 let target_heading = wind_strength_y.atan2(wind_strength);
-                let diff = target_heading - self.heading;
-
-                let mut normalized_diff = diff;
-                while normalized_diff > PI {
-                    normalized_diff -= 2.0 * PI;
-                }
-                while normalized_diff < -PI {
-                    normalized_diff += 2.0 * PI;
-                }
-
-                let steer_strength = 0.3;
-                self.heading += normalized_diff * steer_strength;
+                self.apply_steering(target_heading, WIND_STEER_STRENGTH);
             }
         }
     }
@@ -205,73 +200,43 @@ impl Agent {
         match terrain {
             TerrainType::None => {}
             TerrainType::Smooth => {
-                let scale = 0.005;
-                let nx = self.x as f64 * scale + seed_val;
-                let ny = self.y as f64 * scale + seed_val;
+                let nx = self.x as f64 * TERRAIN_SCALE_SMOOTH as f64 + seed_val;
+                let ny = self.y as f64 * TERRAIN_SCALE_SMOOTH as f64 + seed_val;
                 let noise_val = noise.get(nx, ny);
 
                 let angle = (noise_val as f32 - 0.5) * PI * 2.0 * terrain_strength;
-                let diff = angle - self.heading;
-
-                let mut normalized_diff = diff;
-                while normalized_diff > PI {
-                    normalized_diff -= 2.0 * PI;
-                }
-                while normalized_diff < -PI {
-                    normalized_diff += 2.0 * PI;
-                }
-
-                let steer_strength = 0.1;
-                self.heading += normalized_diff * steer_strength;
+                self.apply_steering(angle, TERRAIN_STRENGTH_SMOOTH);
             }
             TerrainType::Turbulent => {
-                let scale = 0.02;
-                let nx = self.x as f64 * scale + seed_val + 100.0;
-                let ny = self.y as f64 * scale + seed_val + 100.0;
+                let nx = self.x as f64 * TERRAIN_SCALE_TURBULENT as f64
+                    + seed_val
+                    + TERRAIN_NOISE_OFFSET as f64;
+                let ny = self.y as f64 * TERRAIN_SCALE_TURBULENT as f64
+                    + seed_val
+                    + TERRAIN_NOISE_OFFSET as f64;
                 let noise_val = noise.get(nx, ny);
 
                 let angle = (noise_val as f32 - 0.5) * PI * 2.0 * terrain_strength;
-                let diff = angle - self.heading;
-
-                let mut normalized_diff = diff;
-                while normalized_diff > PI {
-                    normalized_diff -= 2.0 * PI;
-                }
-                while normalized_diff < -PI {
-                    normalized_diff += 2.0 * PI;
-                }
-
-                let steer_strength = 0.2;
-                self.heading += normalized_diff * steer_strength;
+                self.apply_steering(angle, TERRAIN_STRENGTH_TURBULENT);
             }
             TerrainType::Mixed => {
-                let smooth_scale = 0.005;
-                let turb_scale = 0.02;
-
-                let nx = self.x as f64 * smooth_scale + seed_val;
-                let ny = self.y as f64 * smooth_scale + seed_val;
+                let nx = self.x as f64 * TERRAIN_SCALE_SMOOTH as f64 + seed_val;
+                let ny = self.y as f64 * TERRAIN_SCALE_SMOOTH as f64 + seed_val;
                 let smooth_val = noise.get(nx, ny);
 
-                let nx = self.x as f64 * turb_scale + seed_val + 100.0;
-                let ny = self.y as f64 * turb_scale + seed_val + 100.0;
+                let nx = self.x as f64 * TERRAIN_SCALE_TURBULENT as f64
+                    + seed_val
+                    + TERRAIN_NOISE_OFFSET as f64;
+                let ny = self.y as f64 * TERRAIN_SCALE_TURBULENT as f64
+                    + seed_val
+                    + TERRAIN_NOISE_OFFSET as f64;
                 let turb_val = noise.get(nx, ny);
 
                 let smooth_angle = (smooth_val as f32 - 0.5) * PI * 2.0 * terrain_strength;
                 let turb_angle = (turb_val as f32 - 0.5) * PI * 2.0 * terrain_strength * 0.5;
 
                 let combined_angle = smooth_angle + turb_angle;
-                let diff = combined_angle - self.heading;
-
-                let mut normalized_diff = diff;
-                while normalized_diff > PI {
-                    normalized_diff -= 2.0 * PI;
-                }
-                while normalized_diff < -PI {
-                    normalized_diff += 2.0 * PI;
-                }
-
-                let steer_strength = 0.15;
-                self.heading += normalized_diff * steer_strength;
+                self.apply_steering(combined_angle, TERRAIN_STRENGTH_MIXED);
             }
         }
     }
@@ -323,6 +288,12 @@ impl Agent {
             let idx = y * width + x;
             trail[idx] += deposit_amount;
         }
+    }
+
+    #[inline]
+    fn apply_steering(&mut self, target_angle: f32, steer_strength: f32) {
+        let diff = normalize_angle(target_angle - self.heading);
+        self.heading += diff * steer_strength;
     }
 }
 

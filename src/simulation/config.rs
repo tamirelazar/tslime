@@ -6,6 +6,13 @@
 use image::io::Reader as ImageReader;
 use std::path::Path;
 
+use super::agent::normalize_angle;
+use super::constants::agent as agent_consts;
+use super::constants::env as env_consts;
+use super::constants::population as pop_consts;
+use super::constants::time as time_consts;
+use super::constants::trail as trail_consts;
+
 /// Algorithm used for pheromone diffusion (spreading).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffusionKernel {
@@ -380,14 +387,8 @@ impl Obstacle {
                 let dx = px - x;
                 let dy = py - y;
                 let normal_angle = dy.atan2(dx);
-                let mut new_heading = 2.0 * normal_angle - heading + std::f32::consts::PI;
-                while new_heading > std::f32::consts::PI {
-                    new_heading -= 2.0 * std::f32::consts::PI;
-                }
-                while new_heading < -std::f32::consts::PI {
-                    new_heading += 2.0 * std::f32::consts::PI;
-                }
-                new_heading
+                let new_heading = 2.0 * normal_angle - heading + std::f32::consts::PI;
+                normalize_angle(new_heading)
             }
             Obstacle::Rect {
                 x,
@@ -553,88 +554,138 @@ impl SimConfig {
         if self.species_configs.is_empty() {
             return Err("at least one species must be configured".to_string());
         }
-        if self.species_configs.iter().map(|s| s.count).sum::<usize>() < 1000
-            || self.species_configs.iter().map(|s| s.count).sum::<usize>() > 200_000
-        {
+        let total_pop: usize = self.species_configs.iter().map(|s| s.count).sum();
+        if total_pop < pop_consts::MIN_TOTAL || total_pop > pop_consts::MAX_TOTAL {
             return Err(format!(
-                "total population must be between 1000 and 200000, got {}",
-                self.species_configs.iter().map(|s| s.count).sum::<usize>()
+                "total population must be between {} and {}, got {}",
+                pop_consts::MIN_TOTAL,
+                pop_consts::MAX_TOTAL,
+                total_pop
             ));
         }
-        if self.sensor_angle < 5.0 || self.sensor_angle > 90.0 {
+        if self.sensor_angle < agent_consts::MIN_SENSOR_ANGLE
+            || self.sensor_angle > agent_consts::MAX_SENSOR_ANGLE
+        {
             return Err(format!(
-                "sensor_angle must be between 5.0 and 90.0, got {}",
+                "sensor_angle must be between {} and {}, got {}",
+                agent_consts::MIN_SENSOR_ANGLE,
+                agent_consts::MAX_SENSOR_ANGLE,
                 self.sensor_angle
             ));
         }
-        if self.sensor_distance < 1.0 || self.sensor_distance > 50.0 {
+        if self.sensor_distance < agent_consts::MIN_SENSOR_DISTANCE
+            || self.sensor_distance > agent_consts::MAX_SENSOR_DISTANCE
+        {
             return Err(format!(
-                "sensor_distance must be between 1.0 and 50.0, got {}",
+                "sensor_distance must be between {} and {}, got {}",
+                agent_consts::MIN_SENSOR_DISTANCE,
+                agent_consts::MAX_SENSOR_DISTANCE,
                 self.sensor_distance
             ));
         }
-        if self.rotation_angle < 5.0 || self.rotation_angle > 90.0 {
+        if self.rotation_angle < agent_consts::MIN_ROTATION_ANGLE
+            || self.rotation_angle > agent_consts::MAX_ROTATION_ANGLE
+        {
             return Err(format!(
-                "rotation_angle must be between 5.0 and 90.0, got {}",
+                "rotation_angle must be between {} and {}, got {}",
+                agent_consts::MIN_ROTATION_ANGLE,
+                agent_consts::MAX_ROTATION_ANGLE,
                 self.rotation_angle
             ));
         }
-        if self.step_size < 0.01 || self.step_size > 10.0 {
+        if self.step_size < agent_consts::MIN_STEP_SIZE
+            || self.step_size > agent_consts::MAX_STEP_SIZE
+        {
             return Err(format!(
-                "step_size must be between 0.01 and 10.0, got {}",
+                "step_size must be between {} and {}, got {}",
+                agent_consts::MIN_STEP_SIZE,
+                agent_consts::MAX_STEP_SIZE,
                 self.step_size
             ));
         }
-        if self.decay_factor < 0.5 || self.decay_factor > 0.9999 {
+        if self.decay_factor < trail_consts::MIN_DECAY_FACTOR
+            || self.decay_factor > trail_consts::MAX_DECAY_FACTOR
+        {
             return Err(format!(
-                "decay_factor must be between 0.5 and 0.9999, got {}",
+                "decay_factor must be between {} and {}, got {}",
+                trail_consts::MIN_DECAY_FACTOR,
+                trail_consts::MAX_DECAY_FACTOR,
                 self.decay_factor
             ));
         }
-        if self.deposit_amount < 0.1 || self.deposit_amount > 20.0 {
+        if self.deposit_amount < agent_consts::MIN_DEPOSIT_AMOUNT
+            || self.deposit_amount > agent_consts::MAX_DEPOSIT_AMOUNT
+        {
             return Err(format!(
-                "deposit_amount must be between 0.1 and 20.0, got {}",
+                "deposit_amount must be between {} and {}, got {}",
+                agent_consts::MIN_DEPOSIT_AMOUNT,
+                agent_consts::MAX_DEPOSIT_AMOUNT,
                 self.deposit_amount
             ));
         }
-        if self.max_brightness < 1.0 || self.max_brightness > 1000.0 {
+        if self.max_brightness < trail_consts::MIN_MAX_BRIGHTNESS
+            || self.max_brightness > trail_consts::MAX_MAX_BRIGHTNESS
+        {
             return Err(format!(
-                "max_brightness must be between 1.0 and 1000.0, got {}",
+                "max_brightness must be between {} and {}, got {}",
+                trail_consts::MIN_MAX_BRIGHTNESS,
+                trail_consts::MAX_MAX_BRIGHTNESS,
                 self.max_brightness
             ));
         }
-        if self.diffusion_sigma < 0.5 || self.diffusion_sigma > 2.0 {
+        if self.diffusion_sigma < trail_consts::MIN_DIFFUSION_SIGMA
+            || self.diffusion_sigma > trail_consts::MAX_DIFFUSION_SIGMA
+        {
             return Err(format!(
-                "diffusion_sigma must be between 0.5 and 2.0, got {}",
+                "diffusion_sigma must be between {} and {}, got {}",
+                trail_consts::MIN_DIFFUSION_SIGMA,
+                trail_consts::MAX_DIFFUSION_SIGMA,
                 self.diffusion_sigma
             ));
         }
-        if self.time_scale < 0.1 || self.time_scale > 10.0 {
+        if self.time_scale < time_consts::MIN_TIME_SCALE
+            || self.time_scale > time_consts::MAX_TIME_SCALE
+        {
             return Err(format!(
-                "time_scale must be between 0.1 and 10.0, got {}",
+                "time_scale must be between {} and {}, got {}",
+                time_consts::MIN_TIME_SCALE,
+                time_consts::MAX_TIME_SCALE,
                 self.time_scale
             ));
         }
-        if self.attractor_strength < 0.1 || self.attractor_strength > 10.0 {
+        if self.attractor_strength < env_consts::MIN_ATTRACTOR_STRENGTH
+            || self.attractor_strength > env_consts::MAX_ATTRACTOR_STRENGTH
+        {
             return Err(format!(
-                "attractor_strength must be between 0.1 and 10.0, got {}",
+                "attractor_strength must be between {} and {}, got {}",
+                env_consts::MIN_ATTRACTOR_STRENGTH,
+                env_consts::MAX_ATTRACTOR_STRENGTH,
                 self.attractor_strength
             ));
         }
         for (i, attractor) in self.attractors.iter().enumerate() {
-            if attractor.strength < -10.0 || attractor.strength > 10.0 {
+            if attractor.strength < env_consts::ATTRACTOR_STRENGTH_MIN
+                || attractor.strength > env_consts::ATTRACTOR_STRENGTH_MAX
+            {
                 return Err(format!(
-                    "attractor[{}].strength must be between -10.0 and 10.0, got {}",
-                    i, attractor.strength
+                    "attractor[{}].strength must be between {} and {}, got {}",
+                    i,
+                    env_consts::ATTRACTOR_STRENGTH_MIN,
+                    env_consts::ATTRACTOR_STRENGTH_MAX,
+                    attractor.strength
                 ));
             }
         }
         for species in &self.species_configs {
             species.validate()?;
         }
-        if self.terrain_strength < 0.1 || self.terrain_strength > 5.0 {
+        if self.terrain_strength < env_consts::MIN_TERRAIN_STRENGTH
+            || self.terrain_strength > env_consts::MAX_TERRAIN_STRENGTH
+        {
             return Err(format!(
-                "terrain_strength must be between 0.1 and 5.0, got {}",
+                "terrain_strength must be between {} and {}, got {}",
+                env_consts::MIN_TERRAIN_STRENGTH,
+                env_consts::MAX_TERRAIN_STRENGTH,
                 self.terrain_strength
             ));
         }
@@ -727,6 +778,41 @@ impl Default for SimConfig {
     }
 }
 
+impl SimConfig {
+    /// Creates a base preset configuration with common fields set to their defaults.
+    fn base_preset() -> Self {
+        Self {
+            sensor_angle: 22.5,
+            sensor_distance: 9.0,
+            rotation_angle: 45.0,
+            step_size: 1.0,
+            decay_factor: 0.5,
+            deposit_amount: 5.0,
+            diffusion_kernel: DiffusionKernel::Gaussian,
+            diffusion_sigma: 1.0,
+            max_brightness: 100.0,
+            time_scale: 1.0,
+            attractors: Vec::new(),
+            attractor_strength: 1.0,
+            mouse_attractors: Vec::new(),
+            mouse_timeout: 3.0,
+            species_configs: vec![SpeciesConfig::default()],
+            separate_species_trails: false,
+            use_simd: true,
+            food_image_path: None,
+            food_image_invert: false,
+            food_image_scale: 1.0,
+            obstacles: Vec::new(),
+            obstacle_masks: Vec::new(),
+            wind: None,
+            terrain: TerrainType::None,
+            terrain_strength: 1.0,
+            background_color: None,
+            preferred_init_mode: None,
+        }
+    }
+}
+
 impl From<Preset> for SimConfig {
     fn from(preset: Preset) -> Self {
         match preset {
@@ -734,17 +820,9 @@ impl From<Preset> for SimConfig {
                 sensor_angle: 15.0,
                 sensor_distance: 9.0,
                 rotation_angle: 30.0,
-                step_size: 1.0,
                 decay_factor: 0.85,
-                deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 20.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 50_000,
@@ -754,34 +832,16 @@ impl From<Preset> for SimConfig {
                     deposit_amount: 5.0,
                     color: "228b22".to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Exploratory => Self {
                 sensor_angle: 45.0,
                 sensor_distance: 15.0,
                 rotation_angle: 60.0,
-                step_size: 1.0,
                 decay_factor: 0.96,
                 deposit_amount: 3.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 12.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 30_000,
@@ -791,18 +851,7 @@ impl From<Preset> for SimConfig {
                     deposit_amount: 3.0,
                     color: "228b22".to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Tendrils => Self {
                 sensor_angle: 30.0,
@@ -812,13 +861,7 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.90,
                 deposit_amount: 4.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 16.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 40_000,
@@ -828,18 +871,7 @@ impl From<Preset> for SimConfig {
                     deposit_amount: 4.0,
                     color: "228b22".to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Organic => Self {
                 sensor_angle: 22.5,
@@ -847,28 +879,9 @@ impl From<Preset> for SimConfig {
                 rotation_angle: 45.0,
                 step_size: 1.0,
                 decay_factor: 0.85,
-                deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 20.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
-                species_configs: vec![SpeciesConfig::default()],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Minimal => Self {
                 sensor_angle: 30.0,
@@ -878,13 +891,7 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.95,
                 deposit_amount: 3.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 15.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 15_000,
@@ -894,34 +901,16 @@ impl From<Preset> for SimConfig {
                     deposit_amount: 3.0,
                     color: "228b22".to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Moss => Self {
                 sensor_angle: 22.0,
                 sensor_distance: 12.0,
                 rotation_angle: 35.0,
-                step_size: 1.0,
                 decay_factor: 0.88,
                 deposit_amount: 4.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 18.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 35_000,
@@ -931,18 +920,7 @@ impl From<Preset> for SimConfig {
                     deposit_amount: 4.0,
                     color: "4a7a4a".to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Cosmic => Self {
                 sensor_angle: 55.0,
@@ -951,14 +929,7 @@ impl From<Preset> for SimConfig {
                 step_size: 0.7,
                 decay_factor: 0.93,
                 deposit_amount: 3.0,
-                diffusion_kernel: DiffusionKernel::Gaussian,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 14.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 25_000,
@@ -968,18 +939,7 @@ impl From<Preset> for SimConfig {
                     deposit_amount: 3.0,
                     color: "8a2be2".to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Fire => Self {
                 sensor_angle: 15.0,

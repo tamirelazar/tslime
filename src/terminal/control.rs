@@ -1,6 +1,10 @@
+pub use crate::cli::num_palettes;
 use crate::cli::Palette;
+pub use crate::cli::ALL_PALETTES;
 use crate::food_image::FOOD_IMAGE_PNG;
 use crate::render::charset::Charset;
+pub use crate::render::charset::ALL_CHARSETS;
+use crate::render::constants::intensity::PERLIN_SEED;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::IntensityMapping;
 use crate::render::theme::{PanelStyle, ALL_THEMES, GRUVBOX_DARK};
@@ -28,37 +32,6 @@ pub enum MouseInteractionMode {
     /// Mouse click creates a repeller.
     Repel,
 }
-
-/// List of all available color palettes for cycling.
-pub const ALL_PALETTES: [Palette; 16] = [
-    Palette::Organic,
-    Palette::Heat,
-    Palette::Ocean,
-    Palette::Mono,
-    Palette::Forest,
-    Palette::Neon,
-    Palette::Warm,
-    Palette::Vibrant,
-    Palette::LegibleMono,
-    Palette::Slime,
-    Palette::Mold,
-    Palette::Fungus,
-    Palette::Swamp,
-    Palette::Moss,
-    Palette::Cosmic,
-    Palette::Ethereal,
-];
-
-/// List of all available charsets for cycling.
-pub const ALL_CHARSETS: [Charset; 7] = [
-    Charset::HalfBlock,
-    Charset::HalfBlockDual,
-    Charset::Ascii,
-    Charset::Braille,
-    Charset::Quadrant,
-    Charset::Shade,
-    Charset::Points,
-];
 
 /// Returns the number of available charsets.
 pub fn num_charsets() -> usize {
@@ -966,7 +939,9 @@ impl RuntimeState {
             IntensityMapping::linear_log_split(10.0)
         }),
         ("Quantize 6", || IntensityMapping::quantize(6)),
-        ("Perlin", || IntensityMapping::perlin(0.15, 4.0, 42)),
+        ("Perlin", || {
+            IntensityMapping::perlin(0.15, 4.0, PERLIN_SEED)
+        }),
     ];
 
     /// Finds the index of a given intensity mapping by comparing with presets.
@@ -1509,11 +1484,6 @@ impl RuntimeState {
             self.density_history.pop_front();
         }
     }
-}
-
-/// Returns the total number of available palettes.
-pub fn num_palettes() -> usize {
-    ALL_PALETTES.len()
 }
 
 /// Maps a keyboard event to a control action.
