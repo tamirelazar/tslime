@@ -1289,6 +1289,7 @@ pub fn run_simulation(
         initial_intensity_mapping,
         &config,
     );
+    runtime_state.preload_pause_logo(term_width as usize, term_height as usize);
     runtime_state.dither_mode = dither_mode;
     runtime_state.show_dashboard = args.stats;
     renderer.set_dither_mode(dither_mode);
@@ -2458,6 +2459,7 @@ pub fn run_simulation(
                         }
                         ControlAction::TogglePause => {
                             runtime_state.toggle_pause();
+                            runtime_state.pause_just_toggled = true;
                         }
                         ControlAction::Restart => {
                             sim.reset(
@@ -3021,6 +3023,155 @@ pub fn run_simulation(
                     }
                 }
                 _ => {}
+            }
+        }
+
+        // If pause was toggled during input, re-render immediately with the new pause state
+        // This gives instant visual feedback instead of waiting for the next frame
+        if runtime_state.pause_just_toggled {
+            runtime_state.pause_just_toggled = false;
+
+            // Rebuild pause overlays with new state
+            let (pause_logo_overlay, pause_logo_x, pause_logo_y) = if runtime_state.is_paused {
+                let pct = if term_width < 80 {
+                    0.90
+                } else if term_width < 120 {
+                    0.75
+                } else {
+                    0.60
+                };
+                let logo_w = ((term_width as f32 * pct) as usize).clamp(30, 180);
+                let logo_h = ((logo_w as f32 / 2.67) as usize).max(6);
+                let pixel_w = logo_w * 2;
+                let pixel_h = logo_h * 2;
+
+                let brightness_map = if runtime_state
+                    .pause_logo_cache
+                    .as_ref()
+                    .is_some_and(|(cw, _, _)| *cw == logo_w)
+                {
+                    runtime_state.pause_logo_cache.as_ref().unwrap().2.clone()
+                } else {
+                    let map = load_logo_from_memory(FOOD_IMAGE_PNG, pixel_w, pixel_h, true)
+                        .unwrap_or_else(|_| vec![0.0; pixel_w * pixel_h]);
+                    runtime_state.pause_logo_cache = Some((logo_w, pixel_h, map.clone()));
+                    map
+                };
+
+                let current_palette = ALL_PALETTES[runtime_state.palette_index].clone();
+                let logo_mapping = args
+                    .logo_mapping()
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| runtime_state.intensity_mapping.clone());
+                let logo = PauseOverlay::build_logo(
+                    &brightness_map,
+                    logo_w,
+                    logo_h,
+                    current_palette,
+                    runtime_state.reverse_palette,
+                    runtime_state.invert_palette,
+                    0.0,
+                    Some(&logo_mapping),
+                );
+
+                runtime_state.pause_frame_counter += 1;
+
+                let actual_logo_h = logo.lines.len();
+                let lx = (term_width as usize).saturating_sub(logo_w) / 2;
+                let drawable_h = (term_height as usize).saturating_sub(1);
+                let ly = drawable_h.saturating_sub(actual_logo_h) / 2;
+
+                (Some(logo), lx, ly)
+            } else {
+                runtime_state.pause_frame_counter = 0;
+                (None, 0, 0)
+            };
+
+            // Build status line
+            let diffusion_kernel_name = match current_config.diffusion_kernel {
+                DiffusionKernel::Mean3x3 => "Mean3x3",
+                DiffusionKernel::Gaussian => "Gaussian",
+            };
+            let (status_line, status_colors) = render::overlay::OverlayRenderer::build_status_line(
+                runtime_state.is_paused,
+                runtime_state.current_preset,
+                runtime_state.time_scale,
+                current_palette.clone(),
+                runtime_state.dither_mode,
+                term_width as usize,
+                Some(sim.agent_count()),
+                Some(diffusion_kernel_name),
+                !runtime_state.undo_stack.is_empty(),
+                !runtime_state.redo_stack.is_empty(),
+                Some(ui_accent),
+            );
+            let status_x =
+                render::overlay::OverlayRenderer::status_line_x(&status_line, term_width as usize);
+            let status_data = Some((status_line, status_x, status_colors));
+
+            // Re-render with updated pause state
+            if args.species_colors && sim.config().separate_species_trails {
+                let species_trail_maps = sim.trail_maps_for_species_colors();
+                let species_rgb_colors = extract_species_rgb_colors(&current_config);
+                let combined: Vec<_> = species_trail_maps
+                    .iter()
+                    .zip(species_rgb_colors.iter())
+                    .map(|(tm, color)| (*tm, *color))
+                    .collect();
+                renderer.render_multi_species_with_overlay(
+                    &combined,
+                    sim.width(),
+                    sim.height(),
+                    max_brightness.max(1.0),
+                    if runtime_state.is_paused {
+                        Some(runtime_state.pause_frame_counter)
+                    } else {
+                        None
+                    },
+                    pause_logo_overlay
+                        .as_ref()
+                        .map(|v| (v, pause_logo_x, pause_logo_y)),
+                    None,
+                    None,
+                    status_data,
+                    None,
+                    None,
+                    grid_renderer.as_ref(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(&runtime_state.panel_style),
+                    runtime_state.focused_overlay,
+                )?;
+            } else {
+                renderer.render_with_overlay(
+                    downsampled.cells(),
+                    max_brightness.max(1.0),
+                    if runtime_state.is_paused {
+                        Some(runtime_state.pause_frame_counter)
+                    } else {
+                        None
+                    },
+                    pause_logo_overlay
+                        .as_ref()
+                        .map(|v| (v, pause_logo_x, pause_logo_y)),
+                    None,
+                    None,
+                    status_data,
+                    None,
+                    None,
+                    grid_renderer.as_ref(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(&runtime_state.panel_style),
+                    runtime_state.focused_overlay,
+                )?;
             }
         }
 

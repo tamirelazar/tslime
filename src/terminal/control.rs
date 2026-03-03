@@ -1,9 +1,11 @@
 use crate::cli::Palette;
+use crate::food_image::FOOD_IMAGE_PNG;
 use crate::render::charset::Charset;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::IntensityMapping;
 use crate::render::theme::{PanelStyle, ALL_THEMES, GRUVBOX_DARK};
 use crate::simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType, Wind};
+use crate::simulation::food::load_logo_from_memory;
 use crossterm::event::KeyEvent;
 use rand::Rng;
 
@@ -443,6 +445,8 @@ impl DefaultValues {
 pub struct RuntimeState {
     /// Whether simulation is paused.
     pub is_paused: bool,
+    /// Flag set when pause is toggled, cleared after immediate re-render
+    pub pause_just_toggled: bool,
     /// Show controls overlay.
     pub show_controls: bool,
     /// Show keyboard hints overlay.
@@ -608,6 +612,7 @@ impl RuntimeState {
         let default_values = DefaultValues::from_preset(initial_preset);
         Self {
             is_paused: false,
+            pause_just_toggled: false,
             show_controls: false,
             show_keyboard_hints: false,
             show_preset_comparison: false,
@@ -800,6 +805,29 @@ impl RuntimeState {
     /// Toggles the paused state.
     pub fn toggle_pause(&mut self) {
         self.is_paused = !self.is_paused;
+    }
+
+    /// Pre-loads the pause logo to avoid delay on first pause.
+    ///
+    /// Calculates logo size from terminal dimensions and loads the embedded
+    /// PNG using Lanczos3 filtering, then caches the result.
+    pub fn preload_pause_logo(&mut self, term_width: usize, _term_height: usize) {
+        // Use same percentage logic as pause rendering to ensure cache hits
+        let pct = if term_width < 80 {
+            0.90
+        } else if term_width < 120 {
+            0.75
+        } else {
+            0.60
+        };
+        let logo_w = ((term_width as f32 * pct) as usize).clamp(30, 180);
+        let logo_h = ((logo_w as f32 / 2.67) as usize).max(6);
+        let pixel_w = logo_w * 2;
+        let pixel_h = logo_h * 2;
+
+        let map = load_logo_from_memory(FOOD_IMAGE_PNG, pixel_w, pixel_h, true)
+            .unwrap_or_else(|_| vec![0.0; pixel_w * pixel_h]);
+        self.pause_logo_cache = Some((logo_w, pixel_h, map));
     }
 
     /// Toggles the controls overlay.
