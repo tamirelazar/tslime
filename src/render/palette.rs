@@ -137,6 +137,22 @@ pub struct HsvColor {
     pub v: f32,
 }
 
+/// An OKLch perceptual color value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OklchColor {
+    /// Perceptual lightness (0.0 = black, 1.0 = white).
+    pub l: f32,
+    /// Chroma / colorfulness (0.0 = gray, ~0.35 = max sRGB saturation).
+    pub c: f32,
+    /// Hue angle in degrees (0–360). NaN indicates "powerless" hue when chroma ≈ 0.
+    pub h: f32,
+}
+
+/// Epsilon value for determining when chroma is effectively zero.
+/// When chroma is below this threshold, hue is considered "powerless" (undefined).
+/// This follows CSS Color Module Level 4 specification for missing/powerless components.
+pub const OKLCH_EPSILON: f32 = 0.0001;
+
 /// A gradient control point with position (0.0-1.0) and RGB color.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GradientStop {
@@ -144,6 +160,207 @@ pub struct GradientStop {
     pub position: f32,
     /// Color at this position.
     pub color: RgbColor,
+}
+
+//==============================================================================
+// OKLch Color Space — Perceptually Uniform Gradient System
+//==============================================================================
+
+/// A gradient control point defined in OKLch perceptual color space.
+///
+/// OKLch axes:
+/// - `l`: Lightness  (0.0 = black, 1.0 = white)
+/// - `c`: Chroma     (0.0 = gray, ~0.35 = maximum sRGB saturation)
+/// - `h`: Hue angle  (degrees, 0–360: red≈30°, green≈142°, blue≈264°, purple≈285°)
+#[derive(Clone, Copy, Debug)]
+pub struct OklchStop {
+    /// Position along the gradient (0.0 to 1.0).
+    pub position: f32,
+    /// Perceptual lightness (0.0–1.0).
+    pub l: f32,
+    /// Chroma / saturation (0.0–~0.35 for sRGB gamut).
+    pub c: f32,
+    /// Hue angle in degrees (0–360).
+    pub h: f32,
+}
+
+/// Converts an OKLch color to sRGB `RgbColor`.
+///
+/// Performs the full OKLch → OKLab → LMS → linear-sRGB → gamma-sRGB chain.
+/// Out-of-gamut values are clamped to [0, 255].
+///
+/// Note: If `h_deg` is NaN (indicating powerless hue when chroma ≈ 0), it is treated as 0
+/// since the hue value doesn't affect the result for near-grayscale colors.
+pub fn oklch_to_srgb(l: f32, c: f32, h_deg: f32) -> RgbColor {
+    // Step 1: OKLch → OKLab
+    // Handle NaN hue (powerless/undefined when chroma ≈ 0) - any value works since c ≈ 0
+    let h_rad = if h_deg.is_nan() {
+        0.0
+    } else {
+        h_deg.to_radians()
+    };
+    let a = c * h_rad.cos();
+    let b = c * h_rad.sin();
+
+    // Step 2: OKLab → LMS (cube roots of cone responses)
+    // Coefficients from Björn Ottosson's OKLab paper (2020).
+    let l_ = l + 0.396_337_8 * a + 0.215_803_76 * b;
+    let m_ = l - 0.105_561_35 * a - 0.063_854_17 * b;
+    let s_ = l - 0.089_484_18 * a - 1.291_485_5 * b;
+
+    let lms_l = l_ * l_ * l_;
+    let lms_m = m_ * m_ * m_;
+    let lms_s = s_ * s_ * s_;
+
+    // Step 3: LMS → linear sRGB
+    let r_lin = 4.076_741_7 * lms_l - 3.307_736_3 * lms_m + 0.230_910_13 * lms_s;
+    let g_lin = -1.268_438 * lms_l + 2.609_757_4 * lms_m - 0.341_319_4 * lms_s;
+    let b_lin = -0.004_196_077 * lms_l - 0.703_418_6 * lms_m + 1.707_614_7 * lms_s;
+
+    // Step 4: Linear sRGB → gamma-corrected sRGB (IEC 61966-2-1)
+    let gamma = |x: f32| -> f32 {
+        if x <= 0.0031308 {
+            12.92 * x
+        } else {
+            1.055 * x.powf(1.0 / 2.4) - 0.055
+        }
+    };
+
+    RgbColor {
+        r: (gamma(r_lin).clamp(0.0, 1.0) * 255.0).round() as u8,
+        g: (gamma(g_lin).clamp(0.0, 1.0) * 255.0).round() as u8,
+        b: (gamma(b_lin).clamp(0.0, 1.0) * 255.0).round() as u8,
+    }
+}
+
+/// Converts sRGB `RgbColor` to OKLch perceptual color space.
+///
+/// Performs the full gamma-sRGB → linear-sRGB → LMS → OKLab → OKLch chain.
+pub fn srgb_to_oklch(rgb: RgbColor) -> OklchColor {
+    // Step 1: gamma-corrected sRGB → linear sRGB
+    let inv_gamma = |x: f32| -> f32 {
+        if x <= 0.04045 {
+            x / 12.92
+        } else {
+            ((x + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let r = inv_gamma(rgb.r as f32 / 255.0);
+    let g = inv_gamma(rgb.g as f32 / 255.0);
+    let b = inv_gamma(rgb.b as f32 / 255.0);
+
+    // Step 2: linear sRGB → LMS
+    let l = 0.412_221_47 * r + 0.536_332_54 * g + 0.051_445_99 * b;
+    let m = 0.211_903_5 * r + 0.680_699_5 * g + 0.107_396_96 * b;
+    let s = 0.088_302_46 * r + 0.281_718_84 * g + 0.629_978_7 * b;
+
+    // Step 3: cube root (LMS → LMS cube-root space)
+    let l_ = l.cbrt();
+    let m_ = m.cbrt();
+    let s_ = s.cbrt();
+
+    // Step 4: LMS cube roots → OKLab
+    let lab_l = 0.210_454_26 * l_ + 0.793_617_8 * m_ - 0.004_072_047 * s_;
+    let lab_a = 1.977_998_5 * l_ - 2.428_592_2 * m_ + 0.450_593_7 * s_;
+    let lab_b = 0.025_904_037 * l_ + 0.782_771_77 * m_ - 0.808_675_77 * s_;
+
+    // Step 5: OKLab → OKLch
+    let c = (lab_a * lab_a + lab_b * lab_b).sqrt();
+    // When chroma is effectively zero, hue is "powerless" (undefined).
+    // Per CSS Color Module Level 4, return NaN to indicate missing component.
+    let h = if c < OKLCH_EPSILON {
+        f32::NAN
+    } else {
+        let h = lab_b.atan2(lab_a).to_degrees();
+        if h < 0.0 {
+            h + 360.0
+        } else {
+            h
+        }
+    };
+
+    OklchColor { l: lab_l, c, h }
+}
+
+/// Converts an `OklchColor` to sRGB `RgbColor`.
+pub fn oklch_to_rgb(oklch: OklchColor) -> RgbColor {
+    oklch_to_srgb(oklch.l, oklch.c, oklch.h)
+}
+
+/// Interpolates between OKLch stops at parameter `t` using short-arc hue interpolation.
+fn interpolate_oklch_stops(stops: &[OklchStop], t: f32) -> RgbColor {
+    let t = t.clamp(0.0, 1.0);
+
+    if stops.is_empty() {
+        return RgbColor { r: 0, g: 0, b: 0 };
+    }
+    if stops.len() == 1 {
+        return oklch_to_srgb(stops[0].l, stops[0].c, stops[0].h);
+    }
+
+    // Find the two bracketing stops
+    let mut lo = 0;
+    let mut hi = stops.len() - 1;
+    for (i, stop) in stops.iter().enumerate() {
+        if stop.position <= t {
+            lo = i;
+        }
+        if stop.position >= t && i < hi {
+            hi = i;
+            break;
+        }
+    }
+
+    if lo == hi {
+        let s = &stops[lo];
+        return oklch_to_srgb(s.l, s.c, s.h);
+    }
+
+    let range = stops[hi].position - stops[lo].position;
+    if range < f32::EPSILON {
+        let s = &stops[lo];
+        return oklch_to_srgb(s.l, s.c, s.h);
+    }
+
+    let local_t = (t - stops[lo].position) / range;
+
+    // Interpolate L and C linearly
+    let l = stops[lo].l + (stops[hi].l - stops[lo].l) * local_t;
+    let c = stops[lo].c + (stops[hi].c - stops[lo].c) * local_t;
+
+    // Hue: short-arc interpolation (always takes the shorter path around the wheel)
+    let h0 = stops[lo].h;
+    let h1 = stops[hi].h;
+    let dh = {
+        let diff = (h1 - h0).rem_euclid(360.0);
+        if diff > 180.0 {
+            diff - 360.0
+        } else {
+            diff
+        }
+    };
+    let h = (h0 + dh * local_t).rem_euclid(360.0);
+
+    oklch_to_srgb(l, c, h)
+}
+
+/// Builds a dense `Vec<GradientStop>` from OKLch stops by sampling `n` evenly-spaced
+/// points and converting each through OKLch → sRGB.
+///
+/// Using 64 samples means the linear-sRGB interpolation done by `interpolate_gradient`
+/// operates on ≤1.6%-wide intervals — perceptually indistinguishable from true OKLch
+/// interpolation.
+fn oklch_stops_to_gradient(stops: &[OklchStop], n: usize) -> Vec<GradientStop> {
+    let n = n.max(2);
+    (0..n)
+        .map(|i| {
+            let t = i as f32 / (n - 1) as f32;
+            GradientStop {
+                position: t,
+                color: interpolate_oklch_stops(stops, t),
+            }
+        })
+        .collect()
 }
 
 //==============================================================================
@@ -2071,19 +2288,15 @@ pub fn map_species_brightness_rgb(
     hsv_to_rgb(final_hsv)
 }
 
-/// Convert an array of RGB colors to evenly-spaced gradient stops
-fn rgb_array_to_gradient_stops<const N: usize>(colors: &[RgbColor; N]) -> Vec<GradientStop> {
-    colors
-        .iter()
-        .enumerate()
-        .map(|(i, &color)| GradientStop {
-            position: i as f32 / (N - 1).max(1) as f32,
-            color,
-        })
-        .collect()
-}
-
-/// Get gradient stops for a palette (supports continuous interpolation)
+/// Get gradient stops for a palette (supports continuous interpolation).
+///
+/// For built-in palettes, produces 64 evenly-spaced stops by interpolating in
+/// OKLch perceptual color space, then converting to sRGB.  Using 64 samples
+/// means adjacent stops are only ~1.6% apart, making the subsequent linear-sRGB
+/// blending in `interpolate_gradient` perceptually equivalent to true OKLch
+/// interpolation.
+///
+/// Custom palettes fall back to the direct sRGB stop list.
 pub(crate) fn get_gradient_stops(palette: &Palette) -> Vec<GradientStop> {
     match palette {
         Palette::Custom(colors) => {
@@ -2098,9 +2311,9 @@ pub(crate) fn get_gradient_stops(palette: &Palette) -> Vec<GradientStop> {
                 .collect()
         }
         _ => {
-            // For built-in palettes, convert the 11-step arrays to gradient stops
-            let rgb_gradient = gradients::get_rgb_gradient(palette.clone());
-            rgb_array_to_gradient_stops(rgb_gradient)
+            // For built-in palettes, interpolate in OKLch space for perceptual uniformity
+            let oklch_stops = gradients::get_oklch_gradient(palette.clone());
+            oklch_stops_to_gradient(oklch_stops, 64)
         }
     }
 }
@@ -2576,9 +2789,11 @@ mod tests {
 
     #[test]
     fn test_map_brightness_rgb_clamped() {
+        // Out-of-range inputs clamp to [0, 1] endpoints
         let min = map_brightness_rgb(-0.5, Palette::Heat, false, false, 0.0, None);
         let max = map_brightness_rgb(1.5, Palette::Heat, false, false, 0.0, None);
         let normal = map_brightness_rgb(0.5, Palette::Heat, false, false, 0.0, None);
+        // Heat t=0: r=40; Heat t=1: r=240
         assert_eq!(min.r, 40);
         assert_eq!(max.r, 240);
         assert!(min.r <= normal.r && normal.r <= max.r);
@@ -3181,5 +3396,117 @@ mod tests {
                 || without_mapping.g != with_mapping.g
                 || without_mapping.b != with_mapping.b
         );
+    }
+
+    // =========================================================================
+    // OKLch NaN Hue Handling Tests (CSS Color Module Level 4 compliance)
+    // =========================================================================
+
+    #[test]
+    fn test_oklch_grayscale_returns_nan_hue() {
+        // Grayscale colors should return NaN for hue (powerless component)
+        let gray_colors = [
+            RgbColor { r: 0, g: 0, b: 0 }, // Black
+            RgbColor {
+                r: 128,
+                g: 128,
+                b: 128,
+            }, // Mid gray
+            RgbColor {
+                r: 255,
+                g: 255,
+                b: 255,
+            }, // White
+        ];
+
+        for color in gray_colors {
+            let oklch = srgb_to_oklch(color);
+            assert!(
+                oklch.c < OKLCH_EPSILON || oklch.h.is_nan(),
+                "Grayscale color {:?} should have chroma < epsilon or NaN hue, got c={}, h={}",
+                color,
+                oklch.c,
+                oklch.h
+            );
+        }
+    }
+
+    #[test]
+    fn test_oklch_color_returns_valid_hue() {
+        // Non-grayscale colors should return valid hue
+        let color = RgbColor { r: 255, g: 0, b: 0 }; // Pure red
+        let oklch = srgb_to_oklch(color);
+
+        assert!(
+            oklch.c >= OKLCH_EPSILON,
+            "Red should have significant chroma, got {}",
+            oklch.c
+        );
+        assert!(
+            oklch.h.is_finite(),
+            "Red should have finite hue, got {}",
+            oklch.h
+        );
+        // OKLch red hue is approximately 30° (not 0° like HSL)
+        assert!(
+            oklch.h > 20.0 && oklch.h < 40.0,
+            "Red hue should be around 30° in OKLch, got {}",
+            oklch.h
+        );
+    }
+
+    #[test]
+    fn test_oklch_to_srgb_handles_nan_hue() {
+        // Test that oklch_to_srgb handles NaN hue gracefully
+        let gray = oklch_to_srgb(0.5, 0.0, f32::NAN);
+
+        // Should produce grayscale (R=G=B)
+        assert!(
+            gray.r.abs_diff(gray.g) <= 1 && gray.g.abs_diff(gray.b) <= 1,
+            "NaN hue with zero chroma should produce grayscale, got R={}, G={}, B={}",
+            gray.r,
+            gray.g,
+            gray.b
+        );
+    }
+
+    #[test]
+    fn test_oklch_roundtrip_preserves_color() {
+        // Test that RGB -> OKLch -> RGB roundtrip works correctly
+        let original = RgbColor {
+            r: 100,
+            g: 150,
+            b: 80,
+        };
+
+        let oklch = srgb_to_oklch(original);
+        let restored = oklch_to_rgb(oklch);
+
+        // Due to 8-bit quantization, allow small differences
+        let tolerance = 2;
+        assert!(
+            original.r.abs_diff(restored.r) <= tolerance
+                && original.g.abs_diff(restored.g) <= tolerance
+                && original.b.abs_diff(restored.b) <= tolerance,
+            "OKLch roundtrip failed: {:?} -> {:?}",
+            original,
+            restored
+        );
+    }
+
+    #[test]
+    fn test_oklch_epsilon_boundary() {
+        // Test that colors very close to grayscale are handled correctly
+        let near_gray = RgbColor {
+            r: 100,
+            g: 101,
+            b: 100,
+        };
+        let oklch = srgb_to_oklch(near_gray);
+
+        // Should detect near-zero chroma
+        if oklch.c < OKLCH_EPSILON {
+            assert!(oklch.h.is_nan(), "When chroma < epsilon, hue should be NaN");
+        }
     }
 }

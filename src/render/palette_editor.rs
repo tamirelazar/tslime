@@ -1,6 +1,7 @@
 use crate::cli::Palette;
 use crate::render::palette::{
-    hsv_to_rgb, interpolate_gradient, rgb_to_hsv, GradientStop, HsvColor, RgbColor,
+    interpolate_gradient, oklch_to_rgb, oklch_to_srgb, srgb_to_oklch, GradientStop, OklchColor,
+    RgbColor,
 };
 use crate::render::panel::{Padding, PanelBuilder, RenderedOverlay, RichCell, TextAlignment};
 
@@ -18,8 +19,11 @@ const INNER_W: usize = 52;
 /// With Padding::COMPACT (left=1) and a border: border(1) + padding.left(1) = 2.
 const CONTENT_OFFSET: usize = 2;
 
-/// Length of the HSV slider track in characters.
+/// Length of the OKLch slider track in characters.
 const TRACK_LEN: usize = 38;
+
+/// Maximum chroma value for slider display and clamping.
+const MAX_CHROMA: f32 = 0.4;
 
 /// Row indices for the palette editor overlay layout.
 /// These are 0-indexed positions within the overlay content.
@@ -27,14 +31,14 @@ mod rows {
     /// Stop selector row (diamond indicators for palette colors).
     pub const STOP_SELECTOR: usize = 3;
 
+    /// Lightness slider row.
+    pub const LIGHTNESS_SLIDER: usize = 9;
+
+    /// Chroma slider row.
+    pub const CHROMA_SLIDER: usize = 12;
+
     /// Hue slider row.
-    pub const HUE_SLIDER: usize = 9;
-
-    /// Saturation slider row.
-    pub const SAT_SLIDER: usize = 12;
-
-    /// Value/brightness slider row.
-    pub const VALUE_SLIDER: usize = 15;
+    pub const HUE_SLIDER: usize = 15;
 
     /// First hint row (arrow key indicators).
     pub const HINT_ARROWS: usize = 18;
@@ -51,33 +55,33 @@ mod rows {
 
 // ─── Component enum ──────────────────────────────────────────────────────────
 
-/// Component of the HSV color being edited.
+/// Component of the OKLch color being edited.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorComponent {
+    /// Lightness component (0.0-1.0).
+    Lightness,
+    /// Chroma component (0.0-~0.4).
+    Chroma,
     /// Hue component (0-360 degrees).
     Hue,
-    /// Saturation component (0-1).
-    Saturation,
-    /// Value/brightness component (0-1).
-    Value,
 }
 
 impl EditorComponent {
-    /// Cycle to the next component in the H→S→V→H sequence.
+    /// Cycle to the next component in the L→C→H→L sequence.
     pub fn next(self) -> Self {
         match self {
-            Self::Hue => Self::Saturation,
-            Self::Saturation => Self::Value,
-            Self::Value => Self::Hue,
+            Self::Lightness => Self::Chroma,
+            Self::Chroma => Self::Hue,
+            Self::Hue => Self::Lightness,
         }
     }
 
-    /// Cycle to the previous component in H←S←V←H sequence.
+    /// Cycle to the previous component in L←C←H←L sequence.
     pub fn prev(self) -> Self {
         match self {
-            Self::Hue => Self::Value,
-            Self::Saturation => Self::Hue,
-            Self::Value => Self::Saturation,
+            Self::Lightness => Self::Hue,
+            Self::Chroma => Self::Lightness,
+            Self::Hue => Self::Chroma,
         }
     }
 }
@@ -87,7 +91,7 @@ impl EditorComponent {
 /// Current mode of the palette editor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorMode {
-    /// Editing colors in the HSV picker.
+    /// Editing colors in the OKLch picker.
     Editing,
     /// Save dialog for naming and saving the current palette.
     SaveDialog,
@@ -104,7 +108,7 @@ pub struct PaletteEditorState {
     pub mode: EditorMode,
     /// Index of the currently selected color (0-10 = individual stop, 11 = ALL).
     pub selected_color_index: usize,
-    /// Currently selected HSV component being edited.
+    /// Currently selected OKLch component being edited.
     pub selected_component: EditorComponent,
     /// Current palette colors.
     pub colors: [RgbColor; PALETTE_COLOR_COUNT],
@@ -120,6 +124,10 @@ pub struct PaletteEditorState {
     pub saved_palette_index: usize,
     /// List of saved palettes from storage.
     pub saved_palettes_list: Vec<crate::palette_manager::SavedPalette>,
+    /// Stored hue values for each color to preserve hue when chroma → 0.
+    /// When chroma is near 0, hue becomes "powerless" (undefined per CSS Color Module Level 4).
+    /// These stored values ensure hue is preserved during grayscale transitions.
+    pub stored_hues: [f32; PALETTE_COLOR_COUNT],
 }
 
 impl PaletteEditorState {
@@ -128,10 +136,18 @@ impl PaletteEditorState {
         let colors = get_palette_colors(palette);
         let base_palette_name = palette.name().to_string();
 
+        // Initialize stored hues from the initial palette colors
+        let mut stored_hues = [0.0f32; PALETTE_COLOR_COUNT];
+        for (i, &color) in colors.iter().enumerate() {
+            let oklch = srgb_to_oklch(color);
+            // If hue is NaN (color is grayscale), default to 0
+            stored_hues[i] = if oklch.h.is_nan() { 0.0 } else { oklch.h };
+        }
+
         Self {
             mode: EditorMode::Editing,
             selected_color_index: PALETTE_COLOR_COUNT,
-            selected_component: EditorComponent::Hue,
+            selected_component: EditorComponent::Lightness,
             colors,
             original_colors: colors,
             base_palette_name,
@@ -139,6 +155,7 @@ impl PaletteEditorState {
             save_name_input: String::new(),
             saved_palette_index: 0,
             saved_palettes_list: Vec::new(),
+            stored_hues,
         }
     }
 
@@ -147,36 +164,75 @@ impl PaletteEditorState {
         self.selected_color_index == PALETTE_COLOR_COUNT
     }
 
-    /// Circular mean hue, linear mean sat/val across all stops.
-    fn average_hsv(&self) -> HsvColor {
+    /// Circular mean hue, linear mean lightness/chroma across all stops.
+    /// Uses stored hues to preserve hue values when chroma is near 0 (powerless).
+    fn average_oklch(&self) -> OklchColor {
+        use crate::render::palette::OKLCH_EPSILON;
+
         let mut sin_sum = 0.0f32;
         let mut cos_sum = 0.0f32;
-        let mut s_sum = 0.0f32;
-        let mut v_sum = 0.0f32;
-        for &color in &self.colors {
-            let hsv = rgb_to_hsv(color);
-            let h_rad = hsv.h.to_radians();
-            sin_sum += h_rad.sin();
-            cos_sum += h_rad.cos();
-            s_sum += hsv.s;
-            v_sum += hsv.v;
+        let mut l_sum = 0.0f32;
+        let mut c_sum = 0.0f32;
+        let mut hue_count = 0;
+
+        for (i, &color) in self.colors.iter().enumerate() {
+            let oklch = srgb_to_oklch(color);
+            l_sum += oklch.l;
+            c_sum += oklch.c;
+
+            // Use stored hue to avoid NaN when chroma ≈ 0
+            // Only colors with non-negligible chroma contribute to hue average
+            let hue = if oklch.c >= OKLCH_EPSILON {
+                oklch.h
+            } else {
+                self.stored_hues[i]
+            };
+
+            if hue.is_finite() {
+                let h_rad = hue.to_radians();
+                sin_sum += h_rad.sin();
+                cos_sum += h_rad.cos();
+                hue_count += 1;
+            }
         }
+
         let n = PALETTE_COLOR_COUNT as f32;
-        let avg_h = sin_sum.atan2(cos_sum).to_degrees();
-        let avg_h = if avg_h < 0.0 { avg_h + 360.0 } else { avg_h };
-        HsvColor {
+        let avg_h = if hue_count > 0 {
+            let avg = sin_sum.atan2(cos_sum).to_degrees();
+            if avg < 0.0 {
+                avg + 360.0
+            } else {
+                avg
+            }
+        } else {
+            0.0 // Default when no valid hues
+        };
+
+        OklchColor {
+            l: l_sum / n,
+            c: c_sum / n,
             h: avg_h,
-            s: s_sum / n,
-            v: v_sum / n,
         }
     }
 
-    /// Get the HSV color of the currently selected color (average when ALL selected).
-    pub fn current_hsv(&self) -> HsvColor {
+    /// Get the OKLch color of the currently selected color (average when ALL selected).
+    /// Uses stored hue when chroma is near 0 to preserve the intended hue value.
+    pub fn current_oklch(&self) -> OklchColor {
+        use crate::render::palette::OKLCH_EPSILON;
+
         if self.is_all_selected() {
-            self.average_hsv()
+            self.average_oklch()
         } else {
-            rgb_to_hsv(self.colors[self.selected_color_index])
+            let idx = self.selected_color_index;
+            let mut oklch = srgb_to_oklch(self.colors[idx]);
+
+            // When chroma is near 0, hue becomes "powerless" (NaN).
+            // Use the stored hue to preserve the intended color.
+            if oklch.c < OKLCH_EPSILON || oklch.h.is_nan() {
+                oklch.h = self.stored_hues[idx];
+            }
+
+            oklch
         }
     }
 
@@ -188,49 +244,145 @@ impl PaletteEditorState {
         }
     }
 
-    /// Adjust all colors (or the selected one) using `f` to modify the HSV value.
-    fn adjust_hsv<F: Fn(&mut HsvColor)>(&mut self, f: F) {
+    /// Adjust all colors (or the selected one) using `f` to modify the OKLch value.
+    /// Also updates stored_hues when chroma transitions from 0 to non-zero.
+    fn adjust_oklch<F: Fn(&mut OklchColor)>(&mut self, f: F) {
+        use crate::render::palette::OKLCH_EPSILON;
+
         if self.is_all_selected() {
             for i in 0..PALETTE_COLOR_COUNT {
-                let mut hsv = rgb_to_hsv(self.colors[i]);
-                f(&mut hsv);
-                self.colors[i] = hsv_to_rgb(hsv);
+                let mut oklch = srgb_to_oklch(self.colors[i]);
+                let old_c = oklch.c;
+                f(&mut oklch);
+
+                // If chroma was 0 and is now non-zero, use stored hue
+                if old_c < OKLCH_EPSILON && oklch.c >= OKLCH_EPSILON {
+                    oklch.h = self.stored_hues[i];
+                }
+
+                self.colors[i] = oklch_to_rgb(oklch);
+
+                // Update stored hue if chroma is still non-zero
+                if oklch.c >= OKLCH_EPSILON {
+                    self.stored_hues[i] = oklch.h;
+                }
             }
             self.is_modified = true;
         } else {
-            let mut hsv = rgb_to_hsv(self.colors[self.selected_color_index]);
-            f(&mut hsv);
-            self.set_current_color(hsv_to_rgb(hsv));
+            let idx = self.selected_color_index;
+            let mut oklch = srgb_to_oklch(self.colors[idx]);
+            let old_c = oklch.c;
+            f(&mut oklch);
+
+            // If chroma was 0 and is now non-zero, use stored hue
+            if old_c < OKLCH_EPSILON && oklch.c >= OKLCH_EPSILON {
+                oklch.h = self.stored_hues[idx];
+            }
+
+            self.set_current_color(oklch_to_rgb(oklch));
+
+            // Update stored hue if chroma is still non-zero
+            if oklch.c >= OKLCH_EPSILON {
+                self.stored_hues[idx] = oklch.h;
+            }
         }
     }
 
     /// Adjust the hue of the selected color(s) by `delta` degrees.
+    /// Also updates stored_hues to preserve the new hue value.
     pub fn adjust_hue(&mut self, delta: f32) {
-        self.adjust_hsv(|hsv| hsv.h = (hsv.h + delta + 360.0) % 360.0);
+        // First, update stored hues for all affected colors
+        if self.is_all_selected() {
+            for i in 0..PALETTE_COLOR_COUNT {
+                self.stored_hues[i] = (self.stored_hues[i] + delta + 360.0) % 360.0;
+            }
+        } else {
+            let idx = self.selected_color_index;
+            self.stored_hues[idx] = (self.stored_hues[idx] + delta + 360.0) % 360.0;
+        }
+
+        // Apply the hue adjustment, using stored hues as base when current hue is NaN
+        self.adjust_oklch_with_hue_override(delta);
     }
 
-    /// Adjust the saturation of the selected color(s) by `delta`.
-    pub fn adjust_saturation(&mut self, delta: f32) {
-        self.adjust_hsv(|hsv| hsv.s = (hsv.s + delta).clamp(0.0, 1.0));
+    /// Helper to adjust OKLch with proper hue handling for NaN cases.
+    /// Uses stored_hue as base when current chroma is too low.
+    fn adjust_oklch_with_hue_override(&mut self, delta: f32) {
+        use crate::render::palette::OKLCH_EPSILON;
+
+        if self.is_all_selected() {
+            for i in 0..PALETTE_COLOR_COUNT {
+                let mut oklch = srgb_to_oklch(self.colors[i]);
+
+                // Use stored hue as base if current hue is NaN (powerless)
+                let base_hue = if oklch.h.is_nan() || oklch.c < OKLCH_EPSILON {
+                    self.stored_hues[i]
+                } else {
+                    oklch.h
+                };
+
+                oklch.h = (base_hue + delta + 360.0) % 360.0;
+                self.colors[i] = oklch_to_rgb(oklch);
+
+                // Update stored hue if chroma is still non-zero
+                if oklch.c >= OKLCH_EPSILON {
+                    self.stored_hues[i] = oklch.h;
+                }
+            }
+            self.is_modified = true;
+        } else {
+            let idx = self.selected_color_index;
+            let mut oklch = srgb_to_oklch(self.colors[idx]);
+
+            // Use stored hue as base if current hue is NaN (powerless)
+            let base_hue = if oklch.h.is_nan() || oklch.c < OKLCH_EPSILON {
+                self.stored_hues[idx]
+            } else {
+                oklch.h
+            };
+
+            oklch.h = (base_hue + delta + 360.0) % 360.0;
+            self.colors[idx] = oklch_to_rgb(oklch);
+
+            // Update stored hue if chroma is still non-zero
+            if oklch.c >= OKLCH_EPSILON {
+                self.stored_hues[idx] = oklch.h;
+            }
+
+            self.is_modified = true;
+        }
     }
 
-    /// Adjust the value/brightness of the selected color(s) by `delta`.
-    pub fn adjust_value(&mut self, delta: f32) {
-        self.adjust_hsv(|hsv| hsv.v = (hsv.v + delta).clamp(0.0, 1.0));
+    /// Adjust the chroma of the selected color(s) by `delta`.
+    /// Preserves stored_hues so hue can be restored when chroma increases from 0.
+    pub fn adjust_chroma(&mut self, delta: f32) {
+        self.adjust_oklch(|oklch| oklch.c = (oklch.c + delta).clamp(0.0, MAX_CHROMA));
+    }
+
+    /// Adjust the lightness of the selected color(s) by `delta`.
+    pub fn adjust_lightness(&mut self, delta: f32) {
+        self.adjust_oklch(|oklch| oklch.l = (oklch.l + delta).clamp(0.0, 1.0));
     }
 
     /// Adjust the currently selected component by `delta`.
     pub fn adjust_selected_component(&mut self, delta: f32) {
         match self.selected_component {
+            EditorComponent::Lightness => self.adjust_lightness(delta),
+            EditorComponent::Chroma => self.adjust_chroma(delta),
             EditorComponent::Hue => self.adjust_hue(delta * 360.0),
-            EditorComponent::Saturation => self.adjust_saturation(delta),
-            EditorComponent::Value => self.adjust_value(delta),
         }
     }
 
     /// Reset colors to the original values when editor was opened.
+    /// Also resets stored_hues to match the original colors.
     pub fn reset_to_original(&mut self) {
         self.colors = self.original_colors;
+
+        // Recalculate stored hues from original colors
+        for (i, &color) in self.colors.iter().enumerate() {
+            let oklch = srgb_to_oklch(color);
+            self.stored_hues[i] = if oklch.h.is_nan() { 0.0 } else { oklch.h };
+        }
         self.is_modified = false;
     }
 
@@ -308,7 +460,7 @@ fn build_swatch_labels_str() -> String {
     s
 }
 
-/// Build HSV slider label (with arrows if active).
+/// Build OKLch slider label (with arrows if active).
 fn build_slider_label(is_active: bool, comp: char, value_str: &str) -> String {
     if is_active {
         format!("◀ {} {} ▶", comp, value_str)
@@ -317,7 +469,7 @@ fn build_slider_label(is_active: bool, comp: char, value_str: &str) -> String {
     }
 }
 
-/// Build HSV slider bar (38 chars with ◆ cursor).
+/// Build OKLch slider bar (38 chars with ◆ cursor).
 fn build_slider_bar(frac: f32) -> String {
     let cursor_pos =
         ((frac.clamp(0.0, 1.0) * (TRACK_LEN - 1) as f32).round() as usize).min(TRACK_LEN - 1);
@@ -328,7 +480,7 @@ fn build_slider_bar(frac: f32) -> String {
 
 /// Build per-cell color overrides for the editing overlay.
 ///
-/// New layout (16 rows, 0-indexed):
+/// Layout (rows are 0-indexed within overlay content):
 /// 0  top border
 /// 1  gradient strip    ← ▄ with fg=color(t), bg=color(t+Δ)
 /// 2  empty
@@ -337,18 +489,24 @@ fn build_slider_bar(frac: f32) -> String {
 /// 5  empty
 /// 6  color info        ← ◆ swatch colored by stop color
 /// 7  separator
-/// 8  H slider          ← rainbow track, ◆ in white on colored bg
-/// 9  S slider          ← sat gradient track
-/// 10 V slider          ← val gradient track
-/// 11 empty
-/// 12 separator
-/// 13 hint row 1
-/// 14 hint row 2
-/// 15 bottom border
+/// 8  L slider label
+/// 9  L slider          ← lightness gradient track
+/// 10 empty
+/// 11 C slider label
+/// 12 C slider          ← chroma gradient track
+/// 13 empty
+/// 14 H slider label
+/// 15 H slider          ← hue rainbow track
+/// 16 empty
+/// 17 separator
+/// 18-24 hint rows
+/// 25 empty
+/// 26 separator
+/// 27 gradient preview strip
 fn build_editor_rich_lines(
     state: &PaletteEditorState,
     lines: &[String],
-    hsv: HsvColor,
+    oklch: OklchColor,
     text_primary: RgbColor,
     accent: RgbColor,
     panel_bg: RgbColor,
@@ -415,7 +573,7 @@ fn build_editor_rich_lines(
         }
     }
 
-    // Line 20: "Tab  H → S → V" — accent "Tab" and "→" arrows.
+    // Line 20: "Tab  L → C → H" — accent "Tab" and "→" arrows.
     // Search tab_line directly (char-indexed) to avoid the byte-vs-char mismatch
     // that arises when line_str.find() returns a byte offset: the '│' border glyph
     // is 3 bytes but 1 char, shifting all subsequent byte offsets by +2.
@@ -462,68 +620,56 @@ fn build_editor_rich_lines(
         }
     }
 
-    // H bar (hue slider): hue gradient. Colors are intentionally muted (low S/V) so the
-    // light-shade character blends them further into the panel background.
-    let h_cursor = ((hsv.h / 360.0) * (TRACK_LEN - 1) as f32).round() as usize;
+    // L bar (lightness slider): dark-to-light gradient at current chroma and hue.
+    let l_cursor = (oklch.l * (TRACK_LEN - 1) as f32).round() as usize;
+    if rich.len() > rows::LIGHTNESS_SLIDER {
+        let l_start = CONTENT_OFFSET + 7; // centered offset
+        for i in 0..TRACK_LEN {
+            let col = l_start + i;
+            if col < rich[rows::LIGHTNESS_SLIDER].len() {
+                let l = i as f32 / (TRACK_LEN - 1) as f32;
+                let color = oklch_to_srgb(l, oklch.c.min(0.15), oklch.h);
+                if i == l_cursor {
+                    rich[rows::LIGHTNESS_SLIDER][col] = ('▓', Some(text_primary), Some(color));
+                } else {
+                    rich[rows::LIGHTNESS_SLIDER][col] = ('░', Some(color), Some(panel_bg));
+                }
+            }
+        }
+    }
+
+    // C bar (chroma slider): gray-to-vivid gradient at current lightness and hue.
+    let c_frac = (oklch.c / MAX_CHROMA).clamp(0.0, 1.0);
+    let c_cursor = (c_frac * (TRACK_LEN - 1) as f32).round() as usize;
+    if rich.len() > rows::CHROMA_SLIDER {
+        let c_start = CONTENT_OFFSET + 7;
+        for i in 0..TRACK_LEN {
+            let col = c_start + i;
+            if col < rich[rows::CHROMA_SLIDER].len() {
+                let c = (i as f32 / (TRACK_LEN - 1) as f32) * MAX_CHROMA;
+                let color = oklch_to_srgb(oklch.l.max(0.4), c, oklch.h);
+                if i == c_cursor {
+                    rich[rows::CHROMA_SLIDER][col] = ('▓', Some(text_primary), Some(color));
+                } else {
+                    rich[rows::CHROMA_SLIDER][col] = ('░', Some(color), Some(panel_bg));
+                }
+            }
+        }
+    }
+
+    // H bar (hue slider): rainbow at current lightness and chroma.
+    let h_cursor = ((oklch.h / 360.0) * (TRACK_LEN - 1) as f32).round() as usize;
     if rich.len() > rows::HUE_SLIDER {
-        let h_start = CONTENT_OFFSET + 7; // centered offset
+        let h_start = CONTENT_OFFSET + 7;
         for i in 0..TRACK_LEN {
             let col = h_start + i;
             if col < rich[rows::HUE_SLIDER].len() {
                 let h = i as f32 / (TRACK_LEN - 1) as f32 * 360.0;
-                let color = hsv_to_rgb(HsvColor {
-                    h,
-                    s: 0.60,
-                    v: 0.70,
-                });
+                let color = oklch_to_srgb(oklch.l.max(0.5), oklch.c.max(0.08), h);
                 if i == h_cursor {
                     rich[rows::HUE_SLIDER][col] = ('▓', Some(text_primary), Some(color));
                 } else {
                     rich[rows::HUE_SLIDER][col] = ('░', Some(color), Some(panel_bg));
-                }
-            }
-        }
-    }
-
-    // S bar (saturation slider): saturation gradient
-    let s_cursor = (hsv.s * (TRACK_LEN - 1) as f32).round() as usize;
-    if rich.len() > rows::SAT_SLIDER {
-        let s_start = CONTENT_OFFSET + 7;
-        for i in 0..TRACK_LEN {
-            let col = s_start + i;
-            if col < rich[rows::SAT_SLIDER].len() {
-                let s = i as f32 / (TRACK_LEN - 1) as f32;
-                let color = hsv_to_rgb(HsvColor {
-                    h: hsv.h,
-                    s: s * 0.75,
-                    v: 0.65,
-                });
-                if i == s_cursor {
-                    rich[rows::SAT_SLIDER][col] = ('▓', Some(text_primary), Some(color));
-                } else {
-                    rich[rows::SAT_SLIDER][col] = ('░', Some(color), Some(panel_bg));
-                }
-            }
-        }
-    }
-
-    // V bar (value slider): value gradient
-    let v_cursor = (hsv.v * (TRACK_LEN - 1) as f32).round() as usize;
-    if rich.len() > rows::VALUE_SLIDER {
-        let v_start = CONTENT_OFFSET + 7;
-        for i in 0..TRACK_LEN {
-            let col = v_start + i;
-            if col < rich[rows::VALUE_SLIDER].len() {
-                let v = i as f32 / (TRACK_LEN - 1) as f32;
-                let color = hsv_to_rgb(HsvColor {
-                    h: hsv.h,
-                    s: 0.55,
-                    v: v * 0.80,
-                });
-                if i == v_cursor {
-                    rich[rows::VALUE_SLIDER][col] = ('▓', Some(text_primary), Some(color));
-                } else {
-                    rich[rows::VALUE_SLIDER][col] = ('░', Some(color), Some(panel_bg));
                 }
             }
         }
@@ -580,26 +726,26 @@ impl PaletteEditorOverlay {
         panel_style: &crate::render::theme::PanelStyle,
         accent: RgbColor,
     ) -> RenderedOverlay {
-        let hsv = state.current_hsv();
+        let oklch = state.current_oklch();
 
         let gradient_str = "▄".repeat(INNER_W);
         let swatches_str = build_swatches_str(state.selected_color_index);
         let labels_str = build_swatch_labels_str();
 
+        let l_active = state.selected_component == EditorComponent::Lightness;
+        let c_active = state.selected_component == EditorComponent::Chroma;
         let h_active = state.selected_component == EditorComponent::Hue;
-        let s_active = state.selected_component == EditorComponent::Saturation;
-        let v_active = state.selected_component == EditorComponent::Value;
 
-        let h_label = build_slider_label(h_active, 'H', &format!("{:.1}°", hsv.h));
-        let h_bar = build_slider_bar(hsv.h / 360.0);
-        let s_label = build_slider_label(s_active, 'S', &format!("{:.2}", hsv.s));
-        let s_bar = build_slider_bar(hsv.s);
-        let v_label = build_slider_label(v_active, 'V', &format!("{:.2}", hsv.v));
-        let v_bar = build_slider_bar(hsv.v);
+        let l_label = build_slider_label(l_active, 'L', &format!("{:.3}", oklch.l));
+        let l_bar = build_slider_bar(oklch.l);
+        let c_label = build_slider_label(c_active, 'C', &format!("{:.3}", oklch.c));
+        let c_bar = build_slider_bar((oklch.c / MAX_CHROMA).clamp(0.0, 1.0));
+        let h_label = build_slider_label(h_active, 'H', &format!("{:.1}°", oklch.h));
+        let h_bar = build_slider_bar(oklch.h / 360.0);
 
         let first_hint_line = "← select →";
         let second_hint_line = "↑ adjust ↓";
-        let tab_hint_line = "Tab  H → S → V";
+        let tab_hint_line = "Tab  L → C → H";
         let hints = [
             ("r", "reset"),
             ("Enter", "apply"),
@@ -623,14 +769,14 @@ impl PaletteEditorOverlay {
             .add_empty() // line 5
             .add_separator() // line 6
             .add_empty() // line 7
-            .add_single(h_label, TextAlignment::Center) // line 8
-            .add_single(h_bar, TextAlignment::Center) // line 9
+            .add_single(l_label, TextAlignment::Center) // line 8
+            .add_single(l_bar, TextAlignment::Center) // line 9
             .add_empty() // line 10
-            .add_single(s_label, TextAlignment::Center) // line 11
-            .add_single(s_bar, TextAlignment::Center) // line 12
+            .add_single(c_label, TextAlignment::Center) // line 11
+            .add_single(c_bar, TextAlignment::Center) // line 12
             .add_empty() // line 13
-            .add_single(v_label, TextAlignment::Center) // line 14
-            .add_single(v_bar, TextAlignment::Center) // line 15
+            .add_single(h_label, TextAlignment::Center) // line 14
+            .add_single(h_bar, TextAlignment::Center) // line 15
             .add_empty() // line 16
             .add_separator() // line 17
             .add_single(first_hint_line.to_string(), TextAlignment::Center) // line 18
@@ -648,7 +794,7 @@ impl PaletteEditorOverlay {
         overlay.rich_lines = Some(build_editor_rich_lines(
             state,
             &overlay.lines,
-            hsv,
+            oklch,
             panel_style.text_primary,
             accent,
             panel_style.bg_color,
@@ -728,11 +874,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_palette_editor_state_creation() {
-        let state = PaletteEditorState::new(&Palette::Forest);
-        assert_eq!(state.selected_color_index, PALETTE_COLOR_COUNT);
-        assert!(!state.is_modified);
-        assert_eq!(state.mode, EditorMode::Editing);
+    fn test_adjust_hue_updates_stored_hues() {
+        let mut state = PaletteEditorState::new(&Palette::Forest);
+        state.selected_color_index = 3;
+
+        let initial_stored_hue = state.stored_hues[3];
+        state.adjust_hue(45.0);
+
+        // Stored hue should be updated exactly
+        assert!(
+            (state.stored_hues[3] - (initial_stored_hue + 45.0) % 360.0).abs() < 0.1,
+            "Stored hue should be updated when adjusting hue"
+        );
+
+        // Current hue should be close (allowing for 8-bit RGB quantization error)
+        let current_hue = state.current_oklch().h;
+        let hue_diff = (current_hue - state.stored_hues[3]).abs();
+        assert!(
+            hue_diff < 5.0,
+            "Current hue {} should be close to stored hue {} (diff={})",
+            current_hue,
+            state.stored_hues[3],
+            hue_diff
+        );
     }
 
     #[test]
@@ -797,53 +961,71 @@ mod tests {
     }
 
     #[test]
-    fn test_average_hsv_calculation() {
+    fn test_average_oklch_calculation() {
         let mut state = PaletteEditorState::new(&Palette::Forest);
 
-        // Set all colors to pure red (hue=0, sat=1, val=1).
+        // Set all colors to pure red (high chroma in OKLch).
         for color in state.colors.iter_mut() {
             *color = RgbColor { r: 255, g: 0, b: 0 };
         }
 
-        let avg = state.average_hsv();
-        assert!(avg.s > 0.9, "Average saturation should be ~1.0");
-        assert!(avg.v > 0.9, "Average value should be ~1.0");
+        let avg = state.average_oklch();
+        assert!(avg.c > 0.2, "Average chroma of pure red should be high");
+        assert!(
+            avg.l > 0.4,
+            "Average lightness of pure red should be moderate"
+        );
     }
 
     #[test]
-    fn test_hsv_adjustment() {
+    fn test_oklch_adjustment() {
         let mut state = PaletteEditorState::new(&Palette::Forest);
 
+        // Use a mid-range color (moderate chroma) where 8-bit quantization is less severe.
         state.selected_color_index = 0;
-        state.colors[0] = RgbColor { r: 255, g: 0, b: 0 }; // Pure red
-        let original_hue = state.current_hsv().h;
-        assert!(
-            (original_hue - 0.0).abs() < 0.1 || (original_hue - 360.0).abs() < 0.1,
-            "Red should have hue ~0"
-        );
+        state.colors[0] = RgbColor {
+            r: 100,
+            g: 150,
+            b: 80,
+        };
+        let original_hue = state.current_oklch().h;
 
-        state.adjust_hue(10.0);
+        // Large shift to overcome 8-bit RGB quantization noise.
+        state.adjust_hue(45.0);
         assert!(state.is_modified);
 
-        let new_hue = state.current_hsv().h;
-        let diff = (new_hue - 10.0).abs();
+        let new_hue = state.current_oklch().h;
+        let actual_shift = ((new_hue - original_hue + 540.0) % 360.0) - 180.0;
         assert!(
-            diff < 1.0,
-            "hue should change by ~10 degrees: new={}, diff={}",
+            (actual_shift - 45.0).abs() < 10.0,
+            "hue should shift by ~45°: original={}, new={}, actual_shift={}",
+            original_hue,
             new_hue,
-            diff
+            actual_shift
         );
     }
 
     #[test]
-    fn test_saturation_clamping() {
+    fn test_chroma_clamping() {
         let mut state = PaletteEditorState::new(&Palette::Forest);
 
-        state.adjust_saturation(-2.0);
-        assert!((state.current_hsv().s - 0.0).abs() < 0.01);
+        // Select a single stop to avoid average-based measurement.
+        state.selected_color_index = 5;
+        state.adjust_chroma(-2.0);
+        assert!(
+            state.current_oklch().c < 0.02,
+            "Chroma should clamp near 0, got {}",
+            state.current_oklch().c
+        );
 
-        state.adjust_saturation(2.0);
-        assert!((state.current_hsv().s - 1.0).abs() < 0.01);
+        state.adjust_chroma(2.0);
+        // After 8-bit RGB roundtrip, chroma may be slightly less than MAX_CHROMA
+        // due to gamut clamping, but should be in the high range.
+        assert!(
+            state.current_oklch().c > 0.15,
+            "Chroma should be high after large positive adjustment, got {}",
+            state.current_oklch().c
+        );
     }
 
     #[test]
@@ -861,13 +1043,13 @@ mod tests {
 
     #[test]
     fn test_component_cycle() {
-        assert_eq!(EditorComponent::Hue.next(), EditorComponent::Saturation);
-        assert_eq!(EditorComponent::Saturation.next(), EditorComponent::Value);
-        assert_eq!(EditorComponent::Value.next(), EditorComponent::Hue);
+        assert_eq!(EditorComponent::Lightness.next(), EditorComponent::Chroma);
+        assert_eq!(EditorComponent::Chroma.next(), EditorComponent::Hue);
+        assert_eq!(EditorComponent::Hue.next(), EditorComponent::Lightness);
 
-        assert_eq!(EditorComponent::Hue.prev(), EditorComponent::Value);
-        assert_eq!(EditorComponent::Value.prev(), EditorComponent::Saturation);
-        assert_eq!(EditorComponent::Saturation.prev(), EditorComponent::Hue);
+        assert_eq!(EditorComponent::Lightness.prev(), EditorComponent::Hue);
+        assert_eq!(EditorComponent::Hue.prev(), EditorComponent::Chroma);
+        assert_eq!(EditorComponent::Chroma.prev(), EditorComponent::Lightness);
     }
 
     #[test]
@@ -967,6 +1149,118 @@ mod tests {
                 line.chars().count(),
                 PaletteEditorOverlay::WIDTH,
                 "Line {} has wrong width in ALL mode",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_chroma_zero_preserves_hue_single_color() {
+        // Regression test: when chroma goes to 0 and back, hue should be preserved
+        let mut state = PaletteEditorState::new(&Palette::Forest);
+
+        // Select a single color with a non-zero hue (not grayscale)
+        state.selected_color_index = 5;
+        let initial_hue = state.current_oklch().h;
+
+        // Verify we have a valid initial hue (not NaN and not near 0/red)
+        assert!(
+            initial_hue > 10.0,
+            "Initial hue should be non-red for this test, got {}",
+            initial_hue
+        );
+
+        // Reduce chroma to 0 (monochrome)
+        state.adjust_chroma(-2.0);
+        assert!(
+            state.current_oklch().c < 0.02,
+            "Chroma should be near 0, got {}",
+            state.current_oklch().c
+        );
+
+        // Hue should still be preserved in stored_hues
+        assert!(
+            (state.stored_hues[5] - initial_hue).abs() < 1.0,
+            "Stored hue should be preserved when chroma=0, stored={}, initial={}",
+            state.stored_hues[5],
+            initial_hue
+        );
+
+        // Increase chroma back
+        state.adjust_chroma(0.1);
+
+        // Hue should be restored, not become 0 (red)
+        let restored_hue = state.current_oklch().h;
+        assert!(
+            restored_hue > 10.0,
+            "Restored hue should not be red (0°), got {}. Hue was not preserved during chroma=0 transition!",
+            restored_hue
+        );
+    }
+
+    #[test]
+    fn test_chroma_zero_preserves_hue_all_selected() {
+        // Test the ALL selection mode with chroma=0 transition
+        let mut state = PaletteEditorState::new(&Palette::Forest);
+
+        // Store initial average hue
+        let initial_avg_hue = state.current_oklch().h;
+
+        // Reduce chroma to 0 for all colors
+        state.adjust_chroma(-2.0);
+
+        // Verify chroma is near 0
+        assert!(
+            state.current_oklch().c < 0.02,
+            "Average chroma should be near 0"
+        );
+
+        // Increase chroma back
+        state.adjust_chroma(0.15);
+
+        // The average hue should not have become 0 (red)
+        let restored_hue = state.current_oklch().h;
+        assert!(
+            restored_hue > 20.0 || restored_hue < 340.0,
+            "Restored average hue should not be near red (0°), got {}. Stored hues were not preserved!",
+            restored_hue
+        );
+    }
+
+    #[test]
+    fn test_stored_hues_initialized_correctly() {
+        let state = PaletteEditorState::new(&Palette::Forest);
+
+        // Verify stored hues match the actual hues of the palette colors
+        for (i, &color) in state.colors.iter().enumerate() {
+            let oklch = srgb_to_oklch(color);
+            let expected_hue = if oklch.h.is_nan() { 0.0 } else { oklch.h };
+            assert!(
+                (state.stored_hues[i] - expected_hue).abs() < 0.1,
+                "Stored hue {} should match actual hue {} for color {}",
+                state.stored_hues[i],
+                expected_hue,
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_reset_restores_stored_hues() {
+        let mut state = PaletteEditorState::new(&Palette::Forest);
+        let initial_stored_hues = state.stored_hues.clone();
+
+        // Modify hues
+        state.adjust_hue(90.0);
+
+        // Reset
+        state.reset_to_original();
+
+        // Stored hues should be restored
+        for i in 0..PALETTE_COLOR_COUNT {
+            assert!(
+                (state.stored_hues[i] - initial_stored_hues[i]).abs() < 0.1,
+                "Stored hue {} should be reset to original",
                 i
             );
         }

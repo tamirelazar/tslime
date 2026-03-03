@@ -1515,11 +1515,11 @@ pub fn run_simulation(
                                         }
                                     } else {
                                         match state.selected_component {
-                                            EditorComponent::Hue => state.adjust_hue(5.0),
-                                            EditorComponent::Saturation => {
-                                                state.adjust_saturation(0.05)
+                                            EditorComponent::Lightness => {
+                                                state.adjust_lightness(0.02)
                                             }
-                                            EditorComponent::Value => state.adjust_value(0.05),
+                                            EditorComponent::Chroma => state.adjust_chroma(0.01),
+                                            EditorComponent::Hue => state.adjust_hue(5.0),
                                         }
                                         renderer
                                             .set_palette(Palette::Custom(state.colors.to_vec()));
@@ -1535,19 +1535,23 @@ pub fn run_simulation(
                                         }
                                     } else {
                                         match state.selected_component {
-                                            EditorComponent::Hue => state.adjust_hue(-5.0),
-                                            EditorComponent::Saturation => {
-                                                state.adjust_saturation(-0.05)
+                                            EditorComponent::Lightness => {
+                                                state.adjust_lightness(-0.02)
                                             }
-                                            EditorComponent::Value => state.adjust_value(-0.05),
+                                            EditorComponent::Chroma => state.adjust_chroma(-0.01),
+                                            EditorComponent::Hue => state.adjust_hue(-5.0),
                                         }
                                         renderer
                                             .set_palette(Palette::Custom(state.colors.to_vec()));
                                     }
                                     continue;
                                 }
-                                KeyCode::Char('v') | KeyCode::Char('V') => {
-                                    state.selected_component = EditorComponent::Value;
+                                KeyCode::Char('h') | KeyCode::Char('H') => {
+                                    state.selected_component = EditorComponent::Hue;
+                                    continue;
+                                }
+                                KeyCode::Char('c') | KeyCode::Char('C') => {
+                                    state.selected_component = EditorComponent::Chroma;
                                     continue;
                                 }
                                 KeyCode::Char('r') | KeyCode::Char('R') => {
@@ -1556,24 +1560,23 @@ pub fn run_simulation(
                                     continue;
                                 }
                                 KeyCode::Tab => {
-                                    // Transition to controls overlay
-                                    runtime_state.close_all_overlays();
-                                    runtime_state.show_controls = true;
+                                    // Cycle OKLch component: L → C → H → L
+                                    state.selected_component = state.selected_component.next();
                                     continue;
                                 }
                                 KeyCode::Char('s') | KeyCode::Char('S') => {
                                     if key_event.modifiers.contains(KeyModifiers::CONTROL) {
                                         state.mode = EditorMode::SaveDialog;
-                                    } else if key_event.modifiers.contains(KeyModifiers::SHIFT) {
-                                        state.adjust_saturation(0.1);
-                                        renderer
-                                            .set_palette(Palette::Custom(state.colors.to_vec()));
-                                    } else {
-                                        state.selected_component = EditorComponent::Saturation;
                                     }
                                     continue;
                                 }
-                                KeyCode::Char('l') | KeyCode::Char('L') => {
+                                KeyCode::Char('l') => {
+                                    // Lowercase l: select Lightness component
+                                    state.selected_component = EditorComponent::Lightness;
+                                    continue;
+                                }
+                                KeyCode::Char('L') => {
+                                    // Uppercase L: open Load dialog
                                     if let Ok(palettes) = palette_manager::list_palettes() {
                                         state.saved_palettes_list = palettes;
                                         state.saved_palette_index = 0;
