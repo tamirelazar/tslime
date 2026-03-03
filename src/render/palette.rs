@@ -1,5 +1,97 @@
-use crate::cli::Palette;
 use crate::render::gradients;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Color palette for rendering trails.
+pub enum Palette {
+    /// Organic green/brown tones.
+    Organic,
+    /// Thermal camera style (black-red-yellow-white).
+    Heat,
+    /// Deep ocean blues and teals.
+    Ocean,
+    /// Monochrome grayscale.
+    Mono,
+    /// Deep forest greens.
+    Forest,
+    /// Cyberpunk neon colors.
+    Neon,
+    /// Warm earth tones.
+    Warm,
+    /// High saturation vibrant colors.
+    Vibrant,
+    /// High contrast monochrome for readability.
+    LegibleMono,
+    /// Radioactive green slime.
+    Slime,
+    /// Dark moldy colors.
+    Mold,
+    /// Fungal growth colors.
+    Fungus,
+    /// Murky swamp colors.
+    Swamp,
+    /// Soft mossy greens.
+    Moss,
+    /// Deep space purples and blues.
+    Cosmic,
+    /// Ghostly pale colors.
+    Ethereal,
+    /// Custom user-defined palette.
+    Custom(Vec<RgbColor>),
+}
+
+impl Palette {
+    /// Returns the string representation of the palette name.
+    pub fn name(&self) -> &str {
+        match self {
+            Palette::Organic => "Organic",
+            Palette::Heat => "Heat",
+            Palette::Ocean => "Ocean",
+            Palette::Mono => "Mono",
+            Palette::Forest => "Forest",
+            Palette::Neon => "Neon",
+            Palette::Warm => "Warm",
+            Palette::Vibrant => "Vibrant",
+            Palette::LegibleMono => "LegibleMono",
+            Palette::Slime => "Slime",
+            Palette::Mold => "Mold",
+            Palette::Fungus => "Fungus",
+            Palette::Swamp => "Swamp",
+            Palette::Moss => "Moss",
+            Palette::Cosmic => "Cosmic",
+            Palette::Ethereal => "Ethereal",
+            Palette::Custom(_) => "Custom",
+        }
+    }
+}
+
+/// List of all available color palettes for cycling.
+/// This is the single source of truth for palette enumeration.
+pub const ALL_PALETTES: [Palette; 16] = [
+    Palette::Organic,
+    Palette::Heat,
+    Palette::Ocean,
+    Palette::Mono,
+    Palette::Forest,
+    Palette::Neon,
+    Palette::Warm,
+    Palette::Vibrant,
+    Palette::LegibleMono,
+    Palette::Slime,
+    Palette::Mold,
+    Palette::Fungus,
+    Palette::Swamp,
+    Palette::Moss,
+    Palette::Cosmic,
+    Palette::Ethereal,
+];
+
+/// The number of palettes in ALL_PALETTES.
+pub const NUM_PALETTES: usize = ALL_PALETTES.len();
+
+/// Returns the number of available palettes.
+pub fn num_palettes() -> usize {
+    NUM_PALETTES
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// An RGB color value.
@@ -335,7 +427,7 @@ impl IntensityMapping {
 
     /// Validates that segments form a valid partition of [0, 1].
     fn validate_segments(segments: &[MappingSegment]) -> Result<(), MappingError> {
-        use crate::render::constants::math::EPSILON;
+        use crate::config_defaults::math::EPSILON;
 
         if segments.is_empty() {
             return Err(MappingError::NoSegments);
@@ -471,8 +563,8 @@ impl IntensityMapping {
     /// Lower colors mapped linearly, upper colors mapped logarithmically.
     /// For an 11-color palette: [0, 6/11] linear, [6/11, 1] logarithmic.
     pub fn linear_log_split(log_base: f32) -> Self {
-        use crate::render::constants::palette::PALETTE_STEPS;
-        let split_point = 6.0 / PALETTE_STEPS as f32; // ≈ 0.545454...
+        use crate::config_defaults::palette::{DEFAULT_PALETTE_STEPS, LINEAR_COLOR_COUNT};
+        let split_point = LINEAR_COLOR_COUNT / DEFAULT_PALETTE_STEPS as f32; // ≈ 0.545454...
         Self {
             segments: vec![
                 MappingSegment {
@@ -1862,7 +1954,7 @@ pub fn hsv_to_rgb(hsv: HsvColor) -> RgbColor {
 
 /// Rotates the hue of an HSV color.
 pub fn rotate_hue(hsv: HsvColor, degrees: f32) -> HsvColor {
-    use crate::render::constants::math::DEGREES_IN_CIRCLE;
+    use crate::config_defaults::math::DEGREES_IN_CIRCLE;
     HsvColor {
         h: (hsv.h + degrees) % DEGREES_IN_CIRCLE,
         s: hsv.s,
@@ -1910,7 +2002,7 @@ pub fn rgb_to_256(rgb: RgbColor) -> u8 {
 
 /// Inverts an ANSI 256 color code (hue rotation of 180 degrees).
 pub fn invert_256_color(color_code: u8) -> u8 {
-    use crate::render::constants::math::DEGREES_HALF_CIRCLE;
+    use crate::config_defaults::math::DEGREES_HALF_CIRCLE;
     let rgb = ANSI_256_TO_RGB[color_code as usize];
     let hsv = rgb_to_hsv(rgb);
     let rotated = rotate_hue(hsv, DEGREES_HALF_CIRCLE);
@@ -1933,7 +2025,7 @@ pub fn hex_to_rgb(hex: &str) -> Option<RgbColor> {
 /// Internal helper to compute HSV color from brightness and base color.
 /// Shared logic between map_species_brightness and map_species_brightness_rgb.
 fn compute_species_hsv(brightness: f32, base_color: RgbColor, reverse: bool) -> HsvColor {
-    use crate::render::constants::hsv;
+    use crate::config_defaults::hsv;
 
     let hsv_color = rgb_to_hsv(base_color);
     let brightness = if reverse {

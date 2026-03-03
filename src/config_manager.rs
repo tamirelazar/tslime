@@ -1,5 +1,6 @@
 use crate::cli::Palette;
 use crate::render::charset::Charset;
+use crate::render::palette::RgbColor;
 use crate::simulation::config::{DiffusionKernel, InitMode, SimConfig, SpeciesConfig};
 use crate::terminal::control::RuntimeState;
 use serde::{Deserialize, Serialize};
@@ -282,7 +283,11 @@ impl SavedConfig {
         Ok(())
     }
 
-    /// Convert this saved config to a SimConfig for restarting simulation
+    /// Convert this saved config to a SimConfig for restarting simulation.
+    ///
+    /// This function is part of the public API but currently unused in the main application.
+    /// It is retained for future use in configuration management features like
+    /// "Restart with saved config" or "Export config to file".
     #[allow(dead_code)]
     pub fn to_sim_config(&self) -> Result<SimConfig, String> {
         let diffusion_kernel = parse_diffusion_kernel(&self.diffusion_kernel)?;
@@ -295,7 +300,7 @@ impl SavedConfig {
             rotation_angle: self.rotation_angle,
             step_size: self.step_size,
             deposit_amount: self.deposit_amount,
-            color: "228b22".to_string(),
+            color: RgbColor::from_hex(0x228b22),
         };
 
         Ok(SimConfig {
@@ -362,6 +367,10 @@ fn parse_diffusion_kernel(s: &str) -> Result<DiffusionKernel, String> {
     }
 }
 
+/// Parses an initialization mode from a string.
+///
+/// This function is part of the configuration parsing API but currently unused.
+/// It is retained for future use in saved configuration loading.
 #[allow(dead_code)]
 fn parse_init_mode(s: &str) -> Result<InitMode, String> {
     match s.to_lowercase().as_str() {
@@ -454,8 +463,12 @@ pub fn save_config(config: SavedConfig) -> Result<(), String> {
     save_config_file(&config_file)
 }
 
-#[allow(dead_code)]
 /// Loads a specific configuration by name.
+///
+/// This function is part of the public API but currently unused in the main application.
+/// It is retained for future use in configuration management features like
+/// "Load saved preset by name" or CLI config restoration.
+#[allow(dead_code)]
 pub fn load_config(name: &str) -> Result<SavedConfig, String> {
     let config_file = load_config_file()?;
 
@@ -636,7 +649,7 @@ mod tests {
                 rotation_angle: state.rotation_angle,
                 step_size: state.step_size,
                 deposit_amount: state.deposit_amount,
-                color: "228b22".to_string(),
+                color: RgbColor::from_hex(0x228b22),
             }],
             separate_species_trails: false,
             use_simd: true,

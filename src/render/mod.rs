@@ -4,8 +4,6 @@ pub mod adaptive_brightness;
 pub mod charset;
 /// Standalone (non-palette) color constants.
 pub mod color_constants;
-/// Centralized constants for rendering parameters.
-pub mod constants;
 /// Dithering algorithms (ordered, error diffusion).
 pub mod dither;
 /// Downsampling from simulation grid to terminal grid.

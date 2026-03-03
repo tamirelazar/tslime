@@ -99,6 +99,9 @@ impl TerminalRenderer {
     }
 
     /// Get the current dithering mode.
+    ///
+    /// Part of the public API but currently unused internally.
+    /// Retained for potential external use or testing.
     #[allow(dead_code)]
     pub fn dither_mode(&self) -> DitherMode {
         self.dither_mode
@@ -107,6 +110,8 @@ impl TerminalRenderer {
     /// Reset error diffusion error accumulators.
     ///
     /// Should be called at the start of each frame.
+    /// Currently reset automatically in `render_with_overlay`, but exposed
+    /// as public API for advanced use cases.
     #[allow(dead_code)]
     pub fn reset_error_diffusion(&mut self) {
         if let Some(ref mut ed) = self.error_diffusion {
@@ -115,6 +120,9 @@ impl TerminalRenderer {
     }
 
     /// Resize error diffusion buffers.
+    ///
+    /// Part of the public API but currently unused internally.
+    /// Retained for potential external use when terminal size changes.
     #[allow(dead_code)]
     pub fn resize_error_diffusion(&mut self, width: usize, height: usize) {
         if let Some(ref mut ed) = self.error_diffusion {
@@ -129,18 +137,27 @@ impl TerminalRenderer {
     }
 
     /// Update the color palette.
+    ///
+    /// Part of the public API but currently unused internally.
+    /// Retained for potential runtime palette switching features.
     #[allow(dead_code)]
     pub fn set_palette(&mut self, palette: Palette) {
         self.palette = palette;
     }
 
     /// Set the hue shift amount (0.0 to 1.0).
+    ///
+    /// Part of the public API but currently unused internally.
+    /// Retained for potential runtime color adjustment features.
     #[allow(dead_code)]
     pub fn set_hue_shift(&mut self, hue_shift: f32) {
         self.hue_shift = hue_shift;
     }
 
     /// Update the character set used for rendering.
+    ///
+    /// Part of the public API but currently unused internally.
+    /// Retained for potential runtime charset switching features.
     #[allow(dead_code)]
     pub fn set_charset(&mut self, charset: Charset) {
         self.charset = charset;

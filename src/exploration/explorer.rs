@@ -5,6 +5,7 @@
 //! specific emergent behaviors.
 
 use crate::exploration::metrics::PatternMetrics;
+use crate::render::palette::RgbColor;
 use crate::simulation::config::{
     DiffusionKernel, InitMode, SimConfig, SpeciesConfig, TerrainType, Wind,
 };
@@ -381,7 +382,7 @@ impl ExplorationParams {
                 rotation_angle: self.rotation_angle,
                 step_size: self.step_size,
                 deposit_amount: self.deposit_amount,
-                color: "ffffff".to_string(),
+                color: RgbColor::from_hex(0xffffff),
             }],
             diffusion_kernel: self.diffusion_kernel,
             wind,

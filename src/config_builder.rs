@@ -5,246 +5,14 @@
 //! validation and default handling.
 
 use crate::cli::{Args, AttractorArg, ObstacleArg, SpeciesArg, WindArg};
-use crate::config_defaults::ConfigDefaults;
+use crate::config_defaults::{
+    agent, agent as agent_consts, environment, population, population as pop_consts, time,
+    trail as trail_consts,
+};
+use crate::error::ConfigError;
 use crate::simulation::config::{
     Attractor, DiffusionKernel, Preset, SimConfig, SpeciesConfig, TerrainType, Wind,
 };
-use crate::simulation::constants::{
-    agent as agent_consts, population as pop_consts, trail as trail_consts,
-};
-
-/// Error type for configuration building failures.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ConfigBuilderError {
-    /// Invalid resolution dimensions.
-    InvalidResolution {
-        /// The requested width in pixels.
-        width: usize,
-        /// The requested height in pixels.
-        height: usize,
-    },
-    /// Invalid FPS value.
-    InvalidFps {
-        /// The requested frames per second.
-        fps: usize,
-    },
-    /// Invalid population count.
-    InvalidPopulation {
-        /// The requested population count.
-        pop: usize,
-        /// The minimum allowed population.
-        min: usize,
-        /// The maximum allowed population.
-        max: usize,
-    },
-    /// Invalid sensor angle.
-    InvalidSensorAngle {
-        /// The requested sensor angle in degrees.
-        value: f32,
-        /// The minimum allowed angle in degrees.
-        min: f32,
-        /// The maximum allowed angle in degrees.
-        max: f32,
-    },
-    /// Invalid sensor distance.
-    InvalidSensorDistance {
-        /// The requested sensor distance.
-        value: f32,
-        /// The minimum allowed distance.
-        min: f32,
-        /// The maximum allowed distance.
-        max: f32,
-    },
-    /// Invalid rotation angle.
-    InvalidRotationAngle {
-        /// The requested rotation angle in degrees.
-        value: f32,
-        /// The minimum allowed angle in degrees.
-        min: f32,
-        /// The maximum allowed angle in degrees.
-        max: f32,
-    },
-    /// Invalid step size.
-    InvalidStepSize {
-        /// The requested step size.
-        value: f32,
-        /// The minimum allowed step size.
-        min: f32,
-        /// The maximum allowed step size.
-        max: f32,
-    },
-    /// Invalid decay factor.
-    InvalidDecayFactor {
-        /// The requested decay factor.
-        value: f32,
-        /// The minimum allowed decay factor.
-        min: f32,
-        /// The maximum allowed decay factor.
-        max: f32,
-    },
-    /// Invalid deposit amount.
-    InvalidDepositAmount {
-        /// The requested deposit amount.
-        value: f32,
-        /// The minimum allowed deposit amount.
-        min: f32,
-        /// The maximum allowed deposit amount.
-        max: f32,
-    },
-    /// Invalid max brightness.
-    InvalidMaxBrightness {
-        /// The requested max brightness.
-        value: f32,
-        /// The minimum allowed max brightness.
-        min: f32,
-        /// The maximum allowed max brightness.
-        max: f32,
-    },
-    /// Invalid diffusion sigma.
-    InvalidDiffusionSigma {
-        /// The requested diffusion sigma.
-        value: f32,
-        /// The minimum allowed diffusion sigma.
-        min: f32,
-        /// The maximum allowed diffusion sigma.
-        max: f32,
-    },
-    /// Invalid time scale.
-    InvalidTimeScale {
-        /// The requested time scale.
-        value: f32,
-        /// The minimum allowed time scale.
-        min: f32,
-        /// The maximum allowed time scale.
-        max: f32,
-    },
-    /// Invalid attractor strength.
-    InvalidAttractorStrength {
-        /// The requested attractor strength.
-        value: f32,
-        /// The minimum allowed attractor strength.
-        min: f32,
-        /// The maximum allowed attractor strength.
-        max: f32,
-    },
-    /// Invalid terrain strength.
-    InvalidTerrainStrength {
-        /// The requested terrain strength.
-        value: f32,
-        /// The minimum allowed terrain strength.
-        min: f32,
-        /// The maximum allowed terrain strength.
-        max: f32,
-    },
-    /// Failed to parse terrain type.
-    InvalidTerrainType(String),
-}
-
-impl std::fmt::Display for ConfigBuilderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ConfigBuilderError::InvalidResolution { width, height } => {
-                write!(
-                    f,
-                    "resolution must be between 10x10 and 2000x2000, got {}x{}",
-                    width, height
-                )
-            }
-            ConfigBuilderError::InvalidFps { fps } => {
-                write!(f, "fps must be between 1 and 144, got {}", fps)
-            }
-            ConfigBuilderError::InvalidPopulation { pop, min, max } => {
-                write!(
-                    f,
-                    "population must be between {} and {}, got {}",
-                    min, max, pop
-                )
-            }
-            ConfigBuilderError::InvalidSensorAngle { value, min, max } => {
-                write!(
-                    f,
-                    "sensor_angle must be between {} and {} degrees, got {}",
-                    min, max, value
-                )
-            }
-            ConfigBuilderError::InvalidSensorDistance { value, min, max } => {
-                write!(
-                    f,
-                    "sensor_distance must be between {} and {}, got {}",
-                    min, max, value
-                )
-            }
-            ConfigBuilderError::InvalidRotationAngle { value, min, max } => {
-                write!(
-                    f,
-                    "rotation_angle must be between {} and {} degrees, got {}",
-                    min, max, value
-                )
-            }
-            ConfigBuilderError::InvalidStepSize { value, min, max } => {
-                write!(
-                    f,
-                    "step_size must be between {} and {}, got {}",
-                    min, max, value
-                )
-            }
-            ConfigBuilderError::InvalidDecayFactor { value, min, max } => {
-                write!(
-                    f,
-                    "decay must be between {} and {}, got {}",
-                    min, max, value
-                )
-            }
-            ConfigBuilderError::InvalidDepositAmount { value, min, max } => {
-                write!(
-                    f,
-                    "deposit must be between {} and {}, got {}",
-                    min, max, value
-                )
-            }
-            ConfigBuilderError::InvalidMaxBrightness { value, min, max } => {
-                write!(
-                    f,
-                    "max_brightness must be between {} and {}, got {}",
-                    min, max, value
-                )
-            }
-            ConfigBuilderError::InvalidDiffusionSigma { value, min, max } => {
-                write!(
-                    f,
-                    "diffusion_sigma must be between {} and {}, got {}",
-                    min, max, value
-                )
-            }
-            ConfigBuilderError::InvalidTimeScale { value, min, max } => {
-                write!(
-                    f,
-                    "time_scale must be between {} and {}, got {}",
-                    min, max, value
-                )
-            }
-            ConfigBuilderError::InvalidAttractorStrength { value, min, max } => {
-                write!(
-                    f,
-                    "attractor_strength must be between {} and {}, got {}",
-                    min, max, value
-                )
-            }
-            ConfigBuilderError::InvalidTerrainStrength { value, min, max } => {
-                write!(
-                    f,
-                    "terrain_strength must be between {} and {}, got {}",
-                    min, max, value
-                )
-            }
-            ConfigBuilderError::InvalidTerrainType(s) => {
-                write!(f, "invalid terrain type: {}", s)
-            }
-        }
-    }
-}
-
-impl std::error::Error for ConfigBuilderError {}
 
 /// Builder for constructing SimConfig instances with validation.
 ///
@@ -479,11 +247,11 @@ impl ConfigBuilder {
     /// Validates the current configuration state.
     ///
     /// Returns Ok(()) if all parameters are within valid ranges.
-    pub fn validate(&self) -> Result<(), ConfigBuilderError> {
+    pub fn validate(&self) -> Result<(), ConfigError> {
         // Validate population
         if let Some(pop) = self.population {
             if !(pop_consts::MIN_TOTAL..=pop_consts::MAX_TOTAL).contains(&pop) {
-                return Err(ConfigBuilderError::InvalidPopulation {
+                return Err(ConfigError::InvalidPopulation {
                     pop,
                     min: pop_consts::MIN_TOTAL,
                     max: pop_consts::MAX_TOTAL,
@@ -494,14 +262,14 @@ impl ConfigBuilder {
         // Validate FPS
         if let Some(fps) = self.fps {
             if !(1..=144).contains(&fps) {
-                return Err(ConfigBuilderError::InvalidFps { fps });
+                return Err(ConfigError::InvalidFps { fps });
             }
         }
 
         // Validate sensor angle
         if let Some(sa) = self.sensor_angle {
             if !(agent_consts::MIN_SENSOR_ANGLE..=agent_consts::MAX_SENSOR_ANGLE).contains(&sa) {
-                return Err(ConfigBuilderError::InvalidSensorAngle {
+                return Err(ConfigError::InvalidSensorAngle {
                     value: sa,
                     min: agent_consts::MIN_SENSOR_ANGLE,
                     max: agent_consts::MAX_SENSOR_ANGLE,
@@ -514,7 +282,7 @@ impl ConfigBuilder {
             if !(agent_consts::MIN_SENSOR_DISTANCE..=agent_consts::MAX_SENSOR_DISTANCE)
                 .contains(&sd)
             {
-                return Err(ConfigBuilderError::InvalidSensorDistance {
+                return Err(ConfigError::InvalidSensorDistance {
                     value: sd,
                     min: agent_consts::MIN_SENSOR_DISTANCE,
                     max: agent_consts::MAX_SENSOR_DISTANCE,
@@ -526,7 +294,7 @@ impl ConfigBuilder {
         if let Some(ra) = self.rotation_angle {
             if !(agent_consts::MIN_ROTATION_ANGLE..=agent_consts::MAX_ROTATION_ANGLE).contains(&ra)
             {
-                return Err(ConfigBuilderError::InvalidRotationAngle {
+                return Err(ConfigError::InvalidRotationAngle {
                     value: ra,
                     min: agent_consts::MIN_ROTATION_ANGLE,
                     max: agent_consts::MAX_ROTATION_ANGLE,
@@ -537,7 +305,7 @@ impl ConfigBuilder {
         // Validate step size
         if let Some(ss) = self.step_size {
             if !(agent_consts::MIN_STEP_SIZE..=agent_consts::MAX_STEP_SIZE).contains(&ss) {
-                return Err(ConfigBuilderError::InvalidStepSize {
+                return Err(ConfigError::InvalidStepSize {
                     value: ss,
                     min: agent_consts::MIN_STEP_SIZE,
                     max: agent_consts::MAX_STEP_SIZE,
@@ -548,7 +316,7 @@ impl ConfigBuilder {
         // Validate decay factor
         if let Some(df) = self.decay_factor {
             if !(trail_consts::MIN_DECAY_FACTOR..=trail_consts::MAX_DECAY_FACTOR).contains(&df) {
-                return Err(ConfigBuilderError::InvalidDecayFactor {
+                return Err(ConfigError::InvalidDecayFactor {
                     value: df,
                     min: trail_consts::MIN_DECAY_FACTOR,
                     max: trail_consts::MAX_DECAY_FACTOR,
@@ -560,7 +328,7 @@ impl ConfigBuilder {
         if let Some(da) = self.deposit_amount {
             if !(agent_consts::MIN_DEPOSIT_AMOUNT..=agent_consts::MAX_DEPOSIT_AMOUNT).contains(&da)
             {
-                return Err(ConfigBuilderError::InvalidDepositAmount {
+                return Err(ConfigError::InvalidDepositAmount {
                     value: da,
                     min: agent_consts::MIN_DEPOSIT_AMOUNT,
                     max: agent_consts::MAX_DEPOSIT_AMOUNT,
@@ -572,7 +340,7 @@ impl ConfigBuilder {
         if let Some(mb) = self.max_brightness {
             if !(trail_consts::MIN_MAX_BRIGHTNESS..=trail_consts::MAX_MAX_BRIGHTNESS).contains(&mb)
             {
-                return Err(ConfigBuilderError::InvalidMaxBrightness {
+                return Err(ConfigError::InvalidMaxBrightness {
                     value: mb,
                     min: trail_consts::MIN_MAX_BRIGHTNESS,
                     max: trail_consts::MAX_MAX_BRIGHTNESS,
@@ -585,7 +353,7 @@ impl ConfigBuilder {
             if !(trail_consts::MIN_DIFFUSION_SIGMA..=trail_consts::MAX_DIFFUSION_SIGMA)
                 .contains(&ds)
             {
-                return Err(ConfigBuilderError::InvalidDiffusionSigma {
+                return Err(ConfigError::InvalidDiffusionSigma {
                     value: ds,
                     min: trail_consts::MIN_DIFFUSION_SIGMA,
                     max: trail_consts::MAX_DIFFUSION_SIGMA,
@@ -595,37 +363,37 @@ impl ConfigBuilder {
 
         // Validate time scale
         if let Some(ts) = self.time_scale {
-            if !(ConfigDefaults::MIN_TIME_SCALE..=ConfigDefaults::MAX_TIME_SCALE).contains(&ts) {
-                return Err(ConfigBuilderError::InvalidTimeScale {
+            if !(time::MIN_TIME_SCALE..=time::MAX_TIME_SCALE).contains(&ts) {
+                return Err(ConfigError::InvalidTimeScale {
                     value: ts,
-                    min: ConfigDefaults::MIN_TIME_SCALE,
-                    max: ConfigDefaults::MAX_TIME_SCALE,
+                    min: time::MIN_TIME_SCALE,
+                    max: time::MAX_TIME_SCALE,
                 });
             }
         }
 
         // Validate attractor strength
         if let Some(strength) = self.attractor_strength {
-            if !(ConfigDefaults::MIN_ATTRACTOR_STRENGTH..=ConfigDefaults::MAX_ATTRACTOR_STRENGTH)
+            if !(environment::MIN_ATTRACTOR_STRENGTH..=environment::MAX_ATTRACTOR_STRENGTH)
                 .contains(&strength)
             {
-                return Err(ConfigBuilderError::InvalidAttractorStrength {
+                return Err(ConfigError::InvalidAttractorStrength {
                     value: strength,
-                    min: ConfigDefaults::MIN_ATTRACTOR_STRENGTH,
-                    max: ConfigDefaults::MAX_ATTRACTOR_STRENGTH,
+                    min: environment::MIN_ATTRACTOR_STRENGTH,
+                    max: environment::MAX_ATTRACTOR_STRENGTH,
                 });
             }
         }
 
         // Validate terrain strength
         if let Some(ts) = self.terrain_strength {
-            if !(ConfigDefaults::MIN_TERRAIN_STRENGTH..=ConfigDefaults::MAX_TERRAIN_STRENGTH)
+            if !(environment::MIN_TERRAIN_STRENGTH..=environment::MAX_TERRAIN_STRENGTH)
                 .contains(&ts)
             {
-                return Err(ConfigBuilderError::InvalidTerrainStrength {
+                return Err(ConfigError::InvalidTerrainStrength {
                     value: ts,
-                    min: ConfigDefaults::MIN_TERRAIN_STRENGTH,
-                    max: ConfigDefaults::MAX_TERRAIN_STRENGTH,
+                    min: environment::MIN_TERRAIN_STRENGTH,
+                    max: environment::MAX_TERRAIN_STRENGTH,
                 });
             }
         }
@@ -638,7 +406,7 @@ impl ConfigBuilder {
     /// This method applies all configured parameters to a base configuration
     /// (either from a preset or default), handling species configuration
     /// and special cases like high-FPS mode.
-    pub fn build(self) -> Result<SimConfig, ConfigBuilderError> {
+    pub fn build(self) -> Result<SimConfig, ConfigError> {
         // Validate first
         self.validate()?;
 
@@ -737,19 +505,20 @@ impl ConfigBuilder {
                     rotation_angle: s.rotation_angle,
                     step_size: s.step_size,
                     deposit_amount: s.deposit_amount,
-                    color: s.color.clone(),
+                    color: s.color,
                 })
                 .collect();
         } else if self.preset.is_none() {
             // Only use default/CLI-overridden single species if NOT using a preset
+            use crate::render::palette::RgbColor;
             config.species_configs = vec![SpeciesConfig {
                 name: "default".to_string(),
-                count: self.population.unwrap_or(ConfigDefaults::POPULATION),
+                count: self.population.unwrap_or(population::DEFAULT_POPULATION),
                 sensor_angle: self.sensor_angle.unwrap_or(config.sensor_angle),
                 rotation_angle: self.rotation_angle.unwrap_or(config.rotation_angle),
                 step_size: self.step_size.unwrap_or(config.step_size),
                 deposit_amount: self.deposit_amount.unwrap_or(config.deposit_amount),
-                color: "228b22".to_string(),
+                color: RgbColor::from_hex(0x228b22),
             }];
         } else if let Some(preset_species) = config.species_configs.first_mut() {
             // If using a preset, allow overriding the FIRST species' properties with CLI args if provided
@@ -777,7 +546,7 @@ impl ConfigBuilder {
         if let Some(terrain_str) = self.terrain {
             config.terrain = terrain_str
                 .parse::<TerrainType>()
-                .map_err(|_| ConfigBuilderError::InvalidTerrainType(terrain_str))?;
+                .map_err(|_| ConfigError::InvalidTerrainType(terrain_str))?;
         }
         if let Some(strength) = self.terrain_strength {
             config.terrain_strength = strength;
@@ -814,7 +583,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            ConfigBuilderError::InvalidPopulation { .. }
+            ConfigError::InvalidPopulation { .. }
         ));
     }
 
@@ -825,17 +594,16 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            ConfigBuilderError::InvalidSensorAngle { .. }
+            ConfigError::InvalidSensorAngle { .. }
         ));
     }
 
     #[test]
     fn test_config_builder_build_default() {
-        use crate::config_defaults::ConfigDefaults;
         let builder = ConfigBuilder::new();
         let config = builder.build().expect("build should succeed");
-        assert_eq!(config.sensor_angle, ConfigDefaults::SENSOR_ANGLE);
-        assert_eq!(config.total_population(), ConfigDefaults::POPULATION);
+        assert_eq!(config.sensor_angle, agent::DEFAULT_SENSOR_ANGLE);
+        assert_eq!(config.total_population(), population::DEFAULT_POPULATION);
     }
 
     #[test]

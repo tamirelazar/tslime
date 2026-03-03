@@ -3,20 +3,19 @@ use std::num::ParseIntError;
 use std::str::FromStr;
 
 use crate::config_builder::ConfigBuilder;
-use crate::config_defaults::ConfigDefaults;
+use crate::config_defaults::{
+    agent, agent as agent_consts, ascii, auto_reset, dither as dither_consts, dithering,
+    environment, environment as env_consts, export, food, food as food_img_consts, food_persist,
+    grid, intensity, intensity_mapping, palette, population, population as pop_consts, simulation,
+    terminal, time, time as time_consts, trail, trail as trail_consts, warmup,
+};
 use crate::render::color_constants::default as color_defaults;
-use crate::render::constants::dither as dither_consts;
-use crate::render::constants::intensity::{LOG_DEFAULT, PERLIN_SEED};
-use crate::render::constants::rendering::{ASCII_CONTRAST_DEFAULT, GRID_OPACITY_DEFAULT};
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
     DiffusionKernel, InitMode, Obstacle, Preset, SimConfig, TerrainType, Wind,
 };
-use crate::simulation::constants::{
-    agent as agent_consts, env as env_consts, food_image as food_img_consts,
-    population as pop_consts, time as time_consts, trail as trail_consts,
-};
+use crate::validation::Validatable;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Operational mode of the application.
@@ -50,98 +49,8 @@ pub enum ColorMode {
     Bits256,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-/// Color palette for rendering trails.
-pub enum Palette {
-    /// Organic green/brown tones.
-    Organic,
-    /// Thermal camera style (black-red-yellow-white).
-    Heat,
-    /// Deep ocean blues and teals.
-    Ocean,
-    /// Monochrome grayscale.
-    Mono,
-    /// Deep forest greens.
-    Forest,
-    /// Cyberpunk neon colors.
-    Neon,
-    /// Warm earth tones.
-    Warm,
-    /// High saturation vibrant colors.
-    Vibrant,
-    /// High contrast monochrome for readability.
-    LegibleMono,
-    /// Radioactive green slime.
-    Slime,
-    /// Dark moldy colors.
-    Mold,
-    /// Fungal growth colors.
-    Fungus,
-    /// Murky swamp colors.
-    Swamp,
-    /// Soft mossy greens.
-    Moss,
-    /// Deep space purples and blues.
-    Cosmic,
-    /// Ghostly pale colors.
-    Ethereal,
-    /// Custom user-defined palette.
-    Custom(Vec<RgbColor>),
-}
-
-impl Palette {
-    /// Returns the string representation of the palette name.
-    pub fn name(&self) -> &str {
-        match self {
-            Palette::Organic => "Organic",
-            Palette::Heat => "Heat",
-            Palette::Ocean => "Ocean",
-            Palette::Mono => "Mono",
-            Palette::Forest => "Forest",
-            Palette::Neon => "Neon",
-            Palette::Warm => "Warm",
-            Palette::Vibrant => "Vibrant",
-            Palette::LegibleMono => "LegibleMono",
-            Palette::Slime => "Slime",
-            Palette::Mold => "Mold",
-            Palette::Fungus => "Fungus",
-            Palette::Swamp => "Swamp",
-            Palette::Moss => "Moss",
-            Palette::Cosmic => "Cosmic",
-            Palette::Ethereal => "Ethereal",
-            Palette::Custom(_) => "Custom",
-        }
-    }
-}
-
-/// List of all available color palettes for cycling.
-/// This is the single source of truth for palette enumeration.
-pub const ALL_PALETTES: [Palette; 16] = [
-    Palette::Organic,
-    Palette::Heat,
-    Palette::Ocean,
-    Palette::Mono,
-    Palette::Forest,
-    Palette::Neon,
-    Palette::Warm,
-    Palette::Vibrant,
-    Palette::LegibleMono,
-    Palette::Slime,
-    Palette::Mold,
-    Palette::Fungus,
-    Palette::Swamp,
-    Palette::Moss,
-    Palette::Cosmic,
-    Palette::Ethereal,
-];
-
-/// The number of palettes in ALL_PALETTES.
-pub const NUM_PALETTES: usize = ALL_PALETTES.len();
-
-/// Returns the number of available palettes.
-pub fn num_palettes() -> usize {
-    NUM_PALETTES
-}
+// Re-export palette types from render module for backward compatibility
+pub use crate::render::palette::{num_palettes, Palette, ALL_PALETTES, NUM_PALETTES};
 
 #[derive(Debug, Clone)]
 /// Simulation grid resolution.
@@ -167,8 +76,8 @@ pub struct SpeciesArg {
     pub step_size: f32,
     /// Amount of pheromone deposited.
     pub deposit_amount: f32,
-    /// Hex color code.
-    pub color: String,
+    /// RGB color.
+    pub color: RgbColor,
 }
 
 impl std::str::FromStr for SpeciesArg {
@@ -189,7 +98,7 @@ impl std::str::FromStr for SpeciesArg {
         let mut rotation_angle = agent_consts::DEFAULT_ROTATION_ANGLE;
         let mut step_size = agent_consts::DEFAULT_STEP_SIZE;
         let mut deposit_amount = agent_consts::DEFAULT_DEPOSIT_AMOUNT;
-        let mut color = color_defaults::FOREST_GREEN.to_string();
+        let mut color = RgbColor::from_hex(0x228b22); // Forest green default
 
         if rest.contains('@') {
             let count_and_rest: Vec<&str> = rest.splitn(2, '@').collect();
@@ -205,7 +114,7 @@ impl std::str::FromStr for SpeciesArg {
                         let color_part = params_parts[0];
 
                         if color_part.starts_with('#') || color_part.len() == 6 {
-                            color = color_part.trim_start_matches('#').to_string();
+                            color = parse_hex_color(color_part.trim_start_matches('#'))?;
                         }
 
                         let param_values: Vec<&str> = params.split(',').collect();
@@ -231,7 +140,7 @@ impl std::str::FromStr for SpeciesArg {
                         }
                     }
                 } else if params_and_color.starts_with('#') || params_and_color.len() == 6 {
-                    color = params_and_color.trim_start_matches('#').to_string();
+                    color = parse_hex_color(params_and_color.trim_start_matches('#'))?;
                 }
             }
 
@@ -251,7 +160,7 @@ impl std::str::FromStr for SpeciesArg {
                 count_str = parts[1];
                 let color_part = parts[0];
                 if color_part.starts_with('#') || color_part.len() == 6 {
-                    color = color_part.trim_start_matches('#').to_string();
+                    color = parse_hex_color(color_part.trim_start_matches('#'))?;
                 }
             } else {
                 count_str = parts[0];
@@ -269,6 +178,20 @@ impl std::str::FromStr for SpeciesArg {
             })
         }
     }
+}
+
+/// Parse a hex color string into RgbColor.
+fn parse_hex_color(hex: &str) -> Result<RgbColor, String> {
+    if hex.len() != 6 {
+        return Err(format!("Color hex code must be 6 characters, got: {}", hex));
+    }
+    let r =
+        u8::from_str_radix(&hex[0..2], 16).map_err(|e| format!("Invalid red component: {}", e))?;
+    let g = u8::from_str_radix(&hex[2..4], 16)
+        .map_err(|e| format!("Invalid green component: {}", e))?;
+    let b =
+        u8::from_str_radix(&hex[4..6], 16).map_err(|e| format!("Invalid blue component: {}", e))?;
+    Ok(RgbColor::new(r, g, b))
 }
 
 fn parse_count(s: &str) -> Result<usize, String> {
@@ -425,7 +348,7 @@ impl std::str::FromStr for WindArg {
             .map_err(|e| format!("Invalid dy: {}", e))?;
 
         let wind = Wind::new(dx, dy);
-        wind.validate()?;
+        Validatable::validate(&wind).map_err(|e| e.to_string())?;
         Ok(WindArg { dx, dy })
     }
 }
@@ -612,7 +535,7 @@ pub struct Args {
     #[arg(
         long = "explore-iterations",
         value_name = "INT",
-        default_value_t = ConfigDefaults::EXPLORE_ITERATIONS,
+        default_value_t = simulation::DEFAULT_EXPLORE_ITERATIONS,
         help = "Number of iterations for parameter exploration"
     )]
     /// Number of iterations for parameter exploration.
@@ -628,7 +551,7 @@ pub struct Args {
     #[arg(
         long = "frame-count",
         value_name = "INT",
-        default_value_t = ConfigDefaults::FRAME_COUNT,
+        default_value_t = export::DEFAULT_FRAME_COUNT,
         help = "Number of frames to capture"
     )]
     /// Number of frames to capture.
@@ -637,7 +560,7 @@ pub struct Args {
     #[arg(
         long = "frame-skip",
         value_name = "INT",
-        default_value_t = ConfigDefaults::FRAME_SKIP,
+        default_value_t = export::DEFAULT_FRAME_SKIP,
         help = "Simulation steps between captured frames"
     )]
     /// Number of simulation steps to skip between captured frames.
@@ -646,7 +569,7 @@ pub struct Args {
     #[arg(
         long = "frame-dir",
         value_name = "PATH",
-        default_value = ConfigDefaults::FRAME_DIR,
+        default_value = export::DEFAULT_FRAME_DIR,
         help = "Directory to save captured frames"
     )]
     /// Directory to save captured frames.
@@ -665,7 +588,7 @@ pub struct Args {
         short = 'n',
         long = "population",
         value_name = "INT",
-        help = concat!("Number of agents [default: ", stringify!(ConfigDefaults::POPULATION), "]")
+        help = concat!("Number of agents [default: ", stringify!(population::DEFAULT_POPULATION), "]")
     )]
     /// Number of agents in the simulation.
     pub population: Option<usize>,
@@ -673,7 +596,7 @@ pub struct Args {
     #[arg(
         long = "sensor-angle",
         value_name = "DEG",
-        help = concat!("Sensor spread angle in degrees [range: ", stringify!(ConfigDefaults::MIN_SENSOR_ANGLE), "-", stringify!(ConfigDefaults::MAX_SENSOR_ANGLE), "]")
+        help = concat!("Sensor spread angle in degrees [range: ", stringify!(agent::MIN_SENSOR_ANGLE), "-", stringify!(agent::MAX_SENSOR_ANGLE), "]")
     )]
     /// Angle between sensors (in degrees).
     pub sensor_angle: Option<f32>,
@@ -681,7 +604,7 @@ pub struct Args {
     #[arg(
         long = "sensor-distance",
         value_name = "FLOAT",
-        help = concat!("Sensor range in pixels [range: ", stringify!(ConfigDefaults::MIN_SENSOR_DISTANCE), "-", stringify!(ConfigDefaults::MAX_SENSOR_DISTANCE), "]")
+        help = concat!("Sensor range in pixels [range: ", stringify!(agent::MIN_SENSOR_DISTANCE), "-", stringify!(agent::MAX_SENSOR_DISTANCE), "]")
     )]
     /// Distance to sensors.
     pub sensor_distance: Option<f32>,
@@ -689,7 +612,7 @@ pub struct Args {
     #[arg(
         long = "rotation-angle",
         value_name = "DEG",
-        help = concat!("Turn amount per step in degrees [range: ", stringify!(ConfigDefaults::MIN_ROTATION_ANGLE), "-", stringify!(ConfigDefaults::MAX_ROTATION_ANGLE), "]")
+        help = concat!("Turn amount per step in degrees [range: ", stringify!(agent::MIN_ROTATION_ANGLE), "-", stringify!(agent::MAX_ROTATION_ANGLE), "]")
     )]
     /// Maximum rotation angle per step (in degrees).
     pub rotation_angle: Option<f32>,
@@ -697,7 +620,7 @@ pub struct Args {
     #[arg(
         long = "step-size",
         value_name = "FLOAT",
-        help = concat!("Movement speed in pixels per step [range: ", stringify!(ConfigDefaults::MIN_STEP_SIZE), "-", stringify!(ConfigDefaults::MAX_STEP_SIZE), "]")
+        help = concat!("Movement speed in pixels per step [range: ", stringify!(agent::MIN_STEP_SIZE), "-", stringify!(agent::MAX_STEP_SIZE), "]")
     )]
     /// Distance moved per step.
     pub step_size: Option<f32>,
@@ -705,7 +628,7 @@ pub struct Args {
     #[arg(
         long = "decay",
         value_name = "FLOAT",
-        help = concat!("Trail decay factor (0.0-1.0) [range: ", stringify!(ConfigDefaults::MIN_DECAY_FACTOR), "-", stringify!(ConfigDefaults::MAX_DECAY_FACTOR), "]")
+        help = concat!("Trail decay factor (0.0-1.0) [range: ", stringify!(trail::MIN_DECAY_FACTOR), "-", stringify!(trail::MAX_DECAY_FACTOR), "]")
     )]
     /// Trail decay factor (0.0-1.0).
     pub decay_factor: Option<f32>,
@@ -713,7 +636,7 @@ pub struct Args {
     #[arg(
         long = "deposit",
         value_name = "FLOAT",
-        help = concat!("Amount of pheromone deposited by agents per step [range: ", stringify!(ConfigDefaults::MIN_DEPOSIT_AMOUNT), "-", stringify!(ConfigDefaults::MAX_DEPOSIT_AMOUNT), "]")
+        help = concat!("Amount of pheromone deposited by agents per step [range: ", stringify!(agent::MIN_DEPOSIT_AMOUNT), "-", stringify!(agent::MAX_DEPOSIT_AMOUNT), "]")
     )]
     /// Amount of pheromone deposited per step.
     pub deposit_amount: Option<f32>,
@@ -721,7 +644,7 @@ pub struct Args {
     #[arg(
         long = "max-brightness",
         value_name = "FLOAT",
-        help = concat!("Fixed maximum brightness for normalization (prevents flickering) [range: ", stringify!(ConfigDefaults::MIN_MAX_BRIGHTNESS), "-", stringify!(ConfigDefaults::MAX_MAX_BRIGHTNESS), "]")
+        help = concat!("Fixed maximum brightness for normalization (prevents flickering) [range: ", stringify!(trail::MIN_MAX_BRIGHTNESS), "-", stringify!(trail::MAX_MAX_BRIGHTNESS), "]")
     )]
     /// Maximum brightness for normalization.
     pub max_brightness: Option<f32>,
@@ -761,7 +684,7 @@ pub struct Args {
     #[arg(
         long = "food",
         value_name = "PATH",
-        default_value = ConfigDefaults::FOOD_PATH,
+        default_value = food::DEFAULT_FOOD_PATH,
         help = "Load agents from PNG image. High-brightness areas spawn more agents. Use with --init food"
     )]
     /// Path to image for food-based initialization.
@@ -771,7 +694,7 @@ pub struct Args {
         long = "food-invert",
         value_name = "BOOL",
         num_args = 1,
-        default_value_t = ConfigDefaults::FOOD_INVERT,
+        default_value_t = food::DEFAULT_FOOD_INVERT,
         help = "Invert the food image values (dark areas spawn more agents instead of bright areas)"
     )]
     /// Invert food image brightness.
@@ -780,8 +703,8 @@ pub struct Args {
     #[arg(
         long = "food-scale",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::FOOD_SCALE,
-        help = concat!("Scale factor for food image relative to canvas [default: ", stringify!(ConfigDefaults::FOOD_SCALE), "]")
+        default_value_t = food::DEFAULT_FOOD_SCALE,
+        help = concat!("Scale factor for food image relative to canvas [default: ", stringify!(food::DEFAULT_FOOD_SCALE), "]")
     )]
     /// Scale factor for food image.
     pub food_scale: f32,
@@ -790,8 +713,8 @@ pub struct Args {
         short = 't',
         long = "time",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::FRAME_DELAY,
-        help = concat!("Frame delay in seconds [default: ", stringify!(ConfigDefaults::FRAME_DELAY), "]")
+        default_value_t = time::DEFAULT_FRAME_DELAY,
+        help = concat!("Frame delay in seconds [default: ", stringify!(time::DEFAULT_FRAME_DELAY), "]")
     )]
     /// Frame delay in seconds.
     pub frame_delay: f32,
@@ -799,8 +722,8 @@ pub struct Args {
     #[arg(
         long = "fps",
         value_name = "INT",
-        default_value_t = ConfigDefaults::FPS,
-        help = concat!("Target frames per second [default: ", stringify!(ConfigDefaults::FPS), "]")
+        default_value_t = time::DEFAULT_FPS as usize,
+        help = concat!("Target frames per second [default: ", stringify!(time::DEFAULT_FPS as usize), "]")
     )]
     /// Target FPS.
     pub fps: usize,
@@ -808,8 +731,8 @@ pub struct Args {
     #[arg(
         long = "time-scale",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::TIME_SCALE,
-        help = concat!("Time scaling factor [range: ", stringify!(ConfigDefaults::MIN_TIME_SCALE), "-", stringify!(ConfigDefaults::MAX_TIME_SCALE), "]")
+        default_value_t = time::DEFAULT_TIME_SCALE,
+        help = concat!("Time scaling factor [range: ", stringify!(time::MIN_TIME_SCALE), "-", stringify!(time::MAX_TIME_SCALE), "]")
     )]
     /// Simulation time scale.
     pub time_scale: f32,
@@ -826,7 +749,7 @@ pub struct Args {
     #[arg(
         long = "palette",
         value_name = "NAME",
-        default_value = ConfigDefaults::PALETTE,
+        default_value = palette::DEFAULT_PALETTE_NAME,
         help = "Color palette (organic, heat, ocean, mono, forest, neon, warm, vibrant, legiblemono, slime, mold, fungus, swamp, moss, cosmic, ethereal) or custom: \"#rrggbb,#rrggbb,...\" (2-11 colors)"
     )]
     /// Color palette name or definition.
@@ -926,7 +849,7 @@ pub struct Args {
     #[arg(
         long = "intensity-mapping",
         value_name = "MODE",
-        default_value = ConfigDefaults::INTENSITY_MAPPING,
+        default_value = intensity_mapping::DEFAULT_TYPE,
         help = "Intensity-to-color mapping (linear, log, exp, sqrt, square, sigmoid, smoothstep, quantize, perlin, split)"
     )]
     /// Intensity mapping mode for non-linear color distribution.
@@ -935,8 +858,8 @@ pub struct Args {
     #[arg(
         long = "intensity-mapping-base",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::INTENSITY_MAPPING_BASE,
-        help = concat!("Base parameter for log/exp mapping [default: ", stringify!(ConfigDefaults::INTENSITY_MAPPING_BASE), "]")
+        default_value_t = intensity_mapping::DEFAULT_LOG_BASE,
+        help = concat!("Base parameter for log/exp mapping [default: ", stringify!(intensity_mapping::DEFAULT_LOG_BASE), "]")
     )]
     /// Base for logarithmic/exponential intensity mapping.
     pub intensity_mapping_base: f32,
@@ -944,8 +867,8 @@ pub struct Args {
     #[arg(
         long = "intensity-mapping-gamma",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::INTENSITY_MAPPING_GAMMA,
-        help = concat!("Gamma for power mapping [default: ", stringify!(ConfigDefaults::INTENSITY_MAPPING_GAMMA), "]")
+        default_value_t = intensity_mapping::DEFAULT_GAMMA,
+        help = concat!("Gamma for power mapping [default: ", stringify!(intensity_mapping::DEFAULT_GAMMA), "]")
     )]
     /// Gamma for power intensity mapping.
     pub intensity_mapping_gamma: f32,
@@ -953,8 +876,8 @@ pub struct Args {
     #[arg(
         long = "intensity-mapping-levels",
         value_name = "INT",
-        default_value_t = ConfigDefaults::INTENSITY_MAPPING_LEVELS,
-        help = concat!("Levels for quantize mapping [default: ", stringify!(ConfigDefaults::INTENSITY_MAPPING_LEVELS), "]")
+        default_value_t = intensity_mapping::DEFAULT_LEVELS,
+        help = concat!("Levels for quantize mapping [default: ", stringify!(intensity_mapping::DEFAULT_LEVELS), "]")
     )]
     /// Quantization levels for intensity mapping.
     pub intensity_mapping_levels: u8,
@@ -962,8 +885,8 @@ pub struct Args {
     #[arg(
         long = "perlin-strength",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::PERLIN_STRENGTH,
-        help = concat!("Perlin noise amplitude/strength (0.0-1.0) [default: ", stringify!(ConfigDefaults::PERLIN_STRENGTH), "]")
+        default_value_t = intensity_mapping::DEFAULT_PERLIN_STRENGTH,
+        help = concat!("Perlin noise amplitude/strength (0.0-1.0) [default: ", stringify!(intensity_mapping::DEFAULT_PERLIN_STRENGTH), "]")
     )]
     /// Amplitude for perlin intensity mapping (affects both sim and logo).
     pub perlin_strength: f32,
@@ -971,7 +894,7 @@ pub struct Args {
     #[arg(
         long = "logo-mapping",
         value_name = "MODE",
-        default_value = ConfigDefaults::INTENSITY_MAPPING,
+        default_value = intensity_mapping::DEFAULT_TYPE,
         help = "Intensity mapping for pause logo (linear, log, exp, sqrt, square, sigmoid, smoothstep, quantize, perlin, split, sim=use sim mapping)"
     )]
     /// Intensity mapping for the pause logo. Defaults to "log".
@@ -980,8 +903,8 @@ pub struct Args {
     #[arg(
         long = "logo-mapping-base",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::LOGO_MAPPING_BASE,
-        help = concat!("Base for logo log/exp mapping [default: ", stringify!(ConfigDefaults::LOGO_MAPPING_BASE), "]")
+        default_value_t = intensity_mapping::DEFAULT_LOGO_BASE,
+        help = concat!("Base for logo log/exp mapping [default: ", stringify!(intensity_mapping::DEFAULT_LOGO_BASE), "]")
     )]
     /// Base for the logo's logarithmic/exponential mapping.
     pub logo_mapping_base: f32,
@@ -1037,8 +960,8 @@ pub struct Args {
     #[arg(
         long = "attractor-strength",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::ATTRACTOR_STRENGTH,
-        help = concat!("Global multiplier for attractor/repeller strength [range: ", stringify!(ConfigDefaults::MIN_ATTRACTOR_STRENGTH), "-", stringify!(ConfigDefaults::MAX_ATTRACTOR_STRENGTH), "]")
+        default_value_t = environment::DEFAULT_ATTRACTOR_STRENGTH,
+        help = concat!("Global multiplier for attractor/repeller strength [range: ", stringify!(environment::MIN_ATTRACTOR_STRENGTH), "-", stringify!(environment::MAX_ATTRACTOR_STRENGTH), "]")
     )]
     /// Global strength multiplier for attractors.
     pub attractor_strength: f32,
@@ -1046,7 +969,7 @@ pub struct Args {
     #[arg(
         long = "dither-mode",
         value_name = "MODE",
-        default_value = ConfigDefaults::DITHER_MODE,
+        default_value = dithering::DEFAULT_MODE,
         help = "Dithering mode: none, ordered, error-diffusion, hybrid"
     )]
     /// Dithering algorithm mode.
@@ -1055,8 +978,8 @@ pub struct Args {
     #[arg(
         long = "dither-intensity",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::DITHER_INTENSITY,
-        help = concat!("Dithering intensity for ordered/hybrid modes (0.0-1.0) [default: ", stringify!(ConfigDefaults::DITHER_INTENSITY), "]")
+        default_value_t = dithering::DEFAULT_INTENSITY,
+        help = concat!("Dithering intensity for ordered/hybrid modes (0.0-1.0) [default: ", stringify!(dithering::DEFAULT_INTENSITY), "]")
     )]
     /// Intensity of dithering effect.
     pub dither_intensity: f32,
@@ -1064,7 +987,7 @@ pub struct Args {
     #[arg(
         long = "dither-matrix",
         value_name = "MATRIX",
-        default_value = ConfigDefaults::DITHER_MATRIX,
+        default_value = dithering::DEFAULT_MATRIX,
         help = "Dither matrix for ordered mode: 4x4, 8x8"
     )]
     /// Matrix size for ordered dithering.
@@ -1130,8 +1053,8 @@ pub struct Args {
     #[arg(
         long = "terrain-strength",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::TERRAIN_STRENGTH,
-        help = concat!("Strength of terrain influence [range: ", stringify!(ConfigDefaults::MIN_TERRAIN_STRENGTH), "-", stringify!(ConfigDefaults::MAX_TERRAIN_STRENGTH), "]")
+        default_value_t = environment::DEFAULT_TERRAIN_STRENGTH,
+        help = concat!("Strength of terrain influence [range: ", stringify!(environment::MIN_TERRAIN_STRENGTH), "-", stringify!(environment::MAX_TERRAIN_STRENGTH), "]")
     )]
     /// Strength of terrain effect.
     pub terrain_strength: f32,
@@ -1155,8 +1078,8 @@ pub struct Args {
     #[arg(
         long = "export-frames",
         value_name = "INT",
-        default_value_t = ConfigDefaults::EXPORT_FRAMES,
-        help = concat!("Number of frames to capture for GIF export [default: ", stringify!(ConfigDefaults::EXPORT_FRAMES), "]")
+        default_value_t = export::DEFAULT_FRAMES,
+        help = concat!("Number of frames to capture for GIF export [default: ", stringify!(export::DEFAULT_FRAMES), "]")
     )]
     /// Number of frames to export.
     pub export_frames: usize,
@@ -1164,8 +1087,8 @@ pub struct Args {
     #[arg(
         long = "export-fps",
         value_name = "INT",
-        default_value_t = ConfigDefaults::EXPORT_FPS,
-        help = concat!("GIF playback speed (frames per second) [default: ", stringify!(ConfigDefaults::EXPORT_FPS), "]")
+        default_value_t = export::DEFAULT_FPS,
+        help = concat!("GIF playback speed (frames per second) [default: ", stringify!(export::DEFAULT_FPS), "]")
     )]
     /// FPS for exported animation.
     pub export_fps: usize,
@@ -1187,8 +1110,8 @@ pub struct Args {
     #[arg(
         long = "mouse-timeout",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::MOUSE_TIMEOUT,
-        help = concat!("Time in seconds before mouse-created attractors/repellers expire [default: ", stringify!(ConfigDefaults::MOUSE_TIMEOUT), "]")
+        default_value_t = environment::DEFAULT_MOUSE_TIMEOUT,
+        help = concat!("Time in seconds before mouse-created attractors/repellers expire [default: ", stringify!(environment::DEFAULT_MOUSE_TIMEOUT), "]")
     )]
     /// Duration of mouse effects.
     pub mouse_timeout: f32,
@@ -1210,8 +1133,8 @@ pub struct Args {
     #[arg(
         long = "warmup-frames",
         value_name = "INT",
-        default_value_t = ConfigDefaults::WARMUP_FRAMES,
-        help = concat!("Number of frames to display logo before simulation (0 to disable) [default: ", stringify!(ConfigDefaults::WARMUP_FRAMES), "]")
+        default_value_t = warmup::DEFAULT_WARMUP_FRAMES,
+        help = concat!("Number of frames to display logo before simulation (0 to disable) [default: ", stringify!(warmup::DEFAULT_WARMUP_FRAMES), "]")
     )]
     /// Number of warmup frames.
     pub warmup_frames: usize,
@@ -1219,8 +1142,8 @@ pub struct Args {
     #[arg(
         long = "warmup-brightness",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::WARMUP_BRIGHTNESS_MULTIPLIER,
-        help = concat!("Brightness multiplier during warmup phase [default: ", stringify!(ConfigDefaults::WARMUP_BRIGHTNESS_MULTIPLIER), "]")
+        default_value_t = warmup::DEFAULT_BRIGHTNESS_MULTIPLIER,
+        help = concat!("Brightness multiplier during warmup phase [default: ", stringify!(warmup::DEFAULT_BRIGHTNESS_MULTIPLIER), "]")
     )]
     /// Brightness multiplier during warmup.
     pub warmup_brightness_multiplier: f32,
@@ -1228,8 +1151,8 @@ pub struct Args {
     #[arg(
         long = "warmup-decay",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::WARMUP_DECAY,
-        help = concat!("Decay factor during warmup (higher = logo persists longer) [default: ", stringify!(ConfigDefaults::WARMUP_DECAY), "]")
+        default_value_t = warmup::DEFAULT_DECAY_FACTOR,
+        help = concat!("Decay factor during warmup (higher = logo persists longer) [default: ", stringify!(warmup::DEFAULT_DECAY_FACTOR), "]")
     )]
     /// Trail decay during warmup.
     pub warmup_decay: f32,
@@ -1249,8 +1172,8 @@ pub struct Args {
     #[arg(
         long = "food-persist-strength",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::FOOD_PERSIST_STRENGTH,
-        help = concat!("Strength of food persistence attractors (0.0-5.0) [default: ", stringify!(ConfigDefaults::FOOD_PERSIST_STRENGTH), "]")
+        default_value_t = food_persist::DEFAULT_STRENGTH,
+        help = concat!("Strength of food persistence attractors (0.0-5.0) [default: ", stringify!(food_persist::DEFAULT_STRENGTH), "]")
     )]
     /// Strength of food persistence.
     pub food_persist_strength: f32,
@@ -1258,8 +1181,8 @@ pub struct Args {
     #[arg(
         long = "food-persist-radius",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::FOOD_PERSIST_RADIUS,
-        help = concat!("Radius of influence for food persistence attractors [default: ", stringify!(ConfigDefaults::FOOD_PERSIST_RADIUS), "]")
+        default_value_t = food_persist::DEFAULT_RADIUS,
+        help = concat!("Radius of influence for food persistence attractors [default: ", stringify!(food_persist::DEFAULT_RADIUS), "]")
     )]
     /// Radius of food persistence.
     pub food_persist_radius: f32,
@@ -1267,8 +1190,8 @@ pub struct Args {
     #[arg(
         long = "food-persist-duration",
         value_name = "INT",
-        default_value_t = ConfigDefaults::FOOD_PERSIST_DURATION,
-        help = concat!("Number of frames before food attractors fade out (0 = permanent) [default: ", stringify!(ConfigDefaults::FOOD_PERSIST_DURATION), "]")
+        default_value_t = food_persist::DEFAULT_DURATION,
+        help = concat!("Number of frames before food attractors fade out (0 = permanent) [default: ", stringify!(food_persist::DEFAULT_DURATION), "]")
     )]
     /// Duration of food persistence.
     pub food_persist_duration: usize,
@@ -1285,8 +1208,8 @@ pub struct Args {
     #[arg(
         long = "collapse-threshold",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::COLLAPSE_ENTROPY_THRESHOLD,
-        help = concat!("Entropy threshold to detect collapse (0.0-1.0, higher = more sensitive) [default: ", stringify!(ConfigDefaults::COLLAPSE_ENTROPY_THRESHOLD), "]")
+        default_value_t = auto_reset::DEFAULT_ENTROPY_THRESHOLD,
+        help = concat!("Entropy threshold to detect collapse (0.0-1.0, higher = more sensitive) [default: ", stringify!(auto_reset::DEFAULT_ENTROPY_THRESHOLD), "]")
     )]
     /// Entropy threshold for collapse detection.
     pub collapse_entropy_threshold: f32,
@@ -1294,8 +1217,8 @@ pub struct Args {
     #[arg(
         long = "collapse-duration",
         value_name = "INT",
-        default_value_t = ConfigDefaults::COLLAPSE_DURATION_FRAMES,
-        help = concat!("Number of frames simulation must stay collapsed before auto-reset [default: ", stringify!(ConfigDefaults::COLLAPSE_DURATION_FRAMES), "]")
+        default_value_t = auto_reset::DEFAULT_DURATION_FRAMES,
+        help = concat!("Number of frames simulation must stay collapsed before auto-reset [default: ", stringify!(auto_reset::DEFAULT_DURATION_FRAMES), "]")
     )]
     /// Duration to wait before reset.
     pub collapse_duration_frames: usize,
@@ -1308,8 +1231,8 @@ pub struct Args {
     #[arg(
         long = "grid-size",
         value_name = "INT",
-        default_value_t = ConfigDefaults::GRID_SIZE,
-        help = concat!("Grid cell size (number of cells per dimension) [default: ", stringify!(ConfigDefaults::GRID_SIZE), "]")
+        default_value_t = grid::DEFAULT_GRID_SIZE,
+        help = concat!("Grid cell size (number of cells per dimension) [default: ", stringify!(grid::DEFAULT_GRID_SIZE), "]")
     )]
     /// Grid cell size.
     pub grid_size: usize,
@@ -1317,7 +1240,7 @@ pub struct Args {
     #[arg(
         long = "grid-style",
         value_name = "TYPE",
-        default_value = ConfigDefaults::GRID_STYLE,
+        default_value = grid::DEFAULT_GRID_STYLE,
         help = "Grid rendering style (cross, dots, gradient)"
     )]
     /// Grid style (cross, dots, gradient).
@@ -1326,7 +1249,7 @@ pub struct Args {
     #[arg(
         long = "grid-color",
         value_name = "HEX",
-        default_value = ConfigDefaults::GRID_COLOR,
+        default_value = palette::DEFAULT_GRID_COLOR,
         help = "Grid color as hex (without #)"
     )]
     /// Grid color (hex).
@@ -1335,8 +1258,8 @@ pub struct Args {
     #[arg(
         long = "grid-opacity",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::GRID_OPACITY,
-        help = concat!("Grid opacity (0.0-1.0) [default: ", stringify!(ConfigDefaults::GRID_OPACITY), "]")
+        default_value_t = grid::DEFAULT_GRID_OPACITY,
+        help = concat!("Grid opacity (0.0-1.0) [default: ", stringify!(grid::DEFAULT_GRID_OPACITY), "]")
     )]
     /// Grid opacity.
     pub grid_opacity: f32,
@@ -1360,8 +1283,8 @@ pub struct Args {
     #[arg(
         long = "ascii-contrast",
         value_name = "FLOAT",
-        default_value_t = ConfigDefaults::ASCII_CONTRAST,
-        help = concat!("Shape-vector ASCII contrast exponent (1.0 = none, 3.0 = strong edge enhancement) [default: ", stringify!(ConfigDefaults::ASCII_CONTRAST), "]")
+        default_value_t = ascii::DEFAULT_CONTRAST,
+        help = concat!("Shape-vector ASCII contrast exponent (1.0 = none, 3.0 = strong edge enhancement) [default: ", stringify!(ascii::DEFAULT_CONTRAST), "]")
     )]
     /// Contrast exponent for shape-vector ASCII rendering.
     pub ascii_contrast: f32,
@@ -1492,7 +1415,7 @@ impl Args {
             "perlin" => Ok(IntensityMapping::perlin(
                 self.perlin_strength,
                 5.0,
-                PERLIN_SEED,
+                intensity::DEFAULT_PERLIN_SEED,
             )),
             "split" => Ok(IntensityMapping::linear_log_split(
                 self.intensity_mapping_base,
@@ -1549,7 +1472,7 @@ impl Args {
             "perlin" => Ok(Some(IntensityMapping::perlin(
                 self.perlin_strength,
                 5.0,
-                PERLIN_SEED,
+                intensity::DEFAULT_PERLIN_SEED,
             ))),
             "split" => Ok(Some(IntensityMapping::linear_log_split(
                 self.logo_mapping_base,
@@ -1721,15 +1644,15 @@ impl Default for Args {
             init: Some(InitMode::Food),
             food: food_img_consts::DEFAULT_PATH.to_string(),
             food_invert: food_img_consts::DEFAULT_INVERT,
-            food_scale: ConfigDefaults::FOOD_SCALE, // Food image scale
-            frame_delay: ConfigDefaults::FRAME_DELAY,
-            fps: ConfigDefaults::FPS,
+            food_scale: food::DEFAULT_FOOD_SCALE, // Food image scale
+            frame_delay: time::DEFAULT_FRAME_DELAY,
+            fps: time::DEFAULT_FPS as usize,
             time_scale: time_consts::DEFAULT_TIME_SCALE,
             resolution: Resolution {
-                width: ConfigDefaults::RESOLUTION_WIDTH,
-                height: ConfigDefaults::RESOLUTION_HEIGHT,
+                width: terminal::DEFAULT_RESOLUTION_WIDTH,
+                height: terminal::DEFAULT_RESOLUTION_HEIGHT,
             },
-            palette: ConfigDefaults::PALETTE.to_string(),
+            palette: palette::DEFAULT_PALETTE_NAME.to_string(),
             colors: "true".to_string(),
             ascii: false,
             braille: false,
@@ -1743,8 +1666,8 @@ impl Default for Args {
             reverse_palette: false,
             invert_palette: false,
             palette_shift: 0.0,
-            intensity_mapping: ConfigDefaults::INTENSITY_MAPPING.to_string(),
-            intensity_mapping_base: LOG_DEFAULT,
+            intensity_mapping: intensity_mapping::DEFAULT_TYPE.to_string(),
+            intensity_mapping_base: intensity::LOG_DEFAULT,
             intensity_mapping_gamma: 2.2,
             intensity_mapping_levels: 8,
             perlin_strength: 0.2,
@@ -1797,10 +1720,10 @@ impl Default for Args {
             grid_size: 10,
             grid_style: "cross".to_string(),
             grid_color: "ffffff".to_string(),
-            grid_opacity: GRID_OPACITY_DEFAULT,
+            grid_opacity: grid::DEFAULT_GRID_OPACITY,
             grid_adaptive: false,
             ascii_chars: None,
-            ascii_contrast: ASCII_CONTRAST_DEFAULT,
+            ascii_contrast: ascii::DEFAULT_CONTRAST,
             random: false,
             explain: false,
             completions: None,
@@ -1842,6 +1765,7 @@ fn parse_custom_palette(s: &str) -> Result<Palette, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::palette::RgbColor;
 
     #[test]
     fn test_mode_default() {
@@ -2009,7 +1933,7 @@ mod tests {
         assert!((species.rotation_angle - 45.0).abs() < 0.01);
         assert!((species.step_size - 1.0).abs() < 0.01);
         assert!((species.deposit_amount - 5.0).abs() < 0.01);
-        assert_eq!(species.color, "ff0000");
+        assert_eq!(species.color, RgbColor::new(255, 0, 0));
     }
 
     #[test]
@@ -2027,10 +1951,10 @@ mod tests {
     #[test]
     fn test_species_arg_color_formats() {
         let s1: SpeciesArg = "red:1000:ff0000".parse().unwrap();
-        assert_eq!(s1.color, "ff0000");
+        assert_eq!(s1.color, RgbColor::new(255, 0, 0));
 
         let s2: SpeciesArg = "red:1000:#00ff00".parse().unwrap();
-        assert_eq!(s2.color, "00ff00");
+        assert_eq!(s2.color, RgbColor::new(0, 255, 0));
     }
 
     #[test]
@@ -2040,7 +1964,7 @@ mod tests {
         assert_eq!(species.rotation_angle, 45.0);
         assert_eq!(species.step_size, 1.0);
         assert_eq!(species.deposit_amount, 5.0);
-        assert_eq!(species.color, "228b22");
+        assert_eq!(species.color, RgbColor::new(34, 139, 34));
     }
 
     #[test]

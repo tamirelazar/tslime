@@ -64,11 +64,7 @@ pub use runner::{get_terminal_size, run_simulation};
 ///
 /// Returns a vector of `RgbColor` corresponding to the species order.
 pub fn extract_species_rgb_colors(config: &SimConfig) -> Vec<RgbColor> {
-    config
-        .species_configs
-        .iter()
-        .filter_map(|s| hex_to_rgb(&s.color))
-        .collect()
+    config.species_configs.iter().map(|s| s.color).collect()
 }
 
 /// Applies randomized configuration parameters to the simulation and runtime state.

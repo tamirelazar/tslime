@@ -7,13 +7,12 @@ use image::io::Reader as ImageReader;
 use std::path::Path;
 
 use super::agent::normalize_angle;
-use super::constants::agent as agent_consts;
-use super::constants::env as env_consts;
-use super::constants::food_image as food_img_consts;
-use super::constants::population as pop_consts;
-use super::constants::time as time_consts;
-use super::constants::trail as trail_consts;
+use crate::config_defaults::{
+    agent as agent_consts, environment as env_consts, food as food_img_consts,
+    population as pop_consts, time as time_consts, trail as trail_consts,
+};
 use crate::render::color_constants::{default, presets, ui};
+use crate::render::palette::RgbColor;
 
 /// Algorithm used for pheromone diffusion (spreading).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +67,359 @@ pub enum Preset {
     /// Long snaking worm-like trails.
     Worm,
 }
+
+impl Preset {
+    /// Apply this preset to a SimConfig, modifying only the fields that differ from defaults.
+    pub fn apply(&self, config: &mut SimConfig) {
+        match self {
+            Preset::Network => {
+                config.sensor_angle = 15.0;
+                config.rotation_angle = 30.0;
+                config.decay_factor = 0.85;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 20.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 50_000,
+                    sensor_angle: 15.0,
+                    rotation_angle: 30.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Exploratory => {
+                config.sensor_angle = 45.0;
+                config.sensor_distance = 15.0;
+                config.rotation_angle = 60.0;
+                config.decay_factor = 0.96;
+                config.deposit_amount = 3.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 12.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 30_000,
+                    sensor_angle: 45.0,
+                    rotation_angle: 60.0,
+                    deposit_amount: 3.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Tendrils => {
+                config.sensor_angle = 30.0;
+                config.sensor_distance = 12.0;
+                config.rotation_angle = 45.0;
+                config.step_size = 2.0;
+                config.decay_factor = 0.90;
+                config.deposit_amount = 4.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 16.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 40_000,
+                    sensor_angle: 30.0,
+                    rotation_angle: 45.0,
+                    step_size: 2.0,
+                    deposit_amount: 4.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Organic => {
+                config.sensor_angle = 22.5;
+                config.sensor_distance = 9.0;
+                config.rotation_angle = 45.0;
+                config.step_size = 1.0;
+                config.decay_factor = 0.85;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 20.0;
+            }
+            Preset::Minimal => {
+                config.sensor_angle = 30.0;
+                config.sensor_distance = 9.0;
+                config.rotation_angle = 30.0;
+                config.step_size = 0.8;
+                config.decay_factor = 0.95;
+                config.deposit_amount = 3.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 15.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 15_000,
+                    sensor_angle: 30.0,
+                    rotation_angle: 30.0,
+                    step_size: 0.8,
+                    deposit_amount: 3.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Moss => {
+                config.sensor_angle = 22.0;
+                config.sensor_distance = 12.0;
+                config.rotation_angle = 35.0;
+                config.decay_factor = 0.88;
+                config.deposit_amount = 4.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 18.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 35_000,
+                    sensor_angle: 22.0,
+                    rotation_angle: 35.0,
+                    deposit_amount: 4.0,
+                    color: RgbColor::from_hex(0x4a7a4a),
+                    ..Default::default()
+                }];
+            }
+            Preset::Cosmic => {
+                config.sensor_angle = 55.0;
+                config.sensor_distance = 15.0;
+                config.rotation_angle = 45.0;
+                config.step_size = 0.7;
+                config.decay_factor = 0.93;
+                config.deposit_amount = 3.0;
+                config.max_brightness = 14.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 25_000,
+                    sensor_angle: 55.0,
+                    rotation_angle: 45.0,
+                    step_size: 0.7,
+                    deposit_amount: 3.0,
+                    color: RgbColor::from_hex(0x8a2be2),
+                    ..Default::default()
+                }];
+            }
+            Preset::Fire => {
+                config.sensor_angle = 15.0;
+                config.rotation_angle = 30.0;
+                config.step_size = 1.5;
+                config.decay_factor = 0.85;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 20.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 100_000,
+                    sensor_angle: 15.0,
+                    rotation_angle: 30.0,
+                    step_size: 1.5,
+                    color: RgbColor::from_hex(0xff4500),
+                    ..Default::default()
+                }];
+            }
+            Preset::Zen => {
+                config.sensor_distance = 12.0;
+                config.sensor_angle = 25.0;
+                config.rotation_angle = 30.0;
+                config.step_size = 0.5;
+                config.decay_factor = 0.94;
+                config.deposit_amount = 2.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 12.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 10_000,
+                    sensor_angle: 25.0,
+                    rotation_angle: 30.0,
+                    step_size: 0.5,
+                    deposit_amount: 2.0,
+                    color: RgbColor::from_hex(0xffffff),
+                    ..Default::default()
+                }];
+            }
+            Preset::Storm => {
+                config.sensor_angle = 20.0;
+                config.rotation_angle = 60.0;
+                config.step_size = 2.0;
+                config.decay_factor = 0.80;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 18.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 80_000,
+                    sensor_angle: 20.0,
+                    rotation_angle: 60.0,
+                    step_size: 2.0,
+                    color: RgbColor::from_hex(0x4682b4),
+                    ..Default::default()
+                }];
+                config.wind = Some(Wind::new(0.1, 0.05));
+            }
+            Preset::River => {
+                config.sensor_angle = 25.0;
+                config.step_size = 1.2;
+                config.decay_factor = 0.90;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 18.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 45_000,
+                    sensor_angle: 25.0,
+                    step_size: 1.2,
+                    color: RgbColor::from_hex(0x1e90ff),
+                    ..Default::default()
+                }];
+                config.wind = Some(Wind::new(0.3, 0.0));
+            }
+            Preset::Ethereal => {
+                config.sensor_angle = 40.0;
+                config.step_size = 0.7;
+                config.decay_factor = 0.98;
+                config.deposit_amount = 2.0;
+                config.max_brightness = 12.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 25_000,
+                    sensor_angle: 40.0,
+                    step_size: 0.7,
+                    deposit_amount: 2.0,
+                    color: RgbColor::from_hex(0xe6e6fa),
+                    ..Default::default()
+                }];
+            }
+            Preset::PetriDish => {
+                config.sensor_angle = 45.0;
+                config.rotation_angle = 20.0;
+                config.step_size = 0.05;
+                config.decay_factor = 0.999;
+                config.deposit_amount = 0.2;
+                config.max_brightness = 50.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "mold".to_string(),
+                    count: 20_000,
+                    sensor_angle: 45.0,
+                    rotation_angle: 20.0,
+                    step_size: 0.05,
+                    deposit_amount: 0.2,
+                    color: RgbColor::from_hex(0xd4ff00),
+                    ..Default::default()
+                }];
+                config.obstacles = vec![Obstacle::Circle {
+                    x: 200.0,
+                    y: 100.0,
+                    radius: 90.0,
+                }];
+                config.background_color = Some("000000".to_string());
+                config.preferred_init_mode = Some(InitMode::Petri);
+            }
+            Preset::Vortex => {
+                config.sensor_angle = 25.2;
+                config.sensor_distance = 3.9;
+                config.rotation_angle = 46.4;
+                config.step_size = 1.92;
+                config.decay_factor = 0.96;
+                config.deposit_amount = 4.3;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 32_000,
+                    sensor_angle: 25.2,
+                    rotation_angle: 46.4,
+                    step_size: 1.92,
+                    deposit_amount: 4.3,
+                    color: RgbColor::from_hex(0x9370db),
+                    ..Default::default()
+                }];
+            }
+            Preset::Lightning => {
+                config.sensor_angle = 31.9;
+                config.sensor_distance = 23.2;
+                config.rotation_angle = 39.3;
+                config.step_size = 2.48;
+                config.decay_factor = 0.82;
+                config.deposit_amount = 20.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 40.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 7_000,
+                    sensor_angle: 31.9,
+                    rotation_angle: 39.3,
+                    step_size: 2.48,
+                    deposit_amount: 20.0,
+                    color: RgbColor::from_hex(0x00ffff),
+                    ..Default::default()
+                }];
+            }
+            Preset::Crystal => {
+                config.sensor_angle = 38.9;
+                config.sensor_distance = 30.6;
+                config.rotation_angle = 21.5;
+                config.step_size = 1.47;
+                config.decay_factor = 0.50;
+                config.deposit_amount = 2.1;
+                config.diffusion_sigma = 1.2;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 38_000,
+                    sensor_angle: 38.9,
+                    rotation_angle: 21.5,
+                    step_size: 1.47,
+                    deposit_amount: 2.1,
+                    color: RgbColor::from_hex(0xb0e0e6),
+                    ..Default::default()
+                }];
+            }
+            Preset::ChaosEdge => {
+                config.sensor_angle = 5.0;
+                config.sensor_distance = 26.4;
+                config.rotation_angle = 56.2;
+                config.step_size = 0.58;
+                config.decay_factor = 0.99;
+                config.deposit_amount = 15.8;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 25.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 52_000,
+                    sensor_angle: 5.0,
+                    rotation_angle: 56.2,
+                    step_size: 0.58,
+                    deposit_amount: 15.8,
+                    color: RgbColor::from_hex(0xff6347),
+                    ..Default::default()
+                }];
+            }
+            Preset::Blob => {
+                config.sensor_angle = 72.1;
+                config.sensor_distance = 2.1;
+                config.rotation_angle = 90.0;
+                config.step_size = 0.92;
+                config.decay_factor = 0.50;
+                config.deposit_amount = 9.3;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 25.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 21_000,
+                    sensor_angle: 72.1,
+                    rotation_angle: 90.0,
+                    step_size: 0.92,
+                    deposit_amount: 9.3,
+                    color: RgbColor::from_hex(0x32cd32),
+                    ..Default::default()
+                }];
+            }
+            Preset::Worm => {
+                config.sensor_angle = 38.8;
+                config.sensor_distance = 50.0;
+                config.rotation_angle = 13.4;
+                config.step_size = 1.96;
+                config.decay_factor = 0.65;
+                config.deposit_amount = 6.3;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 6_000,
+                    sensor_angle: 38.8,
+                    rotation_angle: 13.4,
+                    step_size: 1.96,
+                    deposit_amount: 6.3,
+                    color: RgbColor::from_hex(0xdaa520),
+                    ..Default::default()
+                }];
+            }
+        }
+    }
+}
+
 /// How agents are initially distributed in the simulation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InitMode {
@@ -136,26 +488,6 @@ impl Wind {
     pub fn new(dx: f32, dy: f32) -> Self {
         Self { dx, dy }
     }
-
-    /// Validates wind parameters.
-    pub fn validate(&self) -> Result<(), String> {
-        if self.dx < -1.0 || self.dx > 1.0 {
-            return Err(format!(
-                "wind.dx must be between -1.0 and 1.0, got {}",
-                self.dx
-            ));
-        }
-        if self.dy < -1.0 || self.dy > 1.0 {
-            return Err(format!(
-                "wind.dy must be between -1.0 and 1.0, got {}",
-                self.dy
-            ));
-        }
-        if self.dx.abs() < 0.001 && self.dy.abs() < 0.001 {
-            return Err("wind cannot be zero vector".to_string());
-        }
-        Ok(())
-    }
 }
 
 impl Default for Wind {
@@ -164,10 +496,27 @@ impl Default for Wind {
     }
 }
 
+impl Validatable for Wind {
+    fn validate(&self) -> Result<(), ValidationError> {
+        if self.dx < -1.0 || self.dx > 1.0 {
+            return Err(ValidationError::out_of_range("wind.dx", -1.0, 1.0, self.dx));
+        }
+        if self.dy < -1.0 || self.dy > 1.0 {
+            return Err(ValidationError::out_of_range("wind.dy", -1.0, 1.0, self.dy));
+        }
+        if self.dx.abs() < 0.001 && self.dy.abs() < 0.001 {
+            return Err(ValidationError::custom("wind cannot be zero vector"));
+        }
+        Ok(())
+    }
+}
+
 impl std::str::FromStr for Wind {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use crate::validation::Validatable;
+
         let parts: Vec<&str> = s.split(',').collect();
         if parts.len() != 2 {
             return Err(format!("Wind must be in dx,dy format, got: {}", s));
@@ -181,7 +530,7 @@ impl std::str::FromStr for Wind {
             .map_err(|e| format!("Invalid dy: {}", e))?;
 
         let wind = Wind::new(dx, dy);
-        wind.validate()?;
+        Validatable::validate(&wind).map_err(|e| e.to_string())?;
         Ok(wind)
     }
 }
@@ -436,8 +785,8 @@ pub struct SpeciesConfig {
     pub step_size: f32,
     /// Amount of pheromone deposited.
     pub deposit_amount: f32,
-    /// Color hex code.
-    pub color: String,
+    /// Color as RGB.
+    pub color: RgbColor,
 }
 
 impl Default for SpeciesConfig {
@@ -449,49 +798,8 @@ impl Default for SpeciesConfig {
             rotation_angle: agent_consts::DEFAULT_ROTATION_ANGLE,
             step_size: agent_consts::DEFAULT_STEP_SIZE,
             deposit_amount: agent_consts::DEFAULT_DEPOSIT_AMOUNT,
-            color: default::FOREST_GREEN.to_string(),
+            color: RgbColor::from_hex(0x228b22), // Forest green
         }
-    }
-}
-
-impl SpeciesConfig {
-    /// Validates species configuration.
-    pub fn validate(&self) -> Result<(), String> {
-        if self.count < pop_consts::MIN_SPECIES_COUNT || self.count > pop_consts::MAX_SPECIES_COUNT
-        {
-            return Err(format!(
-                "species '{}' count must be between {} and {}, got {}",
-                self.name,
-                pop_consts::MIN_SPECIES_COUNT,
-                pop_consts::MAX_SPECIES_COUNT,
-                self.count
-            ));
-        }
-        if self.sensor_angle < 5.0 || self.sensor_angle > 90.0 {
-            return Err(format!(
-                "species '{}' sensor_angle must be between 5.0 and 90.0, got {}",
-                self.name, self.sensor_angle
-            ));
-        }
-        if self.rotation_angle < 5.0 || self.rotation_angle > 90.0 {
-            return Err(format!(
-                "species '{}' rotation_angle must be between 5.0 and 90.0, got {}",
-                self.name, self.rotation_angle
-            ));
-        }
-        if self.step_size < 0.01 || self.step_size > 5.0 {
-            return Err(format!(
-                "species '{}' step_size must be between 0.01 and 5.0, got {}",
-                self.name, self.step_size
-            ));
-        }
-        if self.deposit_amount < 0.1 || self.deposit_amount > 20.0 {
-            return Err(format!(
-                "species '{}' deposit_amount must be between 0.1 and 20.0, got {}",
-                self.name, self.deposit_amount
-            ));
-        }
-        Ok(())
     }
 }
 
@@ -555,152 +863,6 @@ pub struct SimConfig {
 }
 
 impl SimConfig {
-    /// Validates the simulation configuration.
-    pub fn validate(&self) -> Result<(), String> {
-        if self.species_configs.is_empty() {
-            return Err("at least one species must be configured".to_string());
-        }
-        let total_pop: usize = self.species_configs.iter().map(|s| s.count).sum();
-        if !(pop_consts::MIN_TOTAL..=pop_consts::MAX_TOTAL).contains(&total_pop) {
-            return Err(format!(
-                "total population must be between {} and {}, got {}",
-                pop_consts::MIN_TOTAL,
-                pop_consts::MAX_TOTAL,
-                total_pop
-            ));
-        }
-        if self.sensor_angle < agent_consts::MIN_SENSOR_ANGLE
-            || self.sensor_angle > agent_consts::MAX_SENSOR_ANGLE
-        {
-            return Err(format!(
-                "sensor_angle must be between {} and {}, got {}",
-                agent_consts::MIN_SENSOR_ANGLE,
-                agent_consts::MAX_SENSOR_ANGLE,
-                self.sensor_angle
-            ));
-        }
-        if self.sensor_distance < agent_consts::MIN_SENSOR_DISTANCE
-            || self.sensor_distance > agent_consts::MAX_SENSOR_DISTANCE
-        {
-            return Err(format!(
-                "sensor_distance must be between {} and {}, got {}",
-                agent_consts::MIN_SENSOR_DISTANCE,
-                agent_consts::MAX_SENSOR_DISTANCE,
-                self.sensor_distance
-            ));
-        }
-        if self.rotation_angle < agent_consts::MIN_ROTATION_ANGLE
-            || self.rotation_angle > agent_consts::MAX_ROTATION_ANGLE
-        {
-            return Err(format!(
-                "rotation_angle must be between {} and {}, got {}",
-                agent_consts::MIN_ROTATION_ANGLE,
-                agent_consts::MAX_ROTATION_ANGLE,
-                self.rotation_angle
-            ));
-        }
-        if self.step_size < agent_consts::MIN_STEP_SIZE
-            || self.step_size > agent_consts::MAX_STEP_SIZE
-        {
-            return Err(format!(
-                "step_size must be between {} and {}, got {}",
-                agent_consts::MIN_STEP_SIZE,
-                agent_consts::MAX_STEP_SIZE,
-                self.step_size
-            ));
-        }
-        if self.decay_factor < trail_consts::MIN_DECAY_FACTOR
-            || self.decay_factor > trail_consts::MAX_DECAY_FACTOR
-        {
-            return Err(format!(
-                "decay_factor must be between {} and {}, got {}",
-                trail_consts::MIN_DECAY_FACTOR,
-                trail_consts::MAX_DECAY_FACTOR,
-                self.decay_factor
-            ));
-        }
-        if self.deposit_amount < agent_consts::MIN_DEPOSIT_AMOUNT
-            || self.deposit_amount > agent_consts::MAX_DEPOSIT_AMOUNT
-        {
-            return Err(format!(
-                "deposit_amount must be between {} and {}, got {}",
-                agent_consts::MIN_DEPOSIT_AMOUNT,
-                agent_consts::MAX_DEPOSIT_AMOUNT,
-                self.deposit_amount
-            ));
-        }
-        if self.max_brightness < trail_consts::MIN_MAX_BRIGHTNESS
-            || self.max_brightness > trail_consts::MAX_MAX_BRIGHTNESS
-        {
-            return Err(format!(
-                "max_brightness must be between {} and {}, got {}",
-                trail_consts::MIN_MAX_BRIGHTNESS,
-                trail_consts::MAX_MAX_BRIGHTNESS,
-                self.max_brightness
-            ));
-        }
-        if self.diffusion_sigma < trail_consts::MIN_DIFFUSION_SIGMA
-            || self.diffusion_sigma > trail_consts::MAX_DIFFUSION_SIGMA
-        {
-            return Err(format!(
-                "diffusion_sigma must be between {} and {}, got {}",
-                trail_consts::MIN_DIFFUSION_SIGMA,
-                trail_consts::MAX_DIFFUSION_SIGMA,
-                self.diffusion_sigma
-            ));
-        }
-        if self.time_scale < time_consts::MIN_TIME_SCALE
-            || self.time_scale > time_consts::MAX_TIME_SCALE
-        {
-            return Err(format!(
-                "time_scale must be between {} and {}, got {}",
-                time_consts::MIN_TIME_SCALE,
-                time_consts::MAX_TIME_SCALE,
-                self.time_scale
-            ));
-        }
-        if self.attractor_strength < env_consts::MIN_ATTRACTOR_STRENGTH
-            || self.attractor_strength > env_consts::MAX_ATTRACTOR_STRENGTH
-        {
-            return Err(format!(
-                "attractor_strength must be between {} and {}, got {}",
-                env_consts::MIN_ATTRACTOR_STRENGTH,
-                env_consts::MAX_ATTRACTOR_STRENGTH,
-                self.attractor_strength
-            ));
-        }
-        for (i, attractor) in self.attractors.iter().enumerate() {
-            if attractor.strength < env_consts::ATTRACTOR_STRENGTH_MIN
-                || attractor.strength > env_consts::ATTRACTOR_STRENGTH_MAX
-            {
-                return Err(format!(
-                    "attractor[{}].strength must be between {} and {}, got {}",
-                    i,
-                    env_consts::ATTRACTOR_STRENGTH_MIN,
-                    env_consts::ATTRACTOR_STRENGTH_MAX,
-                    attractor.strength
-                ));
-            }
-        }
-        for species in &self.species_configs {
-            species.validate()?;
-        }
-        if self.terrain_strength < env_consts::MIN_TERRAIN_STRENGTH
-            || self.terrain_strength > env_consts::MAX_TERRAIN_STRENGTH
-        {
-            return Err(format!(
-                "terrain_strength must be between {} and {}, got {}",
-                env_consts::MIN_TERRAIN_STRENGTH,
-                env_consts::MAX_TERRAIN_STRENGTH,
-                self.terrain_strength
-            ));
-        }
-        if let Some(ref wind) = self.wind {
-            wind.validate()?;
-        }
-        Ok(())
-    }
-
     /// Returns the total population across all species.
     pub fn total_population(&self) -> usize {
         self.species_configs.iter().map(|s| s.count).sum()
@@ -784,6 +946,140 @@ impl Default for SimConfig {
     }
 }
 
+// Validation implementations using the Validatable trait
+use crate::error::ValidationError;
+use crate::validation::{rules, Validatable};
+
+impl Validatable for SimConfig {
+    fn validate(&self) -> Result<(), ValidationError> {
+        // Check that at least one species is configured
+        if self.species_configs.is_empty() {
+            return Err(ValidationError::custom(
+                "at least one species must be configured",
+            ));
+        }
+
+        // Validate total population
+        let total_pop: usize = self.species_configs.iter().map(|s| s.count).sum();
+        if total_pop < pop_consts::MIN_TOTAL || total_pop > pop_consts::MAX_TOTAL {
+            return Err(ValidationError::custom(format!(
+                "total population must be between {} and {}, got {}",
+                pop_consts::MIN_TOTAL,
+                pop_consts::MAX_TOTAL,
+                total_pop
+            )));
+        }
+
+        // Validate agent parameters
+        rules::SENSOR_ANGLE.validate_f32(self.sensor_angle)?;
+        rules::SENSOR_DISTANCE.validate_f32(self.sensor_distance)?;
+        rules::ROTATION_ANGLE.validate_f32(self.rotation_angle)?;
+        rules::STEP_SIZE.validate_f32(self.step_size)?;
+        rules::DEPOSIT_AMOUNT.validate_f32(self.deposit_amount)?;
+
+        // Validate trail parameters
+        rules::DECAY_FACTOR.validate_f32(self.decay_factor)?;
+        rules::MAX_BRIGHTNESS.validate_f32(self.max_brightness)?;
+        rules::DIFFUSION_SIGMA.validate_f32(self.diffusion_sigma)?;
+
+        // Validate time and environment parameters
+        rules::TIME_SCALE.validate_f32(self.time_scale)?;
+        rules::ATTRACTOR_STRENGTH.validate_f32(self.attractor_strength)?;
+        rules::TERRAIN_STRENGTH.validate_f32(self.terrain_strength)?;
+
+        // Validate individual attractors
+        for (i, attractor) in self.attractors.iter().enumerate() {
+            if attractor.strength < env_consts::ATTRACTOR_STRENGTH_MIN
+                || attractor.strength > env_consts::ATTRACTOR_STRENGTH_MAX
+            {
+                return Err(ValidationError::out_of_range(
+                    format!("attractor[{}].strength", i),
+                    env_consts::ATTRACTOR_STRENGTH_MIN,
+                    env_consts::ATTRACTOR_STRENGTH_MAX,
+                    attractor.strength,
+                ));
+            }
+        }
+
+        // Validate species configs
+        for species in &self.species_configs {
+            Validatable::validate(species)?;
+        }
+
+        // Validate wind if present
+        if let Some(ref wind) = self.wind {
+            Validatable::validate(wind)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Validatable for SpeciesConfig {
+    fn validate(&self) -> Result<(), ValidationError> {
+        // Validate count
+        if self.count < pop_consts::MIN_SPECIES_COUNT || self.count > pop_consts::MAX_SPECIES_COUNT
+        {
+            return Err(ValidationError::out_of_range(
+                format!("species '{}' count", self.name),
+                pop_consts::MIN_SPECIES_COUNT,
+                pop_consts::MAX_SPECIES_COUNT,
+                self.count,
+            ));
+        }
+
+        // Validate sensor angle
+        if self.sensor_angle < agent_consts::MIN_SENSOR_ANGLE
+            || self.sensor_angle > agent_consts::MAX_SENSOR_ANGLE
+        {
+            return Err(ValidationError::out_of_range(
+                format!("species '{}' sensor_angle", self.name),
+                agent_consts::MIN_SENSOR_ANGLE,
+                agent_consts::MAX_SENSOR_ANGLE,
+                self.sensor_angle,
+            ));
+        }
+
+        // Validate rotation angle
+        if self.rotation_angle < agent_consts::MIN_ROTATION_ANGLE
+            || self.rotation_angle > agent_consts::MAX_ROTATION_ANGLE
+        {
+            return Err(ValidationError::out_of_range(
+                format!("species '{}' rotation_angle", self.name),
+                agent_consts::MIN_ROTATION_ANGLE,
+                agent_consts::MAX_ROTATION_ANGLE,
+                self.rotation_angle,
+            ));
+        }
+
+        // Validate step size
+        if self.step_size < agent_consts::MIN_STEP_SIZE
+            || self.step_size > agent_consts::MAX_STEP_SIZE
+        {
+            return Err(ValidationError::out_of_range(
+                format!("species '{}' step_size", self.name),
+                agent_consts::MIN_STEP_SIZE,
+                agent_consts::MAX_STEP_SIZE,
+                self.step_size,
+            ));
+        }
+
+        // Validate deposit amount
+        if self.deposit_amount < agent_consts::MIN_DEPOSIT_AMOUNT
+            || self.deposit_amount > agent_consts::MAX_DEPOSIT_AMOUNT
+        {
+            return Err(ValidationError::out_of_range(
+                format!("species '{}' deposit_amount", self.name),
+                agent_consts::MIN_DEPOSIT_AMOUNT,
+                agent_consts::MAX_DEPOSIT_AMOUNT,
+                self.deposit_amount,
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 impl SimConfig {
     /// Creates a base preset configuration with common fields set to their defaults.
     fn base_preset() -> Self {
@@ -821,380 +1117,9 @@ impl SimConfig {
 
 impl From<Preset> for SimConfig {
     fn from(preset: Preset) -> Self {
-        match preset {
-            Preset::Network => Self {
-                sensor_angle: 15.0,
-                sensor_distance: 9.0,
-                rotation_angle: 30.0,
-                decay_factor: 0.85,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 20.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 50_000,
-                    sensor_angle: 15.0,
-                    rotation_angle: 30.0,
-                    step_size: 1.0,
-                    deposit_amount: 5.0,
-                    color: "228b22".to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::Exploratory => Self {
-                sensor_angle: 45.0,
-                sensor_distance: 15.0,
-                rotation_angle: 60.0,
-                decay_factor: 0.96,
-                deposit_amount: 3.0,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 12.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 30_000,
-                    sensor_angle: 45.0,
-                    rotation_angle: 60.0,
-                    step_size: 1.0,
-                    deposit_amount: 3.0,
-                    color: "228b22".to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::Tendrils => Self {
-                sensor_angle: 30.0,
-                sensor_distance: 12.0,
-                rotation_angle: 45.0,
-                step_size: 2.0,
-                decay_factor: 0.90,
-                deposit_amount: 4.0,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 16.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 40_000,
-                    sensor_angle: 30.0,
-                    rotation_angle: 45.0,
-                    step_size: 2.0,
-                    deposit_amount: 4.0,
-                    color: "228b22".to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::Organic => Self {
-                sensor_angle: 22.5,
-                sensor_distance: 9.0,
-                rotation_angle: 45.0,
-                step_size: 1.0,
-                decay_factor: 0.85,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 20.0,
-                ..Self::base_preset()
-            },
-            Preset::Minimal => Self {
-                sensor_angle: 30.0,
-                sensor_distance: 9.0,
-                rotation_angle: 30.0,
-                step_size: 0.8,
-                decay_factor: 0.95,
-                deposit_amount: 3.0,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 15.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 15_000,
-                    sensor_angle: 30.0,
-                    rotation_angle: 30.0,
-                    step_size: 0.8,
-                    deposit_amount: 3.0,
-                    color: "228b22".to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::Moss => Self {
-                sensor_angle: 22.0,
-                sensor_distance: 12.0,
-                rotation_angle: 35.0,
-                decay_factor: 0.88,
-                deposit_amount: 4.0,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 18.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 35_000,
-                    sensor_angle: 22.0,
-                    rotation_angle: 35.0,
-                    step_size: 1.0,
-                    deposit_amount: 4.0,
-                    color: "4a7a4a".to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::Cosmic => Self {
-                sensor_angle: 55.0,
-                sensor_distance: 15.0,
-                rotation_angle: 45.0,
-                step_size: 0.7,
-                decay_factor: 0.93,
-                deposit_amount: 3.0,
-                max_brightness: 14.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 25_000,
-                    sensor_angle: 55.0,
-                    rotation_angle: 45.0,
-                    step_size: 0.7,
-                    deposit_amount: 3.0,
-                    color: "8a2be2".to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::Fire => Self {
-                sensor_angle: 15.0,
-                rotation_angle: 30.0,
-                step_size: 1.5,
-                decay_factor: 0.85,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 20.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 100_000,
-                    sensor_angle: 15.0,
-                    rotation_angle: 30.0,
-                    step_size: 1.5,
-                    deposit_amount: 5.0,
-                    color: presets::FIRE_ORANGE.to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::Zen => Self {
-                sensor_distance: 12.0,
-                sensor_angle: 25.0,
-                rotation_angle: 30.0,
-                step_size: 0.5,
-                decay_factor: 0.94,
-                deposit_amount: 2.0,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 12.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 10_000,
-                    sensor_angle: 25.0,
-                    rotation_angle: 30.0,
-                    step_size: 0.5,
-                    deposit_amount: 2.0,
-                    color: presets::ZEN_WHITE.to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::Storm => Self {
-                sensor_angle: 20.0,
-                rotation_angle: 60.0,
-                step_size: 2.0,
-                decay_factor: 0.80,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 18.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 80_000,
-                    sensor_angle: 20.0,
-                    rotation_angle: 60.0,
-                    step_size: 2.0,
-                    deposit_amount: 5.0,
-                    color: presets::STORM_BLUE.to_string(),
-                }],
-                wind: Some(Wind::new(0.1, 0.05)),
-                ..Self::base_preset()
-            },
-            Preset::River => Self {
-                sensor_angle: 25.0,
-                step_size: 1.2,
-                decay_factor: 0.90,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 18.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 45_000,
-                    sensor_angle: 25.0,
-                    rotation_angle: 45.0,
-                    step_size: 1.2,
-                    deposit_amount: 5.0,
-                    color: presets::RIVER_BLUE.to_string(),
-                }],
-                wind: Some(Wind::new(0.3, 0.0)),
-                ..Self::base_preset()
-            },
-            Preset::Ethereal => Self {
-                sensor_angle: 40.0,
-                step_size: 0.7,
-                decay_factor: 0.98,
-                deposit_amount: 2.0,
-                max_brightness: 12.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 25_000,
-                    sensor_angle: 40.0,
-                    rotation_angle: 45.0,
-                    step_size: 0.7,
-                    deposit_amount: 2.0,
-                    color: presets::ETHEREAL_LAVENDER.to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::PetriDish => Self {
-                sensor_angle: 45.0,
-                rotation_angle: 20.0,
-                step_size: 0.05,
-                decay_factor: 0.999,
-                deposit_amount: 0.2,
-                max_brightness: 50.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "mold".to_string(),
-                    count: 20_000,
-                    sensor_angle: 45.0,
-                    rotation_angle: 20.0,
-                    step_size: 0.05,
-                    deposit_amount: 0.2,
-                    color: presets::MOLD_YELLOW.to_string(),
-                }],
-                obstacles: vec![Obstacle::Circle {
-                    x: 200.0,
-                    y: 100.0,
-                    radius: 90.0,
-                }],
-                background_color: Some(ui::BLACK.to_string()),
-                preferred_init_mode: Some(InitMode::Petri),
-                ..Self::base_preset()
-            },
-            // Empirically-derived presets from parameter space optimization
-            Preset::Vortex => Self {
-                // Optimized for high angular momentum (swirling patterns)
-                // rotation_angle > sensor_angle causes oscillation/spiraling
-                sensor_angle: 25.2,
-                sensor_distance: 3.9, // Short-sighted creates local vortices
-                rotation_angle: 46.4, // ~2x sensor_angle for strong spiraling
-                step_size: 1.92,
-                decay_factor: 0.96, // High persistence keeps vortices visible
-                deposit_amount: 4.3,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 32_000,
-                    sensor_angle: 25.2,
-                    rotation_angle: 46.4,
-                    step_size: 1.92,
-                    deposit_amount: 4.3,
-                    color: presets::VORTEX_PURPLE.to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::Lightning => Self {
-                // Optimized for high branching factor with sparse coverage
-                // Fast movement + high deposit + medium decay = branching dendrites
-                sensor_angle: 31.9,
-                sensor_distance: 23.2, // Long-range sensing for coherent branches
-                rotation_angle: 39.3,
-                step_size: 2.48,      // Fast movement
-                decay_factor: 0.82,   // Medium decay for visible branches
-                deposit_amount: 20.0, // Max intensity trails
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 40.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 7_000, // Very low population for distinct branches
-                    sensor_angle: 31.9,
-                    rotation_angle: 39.3,
-                    step_size: 2.48,
-                    deposit_amount: 20.0,
-                    color: presets::LIGHTNING_CYAN.to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::Crystal => Self {
-                // Optimized for high temporal stability (persistent structures)
-                // rotation_angle < sensor_angle for smooth, stable turns
-                sensor_angle: 38.9,
-                sensor_distance: 30.6, // Long-range sensing for coherent growth
-                rotation_angle: 21.5,  // Smaller than sensor for smooth turns
-                step_size: 1.47,
-                decay_factor: 0.50, // Fast decay creates sharp edges
-                deposit_amount: 2.1,
-                diffusion_sigma: 1.2,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 38_000,
-                    sensor_angle: 38.9,
-                    rotation_angle: 21.5,
-                    step_size: 1.47,
-                    deposit_amount: 2.1,
-                    color: presets::CRYSTAL_ICE.to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::ChaosEdge => Self {
-                // Optimized for high heading variance × density variance (chaotic dynamics)
-                // Very narrow sensor + large rotation creates unpredictable behavior
-                sensor_angle: 5.0, // Minimum - very narrow field of view
-                sensor_distance: 26.4,
-                rotation_angle: 56.2, // Large turns amplify chaos
-                step_size: 0.58,      // Slow movement for intricate patterns
-                decay_factor: 0.99,   // Max persistence preserves chaotic trails
-                deposit_amount: 15.8,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 25.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 52_000,
-                    sensor_angle: 5.0,
-                    rotation_angle: 56.2,
-                    step_size: 0.58,
-                    deposit_amount: 15.8,
-                    color: presets::CHAOS_RED.to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::Blob => Self {
-                // Optimized for high fragmentation (isolated clusters)
-                // Very short sensor + max rotation + fast decay = clumping
-                sensor_angle: 72.1,
-                sensor_distance: 2.1, // Extremely short-sighted
-                rotation_angle: 90.0, // Maximum sharp turns
-                step_size: 0.92,
-                decay_factor: 0.50, // Fast decay isolates clusters
-                deposit_amount: 9.3,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 25.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 21_000,
-                    sensor_angle: 72.1,
-                    rotation_angle: 90.0,
-                    step_size: 0.92,
-                    deposit_amount: 9.3,
-                    color: presets::BLOB_LIME.to_string(),
-                }],
-                ..Self::base_preset()
-            },
-            Preset::Worm => Self {
-                // Optimized for high elongation (long snaking trails)
-                // Max sensor distance + low rotation + low population
-                sensor_angle: 38.8,
-                sensor_distance: 50.0, // Maximum long-range sensing
-                rotation_angle: 13.4,  // Very gradual turns
-                step_size: 1.96,
-                decay_factor: 0.65, // Medium decay for visible trails
-                deposit_amount: 6.3,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 6_000, // Very low population for distinct worms
-                    sensor_angle: 38.8,
-                    rotation_angle: 13.4,
-                    step_size: 1.96,
-                    deposit_amount: 6.3,
-                    color: presets::WORM_GOLD.to_string(),
-                }],
-                ..Self::base_preset()
-            },
-        }
+        let mut config = Self::default();
+        preset.apply(&mut config);
+        config
     }
 }
 
@@ -1374,7 +1299,7 @@ mod tests {
                 SpeciesConfig {
                     count: 20000,
                     name: "second".to_string(),
-                    color: "ff0000".to_string(),
+                    color: RgbColor::from_hex(0xff0000),
                     ..Default::default()
                 },
             ],
@@ -1703,5 +1628,33 @@ mod tests {
             ..Default::default()
         };
         assert!(s.validate().is_err());
+    }
+
+    #[test]
+    fn test_validatable_trait() {
+        use crate::validation::Validatable;
+
+        let valid_config = SimConfig::default();
+        assert!(valid_config.validate().is_ok());
+
+        let invalid_config = SimConfig {
+            sensor_angle: 200.0, // Invalid
+            ..Default::default()
+        };
+        assert!(invalid_config.validate().is_err());
+    }
+
+    #[test]
+    fn test_species_validatable_trait() {
+        use crate::validation::Validatable;
+
+        let valid_species = SpeciesConfig::default();
+        assert!(valid_species.validate().is_ok());
+
+        let invalid_species = SpeciesConfig {
+            count: 50, // Below minimum
+            ..Default::default()
+        };
+        assert!(invalid_species.validate().is_err());
     }
 }

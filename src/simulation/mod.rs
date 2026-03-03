@@ -12,7 +12,6 @@
 
 pub mod agent;
 pub mod config;
-pub mod constants;
 pub mod food;
 pub mod trail_map;
 
@@ -906,6 +905,7 @@ impl Simulation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::palette::RgbColor;
     use crate::simulation::config::SpeciesConfig;
 
     #[test]
@@ -924,13 +924,13 @@ mod tests {
                 SpeciesConfig {
                     name: "red".to_string(),
                     count: 10000,
-                    color: "ff0000".to_string(),
+                    color: RgbColor::from_hex(0xff0000),
                     ..Default::default()
                 },
                 SpeciesConfig {
                     name: "blue".to_string(),
                     count: 20000,
-                    color: "0000ff".to_string(),
+                    color: RgbColor::from_hex(0x0000ff),
                     ..Default::default()
                 },
             ],
@@ -1195,7 +1195,7 @@ mod tests {
                 SpeciesConfig {
                     count: 100,
                     name: "blue".to_string(),
-                    color: "0000ff".to_string(),
+                    color: RgbColor::from_hex(0x0000ff),
                     ..Default::default()
                 },
             ],
@@ -1213,7 +1213,7 @@ mod tests {
                 SpeciesConfig {
                     name: "red".to_string(),
                     count: 500,
-                    color: "ff0000".to_string(),
+                    color: RgbColor::from_hex(0xff0000),
                     sensor_angle: 22.5,
                     rotation_angle: 45.0,
                     step_size: 1.0,
@@ -1222,7 +1222,7 @@ mod tests {
                 SpeciesConfig {
                     name: "blue".to_string(),
                     count: 500,
-                    color: "0000ff".to_string(),
+                    color: RgbColor::from_hex(0x0000ff),
                     sensor_angle: 22.5,
                     rotation_angle: 45.0,
                     step_size: 1.0,
@@ -1270,7 +1270,7 @@ mod tests {
                 SpeciesConfig {
                     name: "red".to_string(),
                     count: 0,
-                    color: "ff0000".to_string(),
+                    color: RgbColor::from_hex(0xff0000),
                     sensor_angle: 22.5,
                     rotation_angle: 45.0,
                     step_size: 1.0,
@@ -1279,7 +1279,7 @@ mod tests {
                 SpeciesConfig {
                     name: "blue".to_string(),
                     count: 500,
-                    color: "0000ff".to_string(),
+                    color: RgbColor::from_hex(0x0000ff),
                     sensor_angle: 22.5,
                     rotation_angle: 45.0,
                     step_size: 1.0,
@@ -1341,7 +1341,7 @@ mod tests {
         new_config.species_configs.push(SpeciesConfig {
             name: "blue".to_string(),
             count: 100,
-            color: "0000ff".to_string(),
+            color: RgbColor::from_hex(0x0000ff),
             ..Default::default()
         });
 

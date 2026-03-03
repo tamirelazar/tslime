@@ -47,6 +47,8 @@ pub mod config_builder;
 pub mod config_defaults;
 /// Configuration management (load/save/delete).
 pub mod config_manager;
+/// Error types for structured error handling.
+pub mod error;
 /// Parameter space exploration for preset discovery.
 pub mod exploration;
 /// Export functionality (GIF, WebM, PNG).

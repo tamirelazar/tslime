@@ -291,7 +291,7 @@ pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
             ASCII_CHARS[index]
         }
         Charset::Braille => {
-            use crate::render::constants::threshold;
+            use crate::config_defaults::threshold;
             if let Some(bottom_val) = bottom {
                 map_braille_subpixel(top, bottom_val, threshold::BRAILLE_DEFAULT)
             } else {
@@ -324,7 +324,7 @@ pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
             map_shade(avg)
         }
         Charset::Points => {
-            use crate::render::constants::threshold;
+            use crate::config_defaults::threshold;
             let avg = if let Some(bottom_val) = bottom {
                 (top + bottom_val) / 2.0
             } else {
@@ -373,7 +373,7 @@ pub fn map_half_block_dual(top: f32, bottom: f32, threshold: f32) -> char {
 ///
 /// Returns '█', '▀', '▄', or ' ' based on which subpixels exceed the threshold.
 pub fn map_vertical_block(top: f32, bottom: f32) -> char {
-    use crate::render::constants::threshold;
+    use crate::config_defaults::threshold;
     let top_above = top > threshold::VERTICAL_BLOCK_DEFAULT;
     let bottom_above = bottom > threshold::VERTICAL_BLOCK_DEFAULT;
 
@@ -1057,7 +1057,7 @@ const BLOCK_SHAPE_TABLE: [ShapeEntry; 23] = [
 /// # Arguments
 /// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values (0.0–1.0)
 pub fn map_sculpted_outline(tl: f32, tr: f32, bl: f32, br: f32) -> char {
-    use crate::render::constants::threshold;
+    use crate::config_defaults::threshold;
 
     let tl_on = tl > threshold::SCULPTED_OUTLINE;
     let tr_on = tr > threshold::SCULPTED_OUTLINE;
@@ -1090,7 +1090,7 @@ pub fn map_sculpted_outline(tl: f32, tr: f32, bl: f32, br: f32) -> char {
 
 /// Returns the number of distinct brightness levels supported by the charset.
 pub fn charset_level_count(charset: Charset) -> usize {
-    use crate::render::constants::charset_levels;
+    use crate::config_defaults::charset_levels;
     match charset {
         Charset::HalfBlock => charset_levels::HALF_BLOCK,
         Charset::HalfBlockDual => 256, // Continuous color; effectively unlimited levels

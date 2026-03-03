@@ -20,7 +20,7 @@ impl AdaptiveBrightness {
     /// * `window_size` - Number of frames to track for peak history (clamped 1-100).
     /// * `enabled` - Whether adaptive brightness is active.
     pub fn new(window_size: usize, enabled: bool) -> Self {
-        use crate::render::constants::normalization;
+        use crate::config_defaults::normalization;
         Self {
             window_size: window_size.clamp(1, normalization::WINDOW_LARGE),
             peak_history: Vec::with_capacity(normalization::DEFAULT_WINDOW),

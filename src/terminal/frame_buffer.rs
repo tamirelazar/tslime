@@ -420,6 +420,11 @@ impl FrameBuffer {
         }
     }
 
+    /// Calculates the maximum brightness in a frame.
+    ///
+    /// This helper function is currently only used in tests but is retained
+    /// as it may be useful for future features like automatic brightness normalization
+    /// or exposure adjustment.
     #[allow(dead_code)]
     fn max_brightness(frame: &[DownsampleCell]) -> f32 {
         frame
