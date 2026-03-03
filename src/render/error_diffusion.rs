@@ -1,6 +1,27 @@
-/// Implements Floyd-Steinberg error diffusion dithering.
-///
-/// Maintains error buffers for the current and next row to propagate quantization errors.
+//! Implements Floyd-Steinberg error diffusion dithering.
+//!
+//! Maintains error buffers for the current and next row to propagate quantization errors.
+
+/// Floyd-Steinberg error diffusion coefficients (left-to-right scan).
+/// The 16 divisor is implicit: right = 7/16, down_left = 3/16, down = 5/16, down_right = 1/16
+mod fs_coeff {
+    pub const RIGHT: f32 = 7.0 / 16.0;
+    pub const DOWN_LEFT: f32 = 3.0 / 16.0;
+    pub const DOWN: f32 = 5.0 / 16.0;
+    pub const DOWN_RIGHT: f32 = 1.0 / 16.0;
+
+    /// Coefficients for serpentine (right-to-left) scanning.
+    pub mod serpentine {
+        pub const RIGHT: f32 = 3.0 / 16.0;
+        pub const DOWN_LEFT: f32 = 7.0 / 16.0;
+        #[allow(dead_code)]
+        pub const DOWN: f32 = 5.0 / 16.0;
+        #[allow(dead_code)]
+        pub const DOWN_RIGHT: f32 = 1.0 / 16.0;
+    }
+}
+
+/// Error diffusion state for dithering quantization errors across pixels.
 pub struct ErrorDiffusion {
     width: usize,
     height: usize,
@@ -128,9 +149,19 @@ impl ErrorDiffusion {
         current_errors[x] = 0.0;
 
         let (right, down_left, down, down_right) = if serpentine && y % 2 == 1 {
-            (3.0 / 16.0, 7.0 / 16.0, 5.0 / 16.0, 1.0 / 16.0)
+            (
+                fs_coeff::serpentine::RIGHT,
+                fs_coeff::serpentine::DOWN_LEFT,
+                fs_coeff::DOWN,
+                fs_coeff::DOWN_RIGHT,
+            )
         } else {
-            (7.0 / 16.0, 3.0 / 16.0, 5.0 / 16.0, 1.0 / 16.0)
+            (
+                fs_coeff::RIGHT,
+                fs_coeff::DOWN_LEFT,
+                fs_coeff::DOWN,
+                fs_coeff::DOWN_RIGHT,
+            )
         };
 
         if x + 1 < self.width {

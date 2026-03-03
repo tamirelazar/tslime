@@ -68,11 +68,14 @@ pub mod palette {
     /// Default palette name.
     pub const DEFAULT_NAME: &str = "moss";
 
+    /// Number of gradient steps in built-in palettes.
+    pub const PALETTE_STEPS: usize = 11;
+
     /// Minimum number of colors in custom palette.
     pub const CUSTOM_MIN_COLORS: usize = 2;
 
     /// Maximum number of colors in custom palette.
-    pub const CUSTOM_MAX_COLORS: usize = 11;
+    pub const CUSTOM_MAX_COLORS: usize = PALETTE_STEPS;
 
     /// Default grid color (white).
     pub const DEFAULT_GRID_COLOR: &str = "ffffff";
@@ -202,4 +205,49 @@ pub mod normalization {
 
     /// Large window size.
     pub const WINDOW_LARGE: usize = 200;
+}
+
+/// Rendering-specific constants for magic numbers.
+pub mod rendering {
+    /// Default grid opacity (0.0-1.0).
+    pub const GRID_OPACITY_DEFAULT: f32 = 0.15;
+
+    /// Default ASCII contrast for shape-vector rendering.
+    pub const ASCII_CONTRAST_DEFAULT: f32 = 1.5;
+
+    /// Threshold for dithering edge detection.
+    pub const DITHER_EDGE_THRESHOLD: f32 = 0.15;
+}
+
+/// Mathematical and precision constants.
+pub mod math {
+    /// Epsilon value for floating point comparisons.
+    pub const EPSILON: f32 = 1e-6;
+
+    /// Degrees in a full circle (360.0).
+    pub const DEGREES_IN_CIRCLE: f32 = 360.0;
+
+    /// Half degrees in a circle (180.0), used for hue rotation.
+    pub const DEGREES_HALF_CIRCLE: f32 = 180.0;
+}
+
+/// HSV color space thresholds for brightness mapping.
+pub mod hsv {
+    /// Minimum saturation for species colors (prevents completely desaturated colors).
+    pub const MIN_SATURATION: f32 = 0.05;
+
+    /// Base maximum saturation floor for species colors.
+    pub const MAX_SATURATION_FLOOR: f32 = 0.10;
+
+    /// Minimum value/brightness for species colors (prevents pure black).
+    pub const MIN_VALUE: f32 = 0.08;
+
+    /// Scaling factor for maximum value computation.
+    pub const MAX_VALUE_SCALE: f32 = 0.9;
+
+    /// Offset added when computing maximum value.
+    pub const MAX_VALUE_OFFSET: f32 = 0.1;
+
+    /// Hard cap on maximum value to prevent oversaturation.
+    pub const MAX_VALUE_CAP: f32 = 0.95;
 }

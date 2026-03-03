@@ -41,6 +41,10 @@
 pub mod app;
 /// Command-line argument parsing and configuration.
 pub mod cli;
+/// Configuration builder for creating SimConfig instances.
+pub mod config_builder;
+/// Centralized configuration defaults.
+pub mod config_defaults;
 /// Configuration management (load/save/delete).
 pub mod config_manager;
 /// Parameter space exploration for preset discovery.
@@ -55,6 +59,8 @@ pub mod render;
 pub mod simulation;
 /// Terminal handling (input, output, raw mode).
 pub mod terminal;
+/// Validation utilities for configuration.
+pub mod validation;
 
 /// Embedded GUI terminal window (iced_term) for double-click launch.
 #[cfg(feature = "gui")]

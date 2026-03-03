@@ -200,3 +200,24 @@ pub mod wind {
     /// Diagonal direction wind strength.
     pub const DIAGONAL_STRENGTH: f32 = 0.7;
 }
+
+/// Food image initialization constants.
+pub mod food_image {
+    /// Default food image scale factor.
+    pub const DEFAULT_SCALE: f32 = 0.5;
+
+    /// Default food image invert setting.
+    pub const DEFAULT_INVERT: bool = true;
+
+    /// Default food image path.
+    pub const DEFAULT_PATH: &str = "assets/tslime_logo.png";
+}
+
+/// Logo/pause screen image constants (separate use case from food).
+pub mod logo_image {
+    /// Default logo scale factor (for pause screen display).
+    pub const DEFAULT_SCALE: f32 = 1.5;
+
+    /// Default logo invert setting.
+    pub const DEFAULT_INVERT: bool = true;
+}

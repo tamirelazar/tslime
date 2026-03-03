@@ -40,9 +40,9 @@ use crate::terminal::control::{
     MouseInteractionMode, PaletteShiftSpeed, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
 };
 use crate::terminal::detection::{log_capabilities, TerminalCapabilities};
+use crate::terminal::frame_buffer::FrameBuffer;
 use crate::terminal::input::{InputPoller, MouseEventType};
-use crate::terminal::output::FrameBuffer;
-use crate::terminal::output::TerminalRenderer;
+use crate::terminal::renderer::TerminalRenderer;
 use crate::terminal::screen::TerminalScreen;
 use crate::terminal::signal::is_shutdown_requested;
 use crate::terminal::timing::FrameTimer;
@@ -320,7 +320,7 @@ pub fn apply_random_config(
     runtime_state: &RuntimeState,
     sim: &mut Simulation,
     renderer: &mut TerminalRenderer,
-    palette_list: &[cli::Palette; 16],
+    _palette_list: &[cli::Palette; cli::NUM_PALETTES],
     current_max_brightness: &mut f32,
 ) {
     use rand::Rng;
@@ -329,7 +329,7 @@ pub fn apply_random_config(
     // Apply all new parameters to config
     let mut new_config = sim.config().clone();
     new_config.sensor_angle = runtime_state.sensor_angle;
-    new_config.rotation_angle = runtime_state.turn_angle;
+    new_config.rotation_angle = runtime_state.rotation_angle;
     new_config.step_size = runtime_state.step_size;
     new_config.decay_factor = runtime_state.decay_factor;
     new_config.deposit_amount = runtime_state.deposit_amount;
@@ -1169,6 +1169,430 @@ pub fn export_webm_mode(
     Ok(())
 }
 
+/// Structure to hold all overlay data for rendering.
+///
+/// TODO: Extract overlay building code from run_simulation to use this struct.
+/// This is currently unused but kept for future refactoring.
+#[derive(Default)]
+#[allow(dead_code)]
+#[allow(clippy::type_complexity)]
+struct OverlayData {
+    pause_logo: Option<RenderedOverlay>,
+    pause_logo_pos: (usize, usize),
+    controls: Option<RenderedOverlay>,
+    controls_pos: (usize, usize),
+    status: Option<(String, usize, Vec<(usize, RgbColor)>)>,
+    notification: Option<(RenderedOverlay, usize, usize)>,
+    dashboard: Option<RenderedOverlay>,
+    dashboard_pos: (usize, usize),
+    config_browser: Option<RenderedOverlay>,
+    config_browser_pos: (usize, usize),
+    config_save: Option<RenderedOverlay>,
+    config_save_pos: (usize, usize),
+    keyboard_hints: Option<RenderedOverlay>,
+    keyboard_hints_pos: (usize, usize),
+    preset_comparison: Option<RenderedOverlay>,
+    preset_comparison_pos: (usize, usize),
+    palette_editor: Option<RenderedOverlay>,
+    palette_editor_pos: (usize, usize),
+}
+
+/// Updates food persistence attractors with fade-out effect.
+///
+/// Gradually reduces the strength of food attractors over time using
+/// quadratic easing for a smooth fade-out effect.
+fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeState, args: &Args) {
+    if !runtime_state.food_persist_enabled
+        || runtime_state.is_paused
+        || args.food_persist_duration == 0
+    {
+        return;
+    }
+
+    runtime_state.food_persist_counter += 1;
+
+    if runtime_state.food_persist_counter <= args.food_persist_duration {
+        // Calculate fade factor using quadratic easing
+        let progress =
+            runtime_state.food_persist_counter as f32 / args.food_persist_duration as f32;
+        let fade_factor: f32 = (1.0 - progress).powi(2); // Quadratic fade-out
+
+        // Update attractor strengths
+        let mut new_config = sim.config().clone();
+        new_config.attractors.clear();
+
+        for attractor in &runtime_state.initial_food_attractors {
+            new_config.attractors.push(Attractor::new(
+                attractor.x,
+                attractor.y,
+                attractor.strength * fade_factor,
+            ));
+        }
+
+        sim.update_config(new_config);
+    } else if runtime_state.food_persist_counter == args.food_persist_duration + 1 {
+        // Remove all food attractors when duration expires
+        let mut new_config = sim.config().clone();
+        new_config.attractors.clear();
+        sim.update_config(new_config);
+    }
+}
+
+/// Checks if simulation should auto-reset based on entropy collapse.
+///
+/// Monitors entropy levels and resets the simulation if it collapses
+/// (entropy stays below threshold for specified duration).
+fn check_auto_reset(
+    sim: &mut Simulation,
+    runtime_state: &mut RuntimeState,
+    args: &Args,
+    entropy: f32,
+    init_mode: InitMode,
+) {
+    if !args.auto_reset || runtime_state.is_paused {
+        return;
+    }
+
+    let should_reset = runtime_state.track_entropy(
+        entropy,
+        args.collapse_entropy_threshold,
+        args.collapse_duration_frames,
+    );
+
+    if should_reset {
+        // Generate new seed
+        let new_seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        // Reset simulation
+        sim.reset(new_seed, init_mode);
+        runtime_state.reset_collapse_counter();
+        runtime_state.reset_warmup();
+        runtime_state.food_persist_counter = 0;
+        runtime_state.show_notification(format!(
+            "Simulation collapsed - restarting with seed {}",
+            new_seed
+        ));
+    }
+}
+
+/// Builds all overlays for the current frame.
+///
+/// TODO: Integrate this function into run_simulation to replace inline overlay building.
+/// This is currently unused but kept for future refactoring.
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+fn build_overlays(
+    runtime_state: &mut RuntimeState,
+    term_width: usize,
+    term_height: usize,
+    sim: &Simulation,
+    current_palette: &cli::Palette,
+    ui_accent: RgbColor,
+    timer: &FrameTimer,
+    start_time: &std::time::Instant,
+    init_mode: InitMode,
+    color_mode: ColorMode,
+    charset: &Charset,
+    args: &Args,
+    entropy: f32,
+    _trail_density: f32,
+    blended_trail: &[f32],
+    seed: u64,
+) -> OverlayData {
+    let mut overlays = OverlayData::default();
+
+    // Calculate trail statistics for dashboard
+    let trail_sum: f32 = blended_trail.iter().sum();
+    let trail_capacity = (sim.width() * sim.height()) as f32 * 10.0;
+
+    // Build preset comparison overlay
+    overlays.preset_comparison =
+        if runtime_state.show_preset_comparison && !runtime_state.show_dashboard {
+            Some(PresetComparisonOverlay::build_overlay(
+                runtime_state,
+                runtime_state.comparison_preset,
+            ))
+        } else {
+            None
+        };
+    overlays.preset_comparison_pos = if overlays.preset_comparison.is_some() {
+        PresetComparisonOverlay::calculate_position(term_width, term_height)
+    } else {
+        (0, 0)
+    };
+
+    // Build palette editor overlay
+    overlays.palette_editor =
+        if runtime_state.show_palette_editor && !runtime_state.show_dashboard {
+            runtime_state.palette_editor_state.as_ref().map(|s| {
+                PaletteEditorOverlay::build_overlay(s, &runtime_state.panel_style, ui_accent)
+            })
+        } else {
+            None
+        };
+    overlays.palette_editor_pos = if overlays.palette_editor.is_some() {
+        PaletteEditorOverlay::calculate_position(term_width, term_height)
+    } else {
+        (0, 0)
+    };
+
+    // Calculate controls position
+    overlays.controls_pos = ControlsOverlay::calculate_position(term_width, term_height);
+
+    // Build keyboard hints overlay
+    overlays.keyboard_hints = if runtime_state.show_keyboard_hints && !runtime_state.show_dashboard
+    {
+        Some(KeyboardHintsOverlay::build_overlay(ui_accent))
+    } else {
+        None
+    };
+    overlays.keyboard_hints_pos = if overlays.keyboard_hints.is_some() {
+        KeyboardHintsOverlay::calculate_position(term_width, term_height)
+    } else {
+        (0, 0)
+    };
+
+    // Build controls overlay
+    overlays.controls = if runtime_state.show_controls && !runtime_state.show_dashboard {
+        Some(ControlsOverlay::build_overlay(
+            runtime_state.controls_category_idx,
+            runtime_state.sensor_angle,
+            runtime_state.sensor_distance,
+            runtime_state.rotation_angle,
+            runtime_state.step_size,
+            runtime_state.decay_factor,
+            runtime_state.deposit_amount,
+            runtime_state.time_scale,
+            runtime_state.diffusion_kernel,
+            runtime_state.diffusion_sigma,
+            runtime_state.attractor_strength,
+            match runtime_state.mouse_mode {
+                MouseInteractionMode::Disabled => "Disabled",
+                MouseInteractionMode::Attract => "Attract",
+                MouseInteractionMode::Repel => "Repel",
+            },
+            runtime_state.mouse_timeout,
+            runtime_state.wind_direction,
+            runtime_state.terrain_type,
+            runtime_state.terrain_strength,
+            runtime_state.auto_normalize,
+            runtime_state.motion_blur_frames,
+            runtime_state.max_brightness,
+            runtime_state.fast_mode_enabled,
+            runtime_state.current_palette(&ALL_PALETTES).name(),
+            charset_name(&runtime_state.current_charset()),
+            runtime_state.palette_shift_speed,
+            runtime_state.invert_palette,
+            runtime_state.reverse_palette,
+            runtime_state.dither_mode.name(),
+            term_width,
+            runtime_state.default_values,
+            sim.agent_count(),
+            ui_accent,
+            runtime_state.current_theme_name(),
+            &runtime_state.panel_style,
+            runtime_state.shift_held,
+        ))
+    } else {
+        None
+    };
+
+    // Build status line
+    let diffusion_kernel_name = match runtime_state.diffusion_kernel {
+        simulation::config::DiffusionKernel::Mean3x3 => "Mean3x3",
+        simulation::config::DiffusionKernel::Gaussian => "Gaussian",
+    };
+    let (status_line, status_colors) = render::overlay::OverlayRenderer::build_status_line(
+        runtime_state.is_paused,
+        runtime_state.current_preset,
+        runtime_state.time_scale,
+        current_palette.clone(),
+        runtime_state.dither_mode,
+        term_width,
+        Some(sim.agent_count()),
+        Some(diffusion_kernel_name),
+        !runtime_state.undo_stack.is_empty(),
+        !runtime_state.redo_stack.is_empty(),
+        Some(ui_accent),
+    );
+    let status_x = render::overlay::OverlayRenderer::status_line_x(&status_line, term_width);
+    overlays.status = if runtime_state.any_overlay_open() || runtime_state.is_paused {
+        Some((status_line, status_x, status_colors))
+    } else {
+        None
+    };
+
+    // Build notification overlay
+    let notification_overlay: Option<RenderedOverlay> = runtime_state
+        .current_notification_full()
+        .map(|(msg, level)| build_notification_panel(msg, level, &runtime_state.panel_style));
+    overlays.notification = notification_overlay.map(|overlay| {
+        let outer_w = overlay.lines.first().map_or(0, |l| l.chars().count());
+        let notif_x = if outer_w < term_width {
+            (term_width - outer_w) / 2
+        } else {
+            0
+        };
+        let notif_y = term_height.saturating_sub(5);
+        (overlay, notif_x, notif_y)
+    });
+
+    // Build dashboard overlay
+    overlays.dashboard = if runtime_state.show_dashboard {
+        let elapsed = start_time.elapsed().as_secs_f32();
+        let trail_max = blended_trail.iter().fold(0.0f32, |m, &v| v.max(m));
+        let memory_mb = memory_stats()
+            .map(|m| m.physical_mem as f32 / 1024.0 / 1024.0)
+            .unwrap_or(0.0);
+        let frame_time_ms = timer.last_frame_ms();
+        let cpu_percent = (frame_time_ms / 33.333) * 100.0;
+
+        let init_mode_name = match init_mode {
+            InitMode::Random => "Random",
+            InitMode::CentralBurst => "Central",
+            InitMode::Circle => "Circle",
+            InitMode::Gradient => "Gradient",
+            InitMode::WaveFront => "Wave",
+            InitMode::Spiral => "Spiral",
+            InitMode::RandomClusters => "Clusters",
+            InitMode::Food => "Food",
+            InitMode::Petri => "Petri",
+        };
+
+        let color_mode_name = match color_mode {
+            ColorMode::TrueColor => "TrueColor",
+            ColorMode::Bits8 => "8",
+            ColorMode::Bits16 => "16",
+            ColorMode::Bits256 => "256",
+        };
+
+        let charset_str = match *charset {
+            Charset::HalfBlock => "HalfBlock",
+            Charset::HalfBlockDual => "HalfBlockDual",
+            Charset::Ascii => "ASCII",
+            Charset::Braille => "Braille",
+            Charset::Quadrant => "Quadrant",
+            Charset::Shade => "Shade",
+            Charset::Points => "Points",
+            Charset::Sculpted => "Sculpted",
+            Charset::CustomAscii(_) => "Custom",
+        };
+
+        let food_source = if init_mode == InitMode::Food {
+            Some(args.food.clone())
+        } else {
+            None
+        };
+
+        let current_palette = ALL_PALETTES[runtime_state.palette_index].clone();
+        let pname = palette_name(current_palette.clone());
+        let prname = preset_name(runtime_state.current_preset);
+        let palette_colors: Vec<RgbColor> = (0..78)
+            .map(|i| {
+                crate::render::palette::map_brightness_rgb(
+                    i as f32 / 77.0,
+                    current_palette.clone(),
+                    runtime_state.reverse_palette,
+                    runtime_state.invert_palette,
+                    0.0,
+                    None,
+                )
+            })
+            .collect();
+
+        let current_config = sim.config();
+
+        Some(DashboardOverlay::build_overlay(
+            sim.agent_count(),
+            trail_sum,
+            trail_capacity,
+            trail_max,
+            entropy,
+            timer.current_fps() as f32,
+            timer.average_fps() as f32,
+            timer.frame_count(),
+            elapsed,
+            sim.width(),
+            sim.height(),
+            sim.attractor_count(),
+            sim.obstacle_count(),
+            sim.species_count(),
+            memory_mb,
+            cpu_percent,
+            runtime_state.is_paused,
+            prname,
+            pname,
+            &palette_colors,
+            term_width,
+            term_height,
+            init_mode_name,
+            color_mode_name,
+            charset_str,
+            !args.simd_off,
+            current_config.decay_factor,
+            current_config.sensor_angle,
+            seed,
+            &food_source,
+            args.warmup_frames,
+            args.auto_reset,
+            ui_accent,
+            &runtime_state.panel_style,
+        ))
+    } else {
+        None
+    };
+    overlays.dashboard_pos = DashboardOverlay::calculate_position(term_width, term_height);
+
+    // Build config browser overlay
+    overlays.config_browser = if runtime_state.show_config_browser && !runtime_state.show_dashboard
+    {
+        match config_manager::list_configs() {
+            Ok(configs) => {
+                // Clamp selected index to valid range
+                runtime_state.config_browser_selected_index = runtime_state
+                    .config_browser_selected_index
+                    .min(configs.len().saturating_sub(1));
+                Some(ConfigBrowserOverlay::build_overlay(
+                    &configs,
+                    runtime_state.config_browser_selected_index,
+                ))
+            }
+            Err(_) => {
+                runtime_state.show_notification("Failed to load configurations".to_string());
+                runtime_state.show_config_browser = false;
+                None
+            }
+        }
+    } else {
+        None
+    };
+    overlays.config_browser_pos = if overlays.config_browser.is_some() {
+        ConfigBrowserOverlay::calculate_position(term_width, term_height)
+    } else {
+        (0, 0)
+    };
+
+    // Build config save dialog overlay
+    overlays.config_save = if runtime_state.show_config_save_dialog && !runtime_state.show_dashboard
+    {
+        Some(ConfigSaveOverlay::build_overlay(
+            &runtime_state.config_save_name_input,
+        ))
+    } else {
+        None
+    };
+    overlays.config_save_pos = if overlays.config_save.is_some() {
+        ConfigSaveOverlay::calculate_position(term_width, term_height)
+    } else {
+        (0, 0)
+    };
+
+    overlays
+}
+
 /// Runs the interactive simulation loop (Live or Screensaver mode).
 ///
 /// Handles terminal setup, input processing, simulation updates, and rendering
@@ -1548,7 +1972,7 @@ pub fn run_simulation(
                     runtime_state.controls_category_idx,
                     runtime_state.sensor_angle,
                     runtime_state.sensor_distance,
-                    runtime_state.turn_angle,
+                    runtime_state.rotation_angle,
                     runtime_state.step_size,
                     runtime_state.decay_factor,
                     runtime_state.deposit_amount,
@@ -1792,67 +2216,13 @@ pub fn run_simulation(
         };
 
         // Food persistence fade-out
-        if runtime_state.food_persist_enabled
-            && !runtime_state.is_paused
-            && args.food_persist_duration > 0
-        {
-            runtime_state.food_persist_counter += 1;
-
-            if runtime_state.food_persist_counter <= args.food_persist_duration {
-                // Calculate fade factor using quadratic easing
-                let progress =
-                    runtime_state.food_persist_counter as f32 / args.food_persist_duration as f32;
-                let fade_factor: f32 = (1.0 - progress).powi(2); // Quadratic fade-out
-
-                // Update attractor strengths
-                let mut new_config = sim.config().clone();
-                new_config.attractors.clear();
-
-                for attractor in &runtime_state.initial_food_attractors {
-                    new_config.attractors.push(Attractor::new(
-                        attractor.x,
-                        attractor.y,
-                        attractor.strength * fade_factor,
-                    ));
-                }
-
-                sim.update_config(new_config);
-            } else if runtime_state.food_persist_counter == args.food_persist_duration + 1 {
-                // Remove all food attractors when duration expires
-                let mut new_config = sim.config().clone();
-                new_config.attractors.clear();
-                sim.update_config(new_config);
-            }
-        }
+        update_food_persistence(sim, &mut runtime_state, args);
 
         // Update focused overlay state before rendering
         runtime_state.update_focused_overlay();
 
         // Entropy-based auto-reset
-        if args.auto_reset && !runtime_state.is_paused {
-            let should_reset = runtime_state.track_entropy(
-                entropy,
-                args.collapse_entropy_threshold,
-                args.collapse_duration_frames,
-            );
-            if should_reset {
-                // Generate new seed
-                let new_seed = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-
-                // Reset simulation
-                sim.reset(new_seed, init_mode);
-                runtime_state.reset_collapse_counter();
-                runtime_state.reset_warmup();
-                runtime_state.food_persist_counter = 0; // Reset food persistence counter
-                runtime_state.show_notification(format!(
-                    "Simulation collapsed - restarting with seed {}",
-                    new_seed
-                ));
-            }
-        }
+        check_auto_reset(sim, &mut runtime_state, args, entropy, init_mode);
 
         // VCR pause overlays: dim logo + blinking badge
         let (pause_logo_overlay, pause_logo_x, pause_logo_y) = if runtime_state.is_paused {
@@ -2567,14 +2937,14 @@ pub fn run_simulation(
                             }
                         }
                         ControlAction::AdjustTurnAngle(delta) => {
-                            let at_bound = runtime_state.adjust_turn_angle(delta);
+                            let at_bound = runtime_state.adjust_rotation_angle(delta);
                             let mut new_config = sim.config().clone();
-                            new_config.rotation_angle = runtime_state.turn_angle;
+                            new_config.rotation_angle = runtime_state.rotation_angle;
                             sim.update_config(new_config);
                             if at_bound {
                                 runtime_state.show_notification(format!(
                                     "Turn angle at {}°",
-                                    runtime_state.turn_angle
+                                    runtime_state.rotation_angle
                                 ));
                             }
                         }
@@ -2854,7 +3224,7 @@ pub fn run_simulation(
                                 // Apply the undone state to simulation
                                 let mut new_config = sim.config().clone();
                                 new_config.sensor_angle = runtime_state.sensor_angle;
-                                new_config.rotation_angle = runtime_state.turn_angle;
+                                new_config.rotation_angle = runtime_state.rotation_angle;
                                 new_config.step_size = runtime_state.step_size;
                                 new_config.decay_factor = runtime_state.decay_factor;
                                 new_config.deposit_amount = runtime_state.deposit_amount;
@@ -2880,7 +3250,7 @@ pub fn run_simulation(
                                 // Apply the redone state to simulation
                                 let mut new_config = sim.config().clone();
                                 new_config.sensor_angle = runtime_state.sensor_angle;
-                                new_config.rotation_angle = runtime_state.turn_angle;
+                                new_config.rotation_angle = runtime_state.rotation_angle;
                                 new_config.step_size = runtime_state.step_size;
                                 new_config.decay_factor = runtime_state.decay_factor;
                                 new_config.deposit_amount = runtime_state.deposit_amount;

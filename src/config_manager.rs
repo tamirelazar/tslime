@@ -236,7 +236,7 @@ impl SavedConfig {
 
         // Apply simulation parameters
         runtime_state.sensor_angle = self.sensor_angle;
-        runtime_state.turn_angle = self.rotation_angle;
+        runtime_state.rotation_angle = self.rotation_angle;
         runtime_state.step_size = self.step_size;
         runtime_state.decay_factor = self.decay_factor;
         runtime_state.deposit_amount = self.deposit_amount;
@@ -606,7 +606,7 @@ mod tests {
         state.reverse_palette = true;
         state.invert_palette = true;
         state.sensor_angle = 35.0;
-        state.turn_angle = 55.0;
+        state.rotation_angle = 55.0;
         state.step_size = 1.5;
         state.decay_factor = 0.92;
         state.deposit_amount = 6.5;
@@ -617,7 +617,7 @@ mod tests {
         let sim_config = SimConfig {
             sensor_angle: state.sensor_angle,
             sensor_distance: 9.0,
-            rotation_angle: state.turn_angle,
+            rotation_angle: state.rotation_angle,
             step_size: state.step_size,
             decay_factor: state.decay_factor,
             deposit_amount: state.deposit_amount,
@@ -633,7 +633,7 @@ mod tests {
                 name: "default".to_string(),
                 count: 50000,
                 sensor_angle: state.sensor_angle,
-                rotation_angle: state.turn_angle,
+                rotation_angle: state.rotation_angle,
                 step_size: state.step_size,
                 deposit_amount: state.deposit_amount,
                 color: "228b22".to_string(),
@@ -678,7 +678,7 @@ mod tests {
         assert_eq!(new_state.reverse_palette, state.reverse_palette);
         assert_eq!(new_state.invert_palette, state.invert_palette);
         assert_eq!(new_state.sensor_angle, state.sensor_angle);
-        assert_eq!(new_state.turn_angle, state.turn_angle);
+        assert_eq!(new_state.rotation_angle, state.rotation_angle);
         assert_eq!(new_state.step_size, state.step_size);
         assert_eq!(new_state.decay_factor, state.decay_factor);
         assert_eq!(new_state.deposit_amount, state.deposit_amount);

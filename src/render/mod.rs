@@ -2,6 +2,8 @@
 pub mod adaptive_brightness;
 /// Character set definitions and mapping logic.
 pub mod charset;
+/// Standalone (non-palette) color constants.
+pub mod color_constants;
 /// Centralized constants for rendering parameters.
 pub mod constants;
 /// Dithering algorithms (ordered, error diffusion).

@@ -45,93 +45,25 @@ pub struct PanelStyle {
 
 /// Gruvbox Dark-inspired panel style.
 pub const GRUVBOX_DARK: PanelStyle = PanelStyle {
-    bg_color: RgbColor {
-        r: 40,
-        g: 40,
-        b: 40,
-    },
-    focus_color: RgbColor {
-        r: 250,
-        g: 189,
-        b: 47,
-    },
-    unfocus_color: RgbColor {
-        r: 120,
-        g: 95,
-        b: 38,
-    },
-    text_primary: RgbColor {
-        r: 235,
-        g: 219,
-        b: 178,
-    },
-    text_secondary: RgbColor {
-        r: 185,
-        g: 170,
-        b: 140,
-    },
-    border_color: RgbColor {
-        r: 105,
-        g: 99,
-        b: 88,
-    }, // Warm gray — subtle amber tint, very low saturation
+    bg_color: RgbColor::new(0x28, 0x28, 0x28), // #282828 - dark background
+    focus_color: RgbColor::new(0xFA, 0xBD, 0x2F), // #FABD2F - yellow accent
+    unfocus_color: RgbColor::new(0x78, 0x5F, 0x26), // #785F26 - dimmed yellow
+    text_primary: RgbColor::new(0xEB, 0xDB, 0xB2), // #EBDBB2 - light text
+    text_secondary: RgbColor::new(0xB9, 0xAA, 0x8C), // #B9AA8C - muted text
+    border_color: RgbColor::new(0x69, 0x63, 0x58), // #696358 - warm gray
     indicator_width: 0,
-    status_bar_bg: RgbColor {
-        r: 16,
-        g: 18,
-        b: 19,
-    },
-    notification_bg: RgbColor {
-        r: 33,
-        g: 38,
-        b: 35,
-    },
+    status_bar_bg: RgbColor::new(0x10, 0x12, 0x13), // #101213 - darker bg
+    notification_bg: RgbColor::new(0x21, 0x26, 0x23), // #212623 - slightly lighter
     vertical_padding: 0,
-    accent_info: RgbColor {
-        r: 131,
-        g: 165,
-        b: 152,
-    }, // Gruvbox aqua
-    accent_success: RgbColor {
-        r: 184,
-        g: 187,
-        b: 38,
-    }, // Gruvbox green
-    accent_warning: RgbColor {
-        r: 250,
-        g: 189,
-        b: 47,
-    }, // Gruvbox yellow
-    accent_error: RgbColor {
-        r: 251,
-        g: 73,
-        b: 52,
-    }, // Gruvbox red
-    accent_active: RgbColor {
-        r: 250,
-        g: 189,
-        b: 47,
-    }, // Gruvbox yellow (same as focus)
-    muted: RgbColor {
-        r: 102,
-        g: 92,
-        b: 84,
-    }, // Gruvbox dark4
-    accent_modified: RgbColor {
-        r: 254,
-        g: 128,
-        b: 25,
-    }, // Gruvbox orange
-    accent_fps_good: RgbColor {
-        r: 142,
-        g: 192,
-        b: 124,
-    }, // Gruvbox green
-    accent_fps_warn: RgbColor {
-        r: 215,
-        g: 153,
-        b: 33,
-    }, // Amber
+    accent_info: RgbColor::new(0x83, 0xA5, 0x98), // #83A598 - aqua
+    accent_success: RgbColor::new(0xB8, 0xBB, 0x26), // #B8BB26 - green
+    accent_warning: RgbColor::new(0xFA, 0xBD, 0x2F), // #FABD2F - yellow
+    accent_error: RgbColor::new(0xFB, 0x49, 0x34), // #FB4934 - red
+    accent_active: RgbColor::new(0xFA, 0xBD, 0x2F), // #FABD2F - yellow
+    muted: RgbColor::new(0x66, 0x5C, 0x54),       // #665C54 - dark4
+    accent_modified: RgbColor::new(0xFE, 0x80, 0x19), // #FE8019 - orange
+    accent_fps_good: RgbColor::new(0x8E, 0xC0, 0x7C), // #8EC07C - bright green
+    accent_fps_warn: RgbColor::new(0xD7, 0x99, 0x21), // #D79921 - amber
 };
 
 /// Slime Mold Dark — a bioluminescent palette inspired by Physarum polycephalum.
@@ -139,89 +71,25 @@ pub const GRUVBOX_DARK: PanelStyle = PanelStyle {
 /// Deep blue-black backgrounds with electric green and cyan highlights
 /// evoke the glowing, living quality of the simulated organism.
 pub const SLIME_DARK: PanelStyle = PanelStyle {
-    bg_color: RgbColor {
-        r: 11,
-        g: 16,
-        b: 14,
-    }, // Near-black with deep green tint
-    focus_color: RgbColor {
-        r: 57,
-        g: 211,
-        b: 83,
-    }, // Bioluminescent green
-    unfocus_color: RgbColor {
-        r: 24,
-        g: 72,
-        b: 40,
-    }, // Dim green
-    text_primary: RgbColor {
-        r: 190,
-        g: 230,
-        b: 205,
-    }, // Soft green-white
-    text_secondary: RgbColor {
-        r: 100,
-        g: 155,
-        b: 118,
-    }, // Muted green-gray
-    border_color: RgbColor {
-        r: 26,
-        g: 56,
-        b: 36,
-    }, // Very subtle dark green — harmonious on all panel backgrounds
+    bg_color: RgbColor::new(0x0B, 0x10, 0x0E), // #0B100E - near-black green
+    focus_color: RgbColor::new(0x39, 0xD3, 0x53), // #39D353 - bioluminescent green
+    unfocus_color: RgbColor::new(0x18, 0x48, 0x28), // #184828 - dim green
+    text_primary: RgbColor::new(0xBE, 0xE6, 0xCD), // #BEE6CD - soft green-white
+    text_secondary: RgbColor::new(0x64, 0x9B, 0x76), // #649B76 - muted green-gray
+    border_color: RgbColor::new(0x1A, 0x38, 0x24), // #1A3824 - subtle dark green
     indicator_width: 0,
-    status_bar_bg: RgbColor { r: 6, g: 10, b: 8 }, // Near-black for status bar
-    notification_bg: RgbColor {
-        r: 15,
-        g: 26,
-        b: 19,
-    }, // Slightly lighter near-black with green tint
+    status_bar_bg: RgbColor::new(0x06, 0x0A, 0x08), // #060A08 - near-black
+    notification_bg: RgbColor::new(0x0F, 0x1A, 0x13), // #0F1A13 - slightly lighter
     vertical_padding: 0,
-    accent_info: RgbColor {
-        r: 0,
-        g: 188,
-        b: 212,
-    }, // Cyan (bioluminescent)
-    accent_success: RgbColor {
-        r: 57,
-        g: 211,
-        b: 83,
-    }, // Electric green
-    accent_warning: RgbColor {
-        r: 255,
-        g: 183,
-        b: 0,
-    }, // Amber
-    accent_error: RgbColor {
-        r: 255,
-        g: 71,
-        b: 87,
-    }, // Coral red
-    accent_active: RgbColor {
-        r: 57,
-        g: 211,
-        b: 83,
-    }, // Electric green for active tab
-    muted: RgbColor {
-        r: 36,
-        g: 58,
-        b: 44,
-    }, // Very muted green-gray
-    accent_modified: RgbColor {
-        r: 255,
-        g: 183,
-        b: 0,
-    }, // Amber for modified values
-    accent_fps_good: RgbColor {
-        r: 57,
-        g: 211,
-        b: 83,
-    }, // Electric green (same as focus)
-    accent_fps_warn: RgbColor {
-        r: 255,
-        g: 183,
-        b: 0,
-    }, // Amber (same as accent_warning)
+    accent_info: RgbColor::new(0x00, 0xBC, 0xD4), // #00BCD4 - cyan
+    accent_success: RgbColor::new(0x39, 0xD3, 0x53), // #39D353 - electric green
+    accent_warning: RgbColor::new(0xFF, 0xB7, 0x00), // #FFB700 - amber
+    accent_error: RgbColor::new(0xFF, 0x47, 0x57), // #FF4757 - coral red
+    accent_active: RgbColor::new(0x39, 0xD3, 0x53), // #39D353 - electric green
+    muted: RgbColor::new(0x24, 0x3A, 0x2C),       // #243A2C - muted green-gray
+    accent_modified: RgbColor::new(0xFF, 0xB7, 0x00), // #FFB700 - amber
+    accent_fps_good: RgbColor::new(0x39, 0xD3, 0x53), // #39D353 - electric green
+    accent_fps_warn: RgbColor::new(0xFF, 0xB7, 0x00), // #FFB700 - amber
 };
 
 /// Nord — Arctic, origin-aligned color palette.

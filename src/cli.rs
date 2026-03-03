@@ -2,12 +2,20 @@ use clap::Parser;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
-use crate::render::constants::intensity::PERLIN_SEED;
+use crate::config_builder::ConfigBuilder;
+use crate::config_defaults::ConfigDefaults;
+use crate::render::color_constants::default as color_defaults;
+use crate::render::constants::dither as dither_consts;
+use crate::render::constants::intensity::{LOG_DEFAULT, PERLIN_SEED};
+use crate::render::constants::rendering::{ASCII_CONTRAST_DEFAULT, GRID_OPACITY_DEFAULT};
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
-    Attractor, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig, SpeciesConfig, TerrainType,
-    Wind,
+    DiffusionKernel, InitMode, Obstacle, Preset, SimConfig, TerrainType, Wind,
+};
+use crate::simulation::constants::{
+    agent as agent_consts, env as env_consts, food_image as food_img_consts,
+    population as pop_consts, time as time_consts, trail as trail_consts,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,9 +135,12 @@ pub const ALL_PALETTES: [Palette; 16] = [
     Palette::Ethereal,
 ];
 
+/// The number of palettes in ALL_PALETTES.
+pub const NUM_PALETTES: usize = ALL_PALETTES.len();
+
 /// Returns the number of available palettes.
 pub fn num_palettes() -> usize {
-    ALL_PALETTES.len()
+    NUM_PALETTES
 }
 
 #[derive(Debug, Clone)]
@@ -174,11 +185,11 @@ impl std::str::FromStr for SpeciesArg {
         let name = name_and_count_parts[0].to_string();
         let rest = name_and_count_parts[1];
 
-        let mut sensor_angle = 22.5;
-        let mut rotation_angle = 45.0;
-        let mut step_size = 1.0;
-        let mut deposit_amount = 5.0;
-        let mut color = "228b22".to_string();
+        let mut sensor_angle = agent_consts::DEFAULT_SENSOR_ANGLE;
+        let mut rotation_angle = agent_consts::DEFAULT_ROTATION_ANGLE;
+        let mut step_size = agent_consts::DEFAULT_STEP_SIZE;
+        let mut deposit_amount = agent_consts::DEFAULT_DEPOSIT_AMOUNT;
+        let mut color = color_defaults::FOREST_GREEN.to_string();
 
         if rest.contains('@') {
             let count_and_rest: Vec<&str> = rest.splitn(2, '@').collect();
@@ -601,7 +612,7 @@ pub struct Args {
     #[arg(
         long = "explore-iterations",
         value_name = "INT",
-        default_value = "100",
+        default_value_t = ConfigDefaults::EXPLORE_ITERATIONS,
         help = "Number of iterations for parameter exploration"
     )]
     /// Number of iterations for parameter exploration.
@@ -617,7 +628,7 @@ pub struct Args {
     #[arg(
         long = "frame-count",
         value_name = "INT",
-        default_value = "50",
+        default_value_t = ConfigDefaults::FRAME_COUNT,
         help = "Number of frames to capture"
     )]
     /// Number of frames to capture.
@@ -626,7 +637,7 @@ pub struct Args {
     #[arg(
         long = "frame-skip",
         value_name = "INT",
-        default_value = "50",
+        default_value_t = ConfigDefaults::FRAME_SKIP,
         help = "Simulation steps between captured frames"
     )]
     /// Number of simulation steps to skip between captured frames.
@@ -635,7 +646,7 @@ pub struct Args {
     #[arg(
         long = "frame-dir",
         value_name = "PATH",
-        default_value = "frames",
+        default_value = ConfigDefaults::FRAME_DIR,
         help = "Directory to save captured frames"
     )]
     /// Directory to save captured frames.
@@ -654,7 +665,7 @@ pub struct Args {
         short = 'n',
         long = "population",
         value_name = "INT",
-        help = "Number of agents [default: 50000]"
+        help = concat!("Number of agents [default: ", stringify!(ConfigDefaults::POPULATION), "]")
     )]
     /// Number of agents in the simulation.
     pub population: Option<usize>,
@@ -662,7 +673,7 @@ pub struct Args {
     #[arg(
         long = "sensor-angle",
         value_name = "DEG",
-        help = "Sensor spread angle [default: 22.5]"
+        help = concat!("Sensor spread angle in degrees [range: ", stringify!(ConfigDefaults::MIN_SENSOR_ANGLE), "-", stringify!(ConfigDefaults::MAX_SENSOR_ANGLE), "]")
     )]
     /// Angle between sensors (in degrees).
     pub sensor_angle: Option<f32>,
@@ -670,7 +681,7 @@ pub struct Args {
     #[arg(
         long = "sensor-distance",
         value_name = "FLOAT",
-        help = "Sensor range [default: 9.0]"
+        help = concat!("Sensor range in pixels [range: ", stringify!(ConfigDefaults::MIN_SENSOR_DISTANCE), "-", stringify!(ConfigDefaults::MAX_SENSOR_DISTANCE), "]")
     )]
     /// Distance to sensors.
     pub sensor_distance: Option<f32>,
@@ -678,7 +689,7 @@ pub struct Args {
     #[arg(
         long = "rotation-angle",
         value_name = "DEG",
-        help = "Turn amount per step [default: 45.0]"
+        help = concat!("Turn amount per step in degrees [range: ", stringify!(ConfigDefaults::MIN_ROTATION_ANGLE), "-", stringify!(ConfigDefaults::MAX_ROTATION_ANGLE), "]")
     )]
     /// Maximum rotation angle per step (in degrees).
     pub rotation_angle: Option<f32>,
@@ -686,7 +697,7 @@ pub struct Args {
     #[arg(
         long = "step-size",
         value_name = "FLOAT",
-        help = "Movement speed [default: 1.0]"
+        help = concat!("Movement speed in pixels per step [range: ", stringify!(ConfigDefaults::MIN_STEP_SIZE), "-", stringify!(ConfigDefaults::MAX_STEP_SIZE), "]")
     )]
     /// Distance moved per step.
     pub step_size: Option<f32>,
@@ -694,7 +705,7 @@ pub struct Args {
     #[arg(
         long = "decay",
         value_name = "FLOAT",
-        help = "Trail decay factor [default: 0.5]"
+        help = concat!("Trail decay factor (0.0-1.0) [range: ", stringify!(ConfigDefaults::MIN_DECAY_FACTOR), "-", stringify!(ConfigDefaults::MAX_DECAY_FACTOR), "]")
     )]
     /// Trail decay factor (0.0-1.0).
     pub decay_factor: Option<f32>,
@@ -702,7 +713,7 @@ pub struct Args {
     #[arg(
         long = "deposit",
         value_name = "FLOAT",
-        help = "Amount of pheromone deposited by agents per step [default: 5.0]"
+        help = concat!("Amount of pheromone deposited by agents per step [range: ", stringify!(ConfigDefaults::MIN_DEPOSIT_AMOUNT), "-", stringify!(ConfigDefaults::MAX_DEPOSIT_AMOUNT), "]")
     )]
     /// Amount of pheromone deposited per step.
     pub deposit_amount: Option<f32>,
@@ -710,7 +721,7 @@ pub struct Args {
     #[arg(
         long = "max-brightness",
         value_name = "FLOAT",
-        help = "Fixed maximum brightness for normalization (prevents flickering) [default: 100.0]"
+        help = concat!("Fixed maximum brightness for normalization (prevents flickering) [range: ", stringify!(ConfigDefaults::MIN_MAX_BRIGHTNESS), "-", stringify!(ConfigDefaults::MAX_MAX_BRIGHTNESS), "]")
     )]
     /// Maximum brightness for normalization.
     pub max_brightness: Option<f32>,
@@ -750,7 +761,7 @@ pub struct Args {
     #[arg(
         long = "food",
         value_name = "PATH",
-        default_value = "assets/tslime_logo.png",
+        default_value = ConfigDefaults::FOOD_PATH,
         help = "Load agents from PNG image. High-brightness areas spawn more agents. Use with --init food"
     )]
     /// Path to image for food-based initialization.
@@ -760,7 +771,7 @@ pub struct Args {
         long = "food-invert",
         value_name = "BOOL",
         num_args = 1,
-        default_value_t = true,
+        default_value_t = ConfigDefaults::FOOD_INVERT,
         help = "Invert the food image values (dark areas spawn more agents instead of bright areas)"
     )]
     /// Invert food image brightness.
@@ -769,8 +780,8 @@ pub struct Args {
     #[arg(
         long = "food-scale",
         value_name = "FLOAT",
-        default_value = "1.5",
-        help = "Scale factor for food image relative to canvas (0.1-5.0, e.g., 0.5 = half size, 2.0 = double size)"
+        default_value_t = ConfigDefaults::FOOD_SCALE,
+        help = concat!("Scale factor for food image relative to canvas [default: ", stringify!(ConfigDefaults::FOOD_SCALE), "]")
     )]
     /// Scale factor for food image.
     pub food_scale: f32,
@@ -779,8 +790,8 @@ pub struct Args {
         short = 't',
         long = "time",
         value_name = "FLOAT",
-        default_value = "0.033",
-        help = "Frame delay in seconds"
+        default_value_t = ConfigDefaults::FRAME_DELAY,
+        help = concat!("Frame delay in seconds [default: ", stringify!(ConfigDefaults::FRAME_DELAY), "]")
     )]
     /// Frame delay in seconds.
     pub frame_delay: f32,
@@ -788,8 +799,8 @@ pub struct Args {
     #[arg(
         long = "fps",
         value_name = "INT",
-        default_value = "30",
-        help = "Target frames per second"
+        default_value_t = ConfigDefaults::FPS,
+        help = concat!("Target frames per second [default: ", stringify!(ConfigDefaults::FPS), "]")
     )]
     /// Target FPS.
     pub fps: usize,
@@ -797,8 +808,8 @@ pub struct Args {
     #[arg(
         long = "time-scale",
         value_name = "FLOAT",
-        default_value = "1.0",
-        help = "Time scaling factor (1.0 = normal, 0.5 = half speed, 2.0 = double speed)"
+        default_value_t = ConfigDefaults::TIME_SCALE,
+        help = concat!("Time scaling factor [range: ", stringify!(ConfigDefaults::MIN_TIME_SCALE), "-", stringify!(ConfigDefaults::MAX_TIME_SCALE), "]")
     )]
     /// Simulation time scale.
     pub time_scale: f32,
@@ -815,7 +826,7 @@ pub struct Args {
     #[arg(
         long = "palette",
         value_name = "NAME",
-        default_value = "moss",
+        default_value = ConfigDefaults::PALETTE,
         help = "Color palette (organic, heat, ocean, mono, forest, neon, warm, vibrant, legiblemono, slime, mold, fungus, swamp, moss, cosmic, ethereal) or custom: \"#rrggbb,#rrggbb,...\" (2-11 colors)"
     )]
     /// Color palette name or definition.
@@ -915,7 +926,7 @@ pub struct Args {
     #[arg(
         long = "intensity-mapping",
         value_name = "MODE",
-        default_value = "log",
+        default_value = ConfigDefaults::INTENSITY_MAPPING,
         help = "Intensity-to-color mapping (linear, log, exp, sqrt, square, sigmoid, smoothstep, quantize, perlin, split)"
     )]
     /// Intensity mapping mode for non-linear color distribution.
@@ -924,8 +935,8 @@ pub struct Args {
     #[arg(
         long = "intensity-mapping-base",
         value_name = "FLOAT",
-        default_value = "10.0",
-        help = "Base parameter for log/exp mapping (default: 10.0)"
+        default_value_t = ConfigDefaults::INTENSITY_MAPPING_BASE,
+        help = concat!("Base parameter for log/exp mapping [default: ", stringify!(ConfigDefaults::INTENSITY_MAPPING_BASE), "]")
     )]
     /// Base for logarithmic/exponential intensity mapping.
     pub intensity_mapping_base: f32,
@@ -933,8 +944,8 @@ pub struct Args {
     #[arg(
         long = "intensity-mapping-gamma",
         value_name = "FLOAT",
-        default_value = "2.2",
-        help = "Gamma for power mapping (default: 2.2)"
+        default_value_t = ConfigDefaults::INTENSITY_MAPPING_GAMMA,
+        help = concat!("Gamma for power mapping [default: ", stringify!(ConfigDefaults::INTENSITY_MAPPING_GAMMA), "]")
     )]
     /// Gamma for power intensity mapping.
     pub intensity_mapping_gamma: f32,
@@ -942,8 +953,8 @@ pub struct Args {
     #[arg(
         long = "intensity-mapping-levels",
         value_name = "INT",
-        default_value = "8",
-        help = "Levels for quantize mapping (default: 8)"
+        default_value_t = ConfigDefaults::INTENSITY_MAPPING_LEVELS,
+        help = concat!("Levels for quantize mapping [default: ", stringify!(ConfigDefaults::INTENSITY_MAPPING_LEVELS), "]")
     )]
     /// Quantization levels for intensity mapping.
     pub intensity_mapping_levels: u8,
@@ -951,8 +962,8 @@ pub struct Args {
     #[arg(
         long = "perlin-strength",
         value_name = "FLOAT",
-        default_value = "0.2",
-        help = "Perlin noise amplitude/strength (0.0–1.0, default: 0.2)"
+        default_value_t = ConfigDefaults::PERLIN_STRENGTH,
+        help = concat!("Perlin noise amplitude/strength (0.0-1.0) [default: ", stringify!(ConfigDefaults::PERLIN_STRENGTH), "]")
     )]
     /// Amplitude for perlin intensity mapping (affects both sim and logo).
     pub perlin_strength: f32,
@@ -960,7 +971,7 @@ pub struct Args {
     #[arg(
         long = "logo-mapping",
         value_name = "MODE",
-        default_value = "log",
+        default_value = ConfigDefaults::INTENSITY_MAPPING,
         help = "Intensity mapping for pause logo (linear, log, exp, sqrt, square, sigmoid, smoothstep, quantize, perlin, split, sim=use sim mapping)"
     )]
     /// Intensity mapping for the pause logo. Defaults to "log".
@@ -969,8 +980,8 @@ pub struct Args {
     #[arg(
         long = "logo-mapping-base",
         value_name = "FLOAT",
-        default_value = "4.0",
-        help = "Base for logo log/exp mapping (default: 4.0)"
+        default_value_t = ConfigDefaults::LOGO_MAPPING_BASE,
+        help = concat!("Base for logo log/exp mapping [default: ", stringify!(ConfigDefaults::LOGO_MAPPING_BASE), "]")
     )]
     /// Base for the logo's logarithmic/exponential mapping.
     pub logo_mapping_base: f32,
@@ -1026,8 +1037,8 @@ pub struct Args {
     #[arg(
         long = "attractor-strength",
         value_name = "FLOAT",
-        default_value = "1.0",
-        help = "Global multiplier for attractor/repeller strength (0.1-10.0)"
+        default_value_t = ConfigDefaults::ATTRACTOR_STRENGTH,
+        help = concat!("Global multiplier for attractor/repeller strength [range: ", stringify!(ConfigDefaults::MIN_ATTRACTOR_STRENGTH), "-", stringify!(ConfigDefaults::MAX_ATTRACTOR_STRENGTH), "]")
     )]
     /// Global strength multiplier for attractors.
     pub attractor_strength: f32,
@@ -1035,7 +1046,7 @@ pub struct Args {
     #[arg(
         long = "dither-mode",
         value_name = "MODE",
-        default_value = "none",
+        default_value = ConfigDefaults::DITHER_MODE,
         help = "Dithering mode: none, ordered, error-diffusion, hybrid"
     )]
     /// Dithering algorithm mode.
@@ -1044,8 +1055,8 @@ pub struct Args {
     #[arg(
         long = "dither-intensity",
         value_name = "FLOAT",
-        default_value = "0.5",
-        help = "Dithering intensity for ordered/hybrid modes (0.0-1.0, higher = more dithering effect)"
+        default_value_t = ConfigDefaults::DITHER_INTENSITY,
+        help = concat!("Dithering intensity for ordered/hybrid modes (0.0-1.0) [default: ", stringify!(ConfigDefaults::DITHER_INTENSITY), "]")
     )]
     /// Intensity of dithering effect.
     pub dither_intensity: f32,
@@ -1053,7 +1064,7 @@ pub struct Args {
     #[arg(
         long = "dither-matrix",
         value_name = "MATRIX",
-        default_value = "4x4",
+        default_value = ConfigDefaults::DITHER_MATRIX,
         help = "Dither matrix for ordered mode: 4x4, 8x8"
     )]
     /// Matrix size for ordered dithering.
@@ -1119,8 +1130,8 @@ pub struct Args {
     #[arg(
         long = "terrain-strength",
         value_name = "FLOAT",
-        default_value = "1.0",
-        help = "Strength of terrain influence (0.1-5.0)"
+        default_value_t = ConfigDefaults::TERRAIN_STRENGTH,
+        help = concat!("Strength of terrain influence [range: ", stringify!(ConfigDefaults::MIN_TERRAIN_STRENGTH), "-", stringify!(ConfigDefaults::MAX_TERRAIN_STRENGTH), "]")
     )]
     /// Strength of terrain effect.
     pub terrain_strength: f32,
@@ -1144,8 +1155,8 @@ pub struct Args {
     #[arg(
         long = "export-frames",
         value_name = "INT",
-        default_value = "50",
-        help = "Number of frames to capture for GIF export"
+        default_value_t = ConfigDefaults::EXPORT_FRAMES,
+        help = concat!("Number of frames to capture for GIF export [default: ", stringify!(ConfigDefaults::EXPORT_FRAMES), "]")
     )]
     /// Number of frames to export.
     pub export_frames: usize,
@@ -1153,8 +1164,8 @@ pub struct Args {
     #[arg(
         long = "export-fps",
         value_name = "INT",
-        default_value = "30",
-        help = "GIF playback speed (frames per second)"
+        default_value_t = ConfigDefaults::EXPORT_FPS,
+        help = concat!("GIF playback speed (frames per second) [default: ", stringify!(ConfigDefaults::EXPORT_FPS), "]")
     )]
     /// FPS for exported animation.
     pub export_fps: usize,
@@ -1176,8 +1187,8 @@ pub struct Args {
     #[arg(
         long = "mouse-timeout",
         value_name = "FLOAT",
-        default_value = "3.0",
-        help = "Time in seconds before mouse-created attractors/repellers expire (0.1-30.0)"
+        default_value_t = ConfigDefaults::MOUSE_TIMEOUT,
+        help = concat!("Time in seconds before mouse-created attractors/repellers expire [default: ", stringify!(ConfigDefaults::MOUSE_TIMEOUT), "]")
     )]
     /// Duration of mouse effects.
     pub mouse_timeout: f32,
@@ -1199,8 +1210,8 @@ pub struct Args {
     #[arg(
         long = "warmup-frames",
         value_name = "INT",
-        default_value = "60",
-        help = "Number of frames to display logo before simulation (0 to disable)"
+        default_value_t = ConfigDefaults::WARMUP_FRAMES,
+        help = concat!("Number of frames to display logo before simulation (0 to disable) [default: ", stringify!(ConfigDefaults::WARMUP_FRAMES), "]")
     )]
     /// Number of warmup frames.
     pub warmup_frames: usize,
@@ -1208,8 +1219,8 @@ pub struct Args {
     #[arg(
         long = "warmup-brightness",
         value_name = "FLOAT",
-        default_value = "2.5",
-        help = "Brightness multiplier during warmup phase"
+        default_value_t = ConfigDefaults::WARMUP_BRIGHTNESS_MULTIPLIER,
+        help = concat!("Brightness multiplier during warmup phase [default: ", stringify!(ConfigDefaults::WARMUP_BRIGHTNESS_MULTIPLIER), "]")
     )]
     /// Brightness multiplier during warmup.
     pub warmup_brightness_multiplier: f32,
@@ -1217,8 +1228,8 @@ pub struct Args {
     #[arg(
         long = "warmup-decay",
         value_name = "FLOAT",
-        default_value = "0.99",
-        help = "Decay factor during warmup (higher = logo persists longer)"
+        default_value_t = ConfigDefaults::WARMUP_DECAY,
+        help = concat!("Decay factor during warmup (higher = logo persists longer) [default: ", stringify!(ConfigDefaults::WARMUP_DECAY), "]")
     )]
     /// Trail decay during warmup.
     pub warmup_decay: f32,
@@ -1238,8 +1249,8 @@ pub struct Args {
     #[arg(
         long = "food-persist-strength",
         value_name = "FLOAT",
-        default_value = "0.3",
-        help = "Strength of food persistence attractors (0.0-5.0)"
+        default_value_t = ConfigDefaults::FOOD_PERSIST_STRENGTH,
+        help = concat!("Strength of food persistence attractors (0.0-5.0) [default: ", stringify!(ConfigDefaults::FOOD_PERSIST_STRENGTH), "]")
     )]
     /// Strength of food persistence.
     pub food_persist_strength: f32,
@@ -1247,8 +1258,8 @@ pub struct Args {
     #[arg(
         long = "food-persist-radius",
         value_name = "FLOAT",
-        default_value = "50.0",
-        help = "Radius of influence for food persistence attractors"
+        default_value_t = ConfigDefaults::FOOD_PERSIST_RADIUS,
+        help = concat!("Radius of influence for food persistence attractors [default: ", stringify!(ConfigDefaults::FOOD_PERSIST_RADIUS), "]")
     )]
     /// Radius of food persistence.
     pub food_persist_radius: f32,
@@ -1256,8 +1267,8 @@ pub struct Args {
     #[arg(
         long = "food-persist-duration",
         value_name = "INT",
-        default_value = "300",
-        help = "Number of frames before food attractors fade out (0 = permanent)"
+        default_value_t = ConfigDefaults::FOOD_PERSIST_DURATION,
+        help = concat!("Number of frames before food attractors fade out (0 = permanent) [default: ", stringify!(ConfigDefaults::FOOD_PERSIST_DURATION), "]")
     )]
     /// Duration of food persistence.
     pub food_persist_duration: usize,
@@ -1274,8 +1285,8 @@ pub struct Args {
     #[arg(
         long = "collapse-threshold",
         value_name = "FLOAT",
-        default_value = "0.95",
-        help = "Entropy threshold to detect collapse (0.0-1.0, higher = more sensitive)"
+        default_value_t = ConfigDefaults::COLLAPSE_ENTROPY_THRESHOLD,
+        help = concat!("Entropy threshold to detect collapse (0.0-1.0, higher = more sensitive) [default: ", stringify!(ConfigDefaults::COLLAPSE_ENTROPY_THRESHOLD), "]")
     )]
     /// Entropy threshold for collapse detection.
     pub collapse_entropy_threshold: f32,
@@ -1283,8 +1294,8 @@ pub struct Args {
     #[arg(
         long = "collapse-duration",
         value_name = "INT",
-        default_value = "90",
-        help = "Number of frames simulation must stay collapsed before auto-reset"
+        default_value_t = ConfigDefaults::COLLAPSE_DURATION_FRAMES,
+        help = concat!("Number of frames simulation must stay collapsed before auto-reset [default: ", stringify!(ConfigDefaults::COLLAPSE_DURATION_FRAMES), "]")
     )]
     /// Duration to wait before reset.
     pub collapse_duration_frames: usize,
@@ -1297,8 +1308,8 @@ pub struct Args {
     #[arg(
         long = "grid-size",
         value_name = "INT",
-        default_value = "10",
-        help = "Grid cell size (number of cells per dimension)"
+        default_value_t = ConfigDefaults::GRID_SIZE,
+        help = concat!("Grid cell size (number of cells per dimension) [default: ", stringify!(ConfigDefaults::GRID_SIZE), "]")
     )]
     /// Grid cell size.
     pub grid_size: usize,
@@ -1306,7 +1317,7 @@ pub struct Args {
     #[arg(
         long = "grid-style",
         value_name = "TYPE",
-        default_value = "cross",
+        default_value = ConfigDefaults::GRID_STYLE,
         help = "Grid rendering style (cross, dots, gradient)"
     )]
     /// Grid style (cross, dots, gradient).
@@ -1315,7 +1326,7 @@ pub struct Args {
     #[arg(
         long = "grid-color",
         value_name = "HEX",
-        default_value = "ffffff",
+        default_value = ConfigDefaults::GRID_COLOR,
         help = "Grid color as hex (without #)"
     )]
     /// Grid color (hex).
@@ -1324,8 +1335,8 @@ pub struct Args {
     #[arg(
         long = "grid-opacity",
         value_name = "FLOAT",
-        default_value = "0.15",
-        help = "Grid opacity (0.0-1.0)"
+        default_value_t = ConfigDefaults::GRID_OPACITY,
+        help = concat!("Grid opacity (0.0-1.0) [default: ", stringify!(ConfigDefaults::GRID_OPACITY), "]")
     )]
     /// Grid opacity.
     pub grid_opacity: f32,
@@ -1349,8 +1360,8 @@ pub struct Args {
     #[arg(
         long = "ascii-contrast",
         value_name = "FLOAT",
-        default_value = "1.5",
-        help = "Shape-vector ASCII contrast exponent (1.0 = none, 1.5 = default, 3.0 = strong edge enhancement)"
+        default_value_t = ConfigDefaults::ASCII_CONTRAST,
+        help = concat!("Shape-vector ASCII contrast exponent (1.0 = none, 3.0 = strong edge enhancement) [default: ", stringify!(ConfigDefaults::ASCII_CONTRAST), "]")
     )]
     /// Contrast exponent for shape-vector ASCII rendering.
     pub ascii_contrast: f32,
@@ -1552,15 +1563,19 @@ impl Args {
         match self.dither_mode.as_str() {
             "none" => Ok(DitherMode::None),
             "ordered" => Ok(DitherMode::Ordered {
-                intensity: self.dither_intensity.clamp(0.0, 1.0),
+                intensity: self
+                    .dither_intensity
+                    .clamp(dither_consts::MIN_INTENSITY, dither_consts::MAX_INTENSITY),
                 matrix: self.parse_dither_matrix()?,
             }),
             "error-diffusion" | "error_diffusion" => {
                 Ok(DitherMode::ErrorDiffusion { serpentine: true })
             }
             "hybrid" => Ok(DitherMode::Hybrid {
-                edge_threshold: 0.15,
-                intensity: self.dither_intensity.clamp(0.0, 1.0),
+                edge_threshold: dither_consts::DEFAULT_HYBRID_EDGE,
+                intensity: self
+                    .dither_intensity
+                    .clamp(dither_consts::MIN_INTENSITY, dither_consts::MAX_INTENSITY),
                 matrix: self.parse_dither_matrix()?,
             }),
             _ => Err(format!("Invalid dither mode: {}", self.dither_mode)),
@@ -1576,126 +1591,28 @@ impl Args {
     }
 
     /// Converts CLI arguments to simulation configuration.
+    ///
+    /// Uses ConfigBuilder for consistent construction and validation.
+    /// Panics if validation fails - use `validate()` before calling this method.
     pub fn to_sim_config(&self) -> SimConfig {
-        let mut config = if let Some(preset) = self.preset {
-            SimConfig::from(preset)
-        } else {
-            SimConfig::default()
-        };
+        ConfigBuilder::from_args(self)
+            .build()
+            .expect("ConfigBuilder validation should have been called before to_sim_config")
+    }
 
-        if let Some(v) = self.sensor_angle {
-            config.sensor_angle = v;
-        }
-        if let Some(v) = self.sensor_distance {
-            config.sensor_distance = v;
-        }
-        if let Some(v) = self.rotation_angle {
-            config.rotation_angle = v;
-        }
-        if let Some(v) = self.step_size {
-            config.step_size = v;
-        }
-        if let Some(v) = self.decay_factor {
-            config.decay_factor = v;
-        }
-        if let Some(v) = self.max_brightness {
-            config.max_brightness = v;
-        }
-        if let Some(v) = self.deposit_amount {
-            config.deposit_amount = v;
-        }
-
-        config.food_image_path = Some(self.food.clone());
-        config.food_image_invert = self.food_invert;
-        config.food_image_scale = self.food_scale;
-
-        if let Some(kernel) = self.diffusion_kernel {
-            config.diffusion_kernel = kernel;
-        }
-
-        if let Some(sigma) = self.diffusion_sigma {
-            config.diffusion_sigma = sigma;
-        }
-
-        config.time_scale = self.time_scale;
-
-        if self.fps >= 60 && self.diffusion_kernel.is_none() && self.diffusion_sigma.is_none() {
-            config.diffusion_kernel = crate::simulation::config::DiffusionKernel::Gaussian;
-            config.diffusion_sigma = 0.5;
-        }
-
-        config.attractors = self
-            .attract
-            .iter()
-            .map(|a| Attractor::new(a.x, a.y, a.strength))
-            .collect();
-        config.attractor_strength = self.attractor_strength;
-
-        config.obstacles = self.obstacle.iter().map(|o| o.obstacle.clone()).collect();
-        let _ = config.load_obstacle_masks();
-
-        config.separate_species_trails = self.separate_species_trails || self.species_colors;
-
-        config.use_simd = !self.simd_off;
-
-        if !self.species.is_empty() {
-            // User explicitly provided species
-            config.species_configs = self
-                .species
-                .iter()
-                .map(|s| SpeciesConfig {
-                    name: s.name.clone(),
-                    count: s.count,
-                    sensor_angle: s.sensor_angle,
-                    rotation_angle: s.rotation_angle,
-                    step_size: s.step_size,
-                    deposit_amount: s.deposit_amount,
-                    color: s.color.clone(),
-                })
-                .collect();
-        } else if self.preset.is_none() {
-            // Only use default/CLI-overridden single species if NOT using a preset
-            // (Presets come with their own species configs)
-            config.species_configs = vec![SpeciesConfig {
-                name: "default".to_string(),
-                count: self.population.unwrap_or(50_000),
-                sensor_angle: self.sensor_angle.unwrap_or(config.sensor_angle),
-                rotation_angle: self.rotation_angle.unwrap_or(config.rotation_angle),
-                step_size: self.step_size.unwrap_or(config.step_size),
-                deposit_amount: self.deposit_amount.unwrap_or(config.deposit_amount),
-                color: "228b22".to_string(),
-            }];
-        } else if let Some(preset_species) = config.species_configs.first_mut() {
-            // If using a preset, allow overriding the FIRST species' properties with CLI args if provided
-            if let Some(pop) = self.population {
-                preset_species.count = pop;
-            }
-            if let Some(sa) = self.sensor_angle {
-                preset_species.sensor_angle = sa;
-            }
-            if let Some(ra) = self.rotation_angle {
-                preset_species.rotation_angle = ra;
-            }
-            if let Some(ss) = self.step_size {
-                preset_species.step_size = ss;
-            }
-            if let Some(da) = self.deposit_amount {
-                preset_species.deposit_amount = da;
-            }
-        }
-
-        config.wind = self.wind.as_ref().map(|w| Wind::new(w.dx, w.dy));
-        config.terrain = self
-            .terrain
-            .parse::<TerrainType>()
-            .unwrap_or(TerrainType::None);
-        config.terrain_strength = self.terrain_strength;
-        config.background_color = self.bg_color.clone();
-
-        config
+    /// Validates CLI arguments using ConfigBuilder.
+    ///
+    /// Returns an error message if any argument is invalid.
+    pub fn validate_with_builder(&self) -> Result<(), String> {
+        ConfigBuilder::from_args(self)
+            .validate()
+            .map_err(|e| e.to_string())
     }
 
     /// Validates arguments for correctness and safety bounds.
+    ///
+    /// Uses ConfigBuilder for simulation parameter validation, while keeping
+    /// CLI-specific validations (resolution, trail_history, etc.) inline.
     #[allow(clippy::manual_range_contains)]
     pub fn validate(&self) -> Result<(), String> {
         // Resolution bounds - prevent excessive memory allocation
@@ -1715,72 +1632,19 @@ impl Args {
         if self.fps < 1 || self.fps > 144 {
             return Err(format!("fps must be between 1 and 144, got {}", self.fps));
         }
-        // Population bounds - prevent memory explosion
-        if let Some(pop) = self.population {
-            if !(100..=500_000).contains(&pop) {
-                return Err(format!(
-                    "population must be between 100 and 500,000, got {}",
-                    pop
-                ));
-            }
-        }
-        // Simulation parameter bounds
-        if let Some(sa) = self.sensor_angle {
-            if !(1.0..=180.0).contains(&sa) {
-                return Err(format!(
-                    "sensor_angle must be between 1.0 and 180.0 degrees, got {}",
-                    sa
-                ));
-            }
-        }
-        if let Some(sd) = self.sensor_distance {
-            if !(0.5..=100.0).contains(&sd) {
-                return Err(format!(
-                    "sensor_distance must be between 0.5 and 100.0, got {}",
-                    sd
-                ));
-            }
-        }
-        if let Some(ra) = self.rotation_angle {
-            if !(1.0..=180.0).contains(&ra) {
-                return Err(format!(
-                    "rotation_angle must be between 1.0 and 180.0 degrees, got {}",
-                    ra
-                ));
-            }
-        }
-        if let Some(ss) = self.step_size {
-            if !(0.01..=10.0).contains(&ss) {
-                return Err(format!(
-                    "step_size must be between 0.01 and 10.0, got {}",
-                    ss
-                ));
-            }
-        }
-        if let Some(df) = self.decay_factor {
-            if !(0.01..=0.9999).contains(&df) {
-                return Err(format!("decay must be between 0.01 and 0.9999, got {}", df));
-            }
-        }
-        if let Some(da) = self.deposit_amount {
-            if !(0.1..=100.0).contains(&da) {
-                return Err(format!("deposit must be between 0.1 and 100.0, got {}", da));
-            }
-        }
-        if let Some(mb) = self.max_brightness {
-            if !(1.0..=1000.0).contains(&mb) {
-                return Err(format!(
-                    "max_brightness must be between 1.0 and 1000.0, got {}",
-                    mb
-                ));
-            }
-        }
-        if !(0.1..=10.0).contains(&self.time_scale) {
+
+        // Use ConfigBuilder for simulation parameter validation
+        self.validate_with_builder()?;
+
+        // Validate terrain type (not validated by ConfigBuilder)
+        if self.terrain.parse::<TerrainType>().is_err() {
             return Err(format!(
-                "time_scale must be between 0.1 and 10.0, got {}",
-                self.time_scale
+                "Invalid terrain type: {}. Must be one of: none, smooth, turbulent, mixed",
+                self.terrain
             ));
         }
+
+        // CLI-specific validations
         if self.trail_history > 10 {
             return Err(format!(
                 "trail_history must be between 0 and 10, got {}",
@@ -1793,35 +1657,11 @@ impl Args {
                 self.normalize_window
             ));
         }
-        if self.attractor_strength < 0.1 || self.attractor_strength > 10.0 {
-            return Err(format!(
-                "attractor_strength must be between 0.1 and 10.0, got {}",
-                self.attractor_strength
-            ));
-        }
         if self.dither_intensity < 0.0 || self.dither_intensity > 1.0 {
             return Err(format!(
                 "dither_intensity must be between 0.0 and 1.0, got {}",
                 self.dither_intensity
             ));
-        }
-        if self.terrain_strength < 0.1 || self.terrain_strength > 5.0 {
-            return Err(format!(
-                "terrain_strength must be between 0.1 and 5.0, got {}",
-                self.terrain_strength
-            ));
-        }
-        if self.terrain.parse::<TerrainType>().is_err() {
-            return Err(format!(
-                "Invalid terrain type: {}. Must be one of: none, smooth, turbulent, mixed",
-                self.terrain
-            ));
-        }
-        if let Some(ref wind) = self.wind {
-            let w = Wind::new(wind.dx, wind.dy);
-            if let Err(e) = w.validate() {
-                return Err(format!("Invalid wind: {}", e));
-            }
         }
         if self.food_scale < 0.1 || self.food_scale > 5.0 {
             return Err(format!(
@@ -1834,12 +1674,6 @@ impl Args {
                 "Cannot specify both --mouse-attract and --mouse-repel. Choose one mode."
                     .to_string(),
             );
-        }
-        if self.mouse_timeout < 0.1 || self.mouse_timeout > 30.0 {
-            return Err(format!(
-                "mouse_timeout must be between 0.1 and 30.0, got {}",
-                self.mouse_timeout
-            ));
         }
         if self.grid && self.grid_size == 0 {
             return Err("grid_size must be greater than 0".to_string());
@@ -1873,29 +1707,29 @@ impl Default for Args {
             explore_behavior: None,
             explore_iterations: 100,
             seed: None,
-            population: Some(50000),
-            sensor_angle: Some(22.5),
-            sensor_distance: Some(9.0),
-            rotation_angle: Some(45.0),
-            step_size: Some(1.0),
-            decay_factor: Some(0.5),
-            deposit_amount: Some(5.0),
-            max_brightness: Some(100.0),
+            population: Some(pop_consts::DEFAULT_COUNT),
+            sensor_angle: Some(agent_consts::DEFAULT_SENSOR_ANGLE),
+            sensor_distance: Some(agent_consts::DEFAULT_SENSOR_DISTANCE),
+            rotation_angle: Some(agent_consts::DEFAULT_ROTATION_ANGLE),
+            step_size: Some(agent_consts::DEFAULT_STEP_SIZE),
+            decay_factor: Some(trail_consts::DEFAULT_DECAY_FACTOR),
+            deposit_amount: Some(agent_consts::DEFAULT_DEPOSIT_AMOUNT),
+            max_brightness: Some(trail_consts::DEFAULT_MAX_BRIGHTNESS),
             diffusion_kernel: None,
             diffusion_sigma: None,
             preset: Option::<Preset>::None,
             init: Some(InitMode::Food),
-            food: "assets/tslime_logo.png".to_string(),
-            food_invert: true,
-            food_scale: 1.5,
-            frame_delay: 0.033,
-            fps: 30,
-            time_scale: 1.0,
+            food: food_img_consts::DEFAULT_PATH.to_string(),
+            food_invert: food_img_consts::DEFAULT_INVERT,
+            food_scale: ConfigDefaults::FOOD_SCALE, // Food image scale
+            frame_delay: ConfigDefaults::FRAME_DELAY,
+            fps: ConfigDefaults::FPS,
+            time_scale: time_consts::DEFAULT_TIME_SCALE,
             resolution: Resolution {
-                width: 400,
-                height: 200,
+                width: ConfigDefaults::RESOLUTION_WIDTH,
+                height: ConfigDefaults::RESOLUTION_HEIGHT,
             },
-            palette: "forest".to_string(),
+            palette: ConfigDefaults::PALETTE.to_string(),
             colors: "true".to_string(),
             ascii: false,
             braille: false,
@@ -1909,8 +1743,8 @@ impl Default for Args {
             reverse_palette: false,
             invert_palette: false,
             palette_shift: 0.0,
-            intensity_mapping: "linear".to_string(),
-            intensity_mapping_base: 10.0,
+            intensity_mapping: ConfigDefaults::INTENSITY_MAPPING.to_string(),
+            intensity_mapping_base: LOG_DEFAULT,
             intensity_mapping_gamma: 2.2,
             intensity_mapping_levels: 8,
             perlin_strength: 0.2,
@@ -1921,13 +1755,13 @@ impl Default for Args {
             auto_normalize: false,
             normalize_window: 30,
             attract: Vec::new(),
-            attractor_strength: 1.0,
+            attractor_strength: env_consts::DEFAULT_ATTRACTOR_STRENGTH,
             capture_frames: false,
             frame_count: 50,
             frame_skip: 50,
             frame_dir: "frames".to_string(),
             dither_mode: "none".to_string(),
-            dither_intensity: 0.5,
+            dither_intensity: dither_consts::DEFAULT_INTENSITY,
             dither_matrix: "4x4".to_string(),
             dither_swap: false,
             error_diffusion_swap: false,
@@ -1937,7 +1771,7 @@ impl Default for Args {
             simd_off: false,
             wind: None,
             terrain: "none".to_string(),
-            terrain_strength: 1.0,
+            terrain_strength: env_consts::DEFAULT_TERRAIN_STRENGTH,
             export_gif: None,
             export_webm: None,
             export_frames: 50,
@@ -1945,7 +1779,7 @@ impl Default for Args {
             obstacle: Vec::new(),
             mouse_attract: false,
             mouse_repel: false,
-            mouse_timeout: 3.0,
+            mouse_timeout: env_consts::DEFAULT_MOUSE_TIMEOUT,
             stats: false,
             auto_fps: false,
             warmup_frames: 60,
@@ -1963,10 +1797,10 @@ impl Default for Args {
             grid_size: 10,
             grid_style: "cross".to_string(),
             grid_color: "ffffff".to_string(),
-            grid_opacity: 0.15,
+            grid_opacity: GRID_OPACITY_DEFAULT,
             grid_adaptive: false,
             ascii_chars: None,
-            ascii_contrast: 1.5,
+            ascii_contrast: ASCII_CONTRAST_DEFAULT,
             random: false,
             explain: false,
             completions: None,

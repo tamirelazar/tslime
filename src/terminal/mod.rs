@@ -2,14 +2,18 @@
 pub mod control;
 /// Terminal capability detection.
 pub mod detection;
+/// Frame buffer for terminal rendering.
+pub mod frame_buffer;
 /// Input handling (keyboard/mouse).
 pub mod input;
-/// Output rendering (ANSI/Unicode).
-pub mod output;
+/// Terminal renderer with overlay support.
+pub mod renderer;
 /// Alternate screen buffer management.
 pub mod screen;
 /// Signal handling (Ctrl+C, resize).
 pub mod signal;
+/// Runtime state and control types.
+pub mod state;
 /// Frame timing and synchronization.
 pub mod timing;
 

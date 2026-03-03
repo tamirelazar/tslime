@@ -9,9 +9,11 @@ use std::path::Path;
 use super::agent::normalize_angle;
 use super::constants::agent as agent_consts;
 use super::constants::env as env_consts;
+use super::constants::food_image as food_img_consts;
 use super::constants::population as pop_consts;
 use super::constants::time as time_consts;
 use super::constants::trail as trail_consts;
+use crate::render::color_constants::{default, presets, ui};
 
 /// Algorithm used for pheromone diffusion (spreading).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -442,12 +444,12 @@ impl Default for SpeciesConfig {
     fn default() -> Self {
         Self {
             name: "default".to_string(),
-            count: 50_000,
-            sensor_angle: 22.5,
-            rotation_angle: 45.0,
-            step_size: 1.0,
-            deposit_amount: 5.0,
-            color: "228b22".to_string(),
+            count: pop_consts::DEFAULT_COUNT,
+            sensor_angle: agent_consts::DEFAULT_SENSOR_ANGLE,
+            rotation_angle: agent_consts::DEFAULT_ROTATION_ANGLE,
+            step_size: agent_consts::DEFAULT_STEP_SIZE,
+            deposit_amount: agent_consts::DEFAULT_DEPOSIT_AMOUNT,
+            color: default::FOREST_GREEN.to_string(),
         }
     }
 }
@@ -455,10 +457,14 @@ impl Default for SpeciesConfig {
 impl SpeciesConfig {
     /// Validates species configuration.
     pub fn validate(&self) -> Result<(), String> {
-        if self.count < 100 || self.count > 200_000 {
+        if self.count < pop_consts::MIN_SPECIES_COUNT || self.count > pop_consts::MAX_SPECIES_COUNT
+        {
             return Err(format!(
-                "species '{}' count must be between 100 and 200000, got {}",
-                self.name, self.count
+                "species '{}' count must be between {} and {}, got {}",
+                self.name,
+                pop_consts::MIN_SPECIES_COUNT,
+                pop_consts::MAX_SPECIES_COUNT,
+                self.count
             ));
         }
         if self.sensor_angle < 5.0 || self.sensor_angle > 90.0 {
@@ -555,7 +561,7 @@ impl SimConfig {
             return Err("at least one species must be configured".to_string());
         }
         let total_pop: usize = self.species_configs.iter().map(|s| s.count).sum();
-        if total_pop < pop_consts::MIN_TOTAL || total_pop > pop_consts::MAX_TOTAL {
+        if !(pop_consts::MIN_TOTAL..=pop_consts::MAX_TOTAL).contains(&total_pop) {
             return Err(format!(
                 "total population must be between {} and {}, got {}",
                 pop_consts::MIN_TOTAL,
@@ -747,31 +753,31 @@ impl SimConfig {
 impl Default for SimConfig {
     fn default() -> Self {
         Self {
-            sensor_angle: 22.5,
-            sensor_distance: 9.0,
-            rotation_angle: 45.0,
-            step_size: 1.0,
-            decay_factor: 0.5,
-            deposit_amount: 5.0,
+            sensor_angle: agent_consts::DEFAULT_SENSOR_ANGLE,
+            sensor_distance: agent_consts::DEFAULT_SENSOR_DISTANCE,
+            rotation_angle: agent_consts::DEFAULT_ROTATION_ANGLE,
+            step_size: agent_consts::DEFAULT_STEP_SIZE,
+            decay_factor: trail_consts::DEFAULT_DECAY_FACTOR,
+            deposit_amount: agent_consts::DEFAULT_DEPOSIT_AMOUNT,
             diffusion_kernel: DiffusionKernel::Gaussian,
-            diffusion_sigma: 1.0,
-            max_brightness: 100.0,
-            time_scale: 1.0,
+            diffusion_sigma: trail_consts::DEFAULT_DIFFUSION_SIGMA,
+            max_brightness: trail_consts::DEFAULT_MAX_BRIGHTNESS,
+            time_scale: time_consts::DEFAULT_TIME_SCALE,
             attractors: Vec::new(),
-            attractor_strength: 1.0,
+            attractor_strength: env_consts::DEFAULT_ATTRACTOR_STRENGTH,
             mouse_attractors: Vec::new(),
-            mouse_timeout: 3.0,
+            mouse_timeout: env_consts::DEFAULT_MOUSE_TIMEOUT,
             species_configs: vec![SpeciesConfig::default()],
             separate_species_trails: false,
             use_simd: true,
-            food_image_path: Some("assets/tslime_logo.png".to_string()),
-            food_image_invert: true,
-            food_image_scale: 0.5,
+            food_image_path: Some(food_img_consts::DEFAULT_PATH.to_string()),
+            food_image_invert: food_img_consts::DEFAULT_INVERT,
+            food_image_scale: food_img_consts::DEFAULT_SCALE,
             obstacles: Vec::new(),
             obstacle_masks: Vec::new(),
             wind: None,
             terrain: TerrainType::None,
-            terrain_strength: 1.0,
+            terrain_strength: env_consts::DEFAULT_TERRAIN_STRENGTH,
             background_color: None,
             preferred_init_mode: Some(InitMode::Food),
         }
@@ -782,20 +788,20 @@ impl SimConfig {
     /// Creates a base preset configuration with common fields set to their defaults.
     fn base_preset() -> Self {
         Self {
-            sensor_angle: 22.5,
-            sensor_distance: 9.0,
-            rotation_angle: 45.0,
-            step_size: 1.0,
-            decay_factor: 0.5,
-            deposit_amount: 5.0,
+            sensor_angle: agent_consts::DEFAULT_SENSOR_ANGLE,
+            sensor_distance: agent_consts::DEFAULT_SENSOR_DISTANCE,
+            rotation_angle: agent_consts::DEFAULT_ROTATION_ANGLE,
+            step_size: agent_consts::DEFAULT_STEP_SIZE,
+            decay_factor: trail_consts::DEFAULT_DECAY_FACTOR,
+            deposit_amount: agent_consts::DEFAULT_DEPOSIT_AMOUNT,
             diffusion_kernel: DiffusionKernel::Gaussian,
-            diffusion_sigma: 1.0,
-            max_brightness: 100.0,
-            time_scale: 1.0,
+            diffusion_sigma: trail_consts::DEFAULT_DIFFUSION_SIGMA,
+            max_brightness: trail_consts::DEFAULT_MAX_BRIGHTNESS,
+            time_scale: time_consts::DEFAULT_TIME_SCALE,
             attractors: Vec::new(),
-            attractor_strength: 1.0,
+            attractor_strength: env_consts::DEFAULT_ATTRACTOR_STRENGTH,
             mouse_attractors: Vec::new(),
-            mouse_timeout: 3.0,
+            mouse_timeout: env_consts::DEFAULT_MOUSE_TIMEOUT,
             species_configs: vec![SpeciesConfig::default()],
             separate_species_trails: false,
             use_simd: true,
@@ -806,7 +812,7 @@ impl SimConfig {
             obstacle_masks: Vec::new(),
             wind: None,
             terrain: TerrainType::None,
-            terrain_strength: 1.0,
+            terrain_strength: env_consts::DEFAULT_TERRAIN_STRENGTH,
             background_color: None,
             preferred_init_mode: None,
         }
@@ -943,19 +949,11 @@ impl From<Preset> for SimConfig {
             },
             Preset::Fire => Self {
                 sensor_angle: 15.0,
-                sensor_distance: 9.0,
                 rotation_angle: 30.0,
                 step_size: 1.5,
                 decay_factor: 0.85,
-                deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 20.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 100_000,
@@ -963,36 +961,19 @@ impl From<Preset> for SimConfig {
                     rotation_angle: 30.0,
                     step_size: 1.5,
                     deposit_amount: 5.0,
-                    color: "ff4500".to_string(),
+                    color: presets::FIRE_ORANGE.to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Zen => Self {
-                sensor_angle: 25.0,
                 sensor_distance: 12.0,
+                sensor_angle: 25.0,
                 rotation_angle: 30.0,
                 step_size: 0.5,
                 decay_factor: 0.94,
                 deposit_amount: 2.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 12.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 10_000,
@@ -1000,36 +981,17 @@ impl From<Preset> for SimConfig {
                     rotation_angle: 30.0,
                     step_size: 0.5,
                     deposit_amount: 2.0,
-                    color: "ffffff".to_string(),
+                    color: presets::ZEN_WHITE.to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Storm => Self {
                 sensor_angle: 20.0,
-                sensor_distance: 9.0,
                 rotation_angle: 60.0,
                 step_size: 2.0,
                 decay_factor: 0.80,
-                deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 18.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 80_000,
@@ -1037,36 +999,17 @@ impl From<Preset> for SimConfig {
                     rotation_angle: 60.0,
                     step_size: 2.0,
                     deposit_amount: 5.0,
-                    color: "4682b4".to_string(),
+                    color: presets::STORM_BLUE.to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
                 wind: Some(Wind::new(0.1, 0.05)),
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::River => Self {
                 sensor_angle: 25.0,
-                sensor_distance: 9.0,
-                rotation_angle: 45.0,
                 step_size: 1.2,
                 decay_factor: 0.90,
-                deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 18.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 45_000,
@@ -1074,36 +1017,17 @@ impl From<Preset> for SimConfig {
                     rotation_angle: 45.0,
                     step_size: 1.2,
                     deposit_amount: 5.0,
-                    color: "1e90ff".to_string(),
+                    color: presets::RIVER_BLUE.to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
                 wind: Some(Wind::new(0.3, 0.0)),
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Ethereal => Self {
                 sensor_angle: 40.0,
-                sensor_distance: 9.0,
-                rotation_angle: 45.0,
                 step_size: 0.7,
                 decay_factor: 0.98,
                 deposit_amount: 2.0,
-                diffusion_kernel: DiffusionKernel::Gaussian,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 12.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 25_000,
@@ -1111,36 +1035,17 @@ impl From<Preset> for SimConfig {
                     rotation_angle: 45.0,
                     step_size: 0.7,
                     deposit_amount: 2.0,
-                    color: "e6e6fa".to_string(),
+                    color: presets::ETHEREAL_LAVENDER.to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::PetriDish => Self {
                 sensor_angle: 45.0,
-                sensor_distance: 9.0,
                 rotation_angle: 20.0,
                 step_size: 0.05,
                 decay_factor: 0.999,
                 deposit_amount: 0.2,
-                diffusion_kernel: DiffusionKernel::Gaussian,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 50.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "mold".to_string(),
                     count: 20_000,
@@ -1148,24 +1053,16 @@ impl From<Preset> for SimConfig {
                     rotation_angle: 20.0,
                     step_size: 0.05,
                     deposit_amount: 0.2,
-                    color: "d4ff00".to_string(), // Yellowish mold color
+                    color: presets::MOLD_YELLOW.to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
                 obstacles: vec![Obstacle::Circle {
                     x: 200.0,
                     y: 100.0,
                     radius: 90.0,
                 }],
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: Some("000000".to_string()),
+                background_color: Some(ui::BLACK.to_string()),
                 preferred_init_mode: Some(InitMode::Petri),
+                ..Self::base_preset()
             },
             // Empirically-derived presets from parameter space optimization
             Preset::Vortex => Self {
@@ -1178,13 +1075,6 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.96, // High persistence keeps vortices visible
                 deposit_amount: 4.3,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
-                max_brightness: 16.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 32_000,
@@ -1192,20 +1082,9 @@ impl From<Preset> for SimConfig {
                     rotation_angle: 46.4,
                     step_size: 1.92,
                     deposit_amount: 4.3,
-                    color: "9370db".to_string(), // Medium purple
+                    color: presets::VORTEX_PURPLE.to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Lightning => Self {
                 // Optimized for high branching factor with sparse coverage
@@ -1217,13 +1096,7 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.82,   // Medium decay for visible branches
                 deposit_amount: 20.0, // Max intensity trails
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 40.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 7_000, // Very low population for distinct branches
@@ -1231,20 +1104,9 @@ impl From<Preset> for SimConfig {
                     rotation_angle: 39.3,
                     step_size: 2.48,
                     deposit_amount: 20.0,
-                    color: "00ffff".to_string(), // Cyan/electric blue
+                    color: presets::LIGHTNING_CYAN.to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Crystal => Self {
                 // Optimized for high temporal stability (persistent structures)
@@ -1255,14 +1117,7 @@ impl From<Preset> for SimConfig {
                 step_size: 1.47,
                 decay_factor: 0.50, // Fast decay creates sharp edges
                 deposit_amount: 2.1,
-                diffusion_kernel: DiffusionKernel::Gaussian,
                 diffusion_sigma: 1.2,
-                max_brightness: 15.0,
-                time_scale: 1.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 38_000,
@@ -1270,20 +1125,9 @@ impl From<Preset> for SimConfig {
                     rotation_angle: 21.5,
                     step_size: 1.47,
                     deposit_amount: 2.1,
-                    color: "b0e0e6".to_string(), // Powder blue/ice
+                    color: presets::CRYSTAL_ICE.to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::ChaosEdge => Self {
                 // Optimized for high heading variance × density variance (chaotic dynamics)
@@ -1295,13 +1139,7 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.99,   // Max persistence preserves chaotic trails
                 deposit_amount: 15.8,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 25.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 52_000,
@@ -1309,20 +1147,9 @@ impl From<Preset> for SimConfig {
                     rotation_angle: 56.2,
                     step_size: 0.58,
                     deposit_amount: 15.8,
-                    color: "ff6347".to_string(), // Tomato red
+                    color: presets::CHAOS_RED.to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Blob => Self {
                 // Optimized for high fragmentation (isolated clusters)
@@ -1334,13 +1161,7 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.50, // Fast decay isolates clusters
                 deposit_amount: 9.3,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
                 max_brightness: 25.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 21_000,
@@ -1348,20 +1169,9 @@ impl From<Preset> for SimConfig {
                     rotation_angle: 90.0,
                     step_size: 0.92,
                     deposit_amount: 9.3,
-                    color: "32cd32".to_string(), // Lime green
+                    color: presets::BLOB_LIME.to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
             Preset::Worm => Self {
                 // Optimized for high elongation (long snaking trails)
@@ -1373,13 +1183,6 @@ impl From<Preset> for SimConfig {
                 decay_factor: 0.65, // Medium decay for visible trails
                 deposit_amount: 6.3,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                diffusion_sigma: 1.0,
-                time_scale: 1.0,
-                max_brightness: 18.0,
-                attractors: Vec::new(),
-                attractor_strength: 1.0,
-                mouse_attractors: Vec::new(),
-                mouse_timeout: 3.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 6_000, // Very low population for distinct worms
@@ -1387,20 +1190,9 @@ impl From<Preset> for SimConfig {
                     rotation_angle: 13.4,
                     step_size: 1.96,
                     deposit_amount: 6.3,
-                    color: "daa520".to_string(), // Goldenrod
+                    color: presets::WORM_GOLD.to_string(),
                 }],
-                separate_species_trails: false,
-                use_simd: true,
-                food_image_path: None,
-                food_image_invert: false,
-                food_image_scale: 1.0,
-                obstacles: Vec::new(),
-                obstacle_masks: Vec::new(),
-                wind: None,
-                terrain: TerrainType::None,
-                terrain_strength: 1.0,
-                background_color: None,
-                preferred_init_mode: None,
+                ..Self::base_preset()
             },
         }
     }

@@ -21,6 +21,34 @@ const CONTENT_OFFSET: usize = 2;
 /// Length of the HSV slider track in characters.
 const TRACK_LEN: usize = 38;
 
+/// Row indices for the palette editor overlay layout.
+/// These are 0-indexed positions within the overlay content.
+mod rows {
+    /// Stop selector row (diamond indicators for palette colors).
+    pub const STOP_SELECTOR: usize = 3;
+
+    /// Hue slider row.
+    pub const HUE_SLIDER: usize = 9;
+
+    /// Saturation slider row.
+    pub const SAT_SLIDER: usize = 12;
+
+    /// Value/brightness slider row.
+    pub const VALUE_SLIDER: usize = 15;
+
+    /// First hint row (arrow key indicators).
+    pub const HINT_ARROWS: usize = 18;
+
+    /// Second hint row (adjust indicators).
+    pub const HINT_ADJUST: usize = 19;
+
+    /// Third hint row (Tab navigation).
+    pub const HINT_TAB: usize = 20;
+
+    /// Gradient preview strip row.
+    pub const GRADIENT_STRIP: usize = 27;
+}
+
 // ─── Component enum ──────────────────────────────────────────────────────────
 
 /// Component of the HSV color being edited.
@@ -341,15 +369,15 @@ fn build_editor_rich_lines(
         .collect();
 
     // Line 3: centered stops — shift column offset by +2 for centering
-    if rich.len() > 3 {
+    if rich.len() > rows::STOP_SELECTOR {
         for i in 0..PALETTE_COLOR_COUNT {
             let col = CONTENT_OFFSET + 2 + i * 4 + 1;
-            if col < rich[3].len() {
-                rich[3][col].1 = Some(state.colors[i]);
+            if col < rich[rows::STOP_SELECTOR].len() {
+                rich[rows::STOP_SELECTOR][col].1 = Some(state.colors[i]);
             }
         }
         let all_col = CONTENT_OFFSET + 2 + PALETTE_COLOR_COUNT * 4 + 1;
-        if all_col < rich[3].len() {
+        if all_col < rich[rows::STOP_SELECTOR].len() {
             let all_color = if state.is_all_selected() {
                 RgbColor {
                     r: 255,
@@ -363,15 +391,15 @@ fn build_editor_rich_lines(
                     b: 140,
                 }
             };
-            rich[3][all_col].1 = Some(all_color);
+            rich[rows::STOP_SELECTOR][all_col].1 = Some(all_color);
         }
     }
 
     // Color hint keys (lines 18-24) with accent color.
 
     // Line 18: "← select →" — accent arrow characters
-    if rich.len() > 18 {
-        for (c, fg, _) in rich[18].iter_mut() {
+    if rich.len() > rows::HINT_ARROWS {
+        for (c, fg, _) in rich[rows::HINT_ARROWS].iter_mut() {
             if *c == '←' || *c == '→' {
                 *fg = Some(accent);
             }
@@ -379,8 +407,8 @@ fn build_editor_rich_lines(
     }
 
     // Line 19: "↑ adjust ↓" — accent arrow characters
-    if rich.len() > 19 {
-        for (c, fg, _) in rich[19].iter_mut() {
+    if rich.len() > rows::HINT_ADJUST {
+        for (c, fg, _) in rich[rows::HINT_ADJUST].iter_mut() {
             if *c == '↑' || *c == '↓' {
                 *fg = Some(accent);
             }
@@ -391,8 +419,8 @@ fn build_editor_rich_lines(
     // Search tab_line directly (char-indexed) to avoid the byte-vs-char mismatch
     // that arises when line_str.find() returns a byte offset: the '│' border glyph
     // is 3 bytes but 1 char, shifting all subsequent byte offsets by +2.
-    if rich.len() > 20 {
-        let tab_line = &mut rich[20];
+    if rich.len() > rows::HINT_TAB {
+        let tab_line = &mut rich[rows::HINT_TAB];
         let tab_pos = (0..tab_line.len().saturating_sub(2)).find(|&i| {
             tab_line[i].0 == 'T' && tab_line[i + 1].0 == 'a' && tab_line[i + 2].0 == 'b'
         });
@@ -434,14 +462,14 @@ fn build_editor_rich_lines(
         }
     }
 
-    // H bar (line 9): hue gradient. Colors are intentionally muted (low S/V) so the
+    // H bar (hue slider): hue gradient. Colors are intentionally muted (low S/V) so the
     // light-shade character blends them further into the panel background.
     let h_cursor = ((hsv.h / 360.0) * (TRACK_LEN - 1) as f32).round() as usize;
-    if rich.len() > 9 {
+    if rich.len() > rows::HUE_SLIDER {
         let h_start = CONTENT_OFFSET + 7; // centered offset
         for i in 0..TRACK_LEN {
             let col = h_start + i;
-            if col < rich[9].len() {
+            if col < rich[rows::HUE_SLIDER].len() {
                 let h = i as f32 / (TRACK_LEN - 1) as f32 * 360.0;
                 let color = hsv_to_rgb(HsvColor {
                     h,
@@ -449,21 +477,21 @@ fn build_editor_rich_lines(
                     v: 0.70,
                 });
                 if i == h_cursor {
-                    rich[9][col] = ('▓', Some(text_primary), Some(color));
+                    rich[rows::HUE_SLIDER][col] = ('▓', Some(text_primary), Some(color));
                 } else {
-                    rich[9][col] = ('░', Some(color), Some(panel_bg));
+                    rich[rows::HUE_SLIDER][col] = ('░', Some(color), Some(panel_bg));
                 }
             }
         }
     }
 
-    // S bar (line 12): saturation gradient
+    // S bar (saturation slider): saturation gradient
     let s_cursor = (hsv.s * (TRACK_LEN - 1) as f32).round() as usize;
-    if rich.len() > 12 {
+    if rich.len() > rows::SAT_SLIDER {
         let s_start = CONTENT_OFFSET + 7;
         for i in 0..TRACK_LEN {
             let col = s_start + i;
-            if col < rich[12].len() {
+            if col < rich[rows::SAT_SLIDER].len() {
                 let s = i as f32 / (TRACK_LEN - 1) as f32;
                 let color = hsv_to_rgb(HsvColor {
                     h: hsv.h,
@@ -471,21 +499,21 @@ fn build_editor_rich_lines(
                     v: 0.65,
                 });
                 if i == s_cursor {
-                    rich[12][col] = ('▓', Some(text_primary), Some(color));
+                    rich[rows::SAT_SLIDER][col] = ('▓', Some(text_primary), Some(color));
                 } else {
-                    rich[12][col] = ('░', Some(color), Some(panel_bg));
+                    rich[rows::SAT_SLIDER][col] = ('░', Some(color), Some(panel_bg));
                 }
             }
         }
     }
 
-    // V bar (line 15): value gradient
+    // V bar (value slider): value gradient
     let v_cursor = (hsv.v * (TRACK_LEN - 1) as f32).round() as usize;
-    if rich.len() > 15 {
+    if rich.len() > rows::VALUE_SLIDER {
         let v_start = CONTENT_OFFSET + 7;
         for i in 0..TRACK_LEN {
             let col = v_start + i;
-            if col < rich[15].len() {
+            if col < rich[rows::VALUE_SLIDER].len() {
                 let v = i as f32 / (TRACK_LEN - 1) as f32;
                 let color = hsv_to_rgb(HsvColor {
                     h: hsv.h,
@@ -493,24 +521,24 @@ fn build_editor_rich_lines(
                     v: v * 0.80,
                 });
                 if i == v_cursor {
-                    rich[15][col] = ('▓', Some(text_primary), Some(color));
+                    rich[rows::VALUE_SLIDER][col] = ('▓', Some(text_primary), Some(color));
                 } else {
-                    rich[15][col] = ('░', Some(color), Some(panel_bg));
+                    rich[rows::VALUE_SLIDER][col] = ('░', Some(color), Some(panel_bg));
                 }
             }
         }
     }
 
-    // Gradient strip (line 27)
-    if rich.len() > 27 {
+    // Gradient strip
+    if rich.len() > rows::GRADIENT_STRIP {
         for i in 0..INNER_W {
             let col = CONTENT_OFFSET + i;
-            if col < rich[27].len() {
+            if col < rich[rows::GRADIENT_STRIP].len() {
                 let t = i as f32 / (INNER_W - 1).max(1) as f32;
                 let t_next = (t + 1.5 / INNER_W as f32).min(1.0);
                 let fg_color = interpolate_gradient(&stops, t);
                 let bg_color = interpolate_gradient(&stops, t_next);
-                rich[27][col] = ('▄', Some(fg_color), Some(bg_color));
+                rich[rows::GRADIENT_STRIP][col] = ('▄', Some(fg_color), Some(bg_color));
             }
         }
     }

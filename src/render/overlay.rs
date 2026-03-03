@@ -393,9 +393,9 @@ impl PresetComparisonOverlay {
         builder = add_row(
             builder,
             "Turn Angle",
-            format!("{:.1}°", current.turn_angle),
-            format!("{:.1}°", defaults.turn_angle),
-            (current.turn_angle - defaults.turn_angle).abs() > 0.01,
+            format!("{:.1}°", current.rotation_angle),
+            format!("{:.1}°", defaults.rotation_angle),
+            (current.rotation_angle - defaults.rotation_angle).abs() > 0.01,
         );
         builder = add_row(
             builder,

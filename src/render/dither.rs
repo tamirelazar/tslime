@@ -10,6 +10,17 @@ pub enum DitherMatrix {
     Bayer8x8,
 }
 
+impl DitherMatrix {
+    /// Returns the maximum value in the matrix (matrix size squared minus 1).
+    /// Used for normalizing Bayer matrix values to [0.0, 1.0].
+    pub fn max_value(self) -> f32 {
+        match self {
+            DitherMatrix::Bayer4x4 => 16.0, // 4×4 = 16
+            DitherMatrix::Bayer8x8 => 64.0, // 8×8 = 64
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 /// Algorithm used for color quantization and dithering.
 pub enum DitherMode {
@@ -67,10 +78,11 @@ pub const BAYER_8X8: [[u8; 8]; 8] = [
 ];
 
 fn bayer_threshold(x: usize, y: usize, matrix: DitherMatrix) -> f32 {
-    match matrix {
-        DitherMatrix::Bayer4x4 => BAYER_4X4[y % 4][x % 4] as f32 / 16.0,
-        DitherMatrix::Bayer8x8 => BAYER_8X8[y % 8][x % 8] as f32 / 64.0,
-    }
+    let value = match matrix {
+        DitherMatrix::Bayer4x4 => BAYER_4X4[y % 4][x % 4] as f32,
+        DitherMatrix::Bayer8x8 => BAYER_8X8[y % 8][x % 8] as f32,
+    };
+    value / matrix.max_value()
 }
 
 /// Applies ordered dithering to a pixel.

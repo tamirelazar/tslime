@@ -11,6 +11,27 @@ pub struct RgbColor {
     pub b: u8,
 }
 
+impl RgbColor {
+    /// Creates a new RGB color from individual components.
+    pub const fn new(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b }
+    }
+
+    /// Creates a new RGB color from a 24-bit hex value.
+    ///
+    /// # Example
+    /// ```
+    /// let color = RgbColor::from_hex(0xFF5733); // Orange-red
+    /// ```
+    pub const fn from_hex(hex: u32) -> Self {
+        Self {
+            r: ((hex >> 16) & 0xFF) as u8,
+            g: ((hex >> 8) & 0xFF) as u8,
+            b: (hex & 0xFF) as u8,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 /// An HSV color value.
 pub struct HsvColor {
@@ -312,11 +333,11 @@ impl IntensityMapping {
 
     /// Validates that segments form a valid partition of [0, 1].
     fn validate_segments(segments: &[MappingSegment]) -> Result<(), MappingError> {
+        use crate::render::constants::math::EPSILON;
+
         if segments.is_empty() {
             return Err(MappingError::NoSegments);
         }
-
-        const EPSILON: f32 = 1e-6;
 
         // Check first segment starts at 0
         if (segments[0].start - 0.0).abs() > EPSILON {
@@ -448,7 +469,8 @@ impl IntensityMapping {
     /// Lower colors mapped linearly, upper colors mapped logarithmically.
     /// For an 11-color palette: [0, 6/11] linear, [6/11, 1] logarithmic.
     pub fn linear_log_split(log_base: f32) -> Self {
-        let split_point = 6.0 / 11.0; // ≈ 0.545454...
+        use crate::render::constants::palette::PALETTE_STEPS;
+        let split_point = 6.0 / PALETTE_STEPS as f32; // ≈ 0.545454...
         Self {
             segments: vec![
                 MappingSegment {
@@ -1838,8 +1860,9 @@ pub fn hsv_to_rgb(hsv: HsvColor) -> RgbColor {
 
 /// Rotates the hue of an HSV color.
 pub fn rotate_hue(hsv: HsvColor, degrees: f32) -> HsvColor {
+    use crate::render::constants::math::DEGREES_IN_CIRCLE;
     HsvColor {
-        h: (hsv.h + degrees) % 360.0,
+        h: (hsv.h + degrees) % DEGREES_IN_CIRCLE,
         s: hsv.s,
         v: hsv.v,
     }
@@ -1885,9 +1908,10 @@ pub fn rgb_to_256(rgb: RgbColor) -> u8 {
 
 /// Inverts an ANSI 256 color code (hue rotation of 180 degrees).
 pub fn invert_256_color(color_code: u8) -> u8 {
+    use crate::render::constants::math::DEGREES_HALF_CIRCLE;
     let rgb = ANSI_256_TO_RGB[color_code as usize];
     let hsv = rgb_to_hsv(rgb);
-    let rotated = rotate_hue(hsv, 180.0);
+    let rotated = rotate_hue(hsv, DEGREES_HALF_CIRCLE);
     let new_rgb = hsv_to_rgb(rotated);
     rgb_to_256(new_rgb)
 }
@@ -1907,7 +1931,9 @@ pub fn hex_to_rgb(hex: &str) -> Option<RgbColor> {
 /// Internal helper to compute HSV color from brightness and base color.
 /// Shared logic between map_species_brightness and map_species_brightness_rgb.
 fn compute_species_hsv(brightness: f32, base_color: RgbColor, reverse: bool) -> HsvColor {
-    let hsv = rgb_to_hsv(base_color);
+    use crate::render::constants::hsv;
+
+    let hsv_color = rgb_to_hsv(base_color);
     let brightness = if reverse {
         1.0 - brightness
     } else {
@@ -1916,15 +1942,20 @@ fn compute_species_hsv(brightness: f32, base_color: RgbColor, reverse: bool) -> 
 
     let t = brightness.clamp(0.0, 1.0);
 
-    let min_s = 0.05;
-    let max_s = hsv.s.max(0.1);
-    let min_v = 0.08;
-    let max_v = (hsv.v * 0.9 + 0.1).min(0.95);
+    let min_s = hsv::MIN_SATURATION;
+    let max_s = hsv_color.s.max(hsv::MAX_SATURATION_FLOOR);
+    let min_v = hsv::MIN_VALUE;
+    let max_v =
+        (hsv_color.v * hsv::MAX_VALUE_SCALE + hsv::MAX_VALUE_OFFSET).min(hsv::MAX_VALUE_CAP);
 
     let s = min_s + (max_s - min_s) * t;
     let v = min_v + (max_v - min_v) * t;
 
-    HsvColor { h: hsv.h, s, v }
+    HsvColor {
+        h: hsv_color.h,
+        s,
+        v,
+    }
 }
 
 /// Maps brightness to a color based on a base species color.
@@ -2968,51 +2999,54 @@ pub(crate) fn get_gradient_stops(palette: &Palette) -> Vec<GradientStop> {
     }
 }
 
-fn interpolate_custom_palette(colors: &[RgbColor]) -> [RgbColor; 11] {
-    let num_colors = colors.len();
-    if num_colors == 2 {
-        let mut result = [colors[0]; 11];
-        for (i, slot) in result.iter_mut().enumerate() {
-            let t = i as f32 / 10.0;
-            *slot = RgbColor {
-                r: ((colors[0].r as f32 * (1.0 - t) + colors[1].r as f32 * t) as u8),
-                g: ((colors[0].g as f32 * (1.0 - t) + colors[1].g as f32 * t) as u8),
-                b: ((colors[0].b as f32 * (1.0 - t) + colors[1].b as f32 * t) as u8),
-            };
-        }
-        return result;
-    }
-
-    let mut result = [RgbColor { r: 0, g: 0, b: 0 }; 11];
-    for (i, slot) in result.iter_mut().enumerate() {
-        let t = if num_colors > 1 {
-            (i as f32 / 10.0) * (num_colors - 1) as f32
-        } else {
-            0.0
-        };
-        let segment = t.floor() as usize;
-        let segment_t = t.fract();
-
-        let start_idx = segment.min(num_colors - 1);
-        let end_idx = (segment + 1).min(num_colors - 1);
-
-        let start_color = colors[start_idx];
-        let end_color = colors[end_idx];
-
-        *slot = RgbColor {
-            r: ((start_color.r as f32 * (1.0 - segment_t) + end_color.r as f32 * segment_t) as u8),
-            g: ((start_color.g as f32 * (1.0 - segment_t) + end_color.g as f32 * segment_t) as u8),
-            b: ((start_color.b as f32 * (1.0 - segment_t) + end_color.b as f32 * segment_t) as u8),
-        };
-    }
-    result
-}
-
 fn invert_color(color_code: u8) -> u8 {
     invert_256_color(color_code)
 }
 
+/// Computes RGB color for a given brightness from custom palette colors.
+///
+/// Performs linear interpolation between the palette colors based on the brightness value.
+/// This avoids memory leaks by computing the color on-demand rather than pre-computing
+/// and leaking a gradient array.
+///
+/// # Parameters
+/// - `colors`: The custom palette colors
+/// - `brightness`: Input intensity value (0.0 to 1.0)
+///
+/// # Returns
+/// The interpolated RGB color for the given brightness.
+fn interpolate_custom_color(colors: &[RgbColor], brightness: f32) -> RgbColor {
+    let num_colors = colors.len();
+    if num_colors == 0 {
+        return RgbColor { r: 0, g: 0, b: 0 };
+    }
+    if num_colors == 1 {
+        return colors[0];
+    }
+
+    // Map brightness (0.0-1.0) to position in color array
+    let t = brightness.clamp(0.0, 1.0) * (num_colors - 1) as f32;
+    let segment = t.floor() as usize;
+    let segment_t = t.fract();
+
+    let start_idx = segment.min(num_colors - 1);
+    let end_idx = (segment + 1).min(num_colors - 1);
+
+    let start_color = colors[start_idx];
+    let end_color = colors[end_idx];
+
+    RgbColor {
+        r: ((start_color.r as f32 * (1.0 - segment_t) + end_color.r as f32 * segment_t) as u8),
+        g: ((start_color.g as f32 * (1.0 - segment_t) + end_color.g as f32 * segment_t) as u8),
+        b: ((start_color.b as f32 * (1.0 - segment_t) + end_color.b as f32 * segment_t) as u8),
+    }
+}
+
 /// Maps brightness to an ANSI 256 color based on the selected palette.
+///
+/// Supports built-in palettes with pre-computed gradients and custom palettes
+/// with on-demand interpolation. Custom palette colors are interpolated
+/// directly without memory allocation or leaks.
 ///
 /// # Parameters
 /// - `brightness`: Input intensity value (0.0 to 1.0)
@@ -3020,6 +3054,9 @@ fn invert_color(color_code: u8) -> u8 {
 /// - `reverse`: If true, inverts the intensity (dark becomes bright)
 /// - `invert`: If true, inverts the final color
 /// - `mapping`: Optional non-linear intensity mapping
+///
+/// # Returns
+/// The ANSI 256 color code for the given brightness and palette settings.
 pub fn map_brightness(
     brightness: f32,
     palette: Palette,
@@ -3028,16 +3065,6 @@ pub fn map_brightness(
     mapping: Option<&IntensityMapping>,
 ) -> u8 {
     let mut brightness = brightness.clamp(0.0, 1.0);
-
-    let gradient: &[u8] = match &palette {
-        Palette::Custom(colors) => {
-            let interpolated = interpolate_custom_palette(colors);
-            let gradient_256: Vec<u8> = interpolated.iter().map(|c| rgb_to_256(*c)).collect();
-            let boxed = gradient_256.into_boxed_slice();
-            Box::leak(boxed)
-        }
-        _ => get_256_gradient(palette),
-    };
 
     if reverse {
         brightness = 1.0 - brightness;
@@ -3048,24 +3075,35 @@ pub fn map_brightness(
         brightness = mapping.apply(brightness);
     }
 
-    let position = brightness * (gradient.len() - 1) as f32;
-    let lower = position.floor() as usize;
-    let upper = position.ceil() as usize;
-    let fraction = position - lower as f32;
+    // Get the color based on palette type
+    let color = match &palette {
+        Palette::Custom(colors) => {
+            // For custom palettes, interpolate directly to RGB then convert to 256-color
+            // This avoids memory leaks from Box::leak
+            let rgb = interpolate_custom_color(colors, brightness);
+            rgb_to_256(rgb)
+        }
+        _ => {
+            // For built-in palettes, use the pre-computed gradient
+            let gradient = get_256_gradient(palette);
+            let position = brightness * (gradient.len() - 1) as f32;
+            let lower = position.floor() as usize;
+            let upper = position.ceil() as usize;
+            let fraction = position - lower as f32;
 
-    let color = if upper == lower || fraction < 0.5 {
-        gradient[lower]
-    } else {
-        gradient[upper]
+            if upper == lower || fraction < 0.5 {
+                gradient[lower]
+            } else {
+                gradient[upper]
+            }
+        }
     };
 
-    let mut final_color = color;
-
     if invert {
-        final_color = invert_color(final_color);
+        invert_color(color)
+    } else {
+        color
     }
-
-    final_color
 }
 
 fn invert_rgb(rgb: RgbColor) -> RgbColor {
