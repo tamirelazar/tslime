@@ -12,6 +12,8 @@ pub mod dither;
 pub mod downsample;
 /// Error diffusion specific implementation.
 pub mod error_diffusion;
+/// Color gradient data for palettes.
+pub mod gradients;
 /// Background grid rendering.
 pub mod grid;
 /// Controls overlay rendering.
