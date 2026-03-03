@@ -22,6 +22,7 @@ impl RgbColor {
     ///
     /// # Example
     /// ```
+    /// use tslime::render::palette::RgbColor;
     /// let color = RgbColor::from_hex(0xFF5733); // Orange-red
     /// ```
     pub const fn from_hex(hex: u32) -> Self {
