@@ -885,7 +885,7 @@ mod tests {
         assert_eq!(widths.iter().sum::<usize>(), 54);
         // At least approximately equal
         for w in widths {
-            assert!(w >= 13 && w <= 14);
+            assert!((13..=14).contains(&w));
         }
     }
 

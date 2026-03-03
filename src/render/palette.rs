@@ -3958,7 +3958,7 @@ mod tests {
         assert!((f.apply(1.0) - 1.0).abs() < 0.01);
         // Middle values should be distorted but bounded
         let mid = f.apply(0.5);
-        assert!(mid >= 0.0 && mid <= 1.0);
+        assert!((0.0..=1.0).contains(&mid));
     }
 
     #[test]

@@ -1769,7 +1769,7 @@ mod tests {
 
     #[test]
     fn test_invert_palette_toggle() {
-        let mut state = create_test_runtime_state();
+        let state = create_test_runtime_state();
         assert_eq!(state.palette_shift_speed, PaletteShiftSpeed::Off);
     }
 

@@ -1262,6 +1262,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::needless_update)]
     fn test_separate_trails_second_species_only() {
         let config = SimConfig {
             species_configs: vec![
@@ -1273,7 +1274,6 @@ mod tests {
                     rotation_angle: 45.0,
                     step_size: 1.0,
                     deposit_amount: 5.0,
-                    ..Default::default()
                 },
                 SpeciesConfig {
                     name: "blue".to_string(),
@@ -1283,7 +1283,6 @@ mod tests {
                     rotation_angle: 45.0,
                     step_size: 1.0,
                     deposit_amount: 5.0,
-                    ..Default::default()
                 },
             ],
             separate_species_trails: true,

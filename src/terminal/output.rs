@@ -2907,7 +2907,6 @@ mod tests {
                 top_right: 5.0,
                 bottom_left: 0.0,
                 bottom_right: 0.0,
-                ..Default::default()
             },
             DownsampleCell {
                 top: 0.0,
@@ -2916,7 +2915,6 @@ mod tests {
                 top_right: 0.0,
                 bottom_left: 5.0,
                 bottom_right: 5.0,
-                ..Default::default()
             },
             DownsampleCell {
                 top: 5.0,
@@ -2925,7 +2923,6 @@ mod tests {
                 top_right: 5.0,
                 bottom_left: 5.0,
                 bottom_right: 5.0,
-                ..Default::default()
             },
         ];
         let buffer = FrameBuffer::from_downsampled(
@@ -3074,7 +3071,7 @@ mod tests {
 
         buffer.render_grid_background(2, 1, grid_color, 0.5, true, true);
 
-        let cell = buffer.cells[1 * 5 + 2];
+        let cell = buffer.cells[7];
         assert_eq!(cell.char, '┼');
         assert!(cell.fg_color_256.is_some());
     }
@@ -3090,7 +3087,7 @@ mod tests {
 
         buffer.render_grid_background(2, 1, grid_color, 0.5, true, false);
 
-        let cell = buffer.cells[1 * 5 + 2];
+        let cell = buffer.cells[7];
         assert_eq!(cell.char, '│');
         assert!(cell.fg_color_rgb.is_some());
     }
@@ -3100,7 +3097,7 @@ mod tests {
         let mut buffer = FrameBuffer::new(5, 3, ColorMode::Bits256, None);
 
         // Simulate existing content
-        buffer.cells[1 * 5 + 2] = Cell {
+        buffer.cells[7] = Cell {
             char: '#',
             fg_color_256: Some(200), // Bright color
             bg_color_256: None,
@@ -3115,7 +3112,7 @@ mod tests {
         };
         buffer.render_grid_background(2, 1, grid_color, 0.5, true, true);
 
-        let cell = buffer.cells[1 * 5 + 2];
+        let cell = buffer.cells[7];
         // Should NOT be overwritten
         assert_eq!(cell.char, '#');
         assert_eq!(cell.fg_color_256, Some(200));

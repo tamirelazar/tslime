@@ -1,8 +1,6 @@
 // Integration tests for app module functionality
-use clap::Parser;
 use tslime::app;
-use tslime::simulation::config::{InitMode, SimConfig, SpeciesConfig};
-use tslime::simulation::Simulation;
+use tslime::simulation::config::{SimConfig, SpeciesConfig};
 
 /// Test that generate_completions handles supported shells correctly
 #[test]

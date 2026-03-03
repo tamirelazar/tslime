@@ -280,8 +280,8 @@ mod tests {
         let brightness = 0.5;
         let result_bayer = apply_ordered_dither(0, 0, brightness, 1.0, DitherMatrix::Bayer4x4);
         let result_bayer_8x8 = apply_ordered_dither(0, 0, brightness, 1.0, DitherMatrix::Bayer8x8);
-        assert!(result_bayer >= 0.0 && result_bayer <= 1.0);
-        assert!(result_bayer_8x8 >= 0.0 && result_bayer_8x8 <= 1.0);
+        assert!((0.0..=1.0).contains(&result_bayer));
+        assert!((0.0..=1.0).contains(&result_bayer_8x8));
     }
 
     #[test]
@@ -323,7 +323,7 @@ mod tests {
                 for x in 0..4 {
                     let result = apply_ordered_dither(x, y, brightness, 1.0, matrix);
                     assert!(
-                        result >= 0.0 && result <= 1.0,
+                        (0.0..=1.0).contains(&result),
                         "Result out of bounds for matrix {:?}",
                         matrix
                     );
@@ -341,7 +341,7 @@ mod tests {
     #[test]
     fn test_ordered_dither_high_brightness() {
         let result = apply_ordered_dither(0, 0, 0.9, 1.0, DitherMatrix::Bayer4x4);
-        assert!(result >= 0.0 && result <= 1.0);
+        assert!((0.0..=1.0).contains(&result));
     }
 
     #[test]

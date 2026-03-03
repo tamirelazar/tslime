@@ -746,8 +746,8 @@ mod tests {
     fn test_fragmentation_single_blob() {
         let mut trail = vec![0.0; 100];
         // Create one connected region
-        for i in 40..60 {
-            trail[i] = 1.0;
+        for v in trail.iter_mut().take(60).skip(40) {
+            *v = 1.0;
         }
         let frags = compute_fragmentation(&trail, 10, 10);
         assert_eq!(frags, 1);
@@ -768,8 +768,8 @@ mod tests {
     #[test]
     fn test_coverage() {
         let mut trail = vec![0.0; 100];
-        for i in 0..25 {
-            trail[i] = 1.0;
+        for v in trail.iter_mut().take(25) {
+            *v = 1.0;
         }
         let cov = compute_coverage(&trail);
         assert!((cov - 0.25).abs() < 0.01);

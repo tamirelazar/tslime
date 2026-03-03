@@ -962,6 +962,7 @@ impl OverlayRenderer {
 
     #[cfg(test)]
     #[allow(dead_code)]
+    /// Validates that all attractor sections have consistent line lengths.
     pub fn check_attractor_section_lengths(lines: &[String], base_help_len: usize) -> bool {
         if lines.len() <= base_help_len {
             return true;

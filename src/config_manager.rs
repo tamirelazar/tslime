@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_apply_palette_to_runtime_state() {
-        let mut state = create_test_runtime_state();
+        let state = create_test_runtime_state();
         let _initial_palette_index = state.palette_index;
 
         let config = SavedConfig {

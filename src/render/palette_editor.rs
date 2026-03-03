@@ -759,7 +759,7 @@ mod tests {
 
         assert!(state.is_modified);
         // Every stop should have changed.
-        for i in 0..PALETTE_COLOR_COUNT {
+        for (i, _) in original_colors.iter().enumerate().take(PALETTE_COLOR_COUNT) {
             assert_ne!(
                 state.colors[i], original_colors[i],
                 "Stop {} should have changed after ALL hue adjust",
