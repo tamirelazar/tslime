@@ -1130,67 +1130,68 @@ pub fn run_simulation(
         check_auto_reset(sim, &mut runtime_state, args, entropy, init_mode);
 
         // VCR pause overlays: dim logo + blinking badge
-        let (pause_logo_overlay, pause_logo_x, pause_logo_y) = if runtime_state.is_paused {
-            // Scale logo to terminal: small terminals use more %, large ones less
-            let pct = if term_width < 80 {
-                0.90
-            } else if term_width < 120 {
-                0.75
+        let (pause_logo_overlay, pause_logo_x, pause_logo_y) =
+            if runtime_state.is_paused && !runtime_state.any_overlay_open() {
+                // Scale logo to terminal: small terminals use more %, large ones less
+                let pct = if term_width < 80 {
+                    0.90
+                } else if term_width < 120 {
+                    0.75
+                } else {
+                    0.60
+                };
+                let logo_w = ((term_width as f32 * pct) as usize).clamp(30, 180);
+                // Image is 1365×1024 (~1.33:1). Quadrant cells are 2×2 sub-pixels.
+                // Terminal cell aspect ≈ 1:2 → logo_h = logo_w / (image_aspect * 2) = logo_w / 2.67
+                let logo_h = ((logo_w as f32 / 2.67) as usize).max(6);
+                // Quadrant: 2 pixels wide × 2 pixels tall per terminal cell
+                let pixel_w = logo_w * 2;
+                let pixel_h = logo_h * 2;
+
+                // Decode or reuse cached brightness map
+                let brightness_map = if runtime_state
+                    .pause_logo_cache
+                    .as_ref()
+                    .is_some_and(|(cw, _, _)| *cw == logo_w)
+                {
+                    runtime_state.pause_logo_cache.as_ref().unwrap().2.clone()
+                } else {
+                    let map = load_logo_from_memory(FOOD_IMAGE_PNG, pixel_w, pixel_h, true)
+                        .unwrap_or_else(|_| vec![0.0; pixel_w * pixel_h]);
+                    runtime_state.pause_logo_cache = Some((logo_w, pixel_h, map.clone()));
+                    map
+                };
+
+                let current_palette = ALL_PALETTES[runtime_state.palette_index].clone();
+                let logo_mapping = args
+                    .logo_mapping()
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| runtime_state.intensity_mapping.clone());
+                let logo = PauseOverlay::build_logo(
+                    &brightness_map,
+                    logo_w,
+                    logo_h,
+                    current_palette,
+                    runtime_state.reverse_palette,
+                    runtime_state.invert_palette,
+                    0.0,
+                    Some(&logo_mapping),
+                );
+
+                runtime_state.pause_frame_counter += 1;
+
+                let actual_logo_h = logo.lines.len();
+                let lx = (term_width as usize).saturating_sub(logo_w) / 2;
+                // Center vertically in the drawable area (exclude status bar row)
+                let drawable_h = (term_height as usize).saturating_sub(1);
+                let ly = drawable_h.saturating_sub(actual_logo_h) / 2;
+
+                (Some(logo), lx, ly)
             } else {
-                0.60
+                runtime_state.pause_frame_counter = 0;
+                (None, 0, 0)
             };
-            let logo_w = ((term_width as f32 * pct) as usize).clamp(30, 180);
-            // Image is 1365×1024 (~1.33:1). Quadrant cells are 2×2 sub-pixels.
-            // Terminal cell aspect ≈ 1:2 → logo_h = logo_w / (image_aspect * 2) = logo_w / 2.67
-            let logo_h = ((logo_w as f32 / 2.67) as usize).max(6);
-            // Quadrant: 2 pixels wide × 2 pixels tall per terminal cell
-            let pixel_w = logo_w * 2;
-            let pixel_h = logo_h * 2;
-
-            // Decode or reuse cached brightness map
-            let brightness_map = if runtime_state
-                .pause_logo_cache
-                .as_ref()
-                .is_some_and(|(cw, _, _)| *cw == logo_w)
-            {
-                runtime_state.pause_logo_cache.as_ref().unwrap().2.clone()
-            } else {
-                let map = load_logo_from_memory(FOOD_IMAGE_PNG, pixel_w, pixel_h, true)
-                    .unwrap_or_else(|_| vec![0.0; pixel_w * pixel_h]);
-                runtime_state.pause_logo_cache = Some((logo_w, pixel_h, map.clone()));
-                map
-            };
-
-            let current_palette = ALL_PALETTES[runtime_state.palette_index].clone();
-            let logo_mapping = args
-                .logo_mapping()
-                .ok()
-                .flatten()
-                .unwrap_or_else(|| runtime_state.intensity_mapping.clone());
-            let logo = PauseOverlay::build_logo(
-                &brightness_map,
-                logo_w,
-                logo_h,
-                current_palette,
-                runtime_state.reverse_palette,
-                runtime_state.invert_palette,
-                0.0,
-                Some(&logo_mapping),
-            );
-
-            runtime_state.pause_frame_counter += 1;
-
-            let actual_logo_h = logo.lines.len();
-            let lx = (term_width as usize).saturating_sub(logo_w) / 2;
-            // Center vertically in the drawable area (exclude status bar row)
-            let drawable_h = (term_height as usize).saturating_sub(1);
-            let ly = drawable_h.saturating_sub(actual_logo_h) / 2;
-
-            (Some(logo), lx, ly)
-        } else {
-            runtime_state.pause_frame_counter = 0;
-            (None, 0, 0)
-        };
 
         if args.species_colors && sim.config().separate_species_trails {
             let species_trail_maps = sim.trail_maps_for_species_colors();
