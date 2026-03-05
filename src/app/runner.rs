@@ -11,6 +11,7 @@ use crate::config_manager;
 use crate::export::GifExporter;
 use crate::export::WebmExporter;
 use crate::food_image::FOOD_IMAGE_PNG;
+use crate::overlay::OverlayType;
 use crate::palette_manager;
 use crate::render::adaptive_brightness::AdaptiveBrightness;
 use crate::render::charset::Charset;
@@ -182,15 +183,18 @@ fn build_overlays(
     let trail_capacity = (sim.width() * sim.height()) as f32 * 10.0;
 
     // Build preset comparison overlay
-    overlays.preset_comparison =
-        if runtime_state.show_preset_comparison && !runtime_state.show_dashboard {
-            Some(PresetComparisonOverlay::build_overlay(
-                runtime_state,
-                runtime_state.comparison_preset,
-            ))
-        } else {
-            None
-        };
+    overlays.preset_comparison = if runtime_state
+        .overlay_state
+        .is_open(OverlayType::PresetComparison)
+        && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
+    {
+        Some(PresetComparisonOverlay::build_overlay(
+            runtime_state,
+            runtime_state.comparison_preset,
+        ))
+    } else {
+        None
+    };
     overlays.preset_comparison_pos = if overlays.preset_comparison.is_some() {
         PresetComparisonOverlay::calculate_position(term_width, term_height)
     } else {
@@ -198,14 +202,17 @@ fn build_overlays(
     };
 
     // Build palette editor overlay
-    overlays.palette_editor =
-        if runtime_state.show_palette_editor && !runtime_state.show_dashboard {
-            runtime_state.palette_editor_state.as_ref().map(|s| {
-                PaletteEditorOverlay::build_overlay(s, &runtime_state.panel_style, ui_accent)
-            })
-        } else {
-            None
-        };
+    overlays.palette_editor = if runtime_state.overlay_state.is_palette_editor_open()
+        && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
+    {
+        runtime_state
+            .overlay_state
+            .palette_editor
+            .as_ref()
+            .map(|s| PaletteEditorOverlay::build_overlay(s, &runtime_state.panel_style, ui_accent))
+    } else {
+        None
+    };
     overlays.palette_editor_pos = if overlays.palette_editor.is_some() {
         PaletteEditorOverlay::calculate_position(term_width, term_height)
     } else {
@@ -216,7 +223,10 @@ fn build_overlays(
     overlays.controls_pos = ControlsOverlay::calculate_position(term_width, term_height);
 
     // Build keyboard hints overlay
-    overlays.keyboard_hints = if runtime_state.show_keyboard_hints && !runtime_state.show_dashboard
+    overlays.keyboard_hints = if runtime_state
+        .overlay_state
+        .is_open(OverlayType::KeyboardHints)
+        && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
     {
         Some(KeyboardHintsOverlay::build_overlay(ui_accent))
     } else {
@@ -229,7 +239,9 @@ fn build_overlays(
     };
 
     // Build controls overlay
-    overlays.controls = if runtime_state.show_controls && !runtime_state.show_dashboard {
+    overlays.controls = if runtime_state.overlay_state.is_open(OverlayType::Controls)
+        && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
+    {
         Some(ControlsOverlay::build_overlay(
             runtime_state.controls_category_idx,
             runtime_state.sensor_angle,
@@ -314,7 +326,7 @@ fn build_overlays(
     });
 
     // Build dashboard overlay
-    overlays.dashboard = if runtime_state.show_dashboard {
+    overlays.dashboard = if runtime_state.overlay_state.is_open(OverlayType::Dashboard) {
         let elapsed = start_time.elapsed().as_secs_f32();
         let trail_max = blended_trail.iter().fold(0.0f32, |m, &v| v.max(m));
         let memory_mb = memory_stats()
@@ -420,7 +432,10 @@ fn build_overlays(
     overlays.dashboard_pos = DashboardOverlay::calculate_position(term_width, term_height);
 
     // Build config browser overlay
-    overlays.config_browser = if runtime_state.show_config_browser && !runtime_state.show_dashboard
+    overlays.config_browser = if runtime_state
+        .overlay_state
+        .is_open(OverlayType::ConfigBrowser)
+        && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
     {
         match config_manager::list_configs() {
             Ok(configs) => {
@@ -435,7 +450,7 @@ fn build_overlays(
             }
             Err(_) => {
                 runtime_state.show_notification("Failed to load configurations".to_string());
-                runtime_state.show_config_browser = false;
+                runtime_state.overlay_state.close();
                 None
             }
         }
@@ -449,7 +464,8 @@ fn build_overlays(
     };
 
     // Build config save dialog overlay
-    overlays.config_save = if runtime_state.show_config_save_dialog && !runtime_state.show_dashboard
+    overlays.config_save = if runtime_state.overlay_state.is_open(OverlayType::ConfigSave)
+        && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
     {
         Some(ConfigSaveOverlay::build_overlay(
             &runtime_state.config_save_name_input,
@@ -570,7 +586,9 @@ pub fn run_simulation(
     );
     runtime_state.preload_pause_logo(term_width as usize, term_height as usize);
     runtime_state.dither_mode = dither_mode;
-    runtime_state.show_dashboard = args.stats;
+    if args.stats {
+        runtime_state.overlay_state.open(OverlayType::Dashboard);
+    }
     renderer.set_dither_mode(dither_mode);
     let mut palette_editor_state: Option<PaletteEditorState> = None;
 
@@ -776,15 +794,18 @@ pub fn run_simulation(
         // The renderer handles None gracefully by skipping the overlay
 
         // Build preset comparison overlay (Shift+1-7 keys)
-        let preset_comparison_lines: Option<RenderedOverlay> =
-            if runtime_state.show_preset_comparison && !runtime_state.show_dashboard {
-                Some(PresetComparisonOverlay::build_overlay(
-                    &runtime_state,
-                    runtime_state.comparison_preset,
-                ))
-            } else {
-                None
-            };
+        let preset_comparison_lines: Option<RenderedOverlay> = if runtime_state
+            .overlay_state
+            .is_open(OverlayType::PresetComparison)
+            && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
+        {
+            Some(PresetComparisonOverlay::build_overlay(
+                &runtime_state,
+                runtime_state.comparison_preset,
+            ))
+        } else {
+            None
+        };
         let (preset_comparison_x, preset_comparison_y) = if preset_comparison_lines.is_some() {
             PresetComparisonOverlay::calculate_position(term_width as usize, term_height as usize)
         } else {
@@ -798,14 +819,18 @@ pub fn run_simulation(
             0.0,
             Some(&runtime_state.intensity_mapping),
         );
-        let palette_editor_overlay: Option<RenderedOverlay> = (runtime_state.show_palette_editor
-            && !runtime_state.show_dashboard)
-            .then(|| {
-                palette_editor_state.as_ref().map(|s| {
-                    PaletteEditorOverlay::build_overlay(s, &runtime_state.panel_style, accent)
-                })
-            })
-            .flatten();
+        let palette_editor_overlay: Option<RenderedOverlay> = (runtime_state
+            .overlay_state
+            .is_palette_editor_open()
+            && !runtime_state.overlay_state.is_open(OverlayType::Dashboard))
+        .then(|| {
+            runtime_state
+                .overlay_state
+                .palette_editor
+                .as_ref()
+                .map(|s| PaletteEditorOverlay::build_overlay(s, &runtime_state.panel_style, accent))
+        })
+        .flatten();
         let (palette_editor_x, palette_editor_y) = if palette_editor_overlay.is_some() {
             PaletteEditorOverlay::calculate_position(term_width as usize, term_height as usize)
         } else {
@@ -826,12 +851,15 @@ pub fn run_simulation(
         );
 
         // Build keyboard hints overlay (? key)
-        let keyboard_hints_lines: Option<RenderedOverlay> =
-            if runtime_state.show_keyboard_hints && !runtime_state.show_dashboard {
-                Some(KeyboardHintsOverlay::build_overlay(ui_accent))
-            } else {
-                None
-            };
+        let keyboard_hints_lines: Option<RenderedOverlay> = if runtime_state
+            .overlay_state
+            .is_open(OverlayType::KeyboardHints)
+            && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
+        {
+            Some(KeyboardHintsOverlay::build_overlay(ui_accent))
+        } else {
+            None
+        };
         let (keyboard_hints_x, keyboard_hints_y) = if keyboard_hints_lines.is_some() {
             KeyboardHintsOverlay::calculate_position(term_width as usize, term_height as usize)
         } else {
@@ -840,7 +868,9 @@ pub fn run_simulation(
 
         // Build controls overlay (h key)
         let controls_lines: Option<RenderedOverlay> =
-            if runtime_state.show_controls && !runtime_state.show_dashboard {
+            if runtime_state.overlay_state.is_open(OverlayType::Controls)
+                && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
+            {
                 Some(ControlsOverlay::build_overlay(
                     runtime_state.controls_category_idx,
                     runtime_state.sensor_angle,
@@ -935,116 +965,119 @@ pub fn run_simulation(
 
         runtime_state.update_history(timer.current_fps() as f32, entropy, trail_density);
 
-        let dashboard_overlay: Option<RenderedOverlay> = if runtime_state.show_dashboard {
-            let elapsed = start_time.elapsed().as_secs_f32();
-            let trail_max = blended_trail.iter().fold(0.0f32, |m, &v| v.max(m));
-            let memory_mb = memory_stats()
-                .map(|m| m.physical_mem as f32 / 1024.0 / 1024.0)
-                .unwrap_or(0.0);
-            let frame_time_ms = timer.last_frame_ms();
-            let cpu_percent = (frame_time_ms / 33.333) * 100.0;
+        let dashboard_overlay: Option<RenderedOverlay> =
+            if runtime_state.overlay_state.is_open(OverlayType::Dashboard) {
+                let elapsed = start_time.elapsed().as_secs_f32();
+                let trail_max = blended_trail.iter().fold(0.0f32, |m, &v| v.max(m));
+                let memory_mb = memory_stats()
+                    .map(|m| m.physical_mem as f32 / 1024.0 / 1024.0)
+                    .unwrap_or(0.0);
+                let frame_time_ms = timer.last_frame_ms();
+                let cpu_percent = (frame_time_ms / 33.333) * 100.0;
 
-            let init_mode_name = match init_mode {
-                InitMode::Random => "Random",
-                InitMode::CentralBurst => "Central",
-                InitMode::Circle => "Circle",
-                InitMode::Gradient => "Gradient",
-                InitMode::WaveFront => "Wave",
-                InitMode::Spiral => "Spiral",
-                InitMode::RandomClusters => "Clusters",
-                InitMode::Food => "Food",
-                InitMode::Petri => "Petri",
-            };
+                let init_mode_name = match init_mode {
+                    InitMode::Random => "Random",
+                    InitMode::CentralBurst => "Central",
+                    InitMode::Circle => "Circle",
+                    InitMode::Gradient => "Gradient",
+                    InitMode::WaveFront => "Wave",
+                    InitMode::Spiral => "Spiral",
+                    InitMode::RandomClusters => "Clusters",
+                    InitMode::Food => "Food",
+                    InitMode::Petri => "Petri",
+                };
 
-            let color_mode_name = match color_mode {
-                ColorMode::TrueColor => "TrueColor",
-                ColorMode::Bits8 => "8",
-                ColorMode::Bits16 => "16",
-                ColorMode::Bits256 => "256",
-            };
+                let color_mode_name = match color_mode {
+                    ColorMode::TrueColor => "TrueColor",
+                    ColorMode::Bits8 => "8",
+                    ColorMode::Bits16 => "16",
+                    ColorMode::Bits256 => "256",
+                };
 
-            let charset_str = match charset {
-                Charset::HalfBlock => "HalfBlock",
-                Charset::HalfBlockDual => "HalfBlockDual",
-                Charset::Ascii => "ASCII",
-                Charset::Braille => "Braille",
-                Charset::Quadrant => "Quadrant",
-                Charset::Shade => "Shade",
-                Charset::Points => "Points",
-                Charset::Sculpted => "Sculpted",
-                Charset::CustomAscii(_) => "Custom",
-            };
+                let charset_str = match charset {
+                    Charset::HalfBlock => "HalfBlock",
+                    Charset::HalfBlockDual => "HalfBlockDual",
+                    Charset::Ascii => "ASCII",
+                    Charset::Braille => "Braille",
+                    Charset::Quadrant => "Quadrant",
+                    Charset::Shade => "Shade",
+                    Charset::Points => "Points",
+                    Charset::Sculpted => "Sculpted",
+                    Charset::CustomAscii(_) => "Custom",
+                };
 
-            let food_source = if init_mode == InitMode::Food {
-                Some(args.food.clone())
+                let food_source = if init_mode == InitMode::Food {
+                    Some(args.food.clone())
+                } else {
+                    None
+                };
+
+                let current_palette = ALL_PALETTES[runtime_state.palette_index].clone();
+                let pname = palette_name(current_palette.clone());
+                let prname = preset_name(runtime_state.current_preset);
+                let palette_colors: Vec<RgbColor> = (0..78)
+                    .map(|i| {
+                        crate::render::palette::map_brightness_rgb(
+                            i as f32 / 77.0,
+                            current_palette.clone(),
+                            runtime_state.reverse_palette,
+                            runtime_state.invert_palette,
+                            0.0,
+                            None,
+                        )
+                    })
+                    .collect();
+
+                let current_config = sim.config();
+
+                Some(DashboardOverlay::build_overlay(
+                    sim.agent_count(),
+                    trail_sum,
+                    trail_capacity,
+                    trail_max,
+                    entropy,
+                    timer.current_fps() as f32,
+                    timer.average_fps() as f32,
+                    timer.frame_count(),
+                    elapsed,
+                    sim.width(),
+                    sim.height(),
+                    sim.attractor_count(),
+                    sim.obstacle_count(),
+                    sim.species_count(),
+                    memory_mb,
+                    cpu_percent,
+                    runtime_state.is_paused,
+                    prname,
+                    pname,
+                    &palette_colors,
+                    term_width as usize,
+                    term_height as usize,
+                    init_mode_name,
+                    color_mode_name,
+                    charset_str,
+                    !args.simd_off,
+                    current_config.decay_factor,
+                    current_config.sensor_angle,
+                    seed,
+                    &food_source,
+                    args.warmup_frames,
+                    args.auto_reset,
+                    ui_accent,
+                    &runtime_state.panel_style,
+                ))
             } else {
                 None
             };
-
-            let current_palette = ALL_PALETTES[runtime_state.palette_index].clone();
-            let pname = palette_name(current_palette.clone());
-            let prname = preset_name(runtime_state.current_preset);
-            let palette_colors: Vec<RgbColor> = (0..78)
-                .map(|i| {
-                    crate::render::palette::map_brightness_rgb(
-                        i as f32 / 77.0,
-                        current_palette.clone(),
-                        runtime_state.reverse_palette,
-                        runtime_state.invert_palette,
-                        0.0,
-                        None,
-                    )
-                })
-                .collect();
-
-            let current_config = sim.config();
-
-            Some(DashboardOverlay::build_overlay(
-                sim.agent_count(),
-                trail_sum,
-                trail_capacity,
-                trail_max,
-                entropy,
-                timer.current_fps() as f32,
-                timer.average_fps() as f32,
-                timer.frame_count(),
-                elapsed,
-                sim.width(),
-                sim.height(),
-                sim.attractor_count(),
-                sim.obstacle_count(),
-                sim.species_count(),
-                memory_mb,
-                cpu_percent,
-                runtime_state.is_paused,
-                prname,
-                pname,
-                &palette_colors,
-                term_width as usize,
-                term_height as usize,
-                init_mode_name,
-                color_mode_name,
-                charset_str,
-                !args.simd_off,
-                current_config.decay_factor,
-                current_config.sensor_angle,
-                seed,
-                &food_source,
-                args.warmup_frames,
-                args.auto_reset,
-                ui_accent,
-                &runtime_state.panel_style,
-            ))
-        } else {
-            None
-        };
 
         let (dashboard_x, dashboard_y) =
             DashboardOverlay::calculate_position(term_width as usize, term_height as usize);
 
         // Config browser overlay
-        let config_browser_overlay: Option<RenderedOverlay> = if runtime_state.show_config_browser
-            && !runtime_state.show_dashboard
+        let config_browser_overlay: Option<RenderedOverlay> = if runtime_state
+            .overlay_state
+            .is_open(OverlayType::ConfigBrowser)
+            && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
         {
             match config_manager::list_configs() {
                 Ok(configs) => {
@@ -1059,7 +1092,7 @@ pub fn run_simulation(
                 }
                 Err(_) => {
                     runtime_state.show_notification("Failed to load configurations".to_string());
-                    runtime_state.show_config_browser = false;
+                    runtime_state.overlay_state.close();
                     None
                 }
             }
@@ -1074,7 +1107,9 @@ pub fn run_simulation(
 
         // Config save dialog overlay
         let config_save_overlay: Option<RenderedOverlay> =
-            if runtime_state.show_config_save_dialog && !runtime_state.show_dashboard {
+            if runtime_state.overlay_state.is_open(OverlayType::ConfigSave)
+                && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
+            {
                 Some(ConfigSaveOverlay::build_overlay(
                     &runtime_state.config_save_name_input,
                 ))
@@ -1091,7 +1126,6 @@ pub fn run_simulation(
         update_food_persistence(sim, &mut runtime_state, args);
 
         // Update focused overlay state before rendering
-        runtime_state.update_focused_overlay();
 
         // Entropy-based auto-reset
         check_auto_reset(sim, &mut runtime_state, args, entropy, init_mode);
@@ -1204,7 +1238,7 @@ pub fn run_simulation(
                     .as_ref()
                     .map(|v| (v, palette_editor_x, palette_editor_y)),
                 Some(&runtime_state.panel_style),
-                runtime_state.focused_overlay,
+                runtime_state.overlay_state.active(),
             )?;
         } else {
             renderer.render_with_overlay(
@@ -1242,7 +1276,7 @@ pub fn run_simulation(
                     .as_ref()
                     .map(|v| (v, palette_editor_x, palette_editor_y)),
                 Some(&runtime_state.panel_style),
-                runtime_state.focused_overlay,
+                runtime_state.overlay_state.active(),
             )?;
         }
 
@@ -1278,13 +1312,16 @@ pub fn run_simulation(
                     }
 
                     // Close keyboard hints on any key press
-                    if runtime_state.show_keyboard_hints {
-                        runtime_state.show_keyboard_hints = false;
+                    if runtime_state
+                        .overlay_state
+                        .is_open(OverlayType::KeyboardHints)
+                    {
+                        runtime_state.overlay_state.close();
                         continue;
                     }
 
                     // Handle config save dialog input
-                    if runtime_state.show_config_save_dialog {
+                    if runtime_state.overlay_state.is_open(OverlayType::ConfigSave) {
                         use crossterm::event::{KeyCode, KeyModifiers};
                         match key_event.code {
                             KeyCode::Char(c)
@@ -1342,11 +1379,11 @@ pub fn run_simulation(
                                         }
                                     }
                                 }
-                                runtime_state.show_config_save_dialog = false;
+                                runtime_state.overlay_state.close();
                                 continue;
                             }
                             KeyCode::Esc => {
-                                runtime_state.show_config_save_dialog = false;
+                                runtime_state.overlay_state.close();
                                 continue;
                             }
                             _ => continue,
@@ -1354,7 +1391,10 @@ pub fn run_simulation(
                     }
 
                     // Handle preset comparison input
-                    if runtime_state.show_preset_comparison {
+                    if runtime_state
+                        .overlay_state
+                        .is_open(OverlayType::PresetComparison)
+                    {
                         use crossterm::event::KeyCode;
                         match key_event.code {
                             KeyCode::Enter => {
@@ -1375,11 +1415,11 @@ pub fn run_simulation(
                                     "Applied preset: {}",
                                     crate::terminal::control::preset_name(preset)
                                 ));
-                                runtime_state.show_preset_comparison = false;
+                                runtime_state.overlay_state.close();
                                 continue;
                             }
                             KeyCode::Esc => {
-                                runtime_state.show_preset_comparison = false;
+                                runtime_state.overlay_state.close();
                                 continue;
                             }
                             _ => {} // Allow other keys (like Shift+1-7 to switch preset being compared)
@@ -1387,7 +1427,10 @@ pub fn run_simulation(
                     }
 
                     // Handle config browser input
-                    if runtime_state.show_config_browser {
+                    if runtime_state
+                        .overlay_state
+                        .is_open(OverlayType::ConfigBrowser)
+                    {
                         use crossterm::event::KeyCode;
                         match key_event.code {
                             KeyCode::Up => {
@@ -1434,7 +1477,7 @@ pub fn run_simulation(
                                         }
                                     }
                                 }
-                                runtime_state.show_config_browser = false;
+                                runtime_state.overlay_state.close();
                                 continue;
                             }
                             KeyCode::Delete => {
@@ -1463,7 +1506,7 @@ pub fn run_simulation(
                                 continue;
                             }
                             KeyCode::Esc => {
-                                runtime_state.show_config_browser = false;
+                                runtime_state.overlay_state.close();
                                 continue;
                             }
                             _ => continue,
@@ -1471,15 +1514,24 @@ pub fn run_simulation(
                     }
 
                     // Handle palette editor input (intercept keys while editor is open)
-                    if runtime_state.show_palette_editor {
+                    if runtime_state.overlay_state.is_palette_editor_open() {
                         use crossterm::event::{KeyCode, KeyModifiers};
 
-                        if palette_editor_state.is_none() {
+                        // Initialize palette editor state if needed
+                        if runtime_state.overlay_state.palette_editor.is_none() {
                             let current_palette = runtime_state.current_palette(&ALL_PALETTES);
-                            palette_editor_state = Some(PaletteEditorState::new(&current_palette));
+                            runtime_state
+                                .overlay_state
+                                .open_palette_editor(PaletteEditorState::new(&current_palette));
                         }
 
-                        if let Some(ref mut state) = palette_editor_state {
+                        // Collect notifications and palette updates to process after borrow ends
+                        let mut notification: Option<String> = None;
+                        let mut saved_palette_name: Option<String> = None;
+                        let mut palette_to_apply: Option<Palette> = None;
+                        let mut should_close = false;
+
+                        if let Some(ref mut state) = runtime_state.overlay_state.palette_editor {
                             match key_event.code {
                                 KeyCode::Esc => {
                                     match state.mode {
@@ -1493,9 +1545,8 @@ pub fn run_simulation(
                                         EditorMode::Editing => {
                                             let original =
                                                 Palette::Custom(state.original_colors.to_vec());
-                                            renderer.set_palette(original);
-                                            runtime_state.show_palette_editor = false;
-                                            palette_editor_state = None;
+                                            palette_to_apply = Some(original);
+                                            should_close = true;
                                         }
                                     }
                                     continue;
@@ -1521,8 +1572,8 @@ pub fn run_simulation(
                                             EditorComponent::Chroma => state.adjust_chroma(0.01),
                                             EditorComponent::Hue => state.adjust_hue(5.0),
                                         }
-                                        renderer
-                                            .set_palette(Palette::Custom(state.colors.to_vec()));
+                                        palette_to_apply =
+                                            Some(Palette::Custom(state.colors.to_vec()));
                                     }
                                     continue;
                                 }
@@ -1541,8 +1592,8 @@ pub fn run_simulation(
                                             EditorComponent::Chroma => state.adjust_chroma(-0.01),
                                             EditorComponent::Hue => state.adjust_hue(-5.0),
                                         }
-                                        renderer
-                                            .set_palette(Palette::Custom(state.colors.to_vec()));
+                                        palette_to_apply =
+                                            Some(Palette::Custom(state.colors.to_vec()));
                                     }
                                     continue;
                                 }
@@ -1556,7 +1607,7 @@ pub fn run_simulation(
                                 }
                                 KeyCode::Char('r') | KeyCode::Char('R') => {
                                     state.reset_to_original();
-                                    renderer.set_palette(Palette::Custom(state.colors.to_vec()));
+                                    palette_to_apply = Some(Palette::Custom(state.colors.to_vec()));
                                     continue;
                                 }
                                 KeyCode::Tab => {
@@ -1587,11 +1638,9 @@ pub fn run_simulation(
                                 KeyCode::Enter => {
                                     match state.mode {
                                         EditorMode::Editing => {
-                                            runtime_state.show_palette_editor = false;
-                                            runtime_state.show_notification(
-                                                "Custom palette applied".to_string(),
-                                            );
-                                            palette_editor_state = None;
+                                            should_close = true;
+                                            notification =
+                                                Some("Custom palette applied".to_string());
                                         }
                                         EditorMode::SaveDialog => {
                                             if !state.save_name_input.is_empty() {
@@ -1601,16 +1650,17 @@ pub fn run_simulation(
                                                 );
                                                 match palette_manager::save_palette(palette) {
                                                     Ok(_) => {
-                                                        runtime_state.show_notification(format!(
+                                                        notification = Some(format!(
                                                             "Palette '{}' saved",
                                                             state.save_name_input
                                                         ));
-                                                        runtime_state.saved_palette_name =
+                                                        saved_palette_name =
                                                             Some(state.save_name_input.clone());
                                                     }
-                                                    Err(e) => runtime_state.show_notification(
-                                                        format!("Failed to save: {}", e),
-                                                    ),
+                                                    Err(e) => {
+                                                        notification =
+                                                            Some(format!("Failed to save: {}", e));
+                                                    }
                                                 }
                                             }
                                             state.save_name_input.clear();
@@ -1625,14 +1675,10 @@ pub fn run_simulation(
                                                 state.original_colors = palette.to_rgb_colors();
                                                 state.base_palette_name = palette.name.clone();
                                                 state.is_modified = false;
-                                                runtime_state.saved_palette_name =
-                                                    Some(palette.name.clone());
-                                                runtime_state.show_notification(
-                                                    "Palette loaded".to_string(),
-                                                );
-                                                renderer.set_palette(Palette::Custom(
-                                                    state.colors.to_vec(),
-                                                ));
+                                                saved_palette_name = Some(palette.name.clone());
+                                                notification = Some("Palette loaded".to_string());
+                                                palette_to_apply =
+                                                    Some(Palette::Custom(state.colors.to_vec()));
                                             }
                                             state.mode = EditorMode::Editing;
                                         }
@@ -1668,7 +1714,19 @@ pub fn run_simulation(
                             }
                         }
 
-                        if let Some(ref state) = palette_editor_state {
+                        // Apply collected changes after borrow ends
+                        if should_close {
+                            runtime_state.overlay_state.close_palette_editor();
+                        }
+                        if let Some(name) = saved_palette_name {
+                            runtime_state.saved_palette_name = Some(name);
+                        }
+                        if let Some(msg) = notification {
+                            runtime_state.show_notification(msg);
+                        }
+                        if let Some(palette) = palette_to_apply {
+                            renderer.set_palette(palette);
+                        } else if let Some(ref state) = runtime_state.overlay_state.palette_editor {
                             renderer.set_palette(Palette::Custom(state.colors.to_vec()));
                         }
                         continue;
@@ -1764,25 +1822,15 @@ pub fn run_simulation(
                             // If no overlays open, Esc does nothing (doesn't quit)
                         }
                         ControlAction::CycleOptionsCategory => {
-                            const TOTAL_CATEGORIES: usize = 6;
-
-                            if !runtime_state.show_controls {
-                                runtime_state.close_all_overlays();
-                                runtime_state.show_controls = true;
-                            } else if runtime_state.controls_category_idx == TOTAL_CATEGORIES - 1 {
-                                runtime_state.controls_category_idx = 0;
+                            if !runtime_state.overlay_state.is_open(OverlayType::Controls) {
+                                runtime_state.toggle_controls();
                             } else {
                                 runtime_state.cycle_controls_category(true);
                             }
                         }
                         ControlAction::CycleOptionsCategoryReverse => {
-                            const TOTAL_CATEGORIES: usize = 6;
-
-                            if !runtime_state.show_controls {
-                                runtime_state.close_all_overlays();
-                                runtime_state.show_controls = true;
-                            } else if runtime_state.controls_category_idx == 0 {
-                                runtime_state.controls_category_idx = TOTAL_CATEGORIES - 1;
+                            if !runtime_state.overlay_state.is_open(OverlayType::Controls) {
+                                runtime_state.toggle_controls();
                             } else {
                                 runtime_state.cycle_controls_category(false);
                             }
@@ -2074,12 +2122,12 @@ pub fn run_simulation(
                         ControlAction::SetIntensityMapping(_) => {}
                         ControlAction::ShowConfigBrowser => {
                             runtime_state.close_all_overlays();
-                            runtime_state.show_config_browser = true;
+                            runtime_state.overlay_state.open(OverlayType::ConfigBrowser);
                             runtime_state.config_browser_selected_index = 0;
                         }
                         ControlAction::ShowConfigSaveDialog => {
                             runtime_state.close_all_overlays();
-                            runtime_state.show_config_save_dialog = true;
+                            runtime_state.overlay_state.open(OverlayType::ConfigSave);
                             runtime_state.config_save_name_input.clear();
                         }
                         ControlAction::RandomizeParams => {
@@ -2161,13 +2209,13 @@ pub fn run_simulation(
                             ));
                         }
                         ControlAction::ShowPaletteEditor => {
-                            runtime_state.toggle_palette_editor();
-                            if runtime_state.show_palette_editor {
-                                let current_palette = runtime_state.current_palette(&ALL_PALETTES);
-                                palette_editor_state =
-                                    Some(PaletteEditorState::new(&current_palette));
+                            if runtime_state.overlay_state.is_palette_editor_open() {
+                                runtime_state.overlay_state.close_palette_editor();
                             } else {
-                                palette_editor_state = None;
+                                let current_palette = runtime_state.current_palette(&ALL_PALETTES);
+                                runtime_state
+                                    .overlay_state
+                                    .open_palette_editor(PaletteEditorState::new(&current_palette));
                             }
                         }
                         ControlAction::None => {}
@@ -2370,7 +2418,7 @@ pub fn run_simulation(
                     None,
                     None,
                     Some(&runtime_state.panel_style),
-                    runtime_state.focused_overlay,
+                    runtime_state.overlay_state.active(),
                 )?;
             } else {
                 renderer.render_with_overlay(
@@ -2396,7 +2444,7 @@ pub fn run_simulation(
                     None,
                     None,
                     Some(&runtime_state.panel_style),
-                    runtime_state.focused_overlay,
+                    runtime_state.overlay_state.active(),
                 )?;
             }
         }

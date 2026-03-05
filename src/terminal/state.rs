@@ -11,9 +11,11 @@ use crate::config_defaults::dither as dither_consts;
 use crate::config_defaults::intensity::DEFAULT_PERLIN_SEED as PERLIN_SEED;
 use crate::config_defaults::{agent as agent_consts, environment as env_consts, trail};
 use crate::food_image::FOOD_IMAGE_PNG;
+use crate::overlay::{OverlayState, OverlayType};
 use crate::render::charset::Charset;
 pub use crate::render::charset::ALL_CHARSETS;
 use crate::render::dither::{DitherMatrix, DitherMode};
+use crate::render::options_overlay::ControlsOverlay;
 use crate::render::palette::IntensityMapping;
 use crate::render::theme::{PanelStyle, ALL_THEMES, GRUVBOX_DARK};
 use crate::simulation::config::{DiffusionKernel, InitMode, Preset, SimConfig, TerrainType, Wind};
@@ -427,12 +429,10 @@ pub struct RuntimeState {
     pub is_paused: bool,
     /// Flag set when pause is toggled, cleared after immediate re-render
     pub pause_just_toggled: bool,
-    /// Show controls overlay.
-    pub show_controls: bool,
-    /// Show keyboard hints overlay.
-    pub show_keyboard_hints: bool,
-    /// Show preset comparison overlay.
-    pub show_preset_comparison: bool,
+    /// Centralized overlay state management.
+    /// Replaces: show_controls, show_keyboard_hints, show_preset_comparison,
+    /// show_dashboard, show_config_browser, show_config_save_dialog
+    pub overlay_state: OverlayState,
     /// Preset being compared against.
     pub comparison_preset: Preset,
     /// Current category tab in controls overlay.
@@ -499,10 +499,6 @@ pub struct RuntimeState {
     pub intensity_mapping: IntensityMapping,
     /// Index of current intensity mapping preset.
     pub intensity_mapping_index: usize,
-    /// Show dashboard overlay (merged stats + info).
-    pub show_dashboard: bool,
-    /// Show palette editor overlay.
-    pub show_palette_editor: bool,
     /// Saved palette name (if loaded from saved palette).
     pub saved_palette_name: Option<String>,
     /// Current notification message with timestamp and severity level.
@@ -517,10 +513,6 @@ pub struct RuntimeState {
     pub food_persist_enabled: bool,
     /// Initial food attractors.
     pub initial_food_attractors: Vec<crate::simulation::config::Attractor>,
-    /// Show config browser overlay.
-    pub show_config_browser: bool,
-    /// Show config save dialog.
-    pub show_config_save_dialog: bool,
     /// Selected index in config browser.
     pub config_browser_selected_index: usize,
     /// Input buffer for save dialog.
@@ -545,8 +537,6 @@ pub struct RuntimeState {
     pub panel_style: PanelStyle,
     /// Index into `ALL_THEMES` for the active UI theme.
     pub theme_index: usize,
-    /// Currently focused overlay type.
-    pub focused_overlay: Option<OverlayType>,
     /// Whether shift key is currently held down.
     pub shift_held: bool,
     /// Cached logo brightness map for VCR pause effect: (logo_w, pixel_h, data).
@@ -554,27 +544,6 @@ pub struct RuntimeState {
     pub pause_logo_cache: Option<(usize, usize, Vec<f32>)>,
     /// Frame counter used for badge blink while paused.
     pub pause_frame_counter: u64,
-    /// Palette editor state (if editor is open).
-    pub palette_editor_state: Option<crate::render::palette_editor::PaletteEditorState>,
-}
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-/// Types of overlays that can be displayed.
-pub enum OverlayType {
-    /// Help overlay.
-    Help,
-    /// Controls overlay.
-    Controls,
-    /// Dashboard overlay (merged stats + info).
-    Dashboard,
-    /// Config browser overlay.
-    ConfigBrowser,
-    /// Config save dialog overlay.
-    ConfigSave,
-    /// Preset comparison overlay.
-    PresetComparison,
-    /// Keyboard hints overlay.
-    KeyboardHints,
 }
 
 impl RuntimeState {
@@ -595,9 +564,7 @@ impl RuntimeState {
         Self {
             is_paused: false,
             pause_just_toggled: false,
-            show_controls: false,
-            show_keyboard_hints: false,
-            show_preset_comparison: false,
+            overlay_state: OverlayState::default(),
             comparison_preset: initial_preset,
             controls_category_idx: 0,
             time_scale: cli_config.time_scale,
@@ -646,8 +613,6 @@ impl RuntimeState {
             reverse_palette: false,
             intensity_mapping: intensity_mapping.clone(),
             intensity_mapping_index: Self::find_intensity_mapping_index(&intensity_mapping),
-            show_dashboard: false,
-            show_palette_editor: false,
             saved_palette_name: None,
             notification: None,
             collapse_frame_counter: 0,
@@ -655,8 +620,6 @@ impl RuntimeState {
             food_persist_counter: 0,
             food_persist_enabled: false,
             initial_food_attractors: Vec::new(),
-            show_config_browser: false,
-            show_config_save_dialog: false,
             config_browser_selected_index: 0,
             config_save_name_input: String::new(),
             default_values,
@@ -669,11 +632,9 @@ impl RuntimeState {
             density_history: std::collections::VecDeque::with_capacity(60),
             panel_style: GRUVBOX_DARK,
             theme_index: 0,
-            focused_overlay: None,
             shift_held: false,
             pause_logo_cache: None,
             pause_frame_counter: 0,
-            palette_editor_state: None,
         }
     }
 
@@ -815,101 +776,54 @@ impl RuntimeState {
 
     /// Toggles the controls overlay.
     pub fn toggle_controls(&mut self) {
-        if self.show_controls {
-            self.show_controls = false;
-        } else {
-            self.close_all_overlays();
-            self.show_controls = true;
-        }
+        self.overlay_state.toggle(OverlayType::Controls);
     }
 
     /// Toggles the keyboard shortcuts overlay.
     pub fn toggle_keyboard_hints(&mut self) {
-        if self.show_keyboard_hints {
-            self.show_keyboard_hints = false;
-        } else {
-            self.close_all_overlays();
-            self.show_keyboard_hints = true;
-        }
+        self.overlay_state.toggle(OverlayType::KeyboardHints);
     }
 
     /// Toggles the preset comparison overlay.
     pub fn toggle_preset_comparison(&mut self, preset: Preset) {
-        if self.show_preset_comparison && self.comparison_preset == preset {
-            self.show_preset_comparison = false;
+        if self.overlay_state.is_open(OverlayType::PresetComparison)
+            && self.comparison_preset == preset
+        {
+            self.overlay_state.close();
         } else {
-            self.close_all_overlays();
-            self.show_preset_comparison = true;
+            self.overlay_state.open(OverlayType::PresetComparison);
             self.comparison_preset = preset;
         }
     }
 
     /// Checks if any overlay window is currently open.
     pub fn any_overlay_open(&self) -> bool {
-        self.show_controls
-            || self.show_keyboard_hints
-            || self.show_preset_comparison
-            || self.show_dashboard
-            || self.show_config_browser
-            || self.show_config_save_dialog
-            || self.show_palette_editor
+        self.overlay_state.any_open()
     }
 
     /// Closes all open overlay windows.
     pub fn close_all_overlays(&mut self) {
-        self.show_controls = false;
-        self.show_keyboard_hints = false;
-        self.show_preset_comparison = false;
-        self.show_dashboard = false;
-        self.show_config_browser = false;
-        self.show_config_save_dialog = false;
-        self.show_palette_editor = false;
-        self.focused_overlay = None;
+        self.overlay_state.close();
     }
 
     /// Toggles palette editor (mutually exclusive with other overlays).
     pub fn toggle_palette_editor(&mut self) {
-        if self.show_palette_editor {
-            self.show_palette_editor = false;
-        } else {
-            self.close_all_overlays();
-            self.show_palette_editor = true;
-        }
+        self.overlay_state.toggle(OverlayType::PaletteEditor);
     }
 
-    /// Updates the focused overlay based on currently open overlays.
-    pub fn update_focused_overlay(&mut self) {
-        self.focused_overlay = if self.show_keyboard_hints {
-            Some(OverlayType::KeyboardHints)
-        } else if self.show_preset_comparison {
-            Some(OverlayType::PresetComparison)
-        } else if self.show_config_save_dialog {
-            Some(OverlayType::ConfigSave)
-        } else if self.show_config_browser {
-            Some(OverlayType::ConfigBrowser)
-        } else if self.show_controls {
-            Some(OverlayType::Controls)
-        } else if self.show_dashboard {
-            Some(OverlayType::Dashboard)
-        } else {
-            None
-        };
-    }
-
-    /// Returns whether the given overlay type is currently focused.
-    pub fn is_overlay_focused(&self, overlay: OverlayType) -> bool {
-        self.focused_overlay == Some(overlay)
+    /// Returns whether the given overlay type is currently active.
+    pub fn is_overlay_active(&self, overlay: OverlayType) -> bool {
+        self.overlay_state.is_open(overlay)
     }
 
     /// Cycles through control categories.
     pub fn cycle_controls_category(&mut self, forward: bool) {
-        const TOTAL_CATEGORIES: usize = 6;
-
         if forward {
-            self.controls_category_idx = (self.controls_category_idx + 1) % TOTAL_CATEGORIES;
+            self.controls_category_idx =
+                (self.controls_category_idx + 1) % ControlsOverlay::TOTAL_CATEGORIES;
         } else {
             self.controls_category_idx = if self.controls_category_idx == 0 {
-                TOTAL_CATEGORIES - 1
+                ControlsOverlay::TOTAL_CATEGORIES - 1
             } else {
                 self.controls_category_idx - 1
             };
@@ -1319,12 +1233,7 @@ impl RuntimeState {
 
     /// Toggles dashboard overlay (merged stats + info).
     pub fn toggle_dashboard(&mut self) {
-        if self.show_dashboard {
-            self.show_dashboard = false;
-        } else {
-            self.close_all_overlays();
-            self.show_dashboard = true;
-        }
+        self.overlay_state.toggle(OverlayType::Dashboard);
     }
 
     /// Resets all parameters to default values.
@@ -1573,13 +1482,13 @@ mod tests {
     fn test_controls_toggle() {
         let mut state = create_test_runtime_state();
 
-        assert!(!state.show_controls);
+        assert!(!state.overlay_state.is_open(OverlayType::Controls));
 
         state.toggle_controls();
-        assert!(state.show_controls);
+        assert!(state.overlay_state.is_open(OverlayType::Controls));
 
         state.toggle_controls();
-        assert!(!state.show_controls);
+        assert!(!state.overlay_state.is_open(OverlayType::Controls));
     }
 
     #[test]
@@ -1588,11 +1497,11 @@ mod tests {
 
         assert!(!state.any_overlay_open());
 
-        state.show_controls = true;
+        state.overlay_state.open(OverlayType::Controls);
         assert!(state.any_overlay_open());
 
-        state.show_controls = false;
-        state.show_dashboard = true;
+        state.overlay_state.close();
+        state.overlay_state.open(OverlayType::Dashboard);
         assert!(state.any_overlay_open());
     }
 
@@ -1600,13 +1509,14 @@ mod tests {
     fn test_close_all_overlays() {
         let mut state = create_test_runtime_state();
 
-        state.show_controls = true;
-        state.show_dashboard = true;
+        state.overlay_state.open(OverlayType::Controls);
+        state.overlay_state.open(OverlayType::Dashboard);
 
         state.close_all_overlays();
 
-        assert!(!state.show_controls);
-        assert!(!state.show_dashboard);
+        assert!(!state.overlay_state.is_open(OverlayType::Controls));
+        assert!(!state.overlay_state.is_open(OverlayType::Dashboard));
+        assert!(!state.any_overlay_open());
     }
 
     #[test]
@@ -1824,22 +1734,22 @@ mod tests {
         assert!(!state.is_paused);
 
         state.toggle_controls();
-        assert!(state.show_controls);
+        assert!(state.overlay_state.is_open(OverlayType::Controls));
         state.toggle_controls();
-        assert!(!state.show_controls);
+        assert!(!state.overlay_state.is_open(OverlayType::Controls));
 
         state.toggle_keyboard_hints();
-        assert!(state.show_keyboard_hints);
+        assert!(state.overlay_state.is_open(OverlayType::KeyboardHints));
         state.toggle_keyboard_hints();
-        assert!(!state.show_keyboard_hints);
+        assert!(!state.overlay_state.is_open(OverlayType::KeyboardHints));
 
         state.toggle_preset_comparison(Preset::Network);
-        assert!(state.show_preset_comparison);
+        assert!(state.overlay_state.is_open(OverlayType::PresetComparison));
         state.toggle_preset_comparison(Preset::Network);
-        assert!(!state.show_preset_comparison);
+        assert!(!state.overlay_state.is_open(OverlayType::PresetComparison));
 
         assert!(!state.any_overlay_open());
-        state.show_dashboard = true;
+        state.overlay_state.open(OverlayType::Dashboard);
         assert!(state.any_overlay_open());
         state.close_all_overlays();
         assert!(!state.any_overlay_open());

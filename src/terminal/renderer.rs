@@ -251,7 +251,7 @@ impl TerminalRenderer {
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
         panel_style: Option<&PanelStyle>,
-        _focused_overlay: Option<crate::terminal::control::OverlayType>,
+        _focused_overlay: Option<crate::overlay::OverlayType>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -580,7 +580,7 @@ impl TerminalRenderer {
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
         panel_style_ms: Option<&PanelStyle>,
-        _focused_overlay: Option<crate::terminal::control::OverlayType>,
+        _focused_overlay: Option<crate::overlay::OverlayType>,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();

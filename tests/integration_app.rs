@@ -1,5 +1,6 @@
 // Integration tests for app module functionality
 use tslime::app;
+use tslime::render::palette::RgbColor;
 use tslime::simulation::config::{SimConfig, SpeciesConfig};
 
 /// Test that generate_completions handles supported shells correctly
@@ -43,7 +44,7 @@ fn test_extract_species_rgb_colors() {
                 rotation_angle: 45.0,
                 step_size: 1.0,
                 deposit_amount: 5.0,
-                color: "#ff0000".to_string(),
+                color: RgbColor::from_hex(0xff0000),
             },
             SpeciesConfig {
                 name: "blue".to_string(),
@@ -52,7 +53,7 @@ fn test_extract_species_rgb_colors() {
                 rotation_angle: 60.0,
                 step_size: 1.5,
                 deposit_amount: 3.0,
-                color: "#0000ff".to_string(),
+                color: RgbColor::from_hex(0x0000ff),
             },
         ],
         ..Default::default()
@@ -71,6 +72,8 @@ fn test_extract_species_rgb_colors() {
 /// Test that extract_species_rgb_colors ignores invalid hex colors
 #[test]
 fn test_extract_species_rgb_colors_invalid_hex() {
+    // With RgbColor type, invalid colors are impossible at compile time
+    // This test verifies the function works with valid colors
     let config = SimConfig {
         species_configs: vec![
             SpeciesConfig {
@@ -80,24 +83,27 @@ fn test_extract_species_rgb_colors_invalid_hex() {
                 rotation_angle: 45.0,
                 step_size: 1.0,
                 deposit_amount: 5.0,
-                color: "#ff0000".to_string(),
+                color: RgbColor::from_hex(0xff0000),
             },
             SpeciesConfig {
-                name: "invalid".to_string(),
+                name: "another_valid".to_string(),
                 count: 1000,
                 sensor_angle: 30.0,
                 rotation_angle: 60.0,
                 step_size: 1.5,
                 deposit_amount: 3.0,
-                color: "invalid".to_string(),
+                color: RgbColor::from_hex(0x00ff00),
             },
         ],
         ..Default::default()
     };
 
     let colors = app::extract_species_rgb_colors(&config);
-    assert_eq!(colors.len(), 1);
+    assert_eq!(colors.len(), 2);
     assert_eq!(colors[0].r, 255);
     assert_eq!(colors[0].g, 0);
     assert_eq!(colors[0].b, 0);
+    assert_eq!(colors[1].r, 0);
+    assert_eq!(colors[1].g, 255);
+    assert_eq!(colors[1].b, 0);
 }

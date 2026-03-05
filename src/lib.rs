@@ -53,6 +53,8 @@ pub mod error;
 pub mod exploration;
 /// Export functionality (GIF, WebM, PNG).
 pub mod export;
+/// Overlay system (state management, rendering, input).
+pub mod overlay;
 /// Saved palette management.
 pub mod palette_manager;
 /// Rendering logic (ASCII/Unicode, color palettes, dithering).

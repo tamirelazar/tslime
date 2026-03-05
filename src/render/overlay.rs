@@ -2,9 +2,6 @@ use crate::cli::Palette;
 use crate::render::dither::DitherMode;
 use crate::render::palette::RgbColor;
 use crate::render::theme::PanelStyle;
-use crate::simulation::config::Attractor;
-use crate::simulation::config::MouseAttractor;
-use crate::simulation::config::Obstacle;
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
@@ -619,7 +616,6 @@ fn build_notification_rich_lines(lines: &[String], accent: RgbColor) -> Vec<Vec<
 pub struct OverlayRenderer;
 
 impl OverlayRenderer {
-    #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
     /// Builds the status bar string displayed at the bottom of the screen.
     ///
@@ -791,7 +787,6 @@ impl OverlayRenderer {
         (result, color_overrides)
     }
 
-    #[allow(dead_code)]
     /// Calculates the X position for the status line (left-aligned or centered).
     pub fn status_line_x(status_line: &str, width: usize) -> usize {
         if status_line.len() < width {
@@ -800,282 +795,11 @@ impl OverlayRenderer {
             width.saturating_sub(status_line.len() + 2)
         }
     }
-
-    #[allow(dead_code)]
-    /// Calculates the X position for the paused indicator.
-    pub fn paused_overlay_x(_width: usize) -> usize {
-        let paused_text = "[ PAUSED ]";
-        _width.saturating_sub(paused_text.len() + 2)
-    }
-
-    #[allow(dead_code)]
-    /// Appends attractor help information to the help window.
-    pub fn build_help_with_attractors(base_help: &[&str], attractors: &[Attractor]) -> Vec<String> {
-        let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
-
-        if !attractors.is_empty() {
-            // ATTRACTOR config: WIDTH=42, padding=1 → CONTENT_WIDTH=38
-            let mut builder = PanelBuilder::new(38, None)
-                .with_padding(Padding::new(0, 0, 1, 1))
-                .with_title("ATTRACTORS");
-
-            for (i, attractor) in attractors.iter().enumerate() {
-                let kind = if attractor.strength > 0.0 {
-                    "attract"
-                } else {
-                    "repel"
-                };
-                let strength = attractor.strength.abs();
-                builder = builder.add_single(
-                    format!(
-                        "{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x",
-                        i + 1,
-                        attractor.x as i32,
-                        attractor.y as i32,
-                        kind,
-                        strength,
-                    ),
-                    TextAlignment::Left,
-                );
-            }
-
-            lines.push(String::new());
-            lines.extend(builder.build());
-        }
-
-        lines
-    }
-
-    #[allow(dead_code)]
-    /// Appends obstacle help information to the help window.
-    pub fn build_help_with_obstacles(base_help: &[&str], obstacles: &[Obstacle]) -> Vec<String> {
-        let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
-
-        if !obstacles.is_empty() {
-            // OBSTACLE config: WIDTH=42, padding=1 → CONTENT_WIDTH=38
-            let mut builder = PanelBuilder::new(38, None)
-                .with_padding(Padding::new(0, 0, 1, 1))
-                .with_title("OBSTACLES");
-
-            for (i, obstacle) in obstacles.iter().enumerate() {
-                let line = match obstacle {
-                    Obstacle::Circle { x, y, radius } => format!(
-                        "{:2}: circle ({:>4},{:>4}) r: {:>4.1}px",
-                        i + 1,
-                        *x as i32,
-                        *y as i32,
-                        radius,
-                    ),
-                    Obstacle::Rect {
-                        x,
-                        y,
-                        width,
-                        height,
-                    } => format!(
-                        "{:2}: rect  ({:>4},{:>4}) {:>4.1}x{:>4.1}px",
-                        i + 1,
-                        *x as i32,
-                        *y as i32,
-                        width,
-                        height,
-                    ),
-                    Obstacle::Image {
-                        path,
-                        x: _,
-                        y: _,
-                        width,
-                        height,
-                        invert: _,
-                        threshold: _,
-                    } => {
-                        let filename = std::path::Path::new(path)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or(path);
-                        format!(
-                            "{:2}: image {:>15} {:>3}x{:>3}px",
-                            i + 1,
-                            &filename[..filename.len().min(15)],
-                            width,
-                            height,
-                        )
-                    }
-                };
-                builder = builder.add_single(line, TextAlignment::Left);
-            }
-
-            lines.push(String::new());
-            lines.extend(builder.build());
-        }
-
-        lines
-    }
-
-    #[allow(dead_code)]
-    /// Appends mouse attractor help information to the help window.
-    pub fn build_help_with_mouse_attractors(
-        base_help: &[&str],
-        mouse_attractors: &[MouseAttractor],
-        _sim_width: usize,
-        _sim_height: usize,
-    ) -> Vec<String> {
-        let mut lines: Vec<String> = base_help.iter().map(|s| s.to_string()).collect();
-
-        if !mouse_attractors.is_empty() {
-            // MOUSE_ATTRACTOR config: WIDTH=46, padding=1 → CONTENT_WIDTH=42
-            let mut builder = PanelBuilder::new(42, None)
-                .with_padding(Padding::new(0, 0, 1, 1))
-                .with_title("MOUSE ATTRACTORS");
-
-            for (i, ma) in mouse_attractors.iter().enumerate() {
-                let kind = if ma.strength > 0.0 {
-                    "attract"
-                } else {
-                    "repel"
-                };
-                let remaining = ma.timeout_seconds - ma.created_at.elapsed().as_secs_f32();
-                let remaining_str = if remaining > 0.0 {
-                    format!("{:.1}s", remaining)
-                } else {
-                    "expired".to_string()
-                };
-                builder = builder.add_single(
-                    format!(
-                        "{:2}: ({:>4},{:>4}) {:^7} s: {:>4.1}x {:>7}",
-                        i + 1,
-                        ma.x as i32,
-                        ma.y as i32,
-                        kind,
-                        ma.strength.abs(),
-                        remaining_str,
-                    ),
-                    TextAlignment::Left,
-                );
-            }
-
-            lines.push(String::new());
-            lines.extend(builder.build());
-        }
-
-        lines
-    }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    /// Validates that all attractor sections have consistent line lengths.
-    pub fn check_attractor_section_lengths(lines: &[String], base_help_len: usize) -> bool {
-        if lines.len() <= base_help_len {
-            return true;
-        }
-        let attractor_section_start = base_help_len + 1; // Skip empty line after base help
-        let attractor_lines = &lines[attractor_section_start..];
-        if attractor_lines.is_empty() {
-            return true;
-        }
-        let target_len = attractor_lines[0].chars().count();
-        // Skip potential title/border differences if needed, but PanelBuilder should be consistent
-        attractor_lines
-            .iter()
-            .all(|line| line.chars().count() == target_len)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::simulation::config::Attractor;
-
-    #[test]
-    fn test_attractor_overlay_no_attractors() {
-        let attractors: Vec<Attractor> = vec![];
-        let base_help = [
-            "╭─ tslime controls ──────────────────────╮",
-            "│ h: Toggle help                         │",
-            "╰────────────────────────────────────────╯",
-        ];
-        let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
-        assert_eq!(lines, base_help);
-    }
-
-    #[test]
-    fn test_attractor_overlay_single_attractor() {
-        let attractors = vec![Attractor::new(200.0, 200.0, 1.0)];
-        let base_help = [
-            "╭─ tslime controls ──────────────────────╮",
-            "│ h: Toggle help                         │",
-            "╰────────────────────────────────────────╯",
-        ];
-        let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
-        assert!(
-            lines.len() > base_help.len(),
-            "Should add attractor section"
-        );
-        assert!(
-            OverlayRenderer::check_attractor_section_lengths(&lines, base_help.len()),
-            "Single attractor overlay should have consistent line lengths"
-        );
-    }
-
-    #[test]
-    fn test_attractor_overlay_max_strength() {
-        let attractors = vec![Attractor::new(100.0, 100.0, 10.0)];
-        let base_help = [
-            "╭─ tslime controls ──────────────────────╮",
-            "│ h: Toggle help                         │",
-            "╰────────────────────────────────────────╯",
-        ];
-        let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
-        assert!(
-            lines.len() > base_help.len(),
-            "Should add attractor section"
-        );
-        assert!(
-            OverlayRenderer::check_attractor_section_lengths(&lines, base_help.len()),
-            "Max strength attractor should still have consistent line lengths"
-        );
-    }
-
-    #[test]
-    fn test_attractor_overlay_negative_coordinates() {
-        let attractors = vec![Attractor::new(-50.0, -100.0, 1.0)];
-        let base_help = [
-            "╭─ tslime controls ──────────────────────╮",
-            "│ h: Toggle help                         │",
-            "╰────────────────────────────────────────╯",
-        ];
-        let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
-        assert!(
-            lines.len() > base_help.len(),
-            "Should add attractor section"
-        );
-        assert!(
-            OverlayRenderer::check_attractor_section_lengths(&lines, base_help.len()),
-            "Negative coordinates should still have consistent line lengths"
-        );
-    }
-
-    #[test]
-    fn test_attractor_overlay_multiple_attractors() {
-        let attractors = vec![
-            Attractor::new(200.0, 200.0, 1.0),
-            Attractor::new(100.0, 100.0, -0.5),
-            Attractor::new(300.0, 150.0, 2.0),
-        ];
-        let base_help = [
-            "╭─ tslime controls ──────────────────────╮",
-            "│ h: Toggle help                         │",
-            "╰────────────────────────────────────────╯",
-        ];
-        let lines = OverlayRenderer::build_help_with_attractors(&base_help, &attractors);
-        assert!(
-            lines.len() > base_help.len(),
-            "Should add attractor section"
-        );
-        assert!(
-            OverlayRenderer::check_attractor_section_lengths(&lines, base_help.len()),
-            "Multiple attractors should have consistent line lengths"
-        );
-    }
 
     #[test]
     fn test_panel_builder_separator() {
@@ -1117,48 +841,6 @@ mod tests {
     fn test_overlay_renderer_helper_positions() {
         assert_eq!(OverlayRenderer::status_line_x("abc", 10), 2);
         assert_eq!(OverlayRenderer::status_line_x("abcdefghij", 10), 0);
-        assert_eq!(OverlayRenderer::paused_overlay_x(80), 68);
-    }
-
-    #[test]
-    fn test_build_help_with_obstacles() {
-        let base_help = ["base"];
-        let obstacles = vec![
-            Obstacle::Circle {
-                x: 1.0,
-                y: 2.0,
-                radius: 3.0,
-            },
-            Obstacle::Rect {
-                x: 1.0,
-                y: 2.0,
-                width: 3.0,
-                height: 4.0,
-            },
-            Obstacle::Image {
-                path: "test.png".to_string(),
-                x: 0.0,
-                y: 0.0,
-                width: 10,
-                height: 10,
-                invert: false,
-                threshold: 0.5,
-            },
-        ];
-        let lines = OverlayRenderer::build_help_with_obstacles(&base_help, &obstacles);
-        assert!(lines.len() > 1);
-        assert!(lines.iter().any(|l| l.contains("circle")));
-        assert!(lines.iter().any(|l| l.contains("rect")));
-        assert!(lines.iter().any(|l| l.contains("image")));
-    }
-
-    #[test]
-    fn test_build_help_with_mouse_attractors() {
-        let base_help = ["base"];
-        let mas = vec![MouseAttractor::new(10.0, 10.0, 1.0, 3.0)];
-        let lines = OverlayRenderer::build_help_with_mouse_attractors(&base_help, &mas, 100, 100);
-        assert!(lines.len() > 1);
-        assert!(lines.iter().any(|l| l.contains("attract")));
     }
 }
 
