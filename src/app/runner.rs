@@ -268,6 +268,9 @@ fn build_overlays(
             runtime_state.current_theme_name(),
             &runtime_state.panel_style,
             runtime_state.shift_held,
+            runtime_state.trail_age_enabled,
+            runtime_state.trail_delta_enabled,
+            runtime_state.sharpen_enabled,
         ))
     } else {
         None
@@ -571,6 +574,15 @@ pub fn run_simulation(
     runtime_state.preload_pause_logo(term_width as usize, term_height as usize);
     runtime_state.dither_mode = dither_mode;
     runtime_state.show_dashboard = args.stats;
+    runtime_state.trail_age_enabled = args.trail_age;
+    runtime_state.trail_delta_enabled = args.trail_delta;
+    runtime_state.sharpen_enabled = args.sharpen;
+    if args.trail_age {
+        sim.set_compute_trail_age(true);
+    }
+    if args.trail_delta {
+        sim.set_compute_trail_delta(true);
+    }
     renderer.set_dither_mode(dither_mode);
     let mut palette_editor_state: Option<PaletteEditorState> = None;
 
@@ -724,12 +736,48 @@ pub fn run_simulation(
         }
 
         let blended_trail = sim.trail_map_blended();
-        let downsampled = downsample(
+        let mut downsampled = downsample(
             &blended_trail,
             sim.width(),
             sim.height(),
             term_width as usize,
             term_height as usize,
+        );
+
+        // Laplacian sharpening post-process
+        if runtime_state.sharpen_enabled {
+            crate::render::downsample::apply_laplacian_sharpening(
+                &mut downsampled,
+                crate::config_defaults::visual_fx::SHARPEN_STRENGTH,
+            );
+        }
+
+        // Compute auxiliary frame for trail age / temporal delta
+        let aux_frame =
+            if runtime_state.trail_age_enabled || runtime_state.trail_delta_enabled {
+                Some(crate::render::downsample::downsample_aux(
+                    if runtime_state.trail_age_enabled {
+                        sim.trail_age()
+                    } else {
+                        None
+                    },
+                    if runtime_state.trail_delta_enabled {
+                        sim.trail_delta()
+                    } else {
+                        None
+                    },
+                    sim.width(),
+                    sim.height(),
+                    term_width as usize,
+                    term_height as usize,
+                ))
+            } else {
+                None
+            };
+        renderer.set_visual_fx(
+            aux_frame,
+            runtime_state.trail_age_enabled,
+            runtime_state.trail_delta_enabled,
         );
 
         let current_config = args.to_sim_config();
@@ -879,6 +927,9 @@ pub fn run_simulation(
                     runtime_state.current_theme_name(),
                     &runtime_state.panel_style,
                     runtime_state.shift_held,
+                    runtime_state.trail_age_enabled,
+                    runtime_state.trail_delta_enabled,
+                    runtime_state.sharpen_enabled,
                 ))
             } else {
                 None
@@ -2169,6 +2220,46 @@ pub fn run_simulation(
                             } else {
                                 palette_editor_state = None;
                             }
+                        }
+                        ControlAction::ToggleTrailAge => {
+                            runtime_state.trail_age_enabled =
+                                !runtime_state.trail_age_enabled;
+                            sim.set_compute_trail_age(runtime_state.trail_age_enabled);
+                            runtime_state.show_notification(format!(
+                                "Trail Age: {}",
+                                if runtime_state.trail_age_enabled {
+                                    "On"
+                                } else {
+                                    "Off"
+                                }
+                            ));
+                        }
+                        ControlAction::ToggleTrailDelta => {
+                            runtime_state.trail_delta_enabled =
+                                !runtime_state.trail_delta_enabled;
+                            sim.set_compute_trail_delta(
+                                runtime_state.trail_delta_enabled,
+                            );
+                            runtime_state.show_notification(format!(
+                                "Trail Delta: {}",
+                                if runtime_state.trail_delta_enabled {
+                                    "On"
+                                } else {
+                                    "Off"
+                                }
+                            ));
+                        }
+                        ControlAction::ToggleSharpen => {
+                            runtime_state.sharpen_enabled =
+                                !runtime_state.sharpen_enabled;
+                            runtime_state.show_notification(format!(
+                                "Sharpen: {}",
+                                if runtime_state.sharpen_enabled {
+                                    "On"
+                                } else {
+                                    "Off"
+                                }
+                            ));
                         }
                         ControlAction::None => {}
                     }

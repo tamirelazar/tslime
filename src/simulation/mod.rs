@@ -133,6 +133,9 @@ pub struct Simulation {
     rng: Rng,
     trail_history: Option<TrailHistory>,
     noise: NoiseWrapper,
+    trail_age: Option<Vec<f32>>,
+    prev_trail: Option<Vec<f32>>,
+    trail_delta: Option<Vec<f32>>,
 }
 
 impl Simulation {
@@ -196,6 +199,9 @@ impl Simulation {
             rng,
             trail_history,
             noise,
+            trail_age: None,
+            prev_trail: None,
+            trail_delta: None,
         }
     }
 
@@ -763,6 +769,32 @@ impl Simulation {
             trail_map.decay(effective_decay);
         }
 
+        // Compute trail age: increment where pheromone present, reset where absent
+        if let Some(ref mut age) = self.trail_age {
+            let current = self.trail_maps[0].current();
+            let max_val = current.iter().copied().fold(0.0f32, f32::max);
+            let threshold = max_val * 0.01;
+            for (a, &v) in age.iter_mut().zip(current.iter()) {
+                if v > threshold {
+                    *a = (*a + dt).min(crate::config_defaults::visual_fx::AGE_MAX_SECONDS);
+                } else {
+                    *a = 0.0;
+                }
+            }
+        }
+
+        // Compute trail delta: absolute difference from previous frame, normalized
+        if let (Some(ref mut delta), Some(ref mut prev)) =
+            (&mut self.trail_delta, &mut self.prev_trail)
+        {
+            let current = self.trail_maps[0].current();
+            let max_val = current.iter().copied().fold(0.0f32, f32::max).max(0.001);
+            for ((d, p), &c) in delta.iter_mut().zip(prev.iter_mut()).zip(current.iter()) {
+                *d = (c - *p).abs() / max_val;
+                *p = c;
+            }
+        }
+
         self.config.remove_expired_mouse_attractors();
 
         if let Some(ref mut history) = self.trail_history {
@@ -824,6 +856,15 @@ impl Simulation {
         if let Some(ref mut history) = self.trail_history {
             history.clear();
         }
+        if let Some(ref mut buf) = self.trail_age {
+            buf.fill(0.0);
+        }
+        if let Some(ref mut buf) = self.trail_delta {
+            buf.fill(0.0);
+        }
+        if let Some(ref mut buf) = self.prev_trail {
+            buf.fill(0.0);
+        }
 
         // Re-seed noise
         let noise_seed = (seed % u64::MAX) as u32;
@@ -847,6 +888,32 @@ impl Simulation {
                 self.config.diffusion_sigma,
             ));
         }
+    }
+
+    /// Enable or disable trail age computation.
+    pub fn set_compute_trail_age(&mut self, enabled: bool) {
+        if enabled && self.trail_age.is_none() {
+            self.trail_age = Some(vec![0.0; self.width() * self.height()]);
+        }
+    }
+
+    /// Enable or disable trail delta computation.
+    pub fn set_compute_trail_delta(&mut self, enabled: bool) {
+        if enabled && self.trail_delta.is_none() {
+            let size = self.width() * self.height();
+            self.trail_delta = Some(vec![0.0; size]);
+            self.prev_trail = Some(vec![0.0; size]);
+        }
+    }
+
+    /// Get the trail age buffer (normalized cumulative seconds above threshold).
+    pub fn trail_age(&self) -> Option<&[f32]> {
+        self.trail_age.as_deref()
+    }
+
+    /// Get the trail delta buffer (absolute change normalized by peak).
+    pub fn trail_delta(&self) -> Option<&[f32]> {
+        self.trail_delta.as_deref()
     }
 
     /// Add a temporary attractor at the given coordinates.

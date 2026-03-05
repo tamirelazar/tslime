@@ -93,6 +93,9 @@ impl ControlsOverlay {
         theme_name: &str,
         panel_style: &PanelStyle,
         shift_held: bool,
+        trail_age_enabled: bool,
+        trail_delta_enabled: bool,
+        sharpen_enabled: bool,
     ) -> crate::render::panel::RenderedOverlay {
         use TextAlignment::Left;
 
@@ -469,6 +472,36 @@ impl ControlsOverlay {
                             "Max Bright",
                             mini_bar((max_brightness - 1.0) / 99.0, 8),
                             format!("{:.1}×", max_brightness),
+                        ),
+                        Left,
+                    )
+                    .add_single(
+                        param_row(
+                            " ",
+                            "'",
+                            "Trail Age",
+                            if trail_age_enabled { "▪───────" } else { "────────" }.to_string(),
+                            if trail_age_enabled { "On" } else { "Off" }.to_string(),
+                        ),
+                        Left,
+                    )
+                    .add_single(
+                        param_row(
+                            " ",
+                            ".",
+                            "Trail Delta",
+                            if trail_delta_enabled { "▪───────" } else { "────────" }.to_string(),
+                            if trail_delta_enabled { "On" } else { "Off" }.to_string(),
+                        ),
+                        Left,
+                    )
+                    .add_single(
+                        param_row(
+                            " ",
+                            ">",
+                            "Sharpen",
+                            if sharpen_enabled { "▪───────" } else { "────────" }.to_string(),
+                            if sharpen_enabled { "On" } else { "Off" }.to_string(),
                         ),
                         Left,
                     )

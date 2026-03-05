@@ -473,6 +473,9 @@ pub fn print_mode(
         species_rgb_colors,
         background_color,
         args.ascii_contrast,
+        None,
+        false,
+        false,
     );
 
     // Apply grid rendering if enabled
@@ -611,6 +614,9 @@ pub fn capture_frames_mode(
             species_rgb_colors,
             background_color,
             args.ascii_contrast,
+            None,
+            false,
+            false,
         );
 
         // Apply grid rendering if enabled
@@ -785,6 +791,9 @@ pub fn export_gif_mode(
             species_rgb_colors,
             background_color,
             args.ascii_contrast,
+            None,
+            false,
+            false,
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -895,6 +904,9 @@ pub fn export_webm_mode(
             species_rgb_colors,
             background_color,
             args.ascii_contrast,
+            None,
+            false,
+            false,
         );
 
         let pixels = buffer.get_rgb_pixels();

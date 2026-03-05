@@ -514,6 +514,18 @@ pub mod export {
     pub const DEFAULT_FRAME_DIR: &str = "frames";
 }
 
+/// Visual effects constants for trail age, temporal delta, and Laplacian sharpening.
+pub mod visual_fx {
+    /// Maximum trail age in seconds before clamping.
+    pub const AGE_MAX_SECONDS: f32 = 10.0;
+    /// Hue shift range in degrees for aged trails.
+    pub const AGE_HUE_RANGE: f32 = 60.0;
+    /// Brightness boost strength for temporal delta effect.
+    pub const DELTA_STRENGTH: f32 = 0.5;
+    /// Laplacian sharpening strength.
+    pub const SHARPEN_STRENGTH: f32 = 0.3;
+}
+
 /// Simulation defaults.
 pub mod simulation {
     /// Default number of exploration iterations.

@@ -260,6 +260,9 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('/') => ControlAction::ShowPaletteEditor,
         KeyCode::Char('`') => ControlAction::CycleCharset,
         KeyCode::Char('~') => ControlAction::CycleCharsetReverse,
+        KeyCode::Char('\'') => ControlAction::ToggleTrailAge,
+        KeyCode::Char('.') => ControlAction::ToggleTrailDelta,
+        KeyCode::Char('>') => ControlAction::ToggleSharpen,
         _ => ControlAction::None,
     }
 }

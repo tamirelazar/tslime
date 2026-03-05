@@ -43,6 +43,9 @@ pub struct TerminalRenderer {
     species_rgb_colors: Vec<RgbColor>,
     background_color: Option<RgbColor>,
     ascii_contrast: f32,
+    aux_frame: Option<crate::render::downsample::AuxFrame>,
+    trail_age_enabled: bool,
+    trail_delta_enabled: bool,
 }
 
 impl TerminalRenderer {
@@ -75,6 +78,9 @@ impl TerminalRenderer {
             species_rgb_colors: Vec::new(),
             background_color,
             ascii_contrast: 1.5,
+            aux_frame: None,
+            trail_age_enabled: false,
+            trail_delta_enabled: false,
         }
     }
 
@@ -186,6 +192,18 @@ impl TerminalRenderer {
         self.species_rgb_colors = colors;
     }
 
+    /// Set visual effects data for trail age and temporal delta.
+    pub fn set_visual_fx(
+        &mut self,
+        aux: Option<crate::render::downsample::AuxFrame>,
+        age: bool,
+        delta: bool,
+    ) {
+        self.aux_frame = aux;
+        self.trail_age_enabled = age;
+        self.trail_delta_enabled = delta;
+    }
+
     /// Get a mutable reference to the standard output.
     #[allow(dead_code)]
     pub fn stdout_mut(&mut self) -> &mut Stdout {
@@ -224,6 +242,9 @@ impl TerminalRenderer {
             },
             self.background_color,
             self.ascii_contrast,
+            self.aux_frame.as_ref(),
+            self.trail_age_enabled,
+            self.trail_delta_enabled,
         );
 
         execute!(self.stdout, &buffer)
@@ -278,6 +299,9 @@ impl TerminalRenderer {
             },
             self.background_color,
             self.ascii_contrast,
+            self.aux_frame.as_ref(),
+            self.trail_age_enabled,
+            self.trail_delta_enabled,
         );
 
         // Apply VCR freeze-frame dim+scanline effect when paused
@@ -639,6 +663,9 @@ impl TerminalRenderer {
                 Some(species_color_vec),
                 self.background_color,
                 self.ascii_contrast,
+                None,  // aux_frame not supported for multi-species
+                false,
+                false,
             );
 
             for (i, cell) in species_buffer.cells.iter().enumerate() {

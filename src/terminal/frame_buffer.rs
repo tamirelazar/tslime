@@ -456,7 +456,12 @@ impl FrameBuffer {
         species_rgb_colors: Option<Vec<RgbColor>>,
         background_color: Option<RgbColor>,
         ascii_contrast: f32,
+        aux_frame: Option<&crate::render::downsample::AuxFrame>,
+        trail_age_enabled: bool,
+        trail_delta_enabled: bool,
     ) -> Self {
+        use crate::config_defaults::visual_fx::{AGE_HUE_RANGE, DELTA_STRENGTH};
+
         let mut buffer = Self::new(width, height, color_mode, background_color);
         buffer.species_colors_enabled = species_colors_enabled;
         buffer.ascii_contrast = ascii_contrast;
@@ -477,15 +482,36 @@ impl FrameBuffer {
                 }
             }
 
-            let top_brightness = if max_trail_value > 0.0 {
+            let mut top_brightness = if max_trail_value > 0.0 {
                 dcell.top / max_trail_value
             } else {
                 0.0
             };
-            let bottom_brightness = if max_trail_value > 0.0 {
+            let mut bottom_brightness = if max_trail_value > 0.0 {
                 dcell.bottom / max_trail_value
             } else {
                 0.0
+            };
+
+            // Per-cell hue shift and brightness boost from aux data
+            let cell_hue_shift = if let Some(aux) = aux_frame {
+                let aux_cell = &aux.cells[idx.min(aux.cells.len().saturating_sub(1))];
+
+                // Delta → brightness boost
+                if trail_delta_enabled {
+                    let boost = aux_cell.delta * DELTA_STRENGTH;
+                    top_brightness = (top_brightness + boost).clamp(0.0, 1.0);
+                    bottom_brightness = (bottom_brightness + boost).clamp(0.0, 1.0);
+                }
+
+                // Age → hue shift
+                if trail_age_enabled {
+                    hue_shift + aux_cell.age * AGE_HUE_RANGE
+                } else {
+                    hue_shift
+                }
+            } else {
+                hue_shift
             };
 
             let cell = buffer.create_cell(
@@ -500,7 +526,7 @@ impl FrameBuffer {
                 reverse_palette,
                 invert_palette,
                 color_mode,
-                hue_shift,
+                cell_hue_shift,
                 dither_mode,
                 error_diffusion,
                 intensity_mapping,
@@ -1258,6 +1284,9 @@ pub fn render_frame(
         species_rgb_colors,
         background_color,
         1.5,
+        None,
+        false,
+        false,
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -1856,6 +1885,9 @@ mod tests {
             None,
             None,
             1.5,
+            None,
+            false,
+            false,
         );
         assert_eq!(fb.width(), 10);
         assert_eq!(fb.height(), 10);
@@ -1878,6 +1910,9 @@ mod tests {
             None,
             None,
             1.5,
+            None,
+            false,
+            false,
         );
         assert_ne!(fb.cells[0].fg_color_rgb, fb_rev.cells[0].fg_color_rgb);
     }
@@ -1967,6 +2002,9 @@ mod tests {
             None,
             None,
             1.5,
+            None,
+            false,
+            false,
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -2018,6 +2056,9 @@ mod tests {
             None,
             None,
             1.5,
+            None,
+            false,
+            false,
         );
 
         assert_eq!(buffer.cells[0].char, '▀');

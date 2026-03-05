@@ -925,6 +925,21 @@ pub struct Args {
     /// Enable simple motion blur.
     pub motion_blur: bool,
 
+    #[arg(long = "trail-age", help = "Color veins by age (old veins shift hue)")]
+    /// Enable trail age hue shifting.
+    pub trail_age: bool,
+
+    #[arg(
+        long = "trail-delta",
+        help = "Highlight active growth/decay fronts"
+    )]
+    /// Enable temporal delta brightness boost.
+    pub trail_delta: bool,
+
+    #[arg(long = "sharpen", help = "Sharpen vein edges (Laplacian post-process)")]
+    /// Enable Laplacian sharpening.
+    pub sharpen: bool,
+
     #[arg(
         long = "auto-normalize",
         help = "Enable adaptive brightness normalization to prevent flickering"
@@ -1728,6 +1743,9 @@ impl Default for Args {
             explain: false,
             completions: None,
             bg_color: None,
+            trail_age: false,
+            trail_delta: false,
+            sharpen: false,
         }
     }
 }

@@ -299,6 +299,12 @@ pub enum ControlAction {
     CycleThemeReverse,
     /// Show palette editor.
     ShowPaletteEditor,
+    /// Toggle trail age hue shifting.
+    ToggleTrailAge,
+    /// Toggle temporal delta brightness boost.
+    ToggleTrailDelta,
+    /// Toggle Laplacian sharpening.
+    ToggleSharpen,
     /// No action.
     None,
 }
@@ -556,6 +562,12 @@ pub struct RuntimeState {
     pub pause_frame_counter: u64,
     /// Palette editor state (if editor is open).
     pub palette_editor_state: Option<crate::render::palette_editor::PaletteEditorState>,
+    /// Trail age hue shifting enabled.
+    pub trail_age_enabled: bool,
+    /// Temporal delta brightness boost enabled.
+    pub trail_delta_enabled: bool,
+    /// Laplacian sharpening enabled.
+    pub sharpen_enabled: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -674,6 +686,9 @@ impl RuntimeState {
             pause_logo_cache: None,
             pause_frame_counter: 0,
             palette_editor_state: None,
+            trail_age_enabled: false,
+            trail_delta_enabled: false,
+            sharpen_enabled: false,
         }
     }
 
