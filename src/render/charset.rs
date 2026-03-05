@@ -293,7 +293,7 @@ pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
         Charset::Braille => {
             use crate::config_defaults::threshold;
             if let Some(bottom_val) = bottom {
-                map_braille_subpixel(top, bottom_val, threshold::BRAILLE_DEFAULT)
+                map_braille_subpixel(top, bottom_val, threshold::DEFAULT_BRAILLE_THRESHOLD)
             } else {
                 let brightness = top.clamp(0.0, 1.0);
                 let index = (brightness * 15.0).round() as usize;
@@ -330,7 +330,7 @@ pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
             } else {
                 top
             };
-            map_point(avg, threshold::POINT_DEFAULT) // Higher threshold for sparse dots
+            map_point(avg, threshold::DEFAULT_POINT_THRESHOLD) // Higher threshold for sparse dots
         }
         Charset::Sculpted => {
             // Fallback: same as HalfBlock when no quadrant data available
@@ -374,8 +374,8 @@ pub fn map_half_block_dual(top: f32, bottom: f32, threshold: f32) -> char {
 /// Returns '█', '▀', '▄', or ' ' based on which subpixels exceed the threshold.
 pub fn map_vertical_block(top: f32, bottom: f32) -> char {
     use crate::config_defaults::threshold;
-    let top_above = top > threshold::VERTICAL_BLOCK_DEFAULT;
-    let bottom_above = bottom > threshold::VERTICAL_BLOCK_DEFAULT;
+    let top_above = top > threshold::DEFAULT_VERTICAL_BLOCK_THRESHOLD;
+    let bottom_above = bottom > threshold::DEFAULT_VERTICAL_BLOCK_THRESHOLD;
 
     match (top_above, bottom_above) {
         (true, true) => '█',
@@ -1059,10 +1059,10 @@ const BLOCK_SHAPE_TABLE: [ShapeEntry; 23] = [
 pub fn map_sculpted_outline(tl: f32, tr: f32, bl: f32, br: f32) -> char {
     use crate::config_defaults::threshold;
 
-    let tl_on = tl > threshold::SCULPTED_OUTLINE;
-    let tr_on = tr > threshold::SCULPTED_OUTLINE;
-    let bl_on = bl > threshold::SCULPTED_OUTLINE;
-    let br_on = br > threshold::SCULPTED_OUTLINE;
+    let tl_on = tl > threshold::DEFAULT_SCULPTED_OUTLINE_THRESHOLD;
+    let tr_on = tr > threshold::DEFAULT_SCULPTED_OUTLINE_THRESHOLD;
+    let bl_on = bl > threshold::DEFAULT_SCULPTED_OUTLINE_THRESHOLD;
+    let br_on = br > threshold::DEFAULT_SCULPTED_OUTLINE_THRESHOLD;
 
     let index =
         (tl_on as u32) | ((tr_on as u32) << 1) | ((bl_on as u32) << 2) | ((br_on as u32) << 3);

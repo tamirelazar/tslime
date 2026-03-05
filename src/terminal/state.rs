@@ -972,7 +972,7 @@ impl RuntimeState {
                 matrix: _,
             } => DitherMode::ErrorDiffusion { serpentine: true },
             DitherMode::ErrorDiffusion { .. } => DitherMode::Hybrid {
-                edge_threshold: dither_consts::DEFAULT_HYBRID_EDGE,
+                edge_threshold: dither_consts::DEFAULT_HYBRID_EDGE_THRESHOLD,
                 intensity: dither_consts::DEFAULT_INTENSITY,
                 matrix: DitherMatrix::Bayer4x4,
             },

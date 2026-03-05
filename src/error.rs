@@ -3,6 +3,8 @@
 //! This module provides structured error types using `thiserror` for consistent
 //! error handling across the codebase.
 
+#![allow(missing_docs)]
+
 use thiserror::Error;
 
 /// Main error type for tslime operations.
@@ -166,11 +168,25 @@ pub enum ConfigError {
 
     /// Invalid attractor strength.
     #[error("attractor strength must be between {min} and {max}, got {value}")]
-    InvalidAttractorStrength { value: f32, min: f32, max: f32 },
+    InvalidAttractorStrength {
+        /// The invalid value.
+        value: f32,
+        /// Minimum allowed value.
+        min: f32,
+        /// Maximum allowed value.
+        max: f32,
+    },
 
     /// Invalid terrain strength.
     #[error("terrain strength must be between {min} and {max}, got {value}")]
-    InvalidTerrainStrength { value: f32, min: f32, max: f32 },
+    InvalidTerrainStrength {
+        /// The invalid value.
+        value: f32,
+        /// Minimum allowed value.
+        min: f32,
+        /// Maximum allowed value.
+        max: f32,
+    },
 
     /// Failed to parse terrain type.
     #[error("invalid terrain type: {0}")]

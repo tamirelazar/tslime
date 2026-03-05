@@ -1204,7 +1204,7 @@ mod tests {
         let mut state = PaletteEditorState::new(&Palette::Forest);
 
         // Store initial average hue
-        let initial_avg_hue = state.current_oklch().h;
+        let _initial_avg_hue = state.current_oklch().h;
 
         // Reduce chroma to 0 for all colors
         state.adjust_chroma(-2.0);
@@ -1248,7 +1248,7 @@ mod tests {
     #[test]
     fn test_reset_restores_stored_hues() {
         let mut state = PaletteEditorState::new(&Palette::Forest);
-        let initial_stored_hues = state.stored_hues.clone();
+        let initial_stored_hues = state.stored_hues;
 
         // Modify hues
         state.adjust_hue(90.0);
@@ -1257,9 +1257,13 @@ mod tests {
         state.reset_to_original();
 
         // Stored hues should be restored
-        for i in 0..PALETTE_COLOR_COUNT {
+        for (i, &initial_hue) in initial_stored_hues
+            .iter()
+            .enumerate()
+            .take(PALETTE_COLOR_COUNT)
+        {
             assert!(
-                (state.stored_hues[i] - initial_stored_hues[i]).abs() < 0.1,
+                (state.stored_hues[i] - initial_hue).abs() < 0.1,
                 "Stored hue {} should be reset to original",
                 i
             );

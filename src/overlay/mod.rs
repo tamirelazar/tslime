@@ -78,41 +78,35 @@ impl OverlayType {
 }
 
 /// Collection of all overlay data for rendering.
+#[derive(Default)]
 pub struct OverlayCollection<'a> {
+    /// Pause screen logo overlay.
     pub pause_logo: Option<(&'a RenderedOverlay, usize, usize)>,
+    /// Pause screen badge overlay.
     pub pause_badge: Option<(&'a RenderedOverlay, usize, usize)>,
+    /// Controls help overlay.
     pub controls: Option<(&'a RenderedOverlay, usize, usize)>,
+    /// Dashboard overlay.
     pub dashboard: Option<(&'a RenderedOverlay, usize, usize)>,
+    /// Notification overlay.
     pub notification: Option<(&'a RenderedOverlay, usize, usize)>,
+    /// Config browser overlay.
     pub config_browser: Option<(&'a RenderedOverlay, usize, usize)>,
+    /// Config save overlay.
     pub config_save: Option<(&'a RenderedOverlay, usize, usize)>,
+    /// Keyboard hints overlay.
     pub keyboard_hints: Option<(&'a RenderedOverlay, usize, usize)>,
+    /// Preset comparison overlay.
     pub preset_comparison: Option<(&'a RenderedOverlay, usize, usize)>,
+    /// Palette editor overlay.
     pub palette_editor: Option<(&'a RenderedOverlay, usize, usize)>,
 }
 
-impl<'a> Default for OverlayCollection<'a> {
-    fn default() -> Self {
-        Self {
-            pause_logo: None,
-            pause_badge: None,
-            controls: None,
-            dashboard: None,
-            notification: None,
-            config_browser: None,
-            config_save: None,
-            keyboard_hints: None,
-            preset_comparison: None,
-            palette_editor: None,
-        }
-    }
-}
+type OverlayEntry<'a> = (OverlayType, Option<(&'a RenderedOverlay, usize, usize)>);
 
 impl<'a> OverlayCollection<'a> {
     /// Returns all overlays sorted by z-order.
-    pub fn iter_by_z_order(
-        &self,
-    ) -> Vec<(OverlayType, Option<(&'a RenderedOverlay, usize, usize)>)> {
+    pub fn iter_by_z_order(&self) -> Vec<OverlayEntry<'a>> {
         let mut overlays: Vec<(OverlayType, _, u8)> = vec![
             (
                 OverlayType::PauseLogo,

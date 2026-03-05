@@ -590,7 +590,6 @@ pub fn run_simulation(
         runtime_state.overlay_state.open(OverlayType::Dashboard);
     }
     renderer.set_dither_mode(dither_mode);
-    let mut palette_editor_state: Option<PaletteEditorState> = None;
 
     // Initialize food persistence
     if args.food_persist && init_mode == InitMode::Food {

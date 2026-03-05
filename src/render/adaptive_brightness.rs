@@ -22,8 +22,8 @@ impl AdaptiveBrightness {
     pub fn new(window_size: usize, enabled: bool) -> Self {
         use crate::config_defaults::normalization;
         Self {
-            window_size: window_size.clamp(1, normalization::WINDOW_LARGE),
-            peak_history: Vec::with_capacity(normalization::DEFAULT_WINDOW),
+            window_size: window_size.clamp(1, normalization::LARGE_WINDOW),
+            peak_history: Vec::with_capacity(normalization::DEFAULT_WINDOW_SIZE),
             current_max: 1.0,
             smoothing_factor: 0.1,
             enabled,

@@ -27,7 +27,7 @@ use crate::render::palette_editor::PaletteEditorState;
 /// assert!(!state.is_open(OverlayType::Controls));
 /// assert!(state.is_open(OverlayType::Dashboard));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct OverlayState {
     /// Which overlay is currently visible (mutually exclusive).
     /// None means no overlay is open.
@@ -36,15 +36,6 @@ pub struct OverlayState {
     /// Palette editor sub-state.
     /// This is separate because it has complex internal state (editing mode, selected color, etc.)
     pub palette_editor: Option<PaletteEditorState>,
-}
-
-impl Default for OverlayState {
-    fn default() -> Self {
-        Self {
-            active: None,
-            palette_editor: None,
-        }
-    }
 }
 
 impl OverlayState {

@@ -5,6 +5,8 @@
 //!
 //! All defaults use the DEFAULT_* naming convention for consistency.
 
+#![allow(missing_docs)]
+
 /// Agent behavior constants.
 pub mod agent {
     /// Default sensor angle in degrees.

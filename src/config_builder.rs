@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 //! Configuration builder for creating SimConfig instances.
 //!
 //! This module provides a builder pattern for constructing SimConfig instances
@@ -6,8 +8,7 @@
 
 use crate::cli::{Args, AttractorArg, ObstacleArg, SpeciesArg, WindArg};
 use crate::config_defaults::{
-    agent, agent as agent_consts, environment, population, population as pop_consts, time,
-    trail as trail_consts,
+    agent as agent_consts, environment, population, time, trail, trail as trail_consts,
 };
 use crate::error::ConfigError;
 use crate::simulation::config::{
@@ -250,11 +251,11 @@ impl ConfigBuilder {
     pub fn validate(&self) -> Result<(), ConfigError> {
         // Validate population
         if let Some(pop) = self.population {
-            if !(pop_consts::MIN_TOTAL..=pop_consts::MAX_TOTAL).contains(&pop) {
+            if !(population::MIN_POPULATION..=population::MAX_POPULATION).contains(&pop) {
                 return Err(ConfigError::InvalidPopulation {
                     pop,
-                    min: pop_consts::MIN_TOTAL,
-                    max: pop_consts::MAX_TOTAL,
+                    min: population::MIN_POPULATION,
+                    max: population::MAX_POPULATION,
                 });
             }
         }
@@ -600,6 +601,7 @@ mod tests {
 
     #[test]
     fn test_config_builder_build_default() {
+        use crate::config_defaults::agent;
         let builder = ConfigBuilder::new();
         let config = builder.build().expect("build should succeed");
         assert_eq!(config.sensor_angle, agent::DEFAULT_SENSOR_ANGLE);

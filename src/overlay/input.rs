@@ -136,9 +136,13 @@ pub mod key_matchers {
     /// Direction enum for arrow keys.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Direction {
+        /// Up arrow key.
         Up,
+        /// Down arrow key.
         Down,
+        /// Left arrow key.
         Left,
+        /// Right arrow key.
         Right,
     }
 }

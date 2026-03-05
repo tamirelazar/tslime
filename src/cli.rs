@@ -4,12 +4,11 @@ use std::str::FromStr;
 
 use crate::config_builder::ConfigBuilder;
 use crate::config_defaults::{
-    agent, agent as agent_consts, ascii, auto_reset, dither as dither_consts, dithering,
-    environment, environment as env_consts, export, food, food as food_img_consts, food_persist,
-    grid, intensity, intensity_mapping, palette, population, population as pop_consts, simulation,
-    terminal, time, time as time_consts, trail, trail as trail_consts, warmup,
+    agent as agent_consts, ascii, auto_reset, dither as dither_consts, dithering, environment,
+    environment as env_consts, export, food, food as food_img_consts, food_persist, grid,
+    intensity, intensity_mapping, palette, population, simulation, terminal, time,
+    time as time_consts, trail as trail_consts, warmup,
 };
-use crate::render::color_constants::default as color_defaults;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
@@ -1495,7 +1494,7 @@ impl Args {
                 Ok(DitherMode::ErrorDiffusion { serpentine: true })
             }
             "hybrid" => Ok(DitherMode::Hybrid {
-                edge_threshold: dither_consts::DEFAULT_HYBRID_EDGE,
+                edge_threshold: dither_consts::DEFAULT_HYBRID_EDGE_THRESHOLD,
                 intensity: self
                     .dither_intensity
                     .clamp(dither_consts::MIN_INTENSITY, dither_consts::MAX_INTENSITY),
@@ -1630,7 +1629,7 @@ impl Default for Args {
             explore_behavior: None,
             explore_iterations: 100,
             seed: None,
-            population: Some(pop_consts::DEFAULT_COUNT),
+            population: Some(population::DEFAULT_POPULATION),
             sensor_angle: Some(agent_consts::DEFAULT_SENSOR_ANGLE),
             sensor_distance: Some(agent_consts::DEFAULT_SENSOR_DISTANCE),
             rotation_angle: Some(agent_consts::DEFAULT_ROTATION_ANGLE),
@@ -1642,8 +1641,8 @@ impl Default for Args {
             diffusion_sigma: None,
             preset: Option::<Preset>::None,
             init: Some(InitMode::Food),
-            food: food_img_consts::DEFAULT_PATH.to_string(),
-            food_invert: food_img_consts::DEFAULT_INVERT,
+            food: food_img_consts::DEFAULT_FOOD_PATH.to_string(),
+            food_invert: food_img_consts::DEFAULT_FOOD_INVERT,
             food_scale: food::DEFAULT_FOOD_SCALE, // Food image scale
             frame_delay: time::DEFAULT_FRAME_DELAY,
             fps: time::DEFAULT_FPS as usize,
@@ -1667,7 +1666,7 @@ impl Default for Args {
             invert_palette: false,
             palette_shift: 0.0,
             intensity_mapping: intensity_mapping::DEFAULT_TYPE.to_string(),
-            intensity_mapping_base: intensity::LOG_DEFAULT,
+            intensity_mapping_base: intensity::DEFAULT_LOG_BASE,
             intensity_mapping_gamma: 2.2,
             intensity_mapping_levels: 8,
             perlin_strength: 0.2,

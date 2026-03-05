@@ -8,10 +8,9 @@ use std::path::Path;
 
 use super::agent::normalize_angle;
 use crate::config_defaults::{
-    agent as agent_consts, environment as env_consts, food as food_img_consts,
-    population as pop_consts, time as time_consts, trail as trail_consts,
+    agent as agent_consts, environment, environment as env_consts, food as food_img_consts,
+    population, population as pop_consts, time as time_consts, trail as trail_consts,
 };
-use crate::render::color_constants::{default, presets, ui};
 use crate::render::palette::RgbColor;
 
 /// Algorithm used for pheromone diffusion (spreading).
@@ -184,7 +183,6 @@ impl Preset {
                     step_size: 0.7,
                     deposit_amount: 3.0,
                     color: RgbColor::from_hex(0x8a2be2),
-                    ..Default::default()
                 }];
             }
             Preset::Fire => {
@@ -221,7 +219,6 @@ impl Preset {
                     step_size: 0.5,
                     deposit_amount: 2.0,
                     color: RgbColor::from_hex(0xffffff),
-                    ..Default::default()
                 }];
             }
             Preset::Storm => {
@@ -289,7 +286,6 @@ impl Preset {
                     step_size: 0.05,
                     deposit_amount: 0.2,
                     color: RgbColor::from_hex(0xd4ff00),
-                    ..Default::default()
                 }];
                 config.obstacles = vec![Obstacle::Circle {
                     x: 200.0,
@@ -315,7 +311,6 @@ impl Preset {
                     step_size: 1.92,
                     deposit_amount: 4.3,
                     color: RgbColor::from_hex(0x9370db),
-                    ..Default::default()
                 }];
             }
             Preset::Lightning => {
@@ -335,7 +330,6 @@ impl Preset {
                     step_size: 2.48,
                     deposit_amount: 20.0,
                     color: RgbColor::from_hex(0x00ffff),
-                    ..Default::default()
                 }];
             }
             Preset::Crystal => {
@@ -354,7 +348,6 @@ impl Preset {
                     step_size: 1.47,
                     deposit_amount: 2.1,
                     color: RgbColor::from_hex(0xb0e0e6),
-                    ..Default::default()
                 }];
             }
             Preset::ChaosEdge => {
@@ -374,7 +367,6 @@ impl Preset {
                     step_size: 0.58,
                     deposit_amount: 15.8,
                     color: RgbColor::from_hex(0xff6347),
-                    ..Default::default()
                 }];
             }
             Preset::Blob => {
@@ -394,7 +386,6 @@ impl Preset {
                     step_size: 0.92,
                     deposit_amount: 9.3,
                     color: RgbColor::from_hex(0x32cd32),
-                    ..Default::default()
                 }];
             }
             Preset::Worm => {
@@ -413,7 +404,6 @@ impl Preset {
                     step_size: 1.96,
                     deposit_amount: 6.3,
                     color: RgbColor::from_hex(0xdaa520),
-                    ..Default::default()
                 }];
             }
         }
@@ -793,7 +783,7 @@ impl Default for SpeciesConfig {
     fn default() -> Self {
         Self {
             name: "default".to_string(),
-            count: pop_consts::DEFAULT_COUNT,
+            count: population::DEFAULT_POPULATION,
             sensor_angle: agent_consts::DEFAULT_SENSOR_ANGLE,
             rotation_angle: agent_consts::DEFAULT_ROTATION_ANGLE,
             step_size: agent_consts::DEFAULT_STEP_SIZE,
@@ -932,9 +922,9 @@ impl Default for SimConfig {
             species_configs: vec![SpeciesConfig::default()],
             separate_species_trails: false,
             use_simd: true,
-            food_image_path: Some(food_img_consts::DEFAULT_PATH.to_string()),
-            food_image_invert: food_img_consts::DEFAULT_INVERT,
-            food_image_scale: food_img_consts::DEFAULT_SCALE,
+            food_image_path: Some(food_img_consts::DEFAULT_FOOD_PATH.to_string()),
+            food_image_invert: food_img_consts::DEFAULT_FOOD_INVERT,
+            food_image_scale: food_img_consts::DEFAULT_FOOD_SCALE,
             obstacles: Vec::new(),
             obstacle_masks: Vec::new(),
             wind: None,
@@ -961,11 +951,11 @@ impl Validatable for SimConfig {
 
         // Validate total population
         let total_pop: usize = self.species_configs.iter().map(|s| s.count).sum();
-        if total_pop < pop_consts::MIN_TOTAL || total_pop > pop_consts::MAX_TOTAL {
+        if !(population::MIN_POPULATION..=population::MAX_POPULATION).contains(&total_pop) {
             return Err(ValidationError::custom(format!(
                 "total population must be between {} and {}, got {}",
-                pop_consts::MIN_TOTAL,
-                pop_consts::MAX_TOTAL,
+                population::MIN_POPULATION,
+                population::MAX_POPULATION,
                 total_pop
             )));
         }
@@ -989,13 +979,13 @@ impl Validatable for SimConfig {
 
         // Validate individual attractors
         for (i, attractor) in self.attractors.iter().enumerate() {
-            if attractor.strength < env_consts::ATTRACTOR_STRENGTH_MIN
-                || attractor.strength > env_consts::ATTRACTOR_STRENGTH_MAX
+            if attractor.strength < environment::MIN_ATTRACTOR_STRENGTH
+                || attractor.strength > environment::MAX_ATTRACTOR_STRENGTH
             {
                 return Err(ValidationError::out_of_range(
                     format!("attractor[{}].strength", i),
-                    env_consts::ATTRACTOR_STRENGTH_MIN,
-                    env_consts::ATTRACTOR_STRENGTH_MAX,
+                    environment::MIN_ATTRACTOR_STRENGTH,
+                    environment::MAX_ATTRACTOR_STRENGTH,
                     attractor.strength,
                 ));
             }

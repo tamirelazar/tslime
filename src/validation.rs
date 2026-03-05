@@ -304,7 +304,6 @@ pub fn validate_vec_not_empty<T>(value: &[T], name: &str) -> Result<(), Validati
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::ValidationError;
 
     #[test]
     fn test_validate_range_in_range() {
