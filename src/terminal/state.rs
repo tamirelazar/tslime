@@ -886,7 +886,7 @@ impl RuntimeState {
     /// Adjusts simulation time scale.
     pub fn adjust_time_scale(&mut self, delta: f32) {
         self.checkpoint();
-        let new_scale = (self.time_scale + delta).clamp(0.5, 4.0);
+        let new_scale = (self.time_scale + delta).clamp(0.5, 10.0);
         self.time_scale = new_scale;
     }
 

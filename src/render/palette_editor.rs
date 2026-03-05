@@ -1,9 +1,12 @@
 use crate::cli::Palette;
+use crate::overlay::input::{KeyHint, OverlayInputHandler};
+use crate::palette_manager;
 use crate::render::palette::{
     interpolate_gradient, oklch_to_rgb, oklch_to_srgb, srgb_to_oklch, GradientStop, OklchColor,
     RgbColor,
 };
 use crate::render::panel::{Padding, PanelBuilder, RenderedOverlay, RichCell, TextAlignment};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Number of colors in the palette gradient.
 pub const PALETTE_COLOR_COUNT: usize = 11;
@@ -291,22 +294,14 @@ impl PaletteEditorState {
     /// Adjust the hue of the selected color(s) by `delta` degrees.
     /// Also updates stored_hues to preserve the new hue value.
     pub fn adjust_hue(&mut self, delta: f32) {
-        // First, update stored hues for all affected colors
-        if self.is_all_selected() {
-            for i in 0..PALETTE_COLOR_COUNT {
-                self.stored_hues[i] = (self.stored_hues[i] + delta + 360.0) % 360.0;
-            }
-        } else {
-            let idx = self.selected_color_index;
-            self.stored_hues[idx] = (self.stored_hues[idx] + delta + 360.0) % 360.0;
-        }
-
-        // Apply the hue adjustment, using stored hues as base when current hue is NaN
+        // Apply the hue adjustment using stored hues as base when current hue is NaN
+        // This single call handles both color update and stored_hues sync
         self.adjust_oklch_with_hue_override(delta);
     }
 
     /// Helper to adjust OKLch with proper hue handling for NaN cases.
     /// Uses stored_hue as base when current chroma is too low.
+    /// This is the single source of truth for hue adjustments.
     fn adjust_oklch_with_hue_override(&mut self, delta: f32) {
         use crate::render::palette::OKLCH_EPSILON;
 
@@ -321,13 +316,12 @@ impl PaletteEditorState {
                     oklch.h
                 };
 
-                oklch.h = (base_hue + delta + 360.0) % 360.0;
+                let new_hue = (base_hue + delta + 360.0) % 360.0;
+                oklch.h = new_hue;
                 self.colors[i] = oklch_to_rgb(oklch);
 
-                // Update stored hue if chroma is still non-zero
-                if oklch.c >= OKLCH_EPSILON {
-                    self.stored_hues[i] = oklch.h;
-                }
+                // Update stored hue (single source of truth)
+                self.stored_hues[i] = new_hue;
             }
             self.is_modified = true;
         } else {
@@ -341,13 +335,12 @@ impl PaletteEditorState {
                 oklch.h
             };
 
-            oklch.h = (base_hue + delta + 360.0) % 360.0;
+            let new_hue = (base_hue + delta + 360.0) % 360.0;
+            oklch.h = new_hue;
             self.colors[idx] = oklch_to_rgb(oklch);
 
-            // Update stored hue if chroma is still non-zero
-            if oklch.c >= OKLCH_EPSILON {
-                self.stored_hues[idx] = oklch.h;
-            }
+            // Update stored hue (single source of truth)
+            self.stored_hues[idx] = new_hue;
 
             self.is_modified = true;
         }
@@ -407,6 +400,169 @@ impl PaletteEditorState {
         } else {
             self.base_palette_name.clone()
         }
+    }
+
+    /// Apply the current palette colors (for immediate preview during editing).
+    pub fn to_palette(&self) -> Palette {
+        Palette::Custom(self.colors.to_vec())
+    }
+}
+
+impl OverlayInputHandler for PaletteEditorState {
+    fn handle_key(&mut self, key: &KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => {
+                match self.mode {
+                    EditorMode::SaveDialog => {
+                        self.save_name_input.clear();
+                        self.mode = EditorMode::Editing;
+                    }
+                    EditorMode::LoadDialog => {
+                        self.mode = EditorMode::Editing;
+                    }
+                    EditorMode::Editing => {
+                        return false; // Signal to close overlay
+                    }
+                }
+                true
+            }
+            KeyCode::Left => {
+                self.select_prev_color();
+                true
+            }
+            KeyCode::Right => {
+                self.select_next_color();
+                true
+            }
+            KeyCode::Up => {
+                if matches!(self.mode, EditorMode::LoadDialog) {
+                    if self.saved_palette_index > 0 {
+                        self.saved_palette_index -= 1;
+                    }
+                } else {
+                    match self.selected_component {
+                        EditorComponent::Lightness => self.adjust_lightness(0.02),
+                        EditorComponent::Chroma => self.adjust_chroma(0.01),
+                        EditorComponent::Hue => self.adjust_hue(5.0),
+                    }
+                }
+                true
+            }
+            KeyCode::Down => {
+                if matches!(self.mode, EditorMode::LoadDialog) {
+                    if self.saved_palette_index + 1 < self.saved_palettes_list.len() {
+                        self.saved_palette_index += 1;
+                    }
+                } else {
+                    match self.selected_component {
+                        EditorComponent::Lightness => self.adjust_lightness(-0.02),
+                        EditorComponent::Chroma => self.adjust_chroma(-0.01),
+                        EditorComponent::Hue => self.adjust_hue(-5.0),
+                    }
+                }
+                true
+            }
+            KeyCode::Tab => {
+                self.selected_component = self.selected_component.next();
+                true
+            }
+            KeyCode::Char('h') | KeyCode::Char('H') => {
+                self.selected_component = EditorComponent::Hue;
+                true
+            }
+            KeyCode::Char('c') | KeyCode::Char('C') => {
+                self.selected_component = EditorComponent::Chroma;
+                true
+            }
+            KeyCode::Char('l') => {
+                self.selected_component = EditorComponent::Lightness;
+                true
+            }
+            KeyCode::Char('L') => {
+                if let Ok(palettes) = palette_manager::list_palettes() {
+                    self.saved_palettes_list = palettes;
+                    self.saved_palette_index = 0;
+                }
+                self.mode = EditorMode::LoadDialog;
+                true
+            }
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                self.reset_to_original();
+                true
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.mode = EditorMode::SaveDialog;
+                }
+                true
+            }
+            KeyCode::Enter => {
+                match self.mode {
+                    EditorMode::Editing => {
+                        return false; // Signal to apply and close
+                    }
+                    EditorMode::SaveDialog => {
+                        if !self.save_name_input.is_empty() {
+                            let palette = palette_manager::SavedPalette::new(
+                                self.save_name_input.clone(),
+                                self.colors,
+                            );
+                            if let Err(e) = palette_manager::save_palette(palette) {
+                                eprintln!("Failed to save palette: {}", e);
+                            }
+                        }
+                        self.save_name_input.clear();
+                        self.mode = EditorMode::Editing;
+                    }
+                    EditorMode::LoadDialog => {
+                        if let Some(palette) =
+                            self.saved_palettes_list.get(self.saved_palette_index)
+                        {
+                            self.colors = palette.to_rgb_colors();
+                            self.original_colors = palette.to_rgb_colors();
+                            self.base_palette_name = palette.name.clone();
+                            self.is_modified = false;
+                        }
+                        self.mode = EditorMode::Editing;
+                    }
+                }
+                true
+            }
+            KeyCode::Char(c) => {
+                if matches!(self.mode, EditorMode::SaveDialog)
+                    && !key.modifiers.contains(KeyModifiers::CONTROL)
+                {
+                    if self.save_name_input.len() < 24 {
+                        self.save_name_input.push(c);
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+            KeyCode::Backspace => {
+                if matches!(self.mode, EditorMode::SaveDialog) {
+                    self.save_name_input.pop();
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn key_hints(&self) -> Vec<KeyHint> {
+        vec![
+            KeyHint::new("←/→", "Select color"),
+            KeyHint::new("↑/↓", "Adjust value"),
+            KeyHint::new("Tab", "Cycle L/C/H"),
+            KeyHint::new("Enter", "Apply/Confirm"),
+            KeyHint::new("Ctrl+S", "Save palette"),
+            KeyHint::new("Esc", "Discard/Cancel"),
+            KeyHint::new("r", "Reset"),
+            KeyHint::new("L", "Load palette"),
+        ]
     }
 }
 

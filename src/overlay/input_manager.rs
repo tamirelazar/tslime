@@ -8,7 +8,7 @@
 //! 5. To switch overlays: close current, then open new
 
 use crate::overlay::{OverlayState, OverlayType};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Result of handling input for an overlay
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -54,10 +54,14 @@ impl OverlayInputManager {
 
         // Rule 3: Block keys that would toggle a different overlay
         // This prevents accidental overlay switching
-        if let KeyCode::Char(c) = key.code {
-            if let Some(other) = OverlayType::from_toggle_key(c, key.modifiers) {
-                if other != active {
-                    return OverlayInputResult::Consumed;
+        // NOTE: Don't block Control-modified keys (Ctrl+S, Ctrl+L, etc.) as these
+        // are typically handled by the active overlay, not toggle keys
+        if !key.modifiers.contains(KeyModifiers::CONTROL) {
+            if let KeyCode::Char(c) = key.code {
+                if let Some(other) = OverlayType::from_toggle_key(c, key.modifiers) {
+                    if other != active {
+                        return OverlayInputResult::Consumed;
+                    }
                 }
             }
         }

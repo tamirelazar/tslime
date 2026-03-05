@@ -1596,9 +1596,9 @@ pub fn run_simulation(
                         }
                     }
 
-                    // Handle palette editor input (intercept keys while editor is open)
+                    // Handle palette editor input using OverlayInputHandler trait
                     if runtime_state.overlay_state.is_palette_editor_open() {
-                        use crossterm::event::{KeyCode, KeyModifiers};
+                        use crate::overlay::input::OverlayInputHandler;
 
                         // Initialize palette editor state if needed
                         if runtime_state.overlay_state.palette_editor.is_none() {
@@ -1608,203 +1608,58 @@ pub fn run_simulation(
                                 .open_palette_editor(PaletteEditorState::new(&current_palette));
                         }
 
-                        // Collect notifications and palette updates to process after borrow ends
-                        let mut notification: Option<String> = None;
-                        let mut saved_palette_name: Option<String> = None;
-                        let mut palette_to_apply: Option<Palette> = None;
                         let mut should_close = false;
+                        let mut notification: Option<String> = None;
 
+                        // Use the OverlayInputHandler trait for key handling
                         if let Some(ref mut state) = runtime_state.overlay_state.palette_editor {
-                            match key_event.code {
-                                KeyCode::Esc => {
-                                    match state.mode {
-                                        EditorMode::SaveDialog => {
-                                            state.save_name_input.clear();
-                                            state.mode = EditorMode::Editing;
-                                            continue;
-                                        }
-                                        EditorMode::LoadDialog => {
-                                            state.mode = EditorMode::Editing;
-                                            continue;
-                                        }
-                                        EditorMode::Editing => {
-                                            let original =
-                                                Palette::Custom(state.original_colors.to_vec());
-                                            palette_to_apply = Some(original);
-                                            should_close = true;
-                                            // Don't continue here - let the cleanup code run
-                                        }
-                                    }
-                                }
-                                KeyCode::Left => {
-                                    state.select_prev_color();
-                                    continue;
-                                }
-                                KeyCode::Right => {
-                                    state.select_next_color();
-                                    continue;
-                                }
-                                KeyCode::Up => {
-                                    if matches!(state.mode, EditorMode::LoadDialog) {
-                                        if state.saved_palette_index > 0 {
-                                            state.saved_palette_index -= 1;
-                                        }
-                                    } else {
-                                        match state.selected_component {
-                                            EditorComponent::Lightness => {
-                                                state.adjust_lightness(0.02)
-                                            }
-                                            EditorComponent::Chroma => state.adjust_chroma(0.01),
-                                            EditorComponent::Hue => state.adjust_hue(5.0),
-                                        }
-                                        palette_to_apply =
-                                            Some(Palette::Custom(state.colors.to_vec()));
-                                    }
-                                    continue;
-                                }
-                                KeyCode::Down => {
-                                    if matches!(state.mode, EditorMode::LoadDialog) {
-                                        if state.saved_palette_index + 1
-                                            < state.saved_palettes_list.len()
-                                        {
-                                            state.saved_palette_index += 1;
-                                        }
-                                    } else {
-                                        match state.selected_component {
-                                            EditorComponent::Lightness => {
-                                                state.adjust_lightness(-0.02)
-                                            }
-                                            EditorComponent::Chroma => state.adjust_chroma(-0.01),
-                                            EditorComponent::Hue => state.adjust_hue(-5.0),
-                                        }
-                                        palette_to_apply =
-                                            Some(Palette::Custom(state.colors.to_vec()));
-                                    }
-                                    continue;
-                                }
-                                KeyCode::Char('h') | KeyCode::Char('H') => {
-                                    state.selected_component = EditorComponent::Hue;
-                                    continue;
-                                }
-                                KeyCode::Char('c') | KeyCode::Char('C') => {
-                                    state.selected_component = EditorComponent::Chroma;
-                                    continue;
-                                }
-                                KeyCode::Char('r') | KeyCode::Char('R') => {
-                                    state.reset_to_original();
-                                    palette_to_apply = Some(Palette::Custom(state.colors.to_vec()));
-                                    continue;
-                                }
-                                KeyCode::Tab => {
-                                    // Cycle OKLch component: L → C → H → L
-                                    state.selected_component = state.selected_component.next();
-                                    continue;
-                                }
-                                KeyCode::Char('s') | KeyCode::Char('S') => {
-                                    if key_event.modifiers.contains(KeyModifiers::CONTROL) {
-                                        state.mode = EditorMode::SaveDialog;
-                                    }
-                                    continue;
-                                }
-                                KeyCode::Char('l') => {
-                                    // Lowercase l: select Lightness component
-                                    state.selected_component = EditorComponent::Lightness;
-                                    continue;
-                                }
-                                KeyCode::Char('L') => {
-                                    // Uppercase L: open Load dialog
-                                    if let Ok(palettes) = palette_manager::list_palettes() {
-                                        state.saved_palettes_list = palettes;
-                                        state.saved_palette_index = 0;
-                                    }
-                                    state.mode = EditorMode::LoadDialog;
-                                    continue;
-                                }
-                                KeyCode::Enter => {
-                                    match state.mode {
-                                        EditorMode::Editing => {
-                                            should_close = true;
-                                            notification =
-                                                Some("Custom palette applied".to_string());
-                                        }
-                                        EditorMode::SaveDialog => {
-                                            if !state.save_name_input.is_empty() {
-                                                let palette = palette_manager::SavedPalette::new(
-                                                    state.save_name_input.clone(),
-                                                    state.colors,
-                                                );
-                                                match palette_manager::save_palette(palette) {
-                                                    Ok(_) => {
-                                                        notification = Some(format!(
-                                                            "Palette '{}' saved",
-                                                            state.save_name_input
-                                                        ));
-                                                        saved_palette_name =
-                                                            Some(state.save_name_input.clone());
-                                                    }
-                                                    Err(e) => {
-                                                        notification =
-                                                            Some(format!("Failed to save: {}", e));
-                                                    }
-                                                }
-                                            }
-                                            state.save_name_input.clear();
-                                            state.mode = EditorMode::Editing;
-                                        }
-                                        EditorMode::LoadDialog => {
-                                            if let Some(palette) = state
-                                                .saved_palettes_list
-                                                .get(state.saved_palette_index)
-                                            {
-                                                state.colors = palette.to_rgb_colors();
-                                                state.original_colors = palette.to_rgb_colors();
-                                                state.base_palette_name = palette.name.clone();
-                                                state.is_modified = false;
-                                                saved_palette_name = Some(palette.name.clone());
-                                                notification = Some("Palette loaded".to_string());
-                                                palette_to_apply =
-                                                    Some(Palette::Custom(state.colors.to_vec()));
-                                            }
-                                            state.mode = EditorMode::Editing;
-                                        }
-                                    }
-                                    continue;
-                                }
+                            let was_modified = state.is_modified;
 
-                                KeyCode::Char(c)
-                                    if !key_event.modifiers.contains(KeyModifiers::CONTROL) =>
-                                {
-                                    if matches!(state.mode, EditorMode::SaveDialog) {
-                                        if state.save_name_input.len() < 24 {
-                                            state.save_name_input.push(c);
-                                        }
-                                        continue;
-                                    }
+                            // Handle key using trait implementation
+                            let handled = state.handle_key(&key_event);
+
+                            // Check if we need to close (Esc or Enter in Editing mode returned false)
+                            let is_escape = key_event.code == crossterm::event::KeyCode::Esc;
+                            let is_enter = key_event.code == crossterm::event::KeyCode::Enter;
+                            let is_editing = matches!(state.mode, EditorMode::Editing);
+
+                            if !handled && (is_escape || is_enter) && is_editing {
+                                should_close = true;
+                                if is_enter {
+                                    notification = Some("Custom palette applied".to_string());
+                                } else {
+                                    // On escape, restore original palette
+                                    let original = Palette::Custom(state.original_colors.to_vec());
+                                    renderer.set_palette(original);
                                 }
-                                KeyCode::Backspace => {
-                                    if matches!(state.mode, EditorMode::SaveDialog) {
-                                        state.save_name_input.pop();
-                                        continue;
-                                    }
+                            } else if handled {
+                                // Apply palette changes after each adjustment
+                                renderer.set_palette(state.to_palette());
+
+                                // Handle save dialog completion
+                                if matches!(state.mode, EditorMode::SaveDialog) {
+                                    // Check if save dialog just completed (we detect this by checking
+                                    // if save_name_input was just cleared after having content)
                                 }
-                                _ => {}
                             }
-                        }
 
-                        // Apply collected changes after borrow ends
-                        if should_close {
-                            runtime_state.overlay_state.close_palette_editor();
-                        }
-                        if let Some(name) = saved_palette_name {
-                            runtime_state.saved_palette_name = Some(name);
-                        }
-                        if let Some(msg) = notification {
-                            runtime_state.show_notification(msg);
-                        }
-                        if let Some(palette) = palette_to_apply {
-                            renderer.set_palette(palette);
-                        } else if let Some(ref state) = runtime_state.overlay_state.palette_editor {
-                            renderer.set_palette(Palette::Custom(state.colors.to_vec()));
+                            // Track if palette was saved
+                            let saved_name = if was_modified && !state.is_modified {
+                                Some(state.base_palette_name.clone())
+                            } else {
+                                None
+                            };
+
+                            // Apply cleanup after borrow
+                            if should_close {
+                                runtime_state.overlay_state.close_palette_editor();
+                            }
+                            if let Some(name) = saved_name {
+                                runtime_state.saved_palette_name = Some(name);
+                            }
+                            if let Some(msg) = notification {
+                                runtime_state.show_notification(msg);
+                            }
                         }
                         continue;
                     }
