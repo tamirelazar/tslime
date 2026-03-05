@@ -93,6 +93,11 @@ impl ControlsOverlay {
         theme_name: &str,
         panel_style: &PanelStyle,
         shift_held: bool,
+        trail_age_enabled: bool,
+        trail_age_mode: crate::config_defaults::TrailAgeMode,
+        trail_age_reverse: bool,
+        trail_delta_enabled: bool,
+        gradient_magnitude_enabled: bool,
     ) -> crate::render::panel::RenderedOverlay {
         use TextAlignment::Left;
 
@@ -472,6 +477,64 @@ impl ControlsOverlay {
                         ),
                         Left,
                     )
+                    .add_single(
+                        param_row(
+                            " ",
+                            "'",
+                            "Trail Age",
+                            if trail_age_enabled {
+                                "▪───────"
+                            } else {
+                                "────────"
+                            }
+                            .to_string(),
+                            if trail_age_enabled {
+                                if trail_age_reverse {
+                                    format!("On ({} rev)", trail_age_mode.name())
+                                } else {
+                                    format!("On ({})", trail_age_mode.name())
+                                }
+                            } else {
+                                "Off".to_string()
+                            },
+                        ),
+                        Left,
+                    )
+                    .add_single(
+                        param_row(
+                            " ",
+                            ".",
+                            "Trail Delta",
+                            if trail_delta_enabled {
+                                "▪───────"
+                            } else {
+                                "────────"
+                            }
+                            .to_string(),
+                            if trail_delta_enabled { "On" } else { "Off" }.to_string(),
+                        ),
+                        Left,
+                    )
+                    .add_single(
+                        param_row(
+                            " ",
+                            ">",
+                            "Edge Glow",
+                            if gradient_magnitude_enabled {
+                                "▪───────"
+                            } else {
+                                "────────"
+                            }
+                            .to_string(),
+                            if gradient_magnitude_enabled {
+                                "On"
+                            } else {
+                                "Off"
+                            }
+                            .to_string(),
+                        ),
+                        Left,
+                    )
                     .add_empty()
             }
             // ── Category 4: Performance ───────────────────────────────────────
@@ -792,6 +855,11 @@ mod tests {
             "GruvboxDark",
             &GRUVBOX_DARK,
             false,
+            false,
+            crate::config_defaults::TrailAgeMode::Bidirectional,
+            false,
+            false,
+            false,
         );
 
         assert!(
@@ -852,6 +920,11 @@ mod tests {
                 },
                 "GruvboxDark",
                 &GRUVBOX_DARK,
+                false,
+                false,
+                crate::config_defaults::TrailAgeMode::Bidirectional,
+                false,
+                false,
                 false,
             );
 
@@ -921,6 +994,11 @@ mod tests {
             },
             "GruvboxDark",
             &GRUVBOX_DARK,
+            false,
+            false,
+            crate::config_defaults::TrailAgeMode::Bidirectional,
+            false,
+            false,
             false,
         );
 
@@ -1023,6 +1101,11 @@ fn test_options_overlay_renders_all_categories() {
             "GruvboxDark",
             &GRUVBOX_DARK,
             false,
+            false,
+            crate::config_defaults::TrailAgeMode::Bidirectional,
+            false,
+            false,
+            false,
         );
 
         assert!(
@@ -1083,6 +1166,11 @@ fn test_options_overlay_renders_all_categories() {
         "GruvboxDark",
         &GRUVBOX_DARK,
         false,
+        false,
+        crate::config_defaults::TrailAgeMode::Bidirectional,
+        false,
+        false,
+        false,
     );
     assert!(sim_overlay
         .lines
@@ -1138,6 +1226,11 @@ fn test_options_overlay_renders_all_categories() {
         },
         "GruvboxDark",
         &GRUVBOX_DARK,
+        false,
+        false,
+        crate::config_defaults::TrailAgeMode::Bidirectional,
+        false,
+        false,
         false,
     );
     assert!(env_overlay
@@ -1210,6 +1303,11 @@ fn test_options_overlay_shows_live_parameter_values() {
         },
         "GruvboxDark",
         &GRUVBOX_DARK,
+        false,
+        false,
+        crate::config_defaults::TrailAgeMode::Bidirectional,
+        false,
+        false,
         false,
     );
 
@@ -1289,6 +1387,11 @@ fn test_options_overlay_format() {
             },
             "GruvboxDark",
             &GRUVBOX_DARK,
+            false,
+            false,
+            crate::config_defaults::TrailAgeMode::Bidirectional,
+            false,
+            false,
             false,
         );
 

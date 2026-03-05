@@ -5,6 +5,7 @@
 
 use crate::cli::ColorMode;
 use crate::cli::Palette;
+use crate::config_defaults::TrailAgeMode;
 use crate::render::charset::Charset;
 use crate::render::dither::DitherMode;
 use crate::render::downsample::{downsample_multi_species, Cell as DownsampleCell};
@@ -43,6 +44,16 @@ pub struct TerminalRenderer {
     species_rgb_colors: Vec<RgbColor>,
     background_color: Option<RgbColor>,
     ascii_contrast: f32,
+    aux_frame: Option<crate::render::downsample::AuxFrame>,
+    trail_age_enabled: bool,
+    trail_delta_enabled: bool,
+    trail_age_hue_range: f32,
+    trail_age_blend: f32,
+    trail_age_mode: TrailAgeMode,
+    trail_age_reverse: bool,
+    trail_delta_strength: f32,
+    gradient_magnitude_enabled: bool,
+    gradient_strength: f32,
 }
 
 impl TerminalRenderer {
@@ -75,6 +86,16 @@ impl TerminalRenderer {
             species_rgb_colors: Vec::new(),
             background_color,
             ascii_contrast: 1.5,
+            aux_frame: None,
+            trail_age_enabled: false,
+            trail_delta_enabled: false,
+            trail_age_hue_range: 15.0,
+            trail_age_blend: 0.5,
+            trail_age_mode: TrailAgeMode::Bidirectional,
+            trail_age_reverse: true,
+            trail_delta_strength: 0.5,
+            gradient_magnitude_enabled: false,
+            gradient_strength: 0.3,
         }
     }
 
@@ -186,6 +207,32 @@ impl TerminalRenderer {
         self.species_rgb_colors = colors;
     }
 
+    /// Set visual effects data for trail age, temporal delta, and gradient magnitude.
+    pub fn set_visual_fx(
+        &mut self,
+        aux: Option<crate::render::downsample::AuxFrame>,
+        age: bool,
+        delta: bool,
+        age_hue_range: f32,
+        age_blend: f32,
+        delta_strength: f32,
+        gradient: bool,
+        gradient_strength: f32,
+        age_mode: TrailAgeMode,
+        age_reverse: bool,
+    ) {
+        self.aux_frame = aux;
+        self.trail_age_enabled = age;
+        self.trail_delta_enabled = delta;
+        self.trail_age_hue_range = age_hue_range;
+        self.trail_age_blend = age_blend;
+        self.trail_delta_strength = delta_strength;
+        self.gradient_magnitude_enabled = gradient;
+        self.gradient_strength = gradient_strength;
+        self.trail_age_mode = age_mode;
+        self.trail_age_reverse = age_reverse;
+    }
+
     /// Get a mutable reference to the standard output.
     #[allow(dead_code)]
     pub fn stdout_mut(&mut self) -> &mut Stdout {
@@ -224,6 +271,16 @@ impl TerminalRenderer {
             },
             self.background_color,
             self.ascii_contrast,
+            self.aux_frame.as_ref(),
+            self.trail_age_enabled,
+            self.trail_delta_enabled,
+            self.trail_age_hue_range,
+            self.trail_age_blend,
+            self.trail_delta_strength,
+            self.gradient_magnitude_enabled,
+            self.gradient_strength,
+            self.trail_age_mode,
+            self.trail_age_reverse,
         );
 
         execute!(self.stdout, &buffer)
@@ -278,6 +335,16 @@ impl TerminalRenderer {
             },
             self.background_color,
             self.ascii_contrast,
+            self.aux_frame.as_ref(),
+            self.trail_age_enabled,
+            self.trail_delta_enabled,
+            self.trail_age_hue_range,
+            self.trail_age_blend,
+            self.trail_delta_strength,
+            self.gradient_magnitude_enabled,
+            self.gradient_strength,
+            self.trail_age_mode,
+            self.trail_age_reverse,
         );
 
         // Apply VCR freeze-frame dim+scanline effect when paused
@@ -639,6 +706,16 @@ impl TerminalRenderer {
                 Some(species_color_vec),
                 self.background_color,
                 self.ascii_contrast,
+                None, // aux_frame not supported for multi-species
+                false,
+                false,
+                60.0,  // default hue range
+                1.0,   // default blend
+                0.5,   // default delta strength
+                false, // gradient disabled
+                0.3,   // default gradient strength
+                TrailAgeMode::Bidirectional,
+                false,
             );
 
             for (i, cell) in species_buffer.cells.iter().enumerate() {

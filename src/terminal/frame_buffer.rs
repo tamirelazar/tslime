@@ -5,6 +5,7 @@
 
 use crate::cli::ColorMode;
 use crate::cli::Palette;
+use crate::config_defaults::TrailAgeMode;
 use crate::render::charset::{self, Charset};
 use crate::render::dither::{self, DitherMode};
 use crate::render::downsample::Cell as DownsampleCell;
@@ -456,6 +457,16 @@ impl FrameBuffer {
         species_rgb_colors: Option<Vec<RgbColor>>,
         background_color: Option<RgbColor>,
         ascii_contrast: f32,
+        aux_frame: Option<&crate::render::downsample::AuxFrame>,
+        trail_age_enabled: bool,
+        trail_delta_enabled: bool,
+        trail_age_hue_range: f32,
+        trail_age_blend: f32,
+        trail_delta_strength: f32,
+        gradient_magnitude_enabled: bool,
+        gradient_strength: f32,
+        trail_age_mode: TrailAgeMode,
+        trail_age_reverse: bool,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode, background_color);
         buffer.species_colors_enabled = species_colors_enabled;
@@ -477,15 +488,60 @@ impl FrameBuffer {
                 }
             }
 
-            let top_brightness = if max_trail_value > 0.0 {
+            let mut top_brightness = if max_trail_value > 0.0 {
                 dcell.top / max_trail_value
             } else {
                 0.0
             };
-            let bottom_brightness = if max_trail_value > 0.0 {
+            let mut bottom_brightness = if max_trail_value > 0.0 {
                 dcell.bottom / max_trail_value
             } else {
                 0.0
+            };
+
+            // Per-cell hue shift and brightness boost from aux data
+            let cell_hue_shift = if let Some(aux) = aux_frame {
+                let aux_cell = &aux.cells[idx.min(aux.cells.len().saturating_sub(1))];
+
+                // Delta → brightness boost
+                if trail_delta_enabled {
+                    let boost = aux_cell.delta * trail_delta_strength;
+                    top_brightness = (top_brightness + boost).clamp(0.0, 1.0);
+                    bottom_brightness = (bottom_brightness + boost).clamp(0.0, 1.0);
+                }
+
+                // Gradient magnitude → edge glow brightness boost
+                if gradient_magnitude_enabled {
+                    let boost = aux_cell.gradient * gradient_strength;
+                    top_brightness = (top_brightness + boost).clamp(0.0, 1.0);
+                    bottom_brightness = (bottom_brightness + boost).clamp(0.0, 1.0);
+                }
+
+                // Age → hue shift (blended with original hue shift)
+                if trail_age_enabled {
+                    let age_hue_shift = match trail_age_mode {
+                        TrailAgeMode::Bidirectional => {
+                            // Center around 0: age=0 → -range/2, age=0.5 → 0, age=1 → +range/2
+                            // When reversed: age=0 → +range/2, age=1 → -range/2
+                            let shift = (aux_cell.age - 0.5) * trail_age_hue_range;
+                            if trail_age_reverse {
+                                -shift
+                            } else {
+                                shift
+                            }
+                        }
+                        TrailAgeMode::Alternating => {
+                            // Spatial alternating: direction depends on cell position
+                            let direction = if (x + y) % 2 == 0 { 1.0 } else { -1.0 };
+                            aux_cell.age * trail_age_hue_range * direction
+                        }
+                    };
+                    hue_shift + age_hue_shift * trail_age_blend
+                } else {
+                    hue_shift
+                }
+            } else {
+                hue_shift
             };
 
             let cell = buffer.create_cell(
@@ -500,7 +556,7 @@ impl FrameBuffer {
                 reverse_palette,
                 invert_palette,
                 color_mode,
-                hue_shift,
+                cell_hue_shift,
                 dither_mode,
                 error_diffusion,
                 intensity_mapping,
@@ -1258,6 +1314,16 @@ pub fn render_frame(
         species_rgb_colors,
         background_color,
         1.5,
+        None,
+        false,
+        false,
+        60.0,
+        1.0,
+        0.5,
+        false,
+        0.3,
+        TrailAgeMode::Bidirectional,
+        false,
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -1856,6 +1922,16 @@ mod tests {
             None,
             None,
             1.5,
+            None,
+            false,
+            false,
+            60.0,
+            1.0,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
         );
         assert_eq!(fb.width(), 10);
         assert_eq!(fb.height(), 10);
@@ -1878,6 +1954,16 @@ mod tests {
             None,
             None,
             1.5,
+            None,
+            false,
+            false,
+            60.0,
+            1.0,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
         );
         assert_ne!(fb.cells[0].fg_color_rgb, fb_rev.cells[0].fg_color_rgb);
     }
@@ -1967,6 +2053,16 @@ mod tests {
             None,
             None,
             1.5,
+            None,
+            false,
+            false,
+            60.0,
+            1.0,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -2018,6 +2114,16 @@ mod tests {
             None,
             None,
             1.5,
+            None,
+            false,
+            false,
+            60.0,
+            1.0,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
         );
 
         assert_eq!(buffer.cells[0].char, '▀');

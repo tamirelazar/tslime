@@ -301,6 +301,12 @@ pub enum ControlAction {
     CycleThemeReverse,
     /// Show palette editor.
     ShowPaletteEditor,
+    /// Toggle trail age hue shifting.
+    ToggleTrailAge,
+    /// Toggle temporal delta brightness boost.
+    ToggleTrailDelta,
+    /// Toggle gradient magnitude edge glow.
+    ToggleGradientMagnitude,
     /// No action.
     None,
 }
@@ -544,6 +550,24 @@ pub struct RuntimeState {
     pub pause_logo_cache: Option<(usize, usize, Vec<f32>)>,
     /// Frame counter used for badge blink while paused.
     pub pause_frame_counter: u64,
+    /// Trail age hue shifting enabled.
+    pub trail_age_enabled: bool,
+    /// Temporal delta brightness boost enabled.
+    pub trail_delta_enabled: bool,
+    /// Gradient magnitude edge glow enabled.
+    pub gradient_magnitude_enabled: bool,
+    /// Gradient magnitude strength for edge glow.
+    pub gradient_strength: f32,
+    /// Trail age hue shift range in degrees.
+    pub trail_age_hue_range: f32,
+    /// Trail age blend factor between original and age-modified colors.
+    pub trail_age_blend: f32,
+    /// Trail age hue shift mode (bidirectional or alternating).
+    pub trail_age_mode: crate::config_defaults::TrailAgeMode,
+    /// Reverse trail age bidirectional hue shift.
+    pub trail_age_reverse: bool,
+    /// Trail delta brightness boost strength.
+    pub trail_delta_strength: f32,
 }
 
 impl RuntimeState {
@@ -635,6 +659,15 @@ impl RuntimeState {
             shift_held: false,
             pause_logo_cache: None,
             pause_frame_counter: 0,
+            trail_age_enabled: false,
+            trail_delta_enabled: false,
+            gradient_magnitude_enabled: false,
+            gradient_strength: 0.3,
+            trail_age_hue_range: 15.0,
+            trail_age_blend: 0.5,
+            trail_age_mode: crate::config_defaults::TrailAgeMode::Bidirectional,
+            trail_age_reverse: true,
+            trail_delta_strength: 0.5,
         }
     }
 

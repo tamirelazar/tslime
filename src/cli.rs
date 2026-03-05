@@ -924,6 +924,83 @@ pub struct Args {
     /// Enable simple motion blur.
     pub motion_blur: bool,
 
+    #[arg(long = "trail-age", help = "Color veins by age (old veins shift hue)")]
+    /// Enable trail age hue shifting.
+    pub trail_age: bool,
+
+    #[arg(
+        long = "trail-age-max",
+        value_name = "SECONDS",
+        default_value = "10.0",
+        help = "Maximum trail age in seconds before clamping"
+    )]
+    /// Maximum trail age in seconds.
+    pub trail_age_max: f32,
+
+    #[arg(
+        long = "trail-age-hue-range",
+        value_name = "DEGREES",
+        default_value = "15",
+        help = "Hue shift range in degrees for aged trails"
+    )]
+    /// Hue shift range in degrees for aged trails.
+    pub trail_age_hue_range: f32,
+
+    #[arg(
+        long = "trail-age-blend",
+        value_name = "0.0-1.0",
+        default_value = "0.5",
+        help = "Blend between original (0.0) and age-modified (1.0) colors"
+    )]
+    /// Blend factor between original and age-modified colors.
+    pub trail_age_blend: f32,
+
+    #[arg(
+        long = "trail-age-mode",
+        value_name = "MODE",
+        default_value = "bidirectional",
+        help = "Trail age hue shift mode: bidirectional (default) or alternating"
+    )]
+    /// Trail age mode for hue shifting.
+    pub trail_age_mode: String,
+
+    #[arg(
+        long = "trail-age-reverse",
+        default_value = "true",
+        help = "Reverse the relationship between trail age and hue in bidirectional mode"
+    )]
+    /// Reverse trail age bidirectional hue shift.
+    pub trail_age_reverse: bool,
+
+    #[arg(long = "trail-delta", help = "Highlight active growth/decay fronts")]
+    /// Enable temporal delta brightness boost.
+    pub trail_delta: bool,
+
+    #[arg(
+        long = "trail-delta-strength",
+        value_name = "VALUE",
+        default_value = "0.5",
+        help = "Brightness boost strength for temporal delta effect"
+    )]
+    /// Brightness boost strength for temporal delta.
+    pub trail_delta_strength: f32,
+
+    #[arg(
+        long = "gradient-magnitude",
+        help = "Enable edge glow effect using gradient magnitude"
+    )]
+    /// Enable gradient magnitude edge glow.
+    pub gradient_magnitude: bool,
+
+    #[arg(
+        long = "gradient-strength",
+        value_name = "VALUE",
+        default_value = "0.3",
+        help = "Strength of gradient magnitude edge glow effect"
+    )]
+    /// Gradient magnitude strength for edge glow.
+    pub gradient_strength: f32,
+
     #[arg(
         long = "auto-normalize",
         help = "Enable adaptive brightness normalization to prevent flickering"
@@ -1727,6 +1804,16 @@ impl Default for Args {
             explain: false,
             completions: None,
             bg_color: None,
+            trail_age: false,
+            trail_age_max: 10.0,
+            trail_age_hue_range: 15.0,
+            trail_age_blend: 0.5,
+            trail_age_mode: "bidirectional".to_string(),
+            trail_age_reverse: true,
+            trail_delta: false,
+            trail_delta_strength: 0.5,
+            gradient_magnitude: false,
+            gradient_strength: 0.3,
         }
     }
 }

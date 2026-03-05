@@ -309,6 +309,230 @@ fn compute_average(
     }
 }
 
+/// Auxiliary per-cell data for visual effects (trail age, temporal delta, gradient).
+#[derive(Clone, Copy, Default)]
+pub struct AuxCell {
+    /// Normalized trail age [0, 1] where 1.0 = AGE_MAX_SECONDS.
+    pub age: f32,
+    /// Normalized temporal delta [0, 1].
+    pub delta: f32,
+    /// Normalized gradient magnitude [0, 1] for edge glow.
+    pub gradient: f32,
+}
+
+/// Auxiliary frame holding per-cell age and delta at terminal resolution.
+pub struct AuxFrame {
+    /// Width of the frame in terminal columns.
+    pub width: usize,
+    /// Height of the frame in terminal rows.
+    pub height: usize,
+    /// Auxiliary cell data in row-major order.
+    pub cells: Vec<AuxCell>,
+}
+
+/// Downsamples optional age, delta, and gradient buffers from sim resolution to terminal resolution.
+///
+/// Uses the same average-pooling grid mapping as `downsample()`.
+/// Age values are divided by `AGE_MAX` and clamped to [0, 1].
+pub fn downsample_aux(
+    age_buf: Option<&[f32]>,
+    delta_buf: Option<&[f32]>,
+    gradient_buf: Option<&[f32]>,
+    sim_width: usize,
+    sim_height: usize,
+    term_width: usize,
+    term_height: usize,
+) -> AuxFrame {
+    use crate::config_defaults::visual_fx::AGE_MAX_SECONDS;
+
+    let mut cells = vec![AuxCell::default(); term_width * term_height];
+
+    let x_scale = sim_width as f32 / term_width as f32;
+    let y_scale = sim_height as f32 / term_height as f32;
+
+    for cy in 0..term_height {
+        for cx in 0..term_width {
+            let sim_x_start = (cx as f32 * x_scale) as usize;
+            let sim_x_end = (((cx + 1) as f32 * x_scale).ceil() as usize).min(sim_width);
+            let sim_y_start = (cy as f32 * y_scale) as usize;
+            let sim_y_end = (((cy + 1) as f32 * y_scale).ceil() as usize).min(sim_height);
+
+            let age = if let Some(buf) = age_buf {
+                let avg = compute_average(
+                    buf,
+                    sim_width,
+                    sim_y_start,
+                    sim_y_end,
+                    sim_x_start,
+                    sim_x_end,
+                );
+                (avg / AGE_MAX_SECONDS).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+
+            let delta = if let Some(buf) = delta_buf {
+                compute_average(
+                    buf,
+                    sim_width,
+                    sim_y_start,
+                    sim_y_end,
+                    sim_x_start,
+                    sim_x_end,
+                )
+                .clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+
+            let gradient = if let Some(buf) = gradient_buf {
+                compute_average(
+                    buf,
+                    sim_width,
+                    sim_y_start,
+                    sim_y_end,
+                    sim_x_start,
+                    sim_x_end,
+                )
+                .clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+
+            cells[cy * term_width + cx] = AuxCell {
+                age,
+                delta,
+                gradient,
+            };
+        }
+    }
+
+    AuxFrame {
+        width: term_width,
+        height: term_height,
+        cells,
+    }
+}
+
+/// Applies Laplacian sharpening to a downsampled frame.
+///
+/// For each interior cell, computes `L = center - avg(4 neighbors)` and
+/// adds `strength * L` to sharpen vein edges. Boundary cells are unchanged.
+pub fn apply_laplacian_sharpening(frame: &mut DownsampledFrame, strength: f32) {
+    let w = frame.width;
+    let h = frame.height;
+    if w < 3 || h < 3 {
+        return;
+    }
+
+    // Clone values into scratch buffers
+    let top_orig: Vec<f32> = frame.cells.iter().map(|c| c.top).collect();
+    let bot_orig: Vec<f32> = frame.cells.iter().map(|c| c.bottom).collect();
+    let tl_orig: Vec<f32> = frame.cells.iter().map(|c| c.top_left).collect();
+    let tr_orig: Vec<f32> = frame.cells.iter().map(|c| c.top_right).collect();
+    let bl_orig: Vec<f32> = frame.cells.iter().map(|c| c.bottom_left).collect();
+    let br_orig: Vec<f32> = frame.cells.iter().map(|c| c.bottom_right).collect();
+
+    for y in 1..h - 1 {
+        for x in 1..w - 1 {
+            let idx = y * w + x;
+            let up = (y - 1) * w + x;
+            let dn = (y + 1) * w + x;
+            let lt = y * w + (x - 1);
+            let rt = y * w + (x + 1);
+
+            // Sharpen top
+            let lap_t =
+                top_orig[idx] - (top_orig[up] + top_orig[dn] + top_orig[lt] + top_orig[rt]) * 0.25;
+            frame.cells[idx].top = (top_orig[idx] + strength * lap_t).max(0.0);
+
+            // Sharpen bottom
+            let lap_b =
+                bot_orig[idx] - (bot_orig[up] + bot_orig[dn] + bot_orig[lt] + bot_orig[rt]) * 0.25;
+            frame.cells[idx].bottom = (bot_orig[idx] + strength * lap_b).max(0.0);
+
+            // Sharpen quadrants
+            let lap_tl =
+                tl_orig[idx] - (tl_orig[up] + tl_orig[dn] + tl_orig[lt] + tl_orig[rt]) * 0.25;
+            frame.cells[idx].top_left = (tl_orig[idx] + strength * lap_tl).max(0.0);
+
+            let lap_tr =
+                tr_orig[idx] - (tr_orig[up] + tr_orig[dn] + tr_orig[lt] + tr_orig[rt]) * 0.25;
+            frame.cells[idx].top_right = (tr_orig[idx] + strength * lap_tr).max(0.0);
+
+            let lap_bl =
+                bl_orig[idx] - (bl_orig[up] + bl_orig[dn] + bl_orig[lt] + bl_orig[rt]) * 0.25;
+            frame.cells[idx].bottom_left = (bl_orig[idx] + strength * lap_bl).max(0.0);
+
+            let lap_br =
+                br_orig[idx] - (br_orig[up] + br_orig[dn] + br_orig[lt] + br_orig[rt]) * 0.25;
+            frame.cells[idx].bottom_right = (br_orig[idx] + strength * lap_br).max(0.0);
+        }
+    }
+}
+
+/// Computes gradient magnitude for edge detection.
+///
+/// For each cell, computes the magnitude of the gradient using central differences:
+/// Gx = (right - left) / 2, Gy = (bottom - top) / 2
+/// magnitude = sqrt(Gx² + Gy²)
+///
+/// Returns a buffer of normalized gradient magnitudes in [0, 1] range.
+pub fn compute_gradient_magnitude(frame: &DownsampledFrame) -> Vec<f32> {
+    let w = frame.width;
+    let h = frame.height;
+    let mut magnitude = vec![0.0f32; w * h];
+
+    if w < 3 || h < 3 {
+        return magnitude;
+    }
+
+    // Compute gradients for each channel and average them
+    for y in 1..h - 1 {
+        for x in 1..w - 1 {
+            let idx = y * w + x;
+            let up = (y - 1) * w + x;
+            let dn = (y + 1) * w + x;
+            let lt = y * w + (x - 1);
+            let rt = y * w + (x + 1);
+
+            // Average all cell channels for gradient computation
+            let avg = |cell: &Cell| {
+                (cell.top
+                    + cell.bottom
+                    + cell.top_left
+                    + cell.top_right
+                    + cell.bottom_left
+                    + cell.bottom_right)
+                    / 6.0
+            };
+
+            let center_val = avg(&frame.cells[idx]);
+            let up_val = avg(&frame.cells[up]);
+            let dn_val = avg(&frame.cells[dn]);
+            let lt_val = avg(&frame.cells[lt]);
+            let rt_val = avg(&frame.cells[rt]);
+
+            // Central differences for gradient
+            let gx = (rt_val - lt_val) * 0.5;
+            let gy = (dn_val - up_val) * 0.5;
+
+            // Gradient magnitude
+            magnitude[idx] = (gx * gx + gy * gy).sqrt();
+        }
+    }
+
+    // Normalize to [0, 1]
+    let max_val = magnitude.iter().copied().fold(0.0f32, f32::max);
+    if max_val > 0.0 {
+        for m in magnitude.iter_mut() {
+            *m = (*m / max_val).min(1.0);
+        }
+    }
+
+    magnitude
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
