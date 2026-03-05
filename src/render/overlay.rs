@@ -619,13 +619,13 @@ impl OverlayRenderer {
     #[allow(clippy::too_many_arguments)]
     /// Builds the status bar string displayed at the bottom of the screen.
     ///
-    /// Uses `▸` as a segment separator for a clean powerline-inspired look.
+    /// Uses `◦` as a segment separator for a clean powerline-inspired look.
     /// Segments are added in priority order; lower-priority segments are omitted
     /// when the terminal is too narrow to fit them.
     ///
     /// Layout (left to right):
     /// ```text
-    ///   PRESET  ▸  1.0×  ▸  PALETTE  ▸  50k  [Z Y]  ⏸ PAUSED  ·  ? help
+    ///   PRESET  ◦  1.0×  ▸  PALETTE  ▸  50k  [Z Y]  ⏸ PAUSED  ·  ? help
     /// ```
     pub fn build_status_line(
         _is_paused: bool,
@@ -640,7 +640,7 @@ impl OverlayRenderer {
         can_redo: bool,
         accent: Option<RgbColor>,
     ) -> (String, Vec<(usize, RgbColor)>) {
-        const SEP: &str = "  ▸  ";
+        const SEP: &str = "  ◦  ";
         let mut color_overrides: Vec<(usize, RgbColor)> = Vec::new();
 
         // Theme colors for status bar chrome (GRUVBOX-matching hardcoded values)
@@ -669,11 +669,11 @@ impl OverlayRenderer {
 
         // Add palette swatch + name if space permits
         if width >= 52 {
-            left.push_str("▸  ");
+            left.push_str("◦  ");
             // Color swatch: two block chars tinted with the palette accent
             if let Some(accent_color) = accent {
                 let swatch_start = left.chars().count();
-                left.push_str("▨ ");
+                left.push_str("■  ");
                 color_overrides.push((swatch_start, accent_color));
                 color_overrides.push((swatch_start + 1, accent_color));
             }
@@ -683,14 +683,14 @@ impl OverlayRenderer {
         // Add population if space permits
         if let Some(pop) = population {
             if width >= 68 {
-                left.push_str(&format!("▸  {}k  ", pop / 1000));
+                left.push_str(&format!("◦  {}k  ", pop / 1000));
             }
         }
 
         // Add diffusion kernel if space permits
         if let Some(kernel) = diffusion_kernel {
             if width >= 88 {
-                left.push_str(&format!("▸  {}  ", kernel));
+                left.push_str(&format!("◦  {}  ", kernel));
             }
         }
 
@@ -703,15 +703,15 @@ impl OverlayRenderer {
         };
         if let Some(ref d) = dither_segment {
             if width >= 60 {
-                left.push_str(&format!("▸  {}  ", d));
+                left.push_str(&format!("◦  {}  ", d));
             }
         }
 
-        // Color all ▸ separator characters in the left segment with muted color
+        // Color all ◦ separator characters in the left segment with muted color
         let separator_positions: Vec<usize> = left
             .chars()
             .enumerate()
-            .filter_map(|(i, c)| if c == '▸' { Some(i) } else { None })
+            .filter_map(|(i, c)| if c == '◦' { Some(i) } else { None })
             .collect();
         for pos in &separator_positions {
             color_overrides.push((*pos, muted));
@@ -934,7 +934,7 @@ impl DashboardOverlay {
     /// Returns a status pill string for a boolean.
     fn build_status(on: bool) -> &'static str {
         if on {
-            "● On"
+            "◦ On"
         } else {
             "○ Off"
         }
@@ -1325,7 +1325,7 @@ impl DashboardOverlay {
                         .map(|(i, &c)| {
                             let fg = if Some(i) == divider_col {
                                 Some(muted)
-                            } else if c == '●' {
+                            } else if c == '◦' {
                                 Some(accent)
                             } else if c == '○' {
                                 Some(muted)

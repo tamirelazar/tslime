@@ -119,19 +119,19 @@ impl ControlsOverlay {
         let indicator_line = format!("{:^width$}", indicator_line, width = Self::CONTENT_WIDTH);
         let label_line = format!("{:^width$}", label_line, width = Self::CONTENT_WIDTH);
 
-        // Helper: returns "⚙" when a float param differs from its default, else " ".
+        // Helper: returns "✱" when a float param differs from its default, else " ".
         let mod_marker = |current: f32, default: f32, eps: f32| {
             if (current - default).abs() > eps {
-                "⚙"
+                "✱"
             } else {
                 " "
             }
         };
         let mod_marker_int =
-            |current: usize, default: usize| if current != default { "⚙" } else { " " };
+            |current: usize, default: usize| if current != default { "✱" } else { " " };
         let mod_marker_enum = |current: &dyn std::fmt::Debug, default: &dyn std::fmt::Debug| {
             if format!("{:?}", current) != format!("{:?}", default) {
-                "⚙"
+                "✱"
             } else {
                 " "
             }
@@ -607,7 +607,7 @@ impl ControlsOverlay {
 
         let tab_hint = " < TAB > ";
         let esc_hint = "ESC";
-        let footer_main = "  ⚙ modified  ─ CLI-only  ";
+        let footer_main = "  ✱ modified  ─ CLI-only  ";
 
         let mut overlay = builder
             .add_separator()
@@ -631,7 +631,7 @@ impl ControlsOverlay {
 ///
 /// Identifies parameter rows (key binding + mini bar) and applies:
 /// - Accent colour to the key chars (cols 5–7).
-/// - `accent_modified` colour to the `⚙` modification marker at col 3.
+/// - `accent_modified` colour to the `✱` modification marker at col 3.
 /// - Accent colour to filled bar chars (`█`/`▪`) at cols 25–32.
 /// - Muted colour to empty bar chars (`░`) at the same positions.
 ///
@@ -705,13 +705,13 @@ fn generate_controls_rich_lines(
                     .collect();
             }
 
-            // A param row: marker at col 3 (' ' or '⚙'), space at col 4,
-            // col 5 is not another '⚙' (distinguishes from the "  ⚙ modified…" footer),
+            // A param row: marker at col 3 (' ' or '✱'), space at col 4,
+            // col 5 is not another '✱' (distinguishes from the "  ⚙ modified…" footer),
             // and the region cols 3..47 is not all-spaces (padding rows).
             let is_param_row = n == ControlsOverlay::WIDTH
-                && matches!(chars.get(3), Some(' ') | Some('⚙'))
+                && matches!(chars.get(3), Some(' ') | Some('✱'))
                 && matches!(chars.get(4), Some(' '))
-                && !matches!(chars.get(5), Some('⚙'))
+                && !matches!(chars.get(5), Some('✱'))
                 && chars
                     .get(3..47.min(n))
                     .is_some_and(|s| s.iter().any(|&c| c != ' '));
@@ -727,7 +727,7 @@ fn generate_controls_rich_lines(
                     .iter()
                     .map(|&c| {
                         let fg = match c {
-                            '⚙' => Some(modified_color),
+                            '✱' => Some(modified_color),
                             '─' => Some(light_red),
                             _ => None,
                         };
@@ -768,7 +768,7 @@ fn generate_controls_rich_lines(
                 .enumerate()
                 .map(|(i, &c)| {
                     let fg = match i {
-                        3 if c == '⚙' => Some(modified_color),
+                        3 if c == '✱' => Some(modified_color),
                         5..=7 => {
                             if is_cli_only_row {
                                 Some(light_red)

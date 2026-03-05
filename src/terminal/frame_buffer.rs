@@ -186,19 +186,21 @@ impl FrameBuffer {
 
         // Only render grid where there's no (or very dim) simulation content
         // Check if this cell is essentially empty (dark background)
-        let is_empty = match self.color_mode {
-            ColorMode::TrueColor => cell.fg_color_rgb.map_or(true, |c| {
-                // Check if color is very dark (close to black)
-                (c.r as u32 + c.g as u32 + c.b as u32) < 30
-            }),
-            _ => {
-                // ANSI colors: check if it maps to something very dark
-                cell.fg_color_256.map_or(true, |c| {
-                    let rgb = palette::ANSI_256_TO_RGB[c as usize];
-                    (rgb.r as u32 + rgb.g as u32 + rgb.b as u32) < 30
-                })
-            }
-        };
+        // A cell is empty if it displays a space character OR has no/dark foreground color
+        let is_empty = cell.char == ' '
+            || match self.color_mode {
+                ColorMode::TrueColor => cell.fg_color_rgb.map_or(true, |c| {
+                    // Check if color is very dark (close to black)
+                    (c.r as u32 + c.g as u32 + c.b as u32) < 30
+                }),
+                _ => {
+                    // ANSI colors: check if it maps to something very dark
+                    cell.fg_color_256.map_or(true, |c| {
+                        let rgb = palette::ANSI_256_TO_RGB[c as usize];
+                        (rgb.r as u32 + rgb.g as u32 + rgb.b as u32) < 30
+                    })
+                }
+            };
 
         if is_empty {
             // Apply grid with opacity to empty cells
