@@ -507,7 +507,7 @@ pub fn compute_gradient_magnitude(frame: &DownsampledFrame) -> Vec<f32> {
                     / 6.0
             };
 
-            let center_val = avg(&frame.cells[idx]);
+            let _center_val = avg(&frame.cells[idx]);
             let up_val = avg(&frame.cells[up]);
             let dn_val = avg(&frame.cells[dn]);
             let lt_val = avg(&frame.cells[lt]);

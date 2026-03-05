@@ -5,6 +5,7 @@
 
 pub use crate::cli::num_palettes;
 use crate::cli::Palette;
+use crate::cli::PauseStyle;
 pub use crate::cli::ALL_PALETTES;
 pub use crate::cli::NUM_PALETTES;
 use crate::config_defaults::dither as dither_consts;
@@ -550,6 +551,12 @@ pub struct RuntimeState {
     pub pause_logo_cache: Option<(usize, usize, Vec<f32>)>,
     /// Frame counter used for badge blink while paused.
     pub pause_frame_counter: u64,
+    /// Pause screen visual effect style.
+    pub pause_style: PauseStyle,
+    /// Whether to show the logo image during pause state.
+    pub pause_logo_enabled: bool,
+    /// Debug mode: draw wave rings on empty cells in pulse pause effect.
+    pub pause_pulse_draw_mode: bool,
     /// Trail age hue shifting enabled.
     pub trail_age_enabled: bool,
     /// Temporal delta brightness boost enabled.
@@ -583,6 +590,9 @@ impl RuntimeState {
         mouse_timeout: f32,
         intensity_mapping: IntensityMapping,
         cli_config: &SimConfig,
+        pause_style: PauseStyle,
+        pause_logo_enabled: bool,
+        pause_pulse_draw_mode: bool,
     ) -> Self {
         let default_values = DefaultValues::from_preset(initial_preset);
         Self {
@@ -659,6 +669,9 @@ impl RuntimeState {
             shift_held: false,
             pause_logo_cache: None,
             pause_frame_counter: 0,
+            pause_style,
+            pause_logo_enabled,
+            pause_pulse_draw_mode,
             trail_age_enabled: false,
             trail_delta_enabled: false,
             gradient_magnitude_enabled: false,
@@ -1463,6 +1476,7 @@ impl RuntimeState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::PauseStyle;
     use crate::simulation::config::SimConfig;
 
     fn create_test_runtime_state() -> RuntimeState {
@@ -1476,6 +1490,9 @@ mod tests {
             0.0,
             IntensityMapping::linear(),
             &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
         )
     }
 
@@ -1633,6 +1650,9 @@ mod tests {
             3.0,
             IntensityMapping::linear(),
             &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
         );
         let orig_angle = state.sensor_angle;
         state.randomize_params();
@@ -1652,6 +1672,9 @@ mod tests {
             3.0,
             IntensityMapping::linear(),
             &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
         );
         state.sensor_angle = 12.3;
         let p = state.capture_parameter_state();
@@ -1678,6 +1701,9 @@ mod tests {
             3.0,
             IntensityMapping::linear(),
             &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
         );
         assert_eq!(state.current_notification(), None);
         state.show_notification("test".to_string());
@@ -1698,6 +1724,9 @@ mod tests {
             3.0,
             IntensityMapping::linear(),
             &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
         );
         assert!(!state.is_in_warmup(0));
         assert!(state.is_in_warmup(10));
@@ -1719,6 +1748,9 @@ mod tests {
             3.0,
             IntensityMapping::linear(),
             &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
         );
         assert!(!state.track_entropy(5.0, 10.0, 5));
         assert!(state.track_entropy(15.0, 10.0, 1));
@@ -1738,6 +1770,9 @@ mod tests {
             3.0,
             IntensityMapping::linear(),
             &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
         );
         state.update_history(60.0, 5.0, 0.5);
         assert_eq!(state.fps_history.len(), 1);
@@ -1759,6 +1794,9 @@ mod tests {
             3.0,
             IntensityMapping::linear(),
             &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
         );
 
         state.toggle_pause();
@@ -1837,6 +1875,9 @@ mod tests {
             3.0,
             IntensityMapping::linear(),
             &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
         );
         let orig_angle = state.sensor_angle;
         state.force_checkpoint();

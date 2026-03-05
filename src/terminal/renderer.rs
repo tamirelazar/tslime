@@ -5,6 +5,7 @@
 
 use crate::cli::ColorMode;
 use crate::cli::Palette;
+use crate::cli::PauseStyle;
 use crate::config_defaults::TrailAgeMode;
 use crate::render::charset::Charset;
 use crate::render::dither::DitherMode;
@@ -208,6 +209,7 @@ impl TerminalRenderer {
     }
 
     /// Set visual effects data for trail age, temporal delta, and gradient magnitude.
+    #[allow(clippy::too_many_arguments)]
     pub fn set_visual_fx(
         &mut self,
         aux: Option<crate::render::downsample::AuxFrame>,
@@ -309,6 +311,8 @@ impl TerminalRenderer {
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
         panel_style: Option<&PanelStyle>,
         _focused_overlay: Option<crate::overlay::OverlayType>,
+        pause_style: PauseStyle,
+        pause_pulse_draw_mode: bool,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -347,9 +351,9 @@ impl TerminalRenderer {
             self.trail_age_reverse,
         );
 
-        // Apply VCR freeze-frame dim+scanline effect when paused
+        // Apply pause effect based on selected style
         if let Some(fc) = pause_frame {
-            buffer.apply_vcr_pause_effect(fc);
+            buffer.apply_pause_effect(pause_style, fc, pause_pulse_draw_mode);
         }
 
         // Apply grid rendering if enabled
@@ -648,6 +652,8 @@ impl TerminalRenderer {
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
         panel_style_ms: Option<&PanelStyle>,
         _focused_overlay: Option<crate::overlay::OverlayType>,
+        pause_style: PauseStyle,
+        pause_pulse_draw_mode: bool,
     ) -> io::Result<()> {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
@@ -725,9 +731,9 @@ impl TerminalRenderer {
             }
         }
 
-        // Apply VCR freeze-frame dim+scanline effect when paused
+        // Apply pause effect based on selected style
         if let Some(fc) = pause_frame {
-            buffer.apply_vcr_pause_effect(fc);
+            buffer.apply_pause_effect(pause_style, fc, pause_pulse_draw_mode);
         }
 
         // Apply grid rendering if enabled
@@ -1042,6 +1048,8 @@ mod tests {
             None,
             None,
             None,
+            PauseStyle::Vignette,
+            false,
         );
 
         assert!(result.is_ok());

@@ -503,6 +503,7 @@ pub fn delete_config(name: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::PauseStyle;
     use crate::simulation::config::Preset;
 
     fn create_test_runtime_state() -> RuntimeState {
@@ -516,6 +517,9 @@ mod tests {
             3.0,
             crate::render::palette::IntensityMapping::linear(),
             &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
         )
     }
 

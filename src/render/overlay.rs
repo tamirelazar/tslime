@@ -1732,6 +1732,7 @@ mod status_line_tests {
 
     #[test]
     fn test_preset_comparison_overlay() {
+        use crate::cli::PauseStyle;
         use crate::render::palette::IntensityMapping;
         use crate::simulation::config::{InitMode, SimConfig};
 
@@ -1745,6 +1746,9 @@ mod status_line_tests {
             0.0,
             IntensityMapping::linear(),
             &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
         );
         state.sensor_angle = 90.0; // Changed from default
 

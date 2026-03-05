@@ -48,6 +48,61 @@ pub enum ColorMode {
     Bits256,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Pause screen visual effect style.
+pub enum PauseStyle {
+    /// VCR-style with scanlines and noise (legacy).
+    Vcr,
+    /// Frosted glass blur with blue tint.
+    Frosted,
+    /// Desaturation with vignette.
+    Vignette,
+    /// Trail pulse/wave animation.
+    Pulse,
+    /// Simple freeze with static badge only (default).
+    #[default]
+    Minimal,
+    /// Pixelated/mosaic effect.
+    Pixelate,
+    /// Edge detection outline effect.
+    Edges,
+    /// Radial zoom blur effect.
+    Zoom,
+    /// Falling snowflakes on empty cells.
+    Snow,
+    /// Twinkling starfield on empty cells.
+    Starfield,
+    /// TV static noise on empty cells.
+    Noise,
+    /// Matrix-style falling characters on empty cells.
+    Matrix,
+}
+
+impl std::str::FromStr for PauseStyle {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "vcr" => Ok(PauseStyle::Vcr),
+            "frosted" => Ok(PauseStyle::Frosted),
+            "vignette" => Ok(PauseStyle::Vignette),
+            "pulse" => Ok(PauseStyle::Pulse),
+            "minimal" => Ok(PauseStyle::Minimal),
+            "pixelate" => Ok(PauseStyle::Pixelate),
+            "edges" => Ok(PauseStyle::Edges),
+            "zoom" => Ok(PauseStyle::Zoom),
+            "snow" => Ok(PauseStyle::Snow),
+            "starfield" => Ok(PauseStyle::Starfield),
+            "noise" => Ok(PauseStyle::Noise),
+            "matrix" => Ok(PauseStyle::Matrix),
+            _ => Err(format!(
+                "Unknown pause style: {}. Valid options: vcr, frosted, vignette, pulse, minimal, pixelate, edges, zoom, snow, starfield, noise, matrix",
+                s
+            )),
+        }
+    }
+}
+
 // Re-export palette types from render module for backward compatibility
 pub use crate::render::palette::{num_palettes, Palette, ALL_PALETTES, NUM_PALETTES};
 
@@ -1374,6 +1429,31 @@ pub struct Args {
     /// Background color hex code.
     pub bg_color: Option<String>,
 
+    #[arg(
+        long = "pause-style",
+        value_name = "STYLE",
+        default_value = "minimal",
+        help = "Pause screen visual style: vcr, frosted, vignette, pulse, minimal, pixelate, edges, zoom"
+    )]
+    /// Pause screen visual effect style.
+    pub pause_style: PauseStyle,
+
+    #[arg(
+        long = "pause-logo",
+        value_name = "BOOL",
+        default_value = "false",
+        help = "Show logo image during pause state"
+    )]
+    /// Show logo image during pause state.
+    pub pause_logo: bool,
+
+    #[arg(
+        long = "pause-pulse-draw-mode",
+        help = "Debug mode: draw wave rings on empty cells in pulse pause effect"
+    )]
+    /// Debug mode for pulse pause: draw points on empty cells.
+    pub pause_pulse_draw_mode: bool,
+
     #[arg(long = "random", help = "Start with randomized parameters")]
     /// Start with randomized parameters.
     pub random: bool,
@@ -1804,6 +1884,9 @@ impl Default for Args {
             explain: false,
             completions: None,
             bg_color: None,
+            pause_style: PauseStyle::Vignette,
+            pause_logo: false,
+            pause_pulse_draw_mode: false,
             trail_age: false,
             trail_age_max: 10.0,
             trail_age_hue_range: 15.0,

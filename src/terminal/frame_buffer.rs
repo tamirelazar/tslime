@@ -5,6 +5,7 @@
 
 use crate::cli::ColorMode;
 use crate::cli::Palette;
+use crate::cli::PauseStyle;
 use crate::config_defaults::TrailAgeMode;
 use crate::render::charset::{self, Charset};
 use crate::render::dither::{self, DitherMode};
@@ -1193,16 +1194,25 @@ impl FrameBuffer {
     /// Darken all cells and add scanlines for VCR freeze-frame look.
     ///
     /// Called after `from_downsampled` when the simulation is paused.
-    /// - All cells: multiply RGB by `DIM` (~0.22)
-    /// - Even rows: multiply again by `SCANLINE` (~0.6) to create CRT scanline effect
+    /// - All cells: multiply RGB by `DIM` (~0.40)
+    /// - Even rows: multiply again by `SCANLINE` (~0.55) to create CRT scanline effect
+    /// - Empty cells: draw scanline pattern to make effect visible
     pub fn apply_vcr_pause_effect(&mut self, frame_counter: u64) {
         const DIM: f32 = 0.40;
         const SCANLINE_DARK: f32 = 0.55; // even rows get this multiplier on top of DIM
         const NOISE_AMOUNT: f32 = 0.08; // ±8% brightness jitter
+        const SCANLINE_CHAR: char = '▒'; // Block character for scanlines
+        const SCANLINE_COLOR: RgbColor = RgbColor {
+            r: 40,
+            g: 40,
+            b: 40,
+        };
 
         for y in 0..self.height {
-            let scanline = if y % 2 == 0 { SCANLINE_DARK } else { 1.0 };
+            let is_scanline_row = y % 2 == 0;
+            let scanline = if is_scanline_row { SCANLINE_DARK } else { 1.0 };
             let base_factor = DIM * scanline;
+
             for x in 0..self.width {
                 // Deterministic noise from position + frame
                 let hash = ((x as u64).wrapping_mul(2654435761)
@@ -1213,37 +1223,750 @@ impl FrameBuffer {
 
                 let idx = y * self.width + x;
                 let cell = &mut self.cells[idx];
+
+                // Check if cell is empty
+                let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
+
+                if is_empty && is_scanline_row {
+                    // Draw scanline on empty cells in even rows
+                    cell.char = SCANLINE_CHAR;
+                    cell.fg_color_rgb = Some(SCANLINE_COLOR);
+                } else {
+                    // Apply dimming to existing cells
+                    if let Some(c) = cell.fg_color_rgb {
+                        cell.fg_color_rgb = Some(RgbColor {
+                            r: (c.r as f32 * factor) as u8,
+                            g: (c.g as f32 * factor) as u8,
+                            b: (c.b as f32 * factor) as u8,
+                        });
+                    }
+                    if let Some(c) = cell.bg_color_rgb {
+                        cell.bg_color_rgb = Some(RgbColor {
+                            r: (c.r as f32 * factor) as u8,
+                            g: (c.g as f32 * factor) as u8,
+                            b: (c.b as f32 * factor) as u8,
+                        });
+                    }
+                    if let Some(c) = cell.fg_color_256 {
+                        let rgb = palette::ANSI_256_TO_RGB[c as usize];
+                        let dimmed = RgbColor {
+                            r: (rgb.r as f32 * factor) as u8,
+                            g: (rgb.g as f32 * factor) as u8,
+                            b: (rgb.b as f32 * factor) as u8,
+                        };
+                        cell.fg_color_256 = Some(palette::rgb_to_256(dimmed));
+                    }
+                    if let Some(c) = cell.bg_color_256 {
+                        let rgb = palette::ANSI_256_TO_RGB[c as usize];
+                        let dimmed = RgbColor {
+                            r: (rgb.r as f32 * factor) as u8,
+                            g: (rgb.g as f32 * factor) as u8,
+                            b: (rgb.b as f32 * factor) as u8,
+                        };
+                        cell.bg_color_256 = Some(palette::rgb_to_256(dimmed));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Apply pause effect based on the selected style.
+    ///
+    /// Routes to the appropriate effect implementation based on pause_style.
+    pub fn apply_pause_effect(
+        &mut self,
+        pause_style: PauseStyle,
+        frame_counter: u64,
+        pulse_draw_mode: bool,
+    ) {
+        match pause_style {
+            PauseStyle::Vcr => self.apply_vcr_pause_effect(frame_counter),
+            PauseStyle::Vignette => self.apply_vignette_pause_effect(),
+            PauseStyle::Minimal => {} // No effect - just freeze
+            PauseStyle::Frosted => self.apply_frosted_pause_effect(),
+            PauseStyle::Pixelate => self.apply_pixelate_pause_effect(),
+            PauseStyle::Edges => self.apply_edges_pause_effect(),
+            PauseStyle::Zoom => self.apply_zoom_pause_effect(frame_counter),
+            PauseStyle::Pulse => self.apply_pulse_pause_effect(frame_counter, pulse_draw_mode),
+            PauseStyle::Snow => self.apply_snow_pause_effect(frame_counter),
+            PauseStyle::Starfield => self.apply_starfield_pause_effect(frame_counter),
+            PauseStyle::Noise => self.apply_noise_pause_effect(frame_counter),
+            PauseStyle::Matrix => self.apply_matrix_pause_effect(frame_counter),
+        }
+    }
+
+    /// Desaturation + vignette effect (default pause style).
+    ///
+    /// Slightly desaturates colors and darkens edges for a cinematic look.
+    fn apply_vignette_pause_effect(&mut self) {
+        const DESATURATE: f32 = 0.25; // Desaturation factor
+        const VIGNETTE_STRENGTH: f32 = 0.35; // Edge darkness
+        const BRIGHTNESS: f32 = 0.85; // Overall brightness
+
+        let center_x = (self.width as f32) / 2.0;
+        let center_y = (self.height as f32) / 2.0;
+        let max_radius = ((center_x * center_x + center_y * center_y).sqrt()).max(1.0);
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = y * self.width + x;
+                let cell = &mut self.cells[idx];
+
+                // Calculate vignette factor based on distance from center
+                let dx = x as f32 - center_x;
+                let dy = y as f32 - center_y;
+                let dist = (dx * dx + dy * dy).sqrt() / max_radius;
+                let vignette = 1.0 - (dist * VIGNETTE_STRENGTH).clamp(0.0, VIGNETTE_STRENGTH);
+                let factor = BRIGHTNESS * vignette;
+
+                // Apply to RGB colors
                 if let Some(c) = cell.fg_color_rgb {
+                    // Desaturate: move toward grayscale
+                    let gray = c.r as f32 * 0.299 + c.g as f32 * 0.587 + c.b as f32 * 0.114;
+                    let r = (c.r as f32 * (1.0 - DESATURATE) + gray * DESATURATE) * factor;
+                    let g = (c.g as f32 * (1.0 - DESATURATE) + gray * DESATURATE) * factor;
+                    let b = (c.b as f32 * (1.0 - DESATURATE) + gray * DESATURATE) * factor;
                     cell.fg_color_rgb = Some(RgbColor {
-                        r: (c.r as f32 * factor) as u8,
-                        g: (c.g as f32 * factor) as u8,
-                        b: (c.b as f32 * factor) as u8,
+                        r: r as u8,
+                        g: g as u8,
+                        b: b as u8,
                     });
                 }
                 if let Some(c) = cell.bg_color_rgb {
+                    let gray = c.r as f32 * 0.299 + c.g as f32 * 0.587 + c.b as f32 * 0.114;
+                    let r = (c.r as f32 * (1.0 - DESATURATE) + gray * DESATURATE) * factor;
+                    let g = (c.g as f32 * (1.0 - DESATURATE) + gray * DESATURATE) * factor;
+                    let b = (c.b as f32 * (1.0 - DESATURATE) + gray * DESATURATE) * factor;
                     cell.bg_color_rgb = Some(RgbColor {
-                        r: (c.r as f32 * factor) as u8,
-                        g: (c.g as f32 * factor) as u8,
-                        b: (c.b as f32 * factor) as u8,
+                        r: r as u8,
+                        g: g as u8,
+                        b: b as u8,
                     });
                 }
                 if let Some(c) = cell.fg_color_256 {
                     let rgb = palette::ANSI_256_TO_RGB[c as usize];
-                    let dimmed = RgbColor {
-                        r: (rgb.r as f32 * factor) as u8,
-                        g: (rgb.g as f32 * factor) as u8,
-                        b: (rgb.b as f32 * factor) as u8,
-                    };
-                    cell.fg_color_256 = Some(palette::rgb_to_256(dimmed));
+                    let gray = rgb.r as f32 * 0.299 + rgb.g as f32 * 0.587 + rgb.b as f32 * 0.114;
+                    let r = (rgb.r as f32 * (1.0 - DESATURATE) + gray * DESATURATE) * factor;
+                    let g = (rgb.g as f32 * (1.0 - DESATURATE) + gray * DESATURATE) * factor;
+                    let b = (rgb.b as f32 * (1.0 - DESATURATE) + gray * DESATURATE) * factor;
+                    cell.fg_color_256 = Some(palette::rgb_to_256(RgbColor {
+                        r: r as u8,
+                        g: g as u8,
+                        b: b as u8,
+                    }));
                 }
                 if let Some(c) = cell.bg_color_256 {
                     let rgb = palette::ANSI_256_TO_RGB[c as usize];
-                    let dimmed = RgbColor {
-                        r: (rgb.r as f32 * factor) as u8,
-                        g: (rgb.g as f32 * factor) as u8,
-                        b: (rgb.b as f32 * factor) as u8,
-                    };
-                    cell.bg_color_256 = Some(palette::rgb_to_256(dimmed));
+                    let gray = rgb.r as f32 * 0.299 + rgb.g as f32 * 0.587 + rgb.b as f32 * 0.114;
+                    let r = (rgb.r as f32 * (1.0 - DESATURATE) + gray * DESATURATE) * factor;
+                    let g = (rgb.g as f32 * (1.0 - DESATURATE) + gray * DESATURATE) * factor;
+                    let b = (rgb.b as f32 * (1.0 - DESATURATE) + gray * DESATURATE) * factor;
+                    cell.bg_color_256 = Some(palette::rgb_to_256(RgbColor {
+                        r: r as u8,
+                        g: g as u8,
+                        b: b as u8,
+                    }));
+                }
+            }
+        }
+    }
+
+    /// Frosted glass blur effect.
+    ///
+    /// Applies a subtle blur with blue tint for a modern frozen look.
+    fn apply_frosted_pause_effect(&mut self) {
+        // Create a copy of current cells for blur sampling
+        let original_cells = self.cells.clone();
+        const BLUR_FACTOR: f32 = 0.75; // Blend factor for blur
+        const TINT_R: f32 = 0.95; // Slightly reduce red
+        const TINT_G: f32 = 0.98; // Slightly reduce green
+        const TINT_B: f32 = 1.05; // Boost blue slightly
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = y * self.width + x;
+                let cell = &mut self.cells[idx];
+
+                // Simple 3x3 box blur by sampling neighbors
+                let mut r_sum = 0.0f32;
+                let mut g_sum = 0.0f32;
+                let mut b_sum = 0.0f32;
+                let mut count = 0u32;
+
+                for dy in -1..=1i32 {
+                    for dx in -1..=1i32 {
+                        let nx = (x as i32 + dx).clamp(0, self.width as i32 - 1) as usize;
+                        let ny = (y as i32 + dy).clamp(0, self.height as i32 - 1) as usize;
+                        let nidx = ny * self.width + nx;
+
+                        if let Some(c) = original_cells[nidx].fg_color_rgb {
+                            r_sum += c.r as f32;
+                            g_sum += c.g as f32;
+                            b_sum += c.b as f32;
+                            count += 1;
+                        }
+                    }
+                }
+
+                if count > 0 {
+                    let r_avg = r_sum / count as f32;
+                    let g_avg = g_sum / count as f32;
+                    let b_avg = b_sum / count as f32;
+
+                    if let Some(c) = cell.fg_color_rgb {
+                        // Blend original with blur, then apply blue tint
+                        let r = (c.r as f32 * (1.0 - BLUR_FACTOR) + r_avg * BLUR_FACTOR) * TINT_R;
+                        let g = (c.g as f32 * (1.0 - BLUR_FACTOR) + g_avg * BLUR_FACTOR) * TINT_G;
+                        let b = (c.b as f32 * (1.0 - BLUR_FACTOR) + b_avg * BLUR_FACTOR) * TINT_B;
+                        cell.fg_color_rgb = Some(RgbColor {
+                            r: r.min(255.0) as u8,
+                            g: g.min(255.0) as u8,
+                            b: b.min(255.0) as u8,
+                        });
+                    }
+                    if let Some(c) = cell.bg_color_rgb {
+                        let r = (c.r as f32 * (1.0 - BLUR_FACTOR) + r_avg * BLUR_FACTOR) * TINT_R;
+                        let g = (c.g as f32 * (1.0 - BLUR_FACTOR) + g_avg * BLUR_FACTOR) * TINT_G;
+                        let b = (c.b as f32 * (1.0 - BLUR_FACTOR) + b_avg * BLUR_FACTOR) * TINT_B;
+                        cell.bg_color_rgb = Some(RgbColor {
+                            r: r.min(255.0) as u8,
+                            g: g.min(255.0) as u8,
+                            b: b.min(255.0) as u8,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Pixelate/mosaic effect.
+    ///
+    /// Reduces resolution appearance by grouping cells into blocks.
+    fn apply_pixelate_pause_effect(&mut self) {
+        const BLOCK_SIZE: usize = 2; // 2x2 pixel blocks
+        const DIM: f32 = 0.90; // Slight dimming
+
+        // Process in blocks
+        for block_y in (0..self.height).step_by(BLOCK_SIZE) {
+            for block_x in (0..self.width).step_by(BLOCK_SIZE) {
+                // Calculate block bounds
+                let end_y = (block_y + BLOCK_SIZE).min(self.height);
+                let end_x = (block_x + BLOCK_SIZE).min(self.width);
+
+                // Average colors in block
+                let mut r_sum = 0.0f32;
+                let mut g_sum = 0.0f32;
+                let mut b_sum = 0.0f32;
+                let mut count = 0u32;
+
+                for y in block_y..end_y {
+                    for x in block_x..end_x {
+                        let idx = y * self.width + x;
+                        if let Some(c) = self.cells[idx].fg_color_rgb {
+                            r_sum += c.r as f32;
+                            g_sum += c.g as f32;
+                            b_sum += c.b as f32;
+                            count += 1;
+                        }
+                    }
+                }
+
+                if count > 0 {
+                    let avg_r = ((r_sum / count as f32) * DIM) as u8;
+                    let avg_g = ((g_sum / count as f32) * DIM) as u8;
+                    let avg_b = ((b_sum / count as f32) * DIM) as u8;
+
+                    // Apply average to all cells in block
+                    for y in block_y..end_y {
+                        for x in block_x..end_x {
+                            let idx = y * self.width + x;
+                            if self.cells[idx].fg_color_rgb.is_some() {
+                                self.cells[idx].fg_color_rgb = Some(RgbColor {
+                                    r: avg_r,
+                                    g: avg_g,
+                                    b: avg_b,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Edge detection outline effect.
+    ///
+    /// Shows only high-contrast edges like a sketch.
+    fn apply_edges_pause_effect(&mut self) {
+        const THRESHOLD: f32 = 30.0; // Brightness difference threshold
+        const EDGE_COLOR: RgbColor = RgbColor {
+            r: 220,
+            g: 220,
+            b: 220,
+        };
+        const BG_DIM: f32 = 0.3;
+
+        // Create a copy for sampling
+        let original_cells = self.cells.clone();
+
+        for y in 1..self.height.saturating_sub(1) {
+            for x in 1..self.width.saturating_sub(1) {
+                let idx = y * self.width + x;
+
+                // Get current brightness
+                let _current_brightness = if let Some(c) = original_cells[idx].fg_color_rgb {
+                    (c.r as f32 + c.g as f32 + c.b as f32) / 3.0
+                } else {
+                    0.0
+                };
+
+                // Check gradient with neighbors
+                let left_idx = y * self.width + (x - 1);
+                let right_idx = y * self.width + (x + 1);
+                let up_idx = (y - 1) * self.width + x;
+                let down_idx = (y + 1) * self.width + x;
+
+                let left_brightness = original_cells[left_idx]
+                    .fg_color_rgb
+                    .map_or(0.0, |c| (c.r + c.g + c.b) as f32 / 3.0);
+                let right_brightness = original_cells[right_idx]
+                    .fg_color_rgb
+                    .map_or(0.0, |c| (c.r + c.g + c.b) as f32 / 3.0);
+                let up_brightness = original_cells[up_idx]
+                    .fg_color_rgb
+                    .map_or(0.0, |c| (c.r + c.g + c.b) as f32 / 3.0);
+                let down_brightness = original_cells[down_idx]
+                    .fg_color_rgb
+                    .map_or(0.0, |c| (c.r + c.g + c.b) as f32 / 3.0);
+
+                let dx = (right_brightness - left_brightness).abs();
+                let dy = (down_brightness - up_brightness).abs();
+                let gradient = (dx * dx + dy * dy).sqrt();
+
+                if gradient > THRESHOLD {
+                    // This is an edge - make it bright
+                    self.cells[idx].fg_color_rgb = Some(EDGE_COLOR);
+                } else {
+                    // Not an edge - dim significantly
+                    if let Some(c) = self.cells[idx].fg_color_rgb {
+                        self.cells[idx].fg_color_rgb = Some(RgbColor {
+                            r: (c.r as f32 * BG_DIM) as u8,
+                            g: (c.g as f32 * BG_DIM) as u8,
+                            b: (c.b as f32 * BG_DIM) as u8,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Radial zoom blur effect.
+    ///
+    /// Creates motion blur radiating from center.
+    fn apply_zoom_pause_effect(&mut self, _frame_counter: u64) {
+        const BLUR_STRENGTH: f32 = 0.4;
+        const RADIAL_SAMPLES: i32 = 4;
+
+        let center_x = (self.width as f32) / 2.0;
+        let center_y = (self.height as f32) / 2.0;
+
+        // Create a copy for sampling
+        let original_cells = self.cells.clone();
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = y * self.width + x;
+
+                // Calculate direction from center
+                let dx = x as f32 - center_x;
+                let dy = y as f32 - center_y;
+                let dist = (dx * dx + dy * dy).sqrt();
+
+                if dist < 1.0 {
+                    continue; // Skip center
+                }
+
+                // Normalize direction
+                let dir_x = dx / dist;
+                let dir_y = dy / dist;
+
+                // Sample along radial direction
+                let mut r_sum = 0.0f32;
+                let mut g_sum = 0.0f32;
+                let mut b_sum = 0.0f32;
+                let mut count = 0u32;
+
+                for i in 0..RADIAL_SAMPLES {
+                    let sample_dist = i as f32 * 0.5;
+                    let sx = (x as f32 + dir_x * sample_dist).clamp(0.0, (self.width - 1) as f32)
+                        as usize;
+                    let sy = (y as f32 + dir_y * sample_dist).clamp(0.0, (self.height - 1) as f32)
+                        as usize;
+                    let sidx = sy * self.width + sx;
+
+                    if let Some(c) = original_cells[sidx].fg_color_rgb {
+                        r_sum += c.r as f32;
+                        g_sum += c.g as f32;
+                        b_sum += c.b as f32;
+                        count += 1;
+                    }
+                }
+
+                if count > 0 && self.cells[idx].fg_color_rgb.is_some() {
+                    let r_avg = r_sum / count as f32;
+                    let g_avg = g_sum / count as f32;
+                    let b_avg = b_sum / count as f32;
+
+                    // Blend original with radial blur
+                    if let Some(c) = self.cells[idx].fg_color_rgb {
+                        self.cells[idx].fg_color_rgb = Some(RgbColor {
+                            r: (c.r as f32 * (1.0 - BLUR_STRENGTH) + r_avg * BLUR_STRENGTH) as u8,
+                            g: (c.g as f32 * (1.0 - BLUR_STRENGTH) + g_avg * BLUR_STRENGTH) as u8,
+                            b: (c.b as f32 * (1.0 - BLUR_STRENGTH) + b_avg * BLUR_STRENGTH) as u8,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Pulse/wave animation effect.
+    ///
+    /// Creates expanding circular waves that animate outward from center.
+    fn apply_pulse_pause_effect(&mut self, frame_counter: u64, draw_on_empty: bool) {
+        const WAVE_SPEED: f32 = 0.15;
+        const WAVE_COUNT: usize = 3;
+        const WAVE_WIDTH: f32 = 3.0;
+        const DIM: f32 = 0.75;
+
+        let center_x = self.width as f32 / 2.0;
+        let center_y = self.height as f32 / 2.0;
+        let max_dist = (center_x * center_x + center_y * center_y).sqrt();
+
+        // Draw wave rings on empty cells (only in debug draw mode)
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = y * self.width + x;
+                let cell = &self.cells[idx];
+
+                // Check if cell is empty
+                let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
+
+                let dx = x as f32 - center_x;
+                let dy = y as f32 - center_y;
+                let dist = (dx * dx + dy * dy).sqrt();
+
+                // Calculate wave intensity
+                let mut wave_intensity = 0.0f32;
+                for i in 0..WAVE_COUNT {
+                    let wave_offset = frame_counter as f32 * WAVE_SPEED
+                        + i as f32 * (max_dist / WAVE_COUNT as f32);
+                    let wave_pos = wave_offset % max_dist;
+                    let dist_from_wave = (dist - wave_pos).abs();
+                    if dist_from_wave < WAVE_WIDTH {
+                        let intensity = 1.0 - (dist_from_wave / WAVE_WIDTH);
+                        wave_intensity = wave_intensity.max(intensity);
+                    }
+                }
+
+                if draw_on_empty && is_empty && wave_intensity > 0.1 {
+                    // Draw wave ring on empty cell (debug mode only)
+                    let brightness = (100.0 + wave_intensity * 100.0) as u8;
+                    self.cells[idx].char = '·';
+                    self.cells[idx].fg_color_rgb = Some(RgbColor {
+                        r: brightness,
+                        g: brightness,
+                        b: (brightness as f32 * 1.2).min(255.0) as u8,
+                    });
+                } else if let Some(c) = cell.fg_color_rgb {
+                    // Pulse existing cells - always apply brightness modulation
+                    let pulse = 1.0 + wave_intensity * 0.3;
+                    self.cells[idx].fg_color_rgb = Some(RgbColor {
+                        r: ((c.r as f32 * pulse * DIM).min(255.0)) as u8,
+                        g: ((c.g as f32 * pulse * DIM).min(255.0)) as u8,
+                        b: ((c.b as f32 * pulse * DIM).min(255.0)) as u8,
+                    });
+                }
+            }
+        }
+    }
+
+    /// Falling snowflakes effect.
+    ///
+    /// Draws animated snowflakes on empty cells that slowly fall.
+    fn apply_snow_pause_effect(&mut self, frame_counter: u64) {
+        const SNOW_CHARS: [char; 4] = ['❄', '·', '∙', '•'];
+        const SNOW_COLOR: RgbColor = RgbColor {
+            r: 220,
+            g: 230,
+            b: 255,
+        };
+        const DIM: f32 = 0.80;
+        const FALL_SPEED: f32 = 0.3; // Rows per frame
+
+        // First, dim existing cells
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = y * self.width + x;
+                if let Some(c) = self.cells[idx].fg_color_rgb {
+                    self.cells[idx].fg_color_rgb = Some(RgbColor {
+                        r: (c.r as f32 * DIM) as u8,
+                        g: (c.g as f32 * DIM) as u8,
+                        b: (c.b as f32 * DIM) as u8,
+                    });
+                }
+            }
+        }
+
+        // Draw snowflakes on empty cells
+        // Use deterministic pseudo-random based on position and frame
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = y * self.width + x;
+                let cell = &self.cells[idx];
+
+                // Check if cell is empty
+                let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
+
+                if is_empty {
+                    // Deterministic "random" snow based on column and time
+                    let col_hash = (x as u64).wrapping_mul(2654435761u64);
+                    let snow_chance = ((col_hash ^ (frame_counter / 10)) % 100) as u8;
+
+                    if snow_chance < 5 {
+                        // This column has snow at this time
+                        let fall_offset =
+                            ((frame_counter as f32 * FALL_SPEED) as usize + x) % self.height;
+                        let snow_y = (self.height - 1) - ((y + fall_offset) % self.height);
+
+                        if y == snow_y {
+                            let char_idx = (col_hash % SNOW_CHARS.len() as u64) as usize;
+                            let brightness_var = ((col_hash % 40) as u8) + 180;
+                            self.cells[idx].char = SNOW_CHARS[char_idx];
+                            self.cells[idx].fg_color_rgb = Some(RgbColor {
+                                r: (SNOW_COLOR.r as f32 * brightness_var as f32 / 255.0) as u8,
+                                g: (SNOW_COLOR.g as f32 * brightness_var as f32 / 255.0) as u8,
+                                b: (SNOW_COLOR.b as f32 * brightness_var as f32 / 255.0) as u8,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Twinkling starfield effect.
+    ///
+    /// Draws twinkling stars on empty cells.
+    fn apply_starfield_pause_effect(&mut self, frame_counter: u64) {
+        const STAR_CHARS: [char; 3] = ['·', '•', '✦'];
+        const DIM: f32 = 0.75;
+
+        // Star colors (white, blue-white, yellow-white)
+        const STAR_COLORS: [RgbColor; 3] = [
+            RgbColor {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
+            RgbColor {
+                r: 200,
+                g: 220,
+                b: 255,
+            },
+            RgbColor {
+                r: 255,
+                g: 250,
+                b: 220,
+            },
+        ];
+
+        // First, dim existing cells
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = y * self.width + x;
+                if let Some(c) = self.cells[idx].fg_color_rgb {
+                    self.cells[idx].fg_color_rgb = Some(RgbColor {
+                        r: (c.r as f32 * DIM) as u8,
+                        g: (c.g as f32 * DIM) as u8,
+                        b: (c.b as f32 * DIM) as u8,
+                    });
+                }
+            }
+        }
+
+        // Draw stars on empty cells
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = y * self.width + x;
+                let cell = &self.cells[idx];
+
+                // Check if cell is empty
+                let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
+
+                if is_empty {
+                    // Deterministic star positions
+                    let pos_hash =
+                        ((x * 374761) ^ (y * 668265) ^ (frame_counter / 30) as usize) as u64;
+                    let star_density = 80; // 1 in 80 cells has a star
+
+                    if (pos_hash % star_density as u64) == 0 {
+                        let twinkle = ((pos_hash / star_density as u64) % 10) as u8;
+                        let brightness = if twinkle < 5 {
+                            150 + twinkle * 20
+                        } else {
+                            250 - (twinkle - 5) * 20
+                        };
+
+                        let char_idx = (pos_hash % STAR_CHARS.len() as u64) as usize;
+                        let color_idx = (pos_hash % STAR_COLORS.len() as u64) as usize;
+                        let color = STAR_COLORS[color_idx];
+
+                        self.cells[idx].char = STAR_CHARS[char_idx];
+                        self.cells[idx].fg_color_rgb = Some(RgbColor {
+                            r: (color.r as f32 * brightness as f32 / 255.0) as u8,
+                            g: (color.g as f32 * brightness as f32 / 255.0) as u8,
+                            b: (color.b as f32 * brightness as f32 / 255.0) as u8,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// TV static noise effect.
+    ///
+    /// Draws random noise on empty cells like TV static.
+    fn apply_noise_pause_effect(&mut self, frame_counter: u64) {
+        const NOISE_CHARS: [char; 5] = ['·', ':', '·', '∙', ' '];
+        const DIM: f32 = 0.70;
+
+        // First, dim existing cells
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = y * self.width + x;
+                if let Some(c) = self.cells[idx].fg_color_rgb {
+                    self.cells[idx].fg_color_rgb = Some(RgbColor {
+                        r: (c.r as f32 * DIM) as u8,
+                        g: (c.g as f32 * DIM) as u8,
+                        b: (c.b as f32 * DIM) as u8,
+                    });
+                }
+            }
+        }
+
+        // Draw noise on empty cells
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = y * self.width + x;
+                let cell = &self.cells[idx];
+
+                // Check if cell is empty
+                let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
+
+                if is_empty {
+                    // Deterministic noise based on position and frame
+                    let noise_hash =
+                        ((x * 73856093) ^ (y * 19349663) ^ (frame_counter as usize)) as u64;
+                    let noise_threshold = 60; // 60% of cells get noise
+
+                    if (noise_hash % 100) < noise_threshold {
+                        let char_idx = (noise_hash % NOISE_CHARS.len() as u64) as usize;
+                        let brightness = 100 + ((noise_hash / 100) % 100) as u8;
+
+                        self.cells[idx].char = NOISE_CHARS[char_idx];
+                        self.cells[idx].fg_color_rgb = Some(RgbColor {
+                            r: brightness,
+                            g: brightness,
+                            b: brightness,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Matrix-style falling characters effect.
+    ///
+    /// Draws falling characters on empty cells like the Matrix digital rain.
+    fn apply_matrix_pause_effect(&mut self, frame_counter: u64) {
+        const MATRIX_CHARS: [char; 10] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+        const MATRIX_COLOR: RgbColor = RgbColor {
+            r: 0,
+            g: 200,
+            b: 50,
+        };
+        const HEAD_COLOR: RgbColor = RgbColor {
+            r: 200,
+            g: 255,
+            b: 200,
+        };
+        const DIM: f32 = 0.65;
+        const FALL_SPEED: f32 = 0.4;
+
+        // First, dim existing cells with green tint
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let idx = y * self.width + x;
+                if let Some(c) = self.cells[idx].fg_color_rgb {
+                    self.cells[idx].fg_color_rgb = Some(RgbColor {
+                        r: (c.r as f32 * DIM * 0.5) as u8,
+                        g: (c.g as f32 * DIM) as u8,
+                        b: (c.b as f32 * DIM * 0.5) as u8,
+                    });
+                }
+            }
+        }
+
+        // Draw matrix rain on empty cells
+        for x in 0..self.width {
+            // Each column has its own stream
+            let col_hash = (x as u64).wrapping_mul(2654435761u64);
+            let stream_length = 5 + (col_hash % 15) as usize;
+            let stream_speed = ((col_hash % 3) as f32 + 1.0) * FALL_SPEED;
+            let stream_offset = (frame_counter as f32 * stream_speed) as usize;
+
+            // Determine if this column has an active stream
+            if (col_hash % 100) < 30 {
+                // 30% of columns have streams
+                let head_y = (stream_offset % (self.height + stream_length + 10)) as i32
+                    - stream_length as i32;
+
+                for y in 0..self.height {
+                    let idx = y * self.width + x;
+                    let cell = &self.cells[idx];
+
+                    // Check if cell is empty
+                    let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
+
+                    if is_empty {
+                        let dist_from_head = (y as i32 - head_y).abs();
+
+                        if dist_from_head >= 0 && dist_from_head < stream_length as i32 {
+                            let char_idx =
+                                ((col_hash + y as u64) % MATRIX_CHARS.len() as u64) as usize;
+                            let brightness = if dist_from_head == 0 {
+                                // Head is brighter
+                                255
+                            } else {
+                                // Tail fades
+                                150 - (dist_from_head * 10).min(100)
+                            };
+
+                            let color = if dist_from_head == 0 {
+                                HEAD_COLOR
+                            } else {
+                                MATRIX_COLOR
+                            };
+
+                            self.cells[idx].char = MATRIX_CHARS[char_idx];
+                            self.cells[idx].fg_color_rgb = Some(RgbColor {
+                                r: (color.r as f32 * brightness as f32 / 255.0) as u8,
+                                g: (color.g as f32 * brightness as f32 / 255.0) as u8,
+                                b: (color.b as f32 * brightness as f32 / 255.0) as u8,
+                            });
+                        }
+                    }
                 }
             }
         }

@@ -1042,6 +1042,7 @@ mod tests {
 
 #[test]
 fn test_options_overlay_renders_all_categories() {
+    use crate::cli::PauseStyle;
     use crate::render::palette::IntensityMapping;
     use crate::render::theme::GRUVBOX_DARK;
     use crate::simulation::config::{InitMode, Preset, SimConfig};
@@ -1057,6 +1058,9 @@ fn test_options_overlay_renders_all_categories() {
         0.0,
         IntensityMapping::linear(),
         &SimConfig::default(),
+        PauseStyle::Vignette,
+        false,
+        false,
     );
 
     let total = ControlsOverlay::total_categories();
@@ -1246,6 +1250,7 @@ fn test_options_overlay_renders_all_categories() {
 
 #[test]
 fn test_options_overlay_shows_live_parameter_values() {
+    use crate::cli::PauseStyle;
     use crate::render::palette::IntensityMapping;
     use crate::render::theme::GRUVBOX_DARK;
     use crate::simulation::config::{InitMode, Preset, SimConfig};
@@ -1261,6 +1266,9 @@ fn test_options_overlay_shows_live_parameter_values() {
         0.0,
         IntensityMapping::linear(),
         &SimConfig::default(),
+        PauseStyle::Vignette,
+        false,
+        false,
     );
 
     state.max_brightness = 100.0;
@@ -1332,6 +1340,7 @@ fn test_options_overlay_shows_live_parameter_values() {
 
 #[test]
 fn test_options_overlay_format() {
+    use crate::cli::PauseStyle;
     use crate::render::palette::IntensityMapping;
     use crate::render::theme::GRUVBOX_DARK;
     use crate::simulation::config::{InitMode, Preset, SimConfig};
@@ -1347,6 +1356,9 @@ fn test_options_overlay_format() {
         0.0,
         IntensityMapping::linear(),
         &SimConfig::default(),
+        PauseStyle::Vignette,
+        false,
+        false,
     );
 
     for idx in 0..ControlsOverlay::total_categories() {
