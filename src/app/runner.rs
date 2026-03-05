@@ -11,7 +11,7 @@ use crate::config_manager;
 use crate::export::GifExporter;
 use crate::export::WebmExporter;
 use crate::food_image::FOOD_IMAGE_PNG;
-use crate::overlay::OverlayType;
+use crate::overlay::{OverlayInputManager, OverlayInputResult, OverlayType};
 use crate::palette_manager;
 use crate::render::adaptive_brightness::AdaptiveBrightness;
 use crate::render::charset::Charset;
@@ -1310,13 +1310,23 @@ pub fn run_simulation(
                         runtime_state.warmup_counter = args.warmup_frames; // Skip to end
                     }
 
-                    // Close keyboard hints on any key press
-                    if runtime_state
-                        .overlay_state
-                        .is_open(OverlayType::KeyboardHints)
-                    {
-                        runtime_state.overlay_state.close();
-                        continue;
+                    // Centralized overlay input handling - SINGLE SOURCE OF TRUTH
+                    // This handles: toggle keys, Escape, and blocking other keys
+                    match OverlayInputManager::handle_input(
+                        &runtime_state.overlay_state,
+                        &key_event,
+                    ) {
+                        OverlayInputResult::CloseOverlay => {
+                            runtime_state.overlay_state.close();
+                            continue;
+                        }
+                        OverlayInputResult::Consumed => {
+                            // Key was blocked by open overlay, do nothing
+                            continue;
+                        }
+                        OverlayInputResult::NotHandled => {
+                            // No overlay open, continue to normal processing
+                        }
                     }
 
                     // Handle config save dialog input
@@ -1381,10 +1391,6 @@ pub fn run_simulation(
                                 runtime_state.overlay_state.close();
                                 continue;
                             }
-                            KeyCode::Esc => {
-                                runtime_state.overlay_state.close();
-                                continue;
-                            }
                             _ => continue,
                         }
                     }
@@ -1395,34 +1401,28 @@ pub fn run_simulation(
                         .is_open(OverlayType::PresetComparison)
                     {
                         use crossterm::event::KeyCode;
-                        match key_event.code {
-                            KeyCode::Enter => {
-                                // Apply the comparison preset
-                                let preset = runtime_state.comparison_preset;
-                                runtime_state.set_preset(preset);
-                                let mut new_config = SimConfig::from(preset);
-                                // Maintain existing environment/setup
-                                new_config.attractors = sim.config().attractors.clone();
-                                new_config.attractor_strength = sim.config().attractor_strength;
-                                new_config.food_image_path = sim.config().food_image_path.clone();
-                                new_config.food_image_invert = sim.config().food_image_invert;
-                                new_config.obstacles = sim.config().obstacles.clone();
-                                new_config.obstacle_masks = sim.config().obstacle_masks.clone();
-                                sim.update_config(new_config);
+                        if key_event.code == KeyCode::Enter {
+                            // Apply the comparison preset
+                            let preset = runtime_state.comparison_preset;
+                            runtime_state.set_preset(preset);
+                            let mut new_config = SimConfig::from(preset);
+                            // Maintain existing environment/setup
+                            new_config.attractors = sim.config().attractors.clone();
+                            new_config.attractor_strength = sim.config().attractor_strength;
+                            new_config.food_image_path = sim.config().food_image_path.clone();
+                            new_config.food_image_invert = sim.config().food_image_invert;
+                            new_config.obstacles = sim.config().obstacles.clone();
+                            new_config.obstacle_masks = sim.config().obstacle_masks.clone();
+                            sim.update_config(new_config);
 
-                                runtime_state.show_notification(format!(
-                                    "Applied preset: {}",
-                                    crate::terminal::control::preset_name(preset)
-                                ));
-                                runtime_state.overlay_state.close();
-                                continue;
-                            }
-                            KeyCode::Esc => {
-                                runtime_state.overlay_state.close();
-                                continue;
-                            }
-                            _ => {} // Allow other keys (like Shift+1-7 to switch preset being compared)
+                            runtime_state.show_notification(format!(
+                                "Applied preset: {}",
+                                crate::terminal::control::preset_name(preset)
+                            ));
+                            runtime_state.overlay_state.close();
+                            continue;
                         }
+                        // Note: Other keys are blocked by centralized handler
                     }
 
                     // Handle config browser input
@@ -1504,10 +1504,6 @@ pub fn run_simulation(
                                 }
                                 continue;
                             }
-                            KeyCode::Esc => {
-                                runtime_state.overlay_state.close();
-                                continue;
-                            }
                             _ => continue,
                         }
                     }
@@ -1537,18 +1533,20 @@ pub fn run_simulation(
                                         EditorMode::SaveDialog => {
                                             state.save_name_input.clear();
                                             state.mode = EditorMode::Editing;
+                                            continue;
                                         }
                                         EditorMode::LoadDialog => {
                                             state.mode = EditorMode::Editing;
+                                            continue;
                                         }
                                         EditorMode::Editing => {
                                             let original =
                                                 Palette::Custom(state.original_colors.to_vec());
                                             palette_to_apply = Some(original);
                                             should_close = true;
+                                            // Don't continue here - let the cleanup code run
                                         }
                                     }
-                                    continue;
                                 }
                                 KeyCode::Left => {
                                     state.select_prev_color();
@@ -1684,15 +1682,7 @@ pub fn run_simulation(
                                     }
                                     continue;
                                 }
-                                KeyCode::Char('\\')
-                                | KeyCode::Char('|')
-                                | KeyCode::Char('p')
-                                | KeyCode::Char('P')
-                                | KeyCode::Char('/') => {
-                                    // Transition to dashboard overlay
-                                    runtime_state.toggle_dashboard();
-                                    continue;
-                                }
+
                                 KeyCode::Char(c)
                                     if !key_event.modifiers.contains(KeyModifiers::CONTROL) =>
                                 {

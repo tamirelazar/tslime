@@ -4,16 +4,19 @@
 //! and input handling for terminal overlays.
 
 pub mod input;
+pub mod input_manager;
 pub mod layout;
 pub mod state;
 pub mod trait_impl;
 
 pub use input::{KeyHint, OverlayInputHandler};
+pub use input_manager::{OverlayInputManager, OverlayInputResult};
 pub use layout::{ContentId, OverlayLayout, RowType};
 pub use state::OverlayState;
 pub use trait_impl::Overlay;
 
 use crate::render::panel::RenderedOverlay;
+use crossterm::event::KeyModifiers;
 
 /// Types of overlays that can be displayed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -74,6 +77,58 @@ impl OverlayType {
             OverlayType::PresetComparison => 10,
             OverlayType::PaletteEditor => 10,
         }
+    }
+
+    /// Returns the keybind character(s) that toggle this overlay.
+    pub fn toggle_keys(self) -> &'static [char] {
+        match self {
+            OverlayType::Controls => &['h', 'H'],
+            OverlayType::KeyboardHints => &['?'],
+            OverlayType::Dashboard => &['\\', '|'],
+            OverlayType::PaletteEditor => &['p', 'P', '/'],
+            OverlayType::ConfigBrowser => &[], // Ctrl+L/B only
+            OverlayType::ConfigSave => &[],    // Ctrl+S only
+            _ => &[],
+        }
+    }
+
+    /// Returns true if this key should toggle this overlay.
+    pub fn is_toggle_key(self, key: char, modifiers: KeyModifiers) -> bool {
+        match self {
+            OverlayType::ConfigBrowser => {
+                modifiers.contains(KeyModifiers::CONTROL) && matches!(key, 'l' | 'L' | 'b' | 'B')
+            }
+            OverlayType::ConfigSave => {
+                modifiers.contains(KeyModifiers::CONTROL) && matches!(key, 's' | 'S')
+            }
+            _ => modifiers == KeyModifiers::NONE && self.toggle_keys().contains(&key),
+        }
+    }
+
+    /// Returns true if this overlay blocks all other keys when open.
+    pub fn blocks_other_keys(self) -> bool {
+        // All capturing overlays block other keys
+        self.captures_input()
+    }
+
+    /// Returns true if this overlay handles Escape key internally.
+    /// For these overlays, Escape processing is delegated to their specialized handler.
+    pub fn handles_escape_internally(self) -> bool {
+        matches!(self, OverlayType::PaletteEditor)
+    }
+
+    /// Returns the overlay type that would be toggled by this key, if any.
+    pub fn from_toggle_key(key: char, modifiers: KeyModifiers) -> Option<OverlayType> {
+        [
+            OverlayType::Controls,
+            OverlayType::KeyboardHints,
+            OverlayType::Dashboard,
+            OverlayType::PaletteEditor,
+            OverlayType::ConfigBrowser,
+            OverlayType::ConfigSave,
+        ]
+        .into_iter()
+        .find(|&overlay| overlay.is_toggle_key(key, modifiers))
     }
 }
 
