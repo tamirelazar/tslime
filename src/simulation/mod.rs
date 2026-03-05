@@ -136,6 +136,7 @@ pub struct Simulation {
     trail_age: Option<Vec<f32>>,
     prev_trail: Option<Vec<f32>>,
     trail_delta: Option<Vec<f32>>,
+    gradient_magnitude: Option<Vec<f32>>,
 }
 
 impl Simulation {
@@ -202,6 +203,52 @@ impl Simulation {
             trail_age: None,
             prev_trail: None,
             trail_delta: None,
+            gradient_magnitude: None,
+        }
+    }
+
+    /// Compute gradient magnitude for edge glow effect.
+    ///
+    /// Computes the magnitude of the gradient using central differences on the
+    /// simulation-resolution trail map. This is used for the edge glow visual effect.
+    fn compute_gradient_magnitude(&mut self) {
+        // Get dimensions first
+        let width = self.width();
+        let height = self.height();
+
+        // Get trail data (this may borrow self immutably)
+        let trail = self.trail_map_blended();
+
+        // Now compute gradient using the trail data
+        if let Some(ref mut gradient) = self.gradient_magnitude {
+            // Reset gradient buffer
+            gradient.fill(0.0);
+
+            // Compute gradient using central differences
+            for y in 1..height - 1 {
+                for x in 1..width - 1 {
+                    let idx = y * width + x;
+                    let up = (y - 1) * width + x;
+                    let dn = (y + 1) * width + x;
+                    let lt = y * width + (x - 1);
+                    let rt = y * width + (x + 1);
+
+                    // Central differences for gradient
+                    let gx = (trail[rt] - trail[lt]) * 0.5;
+                    let gy = (trail[dn] - trail[up]) * 0.5;
+
+                    // Gradient magnitude
+                    gradient[idx] = (gx * gx + gy * gy).sqrt();
+                }
+            }
+
+            // Normalize to [0, 1]
+            let max_val = gradient.iter().copied().fold(0.0f32, f32::max);
+            if max_val > 0.0 {
+                for g in gradient.iter_mut() {
+                    *g = (*g / max_val).min(1.0);
+                }
+            }
         }
     }
 
@@ -795,6 +842,11 @@ impl Simulation {
             }
         }
 
+        // Compute gradient magnitude for edge glow effect
+        if self.gradient_magnitude.is_some() {
+            self.compute_gradient_magnitude();
+        }
+
         self.config.remove_expired_mouse_attractors();
 
         if let Some(ref mut history) = self.trail_history {
@@ -865,6 +917,9 @@ impl Simulation {
         if let Some(ref mut buf) = self.prev_trail {
             buf.fill(0.0);
         }
+        if let Some(ref mut buf) = self.gradient_magnitude {
+            buf.fill(0.0);
+        }
 
         // Re-seed noise
         let noise_seed = (seed % u64::MAX) as u32;
@@ -914,6 +969,18 @@ impl Simulation {
     /// Get the trail delta buffer (absolute change normalized by peak).
     pub fn trail_delta(&self) -> Option<&[f32]> {
         self.trail_delta.as_deref()
+    }
+
+    /// Enable or disable gradient magnitude computation.
+    pub fn set_compute_gradient_magnitude(&mut self, enabled: bool) {
+        if enabled && self.gradient_magnitude.is_none() {
+            self.gradient_magnitude = Some(vec![0.0; self.width() * self.height()]);
+        }
+    }
+
+    /// Get the gradient magnitude buffer (normalized edge detection values).
+    pub fn gradient_magnitude(&self) -> Option<&[f32]> {
+        self.gradient_magnitude.as_deref()
     }
 
     /// Add a temporary attractor at the given coordinates.
@@ -1509,5 +1576,65 @@ mod tests {
             unique_positions.len() > 50,
             "Agents should be randomly distributed"
         );
+    }
+
+    #[test]
+    fn test_gradient_magnitude_computation() {
+        let config = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 100,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
+
+        // Gradient should be None initially
+        assert!(sim.gradient_magnitude().is_none());
+
+        // Enable gradient computation
+        sim.set_compute_gradient_magnitude(true);
+        assert!(sim.gradient_magnitude().is_some());
+
+        // Run a few updates to generate trails
+        for _ in 0..10 {
+            sim.update(1.0);
+        }
+
+        // Gradient should now have values
+        let gradient = sim.gradient_magnitude().unwrap();
+        assert_eq!(gradient.len(), 100 * 100);
+
+        // Gradient should be normalized to [0, 1]
+        let max_val = gradient.iter().copied().fold(0.0f32, f32::max);
+        assert!(
+            max_val <= 1.0,
+            "Gradient should be normalized, max was {}",
+            max_val
+        );
+
+        // With trails present, there should be some non-zero gradient values
+        let non_zero_count = gradient.iter().filter(|&&g| g > 0.001).count();
+        assert!(
+            non_zero_count > 0,
+            "There should be some non-zero gradient values with active trails"
+        );
+    }
+
+    #[test]
+    fn test_gradient_magnitude_disable() {
+        let config = SimConfig::default();
+        let mut sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
+
+        // Enable then disable
+        sim.set_compute_gradient_magnitude(true);
+        assert!(sim.gradient_magnitude().is_some());
+
+        // After reset, gradient should be cleared
+        sim.reset(123, InitMode::Random);
+        if let Some(gradient) = sim.gradient_magnitude() {
+            let sum: f32 = gradient.iter().sum();
+            assert_eq!(sum, 0.0, "Gradient should be cleared after reset");
+        }
     }
 }

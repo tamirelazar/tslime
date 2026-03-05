@@ -303,8 +303,8 @@ pub enum ControlAction {
     ToggleTrailAge,
     /// Toggle temporal delta brightness boost.
     ToggleTrailDelta,
-    /// Toggle Laplacian sharpening.
-    ToggleSharpen,
+    /// Toggle gradient magnitude edge glow.
+    ToggleGradientMagnitude,
     /// No action.
     None,
 }
@@ -566,8 +566,20 @@ pub struct RuntimeState {
     pub trail_age_enabled: bool,
     /// Temporal delta brightness boost enabled.
     pub trail_delta_enabled: bool,
-    /// Laplacian sharpening enabled.
-    pub sharpen_enabled: bool,
+    /// Gradient magnitude edge glow enabled.
+    pub gradient_magnitude_enabled: bool,
+    /// Gradient magnitude strength for edge glow.
+    pub gradient_strength: f32,
+    /// Trail age hue shift range in degrees.
+    pub trail_age_hue_range: f32,
+    /// Trail age blend factor between original and age-modified colors.
+    pub trail_age_blend: f32,
+    /// Trail age hue shift mode (bidirectional or alternating).
+    pub trail_age_mode: crate::config_defaults::TrailAgeMode,
+    /// Reverse trail age bidirectional hue shift.
+    pub trail_age_reverse: bool,
+    /// Trail delta brightness boost strength.
+    pub trail_delta_strength: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -688,7 +700,13 @@ impl RuntimeState {
             palette_editor_state: None,
             trail_age_enabled: false,
             trail_delta_enabled: false,
-            sharpen_enabled: false,
+            gradient_magnitude_enabled: false,
+            gradient_strength: 0.3,
+            trail_age_hue_range: 15.0,
+            trail_age_blend: 0.5,
+            trail_age_mode: crate::config_defaults::TrailAgeMode::Bidirectional,
+            trail_age_reverse: true,
+            trail_delta_strength: 0.5,
         }
     }
 

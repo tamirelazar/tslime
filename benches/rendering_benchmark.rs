@@ -35,6 +35,16 @@ pub enum Charset {
     Braille,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DitherMode {
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrailAgeMode {
+    Bidirectional,
+}
+
 const ORGANIC_RGB: [RgbColor; 11] = [
     RgbColor {
         r: 18,
@@ -349,8 +359,23 @@ fn bench_framebuffer_256color(c: &mut Criterion) {
                 black_box(false),
                 black_box(color_mode),
                 black_box(0.0),
+                black_box(DitherMode::None),
+                black_box(&mut None),
+                black_box(None),
                 black_box(false),
+                black_box(None),
+                black_box(None),
                 black_box(0.5),
+                black_box(None),
+                black_box(false),
+                black_box(false),
+                black_box(60.0),
+                black_box(1.0),
+                black_box(0.5),
+                black_box(false),
+                black_box(0.3),
+                black_box(TrailAgeMode::Bidirectional),
+                black_box(false),
             );
             black_box(buffer.build_frame_string(true));
         });
@@ -377,8 +402,23 @@ fn bench_framebuffer_truecolor(c: &mut Criterion) {
                 black_box(false),
                 black_box(color_mode),
                 black_box(0.0),
+                black_box(DitherMode::None),
+                black_box(&mut None),
+                black_box(None),
                 black_box(false),
+                black_box(None),
+                black_box(None),
                 black_box(0.5),
+                black_box(None),
+                black_box(false),
+                black_box(false),
+                black_box(60.0),
+                black_box(1.0),
+                black_box(0.5),
+                black_box(false),
+                black_box(0.3),
+                black_box(TrailAgeMode::Bidirectional),
+                black_box(false),
             );
             black_box(buffer.build_frame_string(true));
         });
@@ -405,8 +445,23 @@ fn bench_framebuffer_large_256color(c: &mut Criterion) {
                 black_box(false),
                 black_box(color_mode),
                 black_box(0.0),
+                black_box(DitherMode::None),
+                black_box(&mut None),
+                black_box(None),
                 black_box(false),
+                black_box(None),
+                black_box(None),
                 black_box(0.5),
+                black_box(None),
+                black_box(false),
+                black_box(false),
+                black_box(60.0),
+                black_box(1.0),
+                black_box(0.5),
+                black_box(false),
+                black_box(0.3),
+                black_box(TrailAgeMode::Bidirectional),
+                black_box(false),
             );
             black_box(buffer.build_frame_string(true));
         });
@@ -433,8 +488,23 @@ fn bench_framebuffer_large_truecolor(c: &mut Criterion) {
                 black_box(false),
                 black_box(color_mode),
                 black_box(0.0),
+                black_box(DitherMode::None),
+                black_box(&mut None),
+                black_box(None),
                 black_box(false),
+                black_box(None),
+                black_box(None),
                 black_box(0.5),
+                black_box(None),
+                black_box(false),
+                black_box(false),
+                black_box(60.0),
+                black_box(1.0),
+                black_box(0.5),
+                black_box(false),
+                black_box(0.3),
+                black_box(TrailAgeMode::Bidirectional),
+                black_box(false),
             );
             black_box(buffer.build_frame_string(true));
         });
@@ -489,8 +559,23 @@ fn bench_color_mode_comparison(c: &mut Criterion) {
                 black_box(false),
                 black_box(ColorMode::Bits256),
                 black_box(0.0),
+                black_box(DitherMode::None),
+                black_box(&mut None),
+                black_box(None),
                 black_box(false),
+                black_box(None),
+                black_box(None),
                 black_box(0.5),
+                black_box(None),
+                black_box(false),
+                black_box(false),
+                black_box(60.0),
+                black_box(1.0),
+                black_box(0.5),
+                black_box(false),
+                black_box(0.3),
+                black_box(TrailAgeMode::Bidirectional),
+                black_box(false),
             );
             black_box(buffer);
         });
@@ -509,8 +594,23 @@ fn bench_color_mode_comparison(c: &mut Criterion) {
                 black_box(false),
                 black_box(ColorMode::TrueColor),
                 black_box(0.0),
+                black_box(DitherMode::None),
+                black_box(&mut None),
+                black_box(None),
                 black_box(false),
+                black_box(None),
+                black_box(None),
                 black_box(0.5),
+                black_box(None),
+                black_box(false),
+                black_box(false),
+                black_box(60.0),
+                black_box(1.0),
+                black_box(0.5),
+                black_box(false),
+                black_box(0.3),
+                black_box(TrailAgeMode::Bidirectional),
+                black_box(false),
             );
             black_box(buffer);
         });

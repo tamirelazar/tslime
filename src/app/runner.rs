@@ -269,8 +269,10 @@ fn build_overlays(
             &runtime_state.panel_style,
             runtime_state.shift_held,
             runtime_state.trail_age_enabled,
+            runtime_state.trail_age_mode,
+            runtime_state.trail_age_reverse,
             runtime_state.trail_delta_enabled,
-            runtime_state.sharpen_enabled,
+            runtime_state.gradient_magnitude_enabled,
         ))
     } else {
         None
@@ -576,12 +578,24 @@ pub fn run_simulation(
     runtime_state.show_dashboard = args.stats;
     runtime_state.trail_age_enabled = args.trail_age;
     runtime_state.trail_delta_enabled = args.trail_delta;
-    runtime_state.sharpen_enabled = args.sharpen;
+    runtime_state.gradient_magnitude_enabled = args.gradient_magnitude;
+    runtime_state.gradient_strength = args.gradient_strength;
+    runtime_state.trail_age_hue_range = args.trail_age_hue_range;
+    runtime_state.trail_age_blend = args.trail_age_blend;
+    runtime_state.trail_age_mode = match args.trail_age_mode.as_str() {
+        "alternating" => crate::config_defaults::TrailAgeMode::Alternating,
+        _ => crate::config_defaults::TrailAgeMode::Bidirectional,
+    };
+    runtime_state.trail_age_reverse = args.trail_age_reverse;
+    runtime_state.trail_delta_strength = args.trail_delta_strength;
     if args.trail_age {
         sim.set_compute_trail_age(true);
     }
     if args.trail_delta {
         sim.set_compute_trail_delta(true);
+    }
+    if args.gradient_magnitude {
+        sim.set_compute_gradient_magnitude(true);
     }
     renderer.set_dither_mode(dither_mode);
     let mut palette_editor_state: Option<PaletteEditorState> = None;
@@ -744,40 +758,46 @@ pub fn run_simulation(
             term_height as usize,
         );
 
-        // Laplacian sharpening post-process
-        if runtime_state.sharpen_enabled {
-            crate::render::downsample::apply_laplacian_sharpening(
-                &mut downsampled,
-                crate::config_defaults::visual_fx::SHARPEN_STRENGTH,
-            );
-        }
-
-        // Compute auxiliary frame for trail age / temporal delta
-        let aux_frame =
-            if runtime_state.trail_age_enabled || runtime_state.trail_delta_enabled {
-                Some(crate::render::downsample::downsample_aux(
-                    if runtime_state.trail_age_enabled {
-                        sim.trail_age()
-                    } else {
-                        None
-                    },
-                    if runtime_state.trail_delta_enabled {
-                        sim.trail_delta()
-                    } else {
-                        None
-                    },
-                    sim.width(),
-                    sim.height(),
-                    term_width as usize,
-                    term_height as usize,
-                ))
-            } else {
-                None
-            };
+        // Compute auxiliary frame for trail age / temporal delta / gradient
+        let aux_frame = if runtime_state.trail_age_enabled
+            || runtime_state.trail_delta_enabled
+            || runtime_state.gradient_magnitude_enabled
+        {
+            Some(crate::render::downsample::downsample_aux(
+                if runtime_state.trail_age_enabled {
+                    sim.trail_age()
+                } else {
+                    None
+                },
+                if runtime_state.trail_delta_enabled {
+                    sim.trail_delta()
+                } else {
+                    None
+                },
+                if runtime_state.gradient_magnitude_enabled {
+                    sim.gradient_magnitude()
+                } else {
+                    None
+                },
+                sim.width(),
+                sim.height(),
+                term_width as usize,
+                term_height as usize,
+            ))
+        } else {
+            None
+        };
         renderer.set_visual_fx(
             aux_frame,
             runtime_state.trail_age_enabled,
             runtime_state.trail_delta_enabled,
+            runtime_state.trail_age_hue_range,
+            runtime_state.trail_age_blend,
+            runtime_state.trail_delta_strength,
+            runtime_state.gradient_magnitude_enabled,
+            runtime_state.gradient_strength,
+            runtime_state.trail_age_mode,
+            runtime_state.trail_age_reverse,
         );
 
         let current_config = args.to_sim_config();
@@ -928,8 +948,10 @@ pub fn run_simulation(
                     &runtime_state.panel_style,
                     runtime_state.shift_held,
                     runtime_state.trail_age_enabled,
+                    runtime_state.trail_age_mode,
+                    runtime_state.trail_age_reverse,
                     runtime_state.trail_delta_enabled,
-                    runtime_state.sharpen_enabled,
+                    runtime_state.gradient_magnitude_enabled,
                 ))
             } else {
                 None
@@ -2222,8 +2244,7 @@ pub fn run_simulation(
                             }
                         }
                         ControlAction::ToggleTrailAge => {
-                            runtime_state.trail_age_enabled =
-                                !runtime_state.trail_age_enabled;
+                            runtime_state.trail_age_enabled = !runtime_state.trail_age_enabled;
                             sim.set_compute_trail_age(runtime_state.trail_age_enabled);
                             runtime_state.show_notification(format!(
                                 "Trail Age: {}",
@@ -2235,11 +2256,8 @@ pub fn run_simulation(
                             ));
                         }
                         ControlAction::ToggleTrailDelta => {
-                            runtime_state.trail_delta_enabled =
-                                !runtime_state.trail_delta_enabled;
-                            sim.set_compute_trail_delta(
-                                runtime_state.trail_delta_enabled,
-                            );
+                            runtime_state.trail_delta_enabled = !runtime_state.trail_delta_enabled;
+                            sim.set_compute_trail_delta(runtime_state.trail_delta_enabled);
                             runtime_state.show_notification(format!(
                                 "Trail Delta: {}",
                                 if runtime_state.trail_delta_enabled {
@@ -2249,12 +2267,15 @@ pub fn run_simulation(
                                 }
                             ));
                         }
-                        ControlAction::ToggleSharpen => {
-                            runtime_state.sharpen_enabled =
-                                !runtime_state.sharpen_enabled;
+                        ControlAction::ToggleGradientMagnitude => {
+                            runtime_state.gradient_magnitude_enabled =
+                                !runtime_state.gradient_magnitude_enabled;
+                            sim.set_compute_gradient_magnitude(
+                                runtime_state.gradient_magnitude_enabled,
+                            );
                             runtime_state.show_notification(format!(
-                                "Sharpen: {}",
-                                if runtime_state.sharpen_enabled {
+                                "Edge Glow: {}",
+                                if runtime_state.gradient_magnitude_enabled {
                                     "On"
                                 } else {
                                     "Off"

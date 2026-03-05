@@ -262,7 +262,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('~') => ControlAction::CycleCharsetReverse,
         KeyCode::Char('\'') => ControlAction::ToggleTrailAge,
         KeyCode::Char('.') => ControlAction::ToggleTrailDelta,
-        KeyCode::Char('>') => ControlAction::ToggleSharpen,
+        KeyCode::Char('>') => ControlAction::ToggleGradientMagnitude,
         _ => ControlAction::None,
     }
 }

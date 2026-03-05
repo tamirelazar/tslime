@@ -476,6 +476,13 @@ pub fn print_mode(
         None,
         false,
         false,
+        60.0,
+        1.0,
+        0.5,
+        false,
+        0.3,
+        crate::config_defaults::TrailAgeMode::Bidirectional,
+        false,
     );
 
     // Apply grid rendering if enabled
@@ -616,6 +623,13 @@ pub fn capture_frames_mode(
             args.ascii_contrast,
             None,
             false,
+            false,
+            60.0,
+            1.0,
+            0.5,
+            false,
+            0.3,
+            crate::config_defaults::TrailAgeMode::Bidirectional,
             false,
         );
 
@@ -794,6 +808,13 @@ pub fn export_gif_mode(
             None,
             false,
             false,
+            60.0,
+            1.0,
+            0.5,
+            false,
+            0.3,
+            crate::config_defaults::TrailAgeMode::Bidirectional,
+            false,
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -906,6 +927,13 @@ pub fn export_webm_mode(
             args.ascii_contrast,
             None,
             false,
+            false,
+            60.0,
+            1.0,
+            0.5,
+            false,
+            0.3,
+            crate::config_defaults::TrailAgeMode::Bidirectional,
             false,
         );
 
