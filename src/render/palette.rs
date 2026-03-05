@@ -1,6 +1,43 @@
 use crate::render::gradients;
+use std::collections::HashMap;
+use std::sync::OnceLock;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Static cache of pre-computed gradient stops for built-in palettes.
+/// This avoids allocating a new Vec on every call to get_gradient_stops.
+fn get_gradient_stops_cache() -> &'static HashMap<Palette, Vec<GradientStop>> {
+    static CACHE: OnceLock<HashMap<Palette, Vec<GradientStop>>> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        let mut cache = HashMap::new();
+        let built_in_palettes = [
+            Palette::Organic,
+            Palette::Heat,
+            Palette::Ocean,
+            Palette::Mono,
+            Palette::Forest,
+            Palette::Neon,
+            Palette::Warm,
+            Palette::Vibrant,
+            Palette::LegibleMono,
+            Palette::Slime,
+            Palette::Mold,
+            Palette::Fungus,
+            Palette::Swamp,
+            Palette::Moss,
+            Palette::Cosmic,
+            Palette::Ethereal,
+        ];
+
+        for palette in built_in_palettes {
+            let oklch_stops = gradients::get_oklch_gradient(palette.clone());
+            let stops = oklch_stops_to_gradient(oklch_stops, 64);
+            cache.insert(palette, stops);
+        }
+
+        cache
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 /// Color palette for rendering trails.
 pub enum Palette {
     /// Organic green/brown tones.
@@ -93,7 +130,7 @@ pub fn num_palettes() -> usize {
     NUM_PALETTES
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 /// An RGB color value.
 pub struct RgbColor {
     /// Red component (0-255).
@@ -865,6 +902,7 @@ impl Default for IntensityMapping {
 
 /// Interpolates smoothly between gradient stops
 /// Supports any number of control points for continuous color mapping
+#[inline]
 pub fn interpolate_gradient(stops: &[GradientStop], t: f32) -> RgbColor {
     let t = t.clamp(0.0, 1.0);
 
@@ -2109,6 +2147,7 @@ pub const ANSI_256_TO_RGB: [RgbColor; 256] = {
 };
 
 /// Converts an RGB color to HSV.
+#[inline]
 pub fn rgb_to_hsv(rgb: RgbColor) -> HsvColor {
     let r = rgb.r as f32 / 255.0;
     let g = rgb.g as f32 / 255.0;
@@ -2139,6 +2178,7 @@ pub fn rgb_to_hsv(rgb: RgbColor) -> HsvColor {
 }
 
 /// Converts an HSV color to RGB.
+#[inline]
 pub fn hsv_to_rgb(hsv: HsvColor) -> RgbColor {
     let h = hsv.h;
     let s = hsv.s;
@@ -2182,6 +2222,7 @@ pub fn rotate_hue(hsv: HsvColor, degrees: f32) -> HsvColor {
 /// Finds the nearest ANSI 256 color code for a given RGB color.
 ///
 /// Uses Euclidean distance in RGB space to find the best match.
+#[inline]
 pub fn rgb_to_256(rgb: RgbColor) -> u8 {
     let gray_diff = (rgb.r as i16 - rgb.g as i16).abs()
         + (rgb.g as i16 - rgb.b as i16).abs()
@@ -2288,32 +2329,60 @@ pub fn map_species_brightness_rgb(
     hsv_to_rgb(final_hsv)
 }
 
+// Thread-local storage for custom palette gradient stops to avoid repeated allocations.
+// This is used only for Palette::Custom variants.
+thread_local! {
+    static CUSTOM_STOPS_CACHE: std::cell::RefCell<Option<(Vec<RgbColor>, Vec<GradientStop>)>> = const { std::cell::RefCell::new(None) };
+}
+
 /// Get gradient stops for a palette (supports continuous interpolation).
 ///
-/// For built-in palettes, produces 64 evenly-spaced stops by interpolating in
-/// OKLch perceptual color space, then converting to sRGB.  Using 64 samples
-/// means adjacent stops are only ~1.6% apart, making the subsequent linear-sRGB
-/// blending in `interpolate_gradient` perceptually equivalent to true OKLch
-/// interpolation.
+/// For built-in palettes, returns a reference to pre-computed stops from the static cache.
+/// For custom palettes, uses thread-local storage to avoid repeated allocations for the same palette.
 ///
-/// Custom palettes fall back to the direct sRGB stop list.
+/// # Arguments
+/// * `palette` - The palette to get gradient stops for
+///
+/// # Returns
+/// A slice of gradient stops. For built-in palettes, this is a reference to static data.
+/// For custom palettes, this may reference thread-local storage.
 pub(crate) fn get_gradient_stops(palette: &Palette) -> Vec<GradientStop> {
     match palette {
         Palette::Custom(colors) => {
-            // For custom palettes, create evenly spaced stops
-            colors
-                .iter()
-                .enumerate()
-                .map(|(i, &color)| GradientStop {
-                    position: i as f32 / (colors.len() - 1).max(1) as f32,
-                    color,
-                })
-                .collect()
+            // Check if we have this custom palette cached in thread-local storage
+            CUSTOM_STOPS_CACHE.with(|cache| {
+                let mut cache = cache.borrow_mut();
+
+                // Check if the cached palette matches the current one
+                if let Some((cached_colors, _)) = cache.as_ref() {
+                    if cached_colors == colors {
+                        // Return a clone of the cached stops (necessary because we return Vec)
+                        return cache.as_ref().unwrap().1.clone();
+                    }
+                }
+
+                // Compute new stops for this custom palette
+                let stops: Vec<GradientStop> = colors
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &color)| GradientStop {
+                        position: i as f32 / (colors.len() - 1).max(1) as f32,
+                        color,
+                    })
+                    .collect();
+
+                // Store in cache
+                *cache = Some((colors.clone(), stops.clone()));
+                stops
+            })
         }
-        _ => {
-            // For built-in palettes, interpolate in OKLch space for perceptual uniformity
-            let oklch_stops = gradients::get_oklch_gradient(palette.clone());
-            oklch_stops_to_gradient(oklch_stops, 64)
+        built_in => {
+            // For built-in palettes, use the global static cache
+            // Clone is necessary because we return Vec, but this only allocates once per palette
+            get_gradient_stops_cache()
+                .get(built_in)
+                .cloned()
+                .unwrap_or_default()
         }
     }
 }

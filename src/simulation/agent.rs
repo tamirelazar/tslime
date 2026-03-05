@@ -305,6 +305,7 @@ impl Agent {
     }
 }
 
+#[inline]
 fn sample_trail(trail: &[f32], width: usize, height: usize, x: f32, y: f32) -> f32 {
     let ix = x.floor() as i32;
     let iy = y.floor() as i32;

@@ -524,7 +524,7 @@ pub fn run_simulation(
 
     let color_mode = capabilities.auto_select_color_mode(args.color_mode().ok());
 
-    let config = args.to_sim_config();
+    let config = args.to_sim_config().unwrap();
     let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
 
     let init_mode = args
@@ -641,7 +641,7 @@ pub fn run_simulation(
         sim.update_config(new_config);
     }
 
-    // let config = args.to_sim_config(); // Already parsed above
+    // let config = args.to_sim_config().unwrap(); // Already parsed above
     if args.species_colors {
         let species_rgb_colors = extract_species_rgb_colors(&config);
         renderer.set_species_colors(true, species_rgb_colors);
@@ -687,6 +687,18 @@ pub fn run_simulation(
         Some(renderer)
     } else {
         None
+    };
+
+    // Pre-allocate frame buffers to avoid per-frame allocations
+    let mut downsampled_frame =
+        crate::render::downsample::DownsampledFrame::new(term_width as usize, term_height as usize);
+    let mut aux_frame = crate::render::downsample::AuxFrame {
+        width: term_width as usize,
+        height: term_height as usize,
+        cells: vec![
+            crate::render::downsample::AuxCell::default();
+            (term_width as usize) * (term_height as usize)
+        ],
     };
 
     loop {
@@ -770,20 +782,21 @@ pub fn run_simulation(
         }
 
         let blended_trail = sim.trail_map_blended();
-        let downsampled = downsample(
+        downsample(
             &blended_trail,
             sim.width(),
             sim.height(),
             term_width as usize,
             term_height as usize,
+            &mut downsampled_frame,
         );
 
         // Compute auxiliary frame for trail age / temporal delta / gradient
-        let aux_frame = if runtime_state.trail_age_enabled
+        let current_aux_frame = if runtime_state.trail_age_enabled
             || runtime_state.trail_delta_enabled
             || runtime_state.gradient_magnitude_enabled
         {
-            Some(crate::render::downsample::downsample_aux(
+            crate::render::downsample::downsample_aux(
                 if runtime_state.trail_age_enabled {
                     sim.trail_age()
                 } else {
@@ -803,12 +816,14 @@ pub fn run_simulation(
                 sim.height(),
                 term_width as usize,
                 term_height as usize,
-            ))
+                &mut aux_frame,
+            );
+            Some(&aux_frame)
         } else {
             None
         };
         renderer.set_visual_fx(
-            aux_frame,
+            current_aux_frame.cloned(),
             runtime_state.trail_age_enabled,
             runtime_state.trail_delta_enabled,
             runtime_state.trail_age_hue_range,
@@ -820,9 +835,9 @@ pub fn run_simulation(
             runtime_state.trail_age_reverse,
         );
 
-        let current_config = args.to_sim_config();
+        let current_config = args.to_sim_config().unwrap();
 
-        adaptive_brightness.update(downsampled.cells());
+        adaptive_brightness.update(downsampled_frame.cells());
         let mut max_brightness = if args.auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
@@ -1327,7 +1342,7 @@ pub fn run_simulation(
             )?;
         } else {
             renderer.render_with_overlay(
-                downsampled.cells(),
+                downsampled_frame.cells(),
                 max_brightness.max(1.0),
                 if runtime_state.is_paused {
                     Some(runtime_state.pause_frame_counter)
@@ -1963,7 +1978,7 @@ pub fn run_simulation(
                             use crate::export::png::save_frame_as_png;
 
                             match save_frame_as_png(
-                                downsampled.cells(),
+                                downsampled_frame.cells(),
                                 term_width as usize,
                                 term_height as usize,
                                 current_palette.clone(),
@@ -2401,7 +2416,7 @@ pub fn run_simulation(
                 )?;
             } else {
                 renderer.render_with_overlay(
-                    downsampled.cells(),
+                    downsampled_frame.cells(),
                     max_brightness.max(1.0),
                     if runtime_state.is_paused {
                         Some(runtime_state.pause_frame_counter)

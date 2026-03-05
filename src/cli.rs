@@ -9,6 +9,7 @@ use crate::config_defaults::{
     intensity, intensity_mapping, palette, population, simulation, terminal, time,
     time as time_consts, trail as trail_consts, warmup,
 };
+use crate::error::ConfigError;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
@@ -1672,11 +1673,9 @@ impl Args {
     /// Converts CLI arguments to simulation configuration.
     ///
     /// Uses ConfigBuilder for consistent construction and validation.
-    /// Panics if validation fails - use `validate()` before calling this method.
-    pub fn to_sim_config(&self) -> SimConfig {
-        ConfigBuilder::from_args(self)
-            .build()
-            .expect("ConfigBuilder validation should have been called before to_sim_config")
+    /// Returns an error if validation fails.
+    pub fn to_sim_config(&self) -> Result<SimConfig, ConfigError> {
+        ConfigBuilder::from_args(self).build()
     }
 
     /// Validates CLI arguments using ConfigBuilder.
@@ -2283,28 +2282,28 @@ mod tests {
             terrain: "smooth".to_string(),
             ..Default::default()
         };
-        let config = args.to_sim_config();
+        let config = args.to_sim_config().unwrap();
         assert_eq!(config.terrain, TerrainType::Smooth);
 
         let args = Args {
             terrain: "turbulent".to_string(),
             ..Default::default()
         };
-        let config = args.to_sim_config();
+        let config = args.to_sim_config().unwrap();
         assert_eq!(config.terrain, TerrainType::Turbulent);
 
         let args = Args {
             terrain: "mixed".to_string(),
             ..Default::default()
         };
-        let config = args.to_sim_config();
+        let config = args.to_sim_config().unwrap();
         assert_eq!(config.terrain, TerrainType::Mixed);
 
         let args = Args {
             terrain: "none".to_string(),
             ..Default::default()
         };
-        let config = args.to_sim_config();
+        let config = args.to_sim_config().unwrap();
         assert_eq!(config.terrain, TerrainType::None);
     }
 
@@ -2314,7 +2313,7 @@ mod tests {
             terrain_strength: 2.0,
             ..Default::default()
         };
-        let config = args.to_sim_config();
+        let config = args.to_sim_config().unwrap();
         assert_eq!(config.terrain_strength, 2.0);
     }
 
@@ -2324,7 +2323,7 @@ mod tests {
             wind: Some(WindArg { dx: 0.5, dy: 0.0 }),
             ..Default::default()
         };
-        let config = args.to_sim_config();
+        let config = args.to_sim_config().unwrap();
         assert!(config.wind.is_some());
         assert_eq!(config.wind.unwrap().dx, 0.5);
         assert_eq!(config.wind.unwrap().dy, 0.0);

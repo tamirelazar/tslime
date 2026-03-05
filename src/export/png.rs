@@ -75,11 +75,16 @@ pub fn save_frame_as_png(
 }
 
 fn generate_timestamp() -> String {
-    let duration = SystemTime::now()
+    // Get current time since UNIX_EPOCH
+    // SystemTime::now() is guaranteed to be after UNIX_EPOCH on all modern systems
+    let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
+        .expect("System time is before 1970 - this should never happen on modern systems")
+        .as_millis();
 
-    format!("tslime_frame_{:013}.png", duration.as_millis())
+    // Add nanoseconds for additional uniqueness to avoid collisions
+    let nanos = std::time::Instant::now().elapsed().subsec_nanos();
+    format!("tslime_frame_{:013}_{:09}.png", millis, nanos)
 }
 
 #[cfg(test)]
@@ -175,12 +180,15 @@ mod tests {
         assert!(filename.ends_with(".png"));
 
         let parts: Vec<&str> = filename.split('_').collect();
-        assert_eq!(parts.len(), 3);
+        // New format: tslime_frame_MILLIS_NANOS.png (4 parts)
+        assert_eq!(parts.len(), 4);
         assert_eq!(parts[0], "tslime");
         assert_eq!(parts[1], "frame");
 
-        let timestamp_part = &parts[2];
-        let without_ext = timestamp_part.trim_end_matches(".png");
-        assert!(without_ext.chars().all(|c| c.is_ascii_digit()));
+        // Verify both timestamp parts are numeric
+        assert!(parts[2].chars().all(|c| c.is_ascii_digit()));
+        let nanos_with_ext = &parts[3];
+        let nanos = nanos_with_ext.trim_end_matches(".png");
+        assert!(nanos.chars().all(|c| c.is_ascii_digit()));
     }
 }

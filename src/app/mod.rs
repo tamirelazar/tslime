@@ -21,7 +21,7 @@ use crate::palette_manager;
 use crate::render::adaptive_brightness::AdaptiveBrightness;
 use crate::render::charset::Charset;
 use crate::render::dither::DitherMode;
-use crate::render::downsample::downsample;
+use crate::render::downsample::{downsample, DownsampledFrame};
 use crate::render::grid::{GridRenderer, GridStyle};
 use crate::render::options_overlay::ControlsOverlay;
 use crate::render::overlay::{
@@ -357,7 +357,7 @@ pub fn run() -> io::Result<()> {
     args.validate()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
-    let config = args.to_sim_config();
+    let config = args.to_sim_config().unwrap();
     let palette = args
         .palette()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
@@ -424,15 +424,17 @@ pub fn print_mode(
     let (term_width, term_height) = get_terminal_size();
 
     let blended_trail = sim.trail_map_blended();
-    let downsampled = downsample(
+    let mut downsampled = DownsampledFrame::new(term_width, term_height);
+    downsample(
         &blended_trail,
         sim.width(),
         sim.height(),
         term_width,
         term_height,
+        &mut downsampled,
     );
 
-    let config = args.to_sim_config();
+    let config = args.to_sim_config().unwrap();
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
     let mut adaptive_brightness =
@@ -567,7 +569,7 @@ pub fn capture_frames_mode(
         args.frame_count, args.frame_dir
     );
 
-    let config = args.to_sim_config();
+    let config = args.to_sim_config().unwrap();
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
     let mut adaptive_brightness =
@@ -579,12 +581,14 @@ pub fn capture_frames_mode(
         }
 
         let blended_trail = sim.trail_map_blended();
-        let downsampled = downsample(
+        let mut downsampled = DownsampledFrame::new(term_width, term_height);
+        downsample(
             &blended_trail,
             sim.width(),
             sim.height(),
             term_width,
             term_height,
+            &mut downsampled,
         );
 
         adaptive_brightness.update(downsampled.cells());
@@ -744,7 +748,7 @@ pub fn export_gif_mode(
         output_path, width, height, args.export_frames, args.export_fps
     );
 
-    let config = args.to_sim_config();
+    let config = args.to_sim_config().unwrap();
     let charset = Charset::Ascii;
 
     let mut gif_exporter = GifExporter::new(width, height, output_path, args.export_fps)
@@ -754,6 +758,7 @@ pub fn export_gif_mode(
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
     let frame_skip = args.frame_skip.max(1);
+    let mut downsampled_frame = DownsampledFrame::new(width, height);
 
     for frame_idx in 0..args.export_frames {
         for _ in 0..frame_skip {
@@ -763,15 +768,16 @@ pub fn export_gif_mode(
         let blended_trail = sim.trail_map_blended();
         let term_width = width;
         let term_height = height;
-        let downsampled = downsample(
+        downsample(
             &blended_trail,
             sim.width(),
             sim.height(),
             term_width,
             term_height,
+            &mut downsampled_frame,
         );
 
-        adaptive_brightness.update(downsampled.cells());
+        adaptive_brightness.update(downsampled_frame.cells());
         let max_brightness = if args.auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
@@ -788,7 +794,7 @@ pub fn export_gif_mode(
         let intensity_mapping = args.intensity_mapping().ok();
 
         let buffer = FrameBuffer::from_downsampled(
-            downsampled.cells(),
+            downsampled_frame.cells(),
             term_width,
             term_height,
             max_brightness,
@@ -865,7 +871,7 @@ pub fn export_webm_mode(
     );
     eprintln!("Note: Requires FFmpeg to be installed with libvpx-vp9 encoder");
 
-    let config = args.to_sim_config();
+    let config = args.to_sim_config().unwrap();
 
     let mut webm_exporter = WebmExporter::new(width, height, output_path, args.export_fps)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
@@ -874,6 +880,7 @@ pub fn export_webm_mode(
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
     let frame_skip = args.frame_skip.max(1);
+    let mut downsampled_frame = DownsampledFrame::new(width, height);
 
     for frame_idx in 0..args.export_frames {
         for _ in 0..frame_skip {
@@ -883,15 +890,16 @@ pub fn export_webm_mode(
         let blended_trail = sim.trail_map_blended();
         let term_width = width;
         let term_height = height;
-        let downsampled = downsample(
+        downsample(
             &blended_trail,
             sim.width(),
             sim.height(),
             term_width,
             term_height,
+            &mut downsampled_frame,
         );
 
-        adaptive_brightness.update(downsampled.cells());
+        adaptive_brightness.update(downsampled_frame.cells());
         let max_brightness = if args.auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
@@ -908,7 +916,7 @@ pub fn export_webm_mode(
         let intensity_mapping = args.intensity_mapping().ok();
 
         let buffer = FrameBuffer::from_downsampled(
-            downsampled.cells(),
+            downsampled_frame.cells(),
             term_width,
             term_height,
             max_brightness,

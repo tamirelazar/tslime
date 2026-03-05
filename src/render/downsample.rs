@@ -4,6 +4,13 @@ pub struct DownsampledFrame {
     width: usize,
     height: usize,
     cells: Vec<Cell>,
+    /// Pre-allocated scratch buffers for Laplacian sharpening to avoid allocations
+    scratch_top: Vec<f32>,
+    scratch_bottom: Vec<f32>,
+    scratch_top_left: Vec<f32>,
+    scratch_top_right: Vec<f32>,
+    scratch_bottom_left: Vec<f32>,
+    scratch_bottom_right: Vec<f32>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -25,8 +32,9 @@ pub struct Cell {
 }
 
 impl DownsampledFrame {
-    /// Creates a new, empty downsampled frame.
+    /// Creates a new, empty downsampled frame with pre-allocated scratch buffers.
     pub fn new(width: usize, height: usize) -> Self {
+        let cell_count = width * height;
         Self {
             width,
             height,
@@ -39,8 +47,15 @@ impl DownsampledFrame {
                     bottom_left: 0.0,
                     bottom_right: 0.0,
                 };
-                width * height
+                cell_count
             ],
+            // Pre-allocate scratch buffers for sharpening to avoid per-frame allocations
+            scratch_top: vec![0.0; cell_count],
+            scratch_bottom: vec![0.0; cell_count],
+            scratch_top_left: vec![0.0; cell_count],
+            scratch_top_right: vec![0.0; cell_count],
+            scratch_bottom_left: vec![0.0; cell_count],
+            scratch_bottom_right: vec![0.0; cell_count],
         }
     }
 
@@ -83,15 +98,22 @@ impl DownsampledFrame {
 ///
 /// Aggregates grid cells into terminal character cells, computing average brightness
 /// for sub-regions (top/bottom, quadrants) to support high-res rendering modes.
+///
+/// # Arguments
+/// * `trail_map` - The high-resolution trail map data
+/// * `sim_width` - Width of the simulation grid
+/// * `sim_height` - Height of the simulation grid
+/// * `term_width` - Target terminal width in columns
+/// * `term_height` - Target terminal height in rows
+/// * `frame` - Pre-allocated frame buffer to write into (must match term dimensions)
 pub fn downsample(
     trail_map: &[f32],
     sim_width: usize,
     sim_height: usize,
     term_width: usize,
     term_height: usize,
-) -> DownsampledFrame {
-    let mut frame = DownsampledFrame::new(term_width, term_height);
-
+    frame: &mut DownsampledFrame,
+) {
     let x_scale = sim_width as f32 / term_width as f32;
     let y_scale = sim_height as f32 / term_height as f32;
 
@@ -169,21 +191,28 @@ pub fn downsample(
         }
     }
 
-    frame
+    // frame is modified in place, no return needed
 }
 
 /// Downsamples multiple trail maps, aggregating brightness across species.
 ///
 /// Similar to `downsample`, but sums contributions from multiple species layers.
+///
+/// # Arguments
+/// * `trail_maps` - Slice of (trail_map, species_index) tuples
+/// * `sim_width` - Width of the simulation grid
+/// * `sim_height` - Height of the simulation grid
+/// * `term_width` - Target terminal width in columns
+/// * `term_height` - Target terminal height in rows
+/// * `frame` - Pre-allocated frame buffer to write into (must match term dimensions)
 pub fn downsample_multi_species(
     trail_maps: &[(&[f32], usize)],
     sim_width: usize,
     sim_height: usize,
     term_width: usize,
     term_height: usize,
-) -> DownsampledFrame {
-    let mut frame = DownsampledFrame::new(term_width, term_height);
-
+    frame: &mut DownsampledFrame,
+) {
     let x_scale = sim_width as f32 / term_width as f32;
     let y_scale = sim_height as f32 / term_height as f32;
 
@@ -274,10 +303,10 @@ pub fn downsample_multi_species(
             };
         }
     }
-
-    frame
+    // frame is modified in place, no return needed
 }
 
+#[inline]
 fn compute_average(
     data: &[f32],
     data_width: usize,
@@ -321,6 +350,7 @@ pub struct AuxCell {
 }
 
 /// Auxiliary frame holding per-cell age and delta at terminal resolution.
+#[derive(Clone)]
 pub struct AuxFrame {
     /// Width of the frame in terminal columns.
     pub width: usize,
@@ -330,10 +360,33 @@ pub struct AuxFrame {
     pub cells: Vec<AuxCell>,
 }
 
+impl AuxFrame {
+    /// Resize the frame to new dimensions, reusing existing allocation if possible.
+    pub fn resize(&mut self, width: usize, height: usize) {
+        let new_len = width * height;
+        if self.cells.len() != new_len {
+            self.cells.resize(new_len, AuxCell::default());
+        }
+        self.width = width;
+        self.height = height;
+    }
+}
+
 /// Downsamples optional age, delta, and gradient buffers from sim resolution to terminal resolution.
 ///
 /// Uses the same average-pooling grid mapping as `downsample()`.
 /// Age values are divided by `AGE_MAX` and clamped to [0, 1].
+///
+/// # Arguments
+/// * `age_buf` - Optional trail age buffer
+/// * `delta_buf` - Optional trail delta buffer
+/// * `gradient_buf` - Optional gradient magnitude buffer
+/// * `sim_width` - Width of the simulation grid
+/// * `sim_height` - Height of the simulation grid
+/// * `term_width` - Target terminal width in columns
+/// * `term_height` - Target terminal height in rows
+/// * `frame` - Pre-allocated aux frame buffer to write into (must match term dimensions)
+#[allow(clippy::too_many_arguments)]
 pub fn downsample_aux(
     age_buf: Option<&[f32]>,
     delta_buf: Option<&[f32]>,
@@ -342,10 +395,14 @@ pub fn downsample_aux(
     sim_height: usize,
     term_width: usize,
     term_height: usize,
-) -> AuxFrame {
+    frame: &mut AuxFrame,
+) {
     use crate::config_defaults::visual_fx::AGE_MAX_SECONDS;
 
-    let mut cells = vec![AuxCell::default(); term_width * term_height];
+    // Ensure frame has correct dimensions
+    if frame.width != term_width || frame.height != term_height {
+        frame.resize(term_width, term_height);
+    }
 
     let x_scale = sim_width as f32 / term_width as f32;
     let y_scale = sim_height as f32 / term_height as f32;
@@ -399,25 +456,22 @@ pub fn downsample_aux(
                 0.0
             };
 
-            cells[cy * term_width + cx] = AuxCell {
+            frame.cells[cy * term_width + cx] = AuxCell {
                 age,
                 delta,
                 gradient,
             };
         }
     }
-
-    AuxFrame {
-        width: term_width,
-        height: term_height,
-        cells,
-    }
+    // frame is modified in place, no return needed
 }
 
 /// Applies Laplacian sharpening to a downsampled frame.
 ///
 /// For each interior cell, computes `L = center - avg(4 neighbors)` and
 /// adds `strength * L` to sharpen vein edges. Boundary cells are unchanged.
+///
+/// Uses pre-allocated scratch buffers to avoid memory allocation.
 pub fn apply_laplacian_sharpening(frame: &mut DownsampledFrame, strength: f32) {
     let w = frame.width;
     let h = frame.height;
@@ -425,13 +479,23 @@ pub fn apply_laplacian_sharpening(frame: &mut DownsampledFrame, strength: f32) {
         return;
     }
 
-    // Clone values into scratch buffers
-    let top_orig: Vec<f32> = frame.cells.iter().map(|c| c.top).collect();
-    let bot_orig: Vec<f32> = frame.cells.iter().map(|c| c.bottom).collect();
-    let tl_orig: Vec<f32> = frame.cells.iter().map(|c| c.top_left).collect();
-    let tr_orig: Vec<f32> = frame.cells.iter().map(|c| c.top_right).collect();
-    let bl_orig: Vec<f32> = frame.cells.iter().map(|c| c.bottom_left).collect();
-    let br_orig: Vec<f32> = frame.cells.iter().map(|c| c.bottom_right).collect();
+    // Copy values into pre-allocated scratch buffers
+    for (i, cell) in frame.cells.iter().enumerate() {
+        frame.scratch_top[i] = cell.top;
+        frame.scratch_bottom[i] = cell.bottom;
+        frame.scratch_top_left[i] = cell.top_left;
+        frame.scratch_top_right[i] = cell.top_right;
+        frame.scratch_bottom_left[i] = cell.bottom_left;
+        frame.scratch_bottom_right[i] = cell.bottom_right;
+    }
+
+    // Use references to scratch buffers for clarity
+    let top_orig = &frame.scratch_top[..];
+    let bot_orig = &frame.scratch_bottom[..];
+    let tl_orig = &frame.scratch_top_left[..];
+    let tr_orig = &frame.scratch_top_right[..];
+    let bl_orig = &frame.scratch_bottom_left[..];
+    let br_orig = &frame.scratch_bottom_right[..];
 
     for y in 1..h - 1 {
         for x in 1..w - 1 {
@@ -572,7 +636,8 @@ mod tests {
     #[test]
     fn test_downsample_identity() {
         let trail_map = vec![1.0; 10000];
-        let frame = downsample(&trail_map, 100, 100, 100, 50);
+        let mut frame = DownsampledFrame::new(100, 50);
+        downsample(&trail_map, 100, 100, 100, 50, &mut frame);
 
         assert_eq!(frame.width(), 100);
         assert_eq!(frame.height(), 50);
@@ -589,7 +654,8 @@ mod tests {
             1.0, 1.0, 2.0, 2.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 3.0, 3.0, 4.0, 4.0,
         ];
 
-        let frame = downsample(&trail_map, 4, 4, 2, 2);
+        let mut frame = DownsampledFrame::new(2, 2);
+        downsample(&trail_map, 4, 4, 2, 2, &mut frame);
 
         assert_eq!(frame.width(), 2);
         assert_eq!(frame.height(), 2);
@@ -615,7 +681,8 @@ mod tests {
             }
         }
 
-        let frame = downsample(&modified, 100, 100, 100, 50);
+        let mut frame = DownsampledFrame::new(100, 50);
+        downsample(&modified, 100, 100, 100, 50, &mut frame);
 
         for cy in 0..25 {
             for cx in 0..100 {
@@ -637,7 +704,8 @@ mod tests {
     #[test]
     fn test_downsample_empty() {
         let trail_map = vec![0.0; 160000];
-        let frame = downsample(&trail_map, 400, 400, 80, 24);
+        let mut frame = DownsampledFrame::new(80, 24);
+        downsample(&trail_map, 400, 400, 80, 24, &mut frame);
 
         for cell in frame.cells() {
             assert_eq!(cell.top, 0.0);
@@ -677,7 +745,8 @@ mod tests {
     fn test_downsample_quadrant_values() {
         let mut trail_map = vec![0.0; 16];
         trail_map[0] = 1.0; // Top-left of the first cell
-        let frame = downsample(&trail_map, 4, 4, 1, 1);
+        let mut frame = DownsampledFrame::new(1, 1);
+        downsample(&trail_map, 4, 4, 1, 1, &mut frame);
         let cell = frame.get(0, 0);
         assert!(cell.top_left > 0.0);
         assert_eq!(cell.bottom_right, 0.0);
@@ -692,7 +761,8 @@ mod tests {
         for &(sim_w, sim_h) in &sim_sizes {
             for &(term_w, term_h) in &term_sizes {
                 let trail_map = vec![0.0; sim_w * sim_h];
-                let frame = downsample(&trail_map, sim_w, sim_h, term_w, term_h);
+                let mut frame = DownsampledFrame::new(term_w, term_h);
+                downsample(&trail_map, sim_w, sim_h, term_w, term_h, &mut frame);
 
                 // Check each cell's quadrant values are computed (not just zero)
                 // The actual check for zero-width quadrants requires inspecting the internal
@@ -771,7 +841,15 @@ mod tests {
         let term_width = 80;
         let term_height = 24;
         let trail_map = vec![1.0; sim_width * sim_height];
-        let frame = downsample(&trail_map, sim_width, sim_height, term_width, term_height);
+        let mut frame = DownsampledFrame::new(term_width, term_height);
+        downsample(
+            &trail_map,
+            sim_width,
+            sim_height,
+            term_width,
+            term_height,
+            &mut frame,
+        );
 
         let mut zero_brightness_quadrant = false;
         for cy in 0..term_height {
@@ -830,7 +908,15 @@ mod tests {
                 *pixel = 1.0;
             }
 
-            let frame = downsample(&trail_map, sim_width, sim_height, *term_width, *term_height);
+            let mut frame = DownsampledFrame::new(*term_width, *term_height);
+            downsample(
+                &trail_map,
+                sim_width,
+                sim_height,
+                *term_width,
+                *term_height,
+                &mut frame,
+            );
 
             // Check each cell for low brightness (should not happen with uniform 1.0)
 
