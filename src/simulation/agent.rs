@@ -58,6 +58,7 @@ impl NoiseWrapper {
     }
 
     /// Sample noise at the given 2D coordinates.
+    #[inline]
     pub fn get(&self, x: f64, y: f64) -> f64 {
         self.perlin.get([x, y])
     }
@@ -100,6 +101,7 @@ impl Agent {
     /// Sense the pheromone trail at left, center, and right sensors.
     ///
     /// Returns a tuple of (left, center, right) sensed values.
+    #[inline]
     pub fn sense(
         &self,
         trail: &[f32],
@@ -285,9 +287,10 @@ impl Agent {
         self.y += self.heading.sin() * step_size;
 
         for (i, obstacle) in obstacles.iter().enumerate() {
-            let mask = obstacle_masks.get(i).cloned().flatten();
-            if obstacle.contains(self.x, self.y, mask.as_ref()) {
-                self.heading = obstacle.bounce(self.x, self.y, self.heading, mask.as_ref());
+            // Use reference instead of cloning to avoid allocation in hot path
+            let mask_ref = obstacle_masks.get(i).and_then(|m| m.as_ref());
+            if obstacle.contains(self.x, self.y, mask_ref) {
+                self.heading = obstacle.bounce(self.x, self.y, self.heading, mask_ref);
                 self.x += self.heading.cos() * step_size;
                 self.y += self.heading.sin() * step_size;
             }
@@ -333,6 +336,10 @@ impl Agent {
 /// Returns 0.0 if out of bounds.
 #[inline]
 fn sample_trail(trail: &[f32], width: usize, height: usize, x: f32, y: f32) -> f32 {
+    if !x.is_finite() || !y.is_finite() {
+        return 0.0;
+    }
+
     let ix = x.floor() as i32;
     let iy = y.floor() as i32;
 

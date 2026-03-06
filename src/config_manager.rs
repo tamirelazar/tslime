@@ -1,6 +1,6 @@
 use crate::cli::Palette;
 use crate::render::charset::Charset;
-use crate::render::palette::RgbColor;
+use crate::render::palette::{IntensityMapping, RgbColor};
 use crate::simulation::config::{DiffusionKernel, InitMode, SimConfig, SpeciesConfig};
 use crate::terminal::control::RuntimeState;
 use serde::{Deserialize, Serialize};
@@ -9,6 +9,39 @@ use std::path::PathBuf;
 
 const CONFIG_DIR: &str = ".config/tslime";
 const CONFIG_FILE: &str = "presets.toml";
+
+/// Available intensity mapping presets (mirrors RuntimeState::INTENSITY_MAPPINGS)
+#[allow(clippy::type_complexity)]
+const INTENSITY_MAPPINGS: &[(&str, fn() -> IntensityMapping)] = &[
+    ("Linear", || IntensityMapping::linear()),
+    ("Logarithmic", || IntensityMapping::logarithmic(10.0)),
+    ("Exponential", || IntensityMapping::exponential(10.0)),
+    ("Square Root", || {
+        IntensityMapping::new(vec![crate::render::palette::MappingSegment {
+            start: 0.0,
+            end: 1.0,
+            function: crate::render::palette::MappingFunction::SquareRoot,
+        }])
+        .unwrap()
+    }),
+    ("Smoothstep", || IntensityMapping::smoothstep()),
+    ("Split (Lin/Log)", || {
+        IntensityMapping::linear_log_split(10.0)
+    }),
+    ("Quantize 6", || IntensityMapping::quantize(6)),
+    ("Perlin", || IntensityMapping::perlin(0.15, 4.0, 42)),
+];
+
+/// Finds the index of a given intensity mapping by comparing with presets.
+/// Returns 0 if no match found (falls back to Linear).
+fn find_intensity_mapping_index(mapping: &IntensityMapping) -> usize {
+    for (i, (_, factory)) in INTENSITY_MAPPINGS.iter().enumerate() {
+        if &factory() == mapping {
+            return i;
+        }
+    }
+    0
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Represents a saved simulation configuration.
@@ -105,29 +138,30 @@ impl SavedConfig {
             DiffusionKernel::Gaussian => "gaussian",
         };
 
-        let palette_str = match palette {
-            Palette::Organic => "organic",
-            Palette::Heat => "heat",
-            Palette::Ocean => "ocean",
-            Palette::Mono => "mono",
-            Palette::Forest => "forest",
-            Palette::Neon => "neon",
-            Palette::Warm => "warm",
-            Palette::Vibrant => "vibrant",
-            Palette::LegibleMono => "legiblemono",
-            Palette::Slime => "slime",
-            Palette::Mold => "mold",
-            Palette::Fungus => "fungus",
-            Palette::Swamp => "swamp",
-            Palette::Moss => "moss",
-            Palette::Cosmic => "cosmic",
-            Palette::Ethereal => "ethereal",
+        // Handle palette string conversion (Custom needs special handling)
+        let palette_str: String = match &palette {
+            Palette::Organic => "organic".to_string(),
+            Palette::Heat => "heat".to_string(),
+            Palette::Ocean => "ocean".to_string(),
+            Palette::Mono => "mono".to_string(),
+            Palette::Forest => "forest".to_string(),
+            Palette::Neon => "neon".to_string(),
+            Palette::Warm => "warm".to_string(),
+            Palette::Vibrant => "vibrant".to_string(),
+            Palette::LegibleMono => "legiblemono".to_string(),
+            Palette::Slime => "slime".to_string(),
+            Palette::Mold => "mold".to_string(),
+            Palette::Fungus => "fungus".to_string(),
+            Palette::Swamp => "swamp".to_string(),
+            Palette::Moss => "moss".to_string(),
+            Palette::Cosmic => "cosmic".to_string(),
+            Palette::Ethereal => "ethereal".to_string(),
             Palette::Custom(colors) => {
                 let hex_colors: Vec<String> = colors
                     .iter()
                     .map(|c| format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b))
                     .collect();
-                &format!("custom:{}", hex_colors.join(","))
+                format!("custom:{}", hex_colors.join(","))
             }
         };
 
@@ -226,22 +260,32 @@ impl SavedConfig {
     }
 
     /// Apply this saved config to runtime state
+    ///
+    /// Note: Some parameters (population, init_mode, food_path) require a simulation
+    /// restart to take effect. This function applies all runtime-adjustable parameters.
     pub fn apply_to_runtime_state(&self, runtime_state: &mut RuntimeState) -> Result<(), String> {
         // Parse and apply palette
         runtime_state.palette_index = parse_palette_index(&self.palette)?;
         runtime_state.reverse_palette = self.reverse_palette;
         runtime_state.invert_palette = self.invert_palette;
 
+        // Parse and apply charset
+        runtime_state.charset_index = parse_charset_index(&self.charset)?;
+
         // Parse and apply diffusion kernel
         runtime_state.diffusion_kernel = parse_diffusion_kernel(&self.diffusion_kernel)?;
 
         // Apply simulation parameters
         runtime_state.sensor_angle = self.sensor_angle;
+        runtime_state.sensor_distance = self.sensor_distance;
         runtime_state.rotation_angle = self.rotation_angle;
         runtime_state.step_size = self.step_size;
         runtime_state.decay_factor = self.decay_factor;
         runtime_state.deposit_amount = self.deposit_amount;
         runtime_state.max_brightness = self.max_brightness;
+
+        // Apply food persistence setting
+        runtime_state.food_persist_enabled = self.food_persist;
 
         // Reset warmup so the changes can be seen
         runtime_state.warmup_counter = 0;
@@ -276,11 +320,34 @@ impl SavedConfig {
             };
 
             if let Some(m) = mapping {
+                // Update intensity_mapping_index to match first
+                runtime_state.intensity_mapping_index = find_intensity_mapping_index(&m);
                 runtime_state.intensity_mapping = m;
             }
         }
 
+        // Parameters that require simulation restart to take effect:
+        // - population (agent count)
+        // - init_mode (initialization pattern)
+        // - food_path (food image path)
+        // - auto_reset (collapse detection)
+        // - grid (background grid)
+        // - grid_style (grid appearance)
+        // - warmup_frames (logo display duration)
+        //
+        // To fully restore a config including these, use to_sim_config() and
+        // restart the simulation.
+
         Ok(())
+    }
+
+    /// Returns true if this config may require a simulation restart to fully apply.
+    ///
+    /// This checks if any parameters differ from runtime-adjustable ones.
+    pub fn requires_restart(&self) -> bool {
+        // These parameters can be changed at runtime, so no restart needed
+        // Check if any "restart-required" parameters are different from defaults
+        self.warmup_frames > 0 || self.auto_reset || self.grid || self.grid_style.is_some()
     }
 
     /// Convert this saved config to a SimConfig for restarting simulation.
@@ -382,6 +449,7 @@ fn parse_init_mode(s: &str) -> Result<InitMode, String> {
         "spiral" => Ok(InitMode::Spiral),
         "clusters" => Ok(InitMode::RandomClusters),
         "food" => Ok(InitMode::Food),
+        "petri" => Ok(InitMode::Petri),
         _ => Err(format!("Unknown init mode: {}", s)),
     }
 }
@@ -393,7 +461,26 @@ fn parse_charset(s: &str) -> Result<Charset, String> {
         "halfblockdual" => Ok(Charset::HalfBlockDual),
         "ascii" => Ok(Charset::Ascii),
         "braille" => Ok(Charset::Braille),
+        "quadrant" => Ok(Charset::Quadrant),
+        "shade" => Ok(Charset::Shade),
+        "points" => Ok(Charset::Points),
+        "sculpted" => Ok(Charset::Sculpted),
         _ => Err(format!("Unknown charset: {}", s)),
+    }
+}
+
+fn parse_charset_index(charset_str: &str) -> Result<usize, String> {
+    let charset = parse_charset(charset_str)?;
+    match charset {
+        Charset::HalfBlock => Ok(0),
+        Charset::HalfBlockDual => Ok(1),
+        Charset::Ascii => Ok(2),
+        Charset::Braille => Ok(3),
+        Charset::Quadrant => Ok(4),
+        Charset::Shade => Ok(5),
+        Charset::Points => Ok(6),
+        Charset::Sculpted => Ok(7),
+        Charset::CustomAscii(_) => Ok(2), // Default to ASCII for custom
     }
 }
 

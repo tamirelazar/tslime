@@ -8,7 +8,8 @@
 
 use crate::cli::{Args, AttractorArg, ObstacleArg, SpeciesArg, WindArg};
 use crate::config_defaults::{
-    agent as agent_consts, environment, population, time, trail, trail as trail_consts,
+    agent as agent_consts, environment as env_consts, population, time, trail,
+    trail as trail_consts,
 };
 use crate::error::ConfigError;
 use crate::simulation::config::{
@@ -375,26 +376,25 @@ impl ConfigBuilder {
 
         // Validate attractor strength
         if let Some(strength) = self.attractor_strength {
-            if !(environment::MIN_ATTRACTOR_STRENGTH..=environment::MAX_ATTRACTOR_STRENGTH)
+            if !(env_consts::MIN_ATTRACTOR_STRENGTH..=env_consts::MAX_ATTRACTOR_STRENGTH)
                 .contains(&strength)
             {
                 return Err(ConfigError::InvalidAttractorStrength {
                     value: strength,
-                    min: environment::MIN_ATTRACTOR_STRENGTH,
-                    max: environment::MAX_ATTRACTOR_STRENGTH,
+                    min: env_consts::MIN_ATTRACTOR_STRENGTH,
+                    max: env_consts::MAX_ATTRACTOR_STRENGTH,
                 });
             }
         }
 
         // Validate terrain strength
         if let Some(ts) = self.terrain_strength {
-            if !(environment::MIN_TERRAIN_STRENGTH..=environment::MAX_TERRAIN_STRENGTH)
-                .contains(&ts)
+            if !(env_consts::MIN_TERRAIN_STRENGTH..=env_consts::MAX_TERRAIN_STRENGTH).contains(&ts)
             {
                 return Err(ConfigError::InvalidTerrainStrength {
                     value: ts,
-                    min: environment::MIN_TERRAIN_STRENGTH,
-                    max: environment::MAX_TERRAIN_STRENGTH,
+                    min: env_consts::MIN_TERRAIN_STRENGTH,
+                    max: env_consts::MAX_TERRAIN_STRENGTH,
                 });
             }
         }

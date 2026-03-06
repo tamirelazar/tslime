@@ -112,6 +112,7 @@ impl TrailMap {
     }
 
     /// Get the pheromone value at (x, y). Returns 0.0 if out of bounds.
+    #[inline]
     pub fn get(&self, x: usize, y: usize) -> f32 {
         if x < self.width && y < self.height {
             self.current[y * self.width + x]

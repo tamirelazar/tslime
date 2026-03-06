@@ -741,7 +741,7 @@ pub fn export_gif_mode(
     let output_path = args
         .export_gif
         .as_ref()
-        .expect("export_gif_mode called without export_gif path");
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "GIF export path not provided"))?;
     let width = sim.width();
     let height = sim.height();
 
@@ -867,7 +867,7 @@ pub fn export_webm_mode(
     let output_path = args
         .export_webm
         .as_ref()
-        .expect("export_webm_mode called without export_webm path");
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "WebM export path not provided"))?;
     let width = sim.width();
     let height = sim.height();
 

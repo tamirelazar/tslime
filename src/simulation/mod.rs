@@ -672,26 +672,37 @@ impl Simulation {
     /// This method writes to a pre-allocated buffer to avoid allocations.
     /// The buffer is cleared and reused on each call.
     pub fn trail_map_blended(&mut self, output: &mut Vec<f32>) {
-        // Clear and reuse the provided buffer
-        output.clear();
-
         // Check if we have history with blended data
         if let Some(blended) = self.trail_history.as_mut().and_then(|h| h.blended()) {
-            output.extend_from_slice(blended);
+            let size = blended.len();
+            if output.len() != size {
+                output.resize(size, 0.0);
+            }
+            output.copy_from_slice(blended);
             return;
         }
 
         if self.config.separate_species_trails {
             let width = self.width();
             let height = self.height();
-            output.resize(width * height, 0.0);
+            let size = width * height;
+            if output.len() != size {
+                output.resize(size, 0.0);
+            } else {
+                output.fill(0.0);
+            }
             for trail_map in &self.trail_maps {
                 for (i, &val) in trail_map.current().iter().enumerate() {
                     output[i] += val;
                 }
             }
         } else {
-            output.extend_from_slice(self.trail_maps[0].current());
+            let source = self.trail_maps[0].current();
+            let size = source.len();
+            if output.len() != size {
+                output.resize(size, 0.0);
+            }
+            output.copy_from_slice(source);
         }
     }
 
@@ -740,65 +751,12 @@ impl Simulation {
                 let species_config = &self.config.species_configs[species_idx];
                 let trail_idx = species_idx;
 
-                {
-                    let trail = self.trail_maps[trail_idx].current();
-                    for agent in self
-                        .agents
-                        .iter_mut()
-                        .filter(|a| a.species_id as usize == species_idx)
-                    {
-                        let (left, center, right) = agent.sense(
-                            trail,
-                            width,
-                            height,
-                            species_config.sensor_angle,
-                            self.config.sensor_distance,
-                        );
-
-                        agent.rotate(
-                            left,
-                            center,
-                            right,
-                            species_config.rotation_angle,
-                            &mut self.rng,
-                        );
-
-                        agent.apply_attractor_forces(&attractors, attractor_strength);
-
-                        agent.apply_wind_force(wind, dt);
-
-                        agent.apply_terrain_bias(terrain, terrain_strength, &self.noise);
-
-                        agent.move_forward(
-                            effective_step_size,
-                            width,
-                            height,
-                            obstacles,
-                            obstacle_masks,
-                        );
-                    }
-                }
-
-                let trail_mut = self.trail_maps[trail_idx].current_mut();
+                let trail = self.trail_maps[trail_idx].current();
                 for agent in self
                     .agents
                     .iter_mut()
                     .filter(|a| a.species_id as usize == species_idx)
                 {
-                    agent.deposit(trail_mut, width, height, species_config.deposit_amount * dt);
-                }
-            }
-        } else {
-            let species_config = self
-                .config
-                .species_configs
-                .first()
-                .cloned()
-                .unwrap_or_default();
-
-            {
-                let trail = self.trail_maps[0].current();
-                for agent in self.agents.iter_mut() {
                     let (left, center, right) = agent.sense(
                         trail,
                         width,
@@ -829,6 +787,55 @@ impl Simulation {
                         obstacle_masks,
                     );
                 }
+
+                let trail_mut = self.trail_maps[trail_idx].current_mut();
+                for agent in self
+                    .agents
+                    .iter_mut()
+                    .filter(|a| a.species_id as usize == species_idx)
+                {
+                    agent.deposit(trail_mut, width, height, species_config.deposit_amount * dt);
+                }
+            }
+        } else {
+            let species_config = self
+                .config
+                .species_configs
+                .first()
+                .cloned()
+                .unwrap_or_default();
+
+            let trail = self.trail_maps[0].current();
+            for agent in self.agents.iter_mut() {
+                let (left, center, right) = agent.sense(
+                    trail,
+                    width,
+                    height,
+                    species_config.sensor_angle,
+                    self.config.sensor_distance,
+                );
+
+                agent.rotate(
+                    left,
+                    center,
+                    right,
+                    species_config.rotation_angle,
+                    &mut self.rng,
+                );
+
+                agent.apply_attractor_forces(&attractors, attractor_strength);
+
+                agent.apply_wind_force(wind, dt);
+
+                agent.apply_terrain_bias(terrain, terrain_strength, &self.noise);
+
+                agent.move_forward(
+                    effective_step_size,
+                    width,
+                    height,
+                    obstacles,
+                    obstacle_masks,
+                );
             }
 
             let trail_mut = self.trail_maps[0].current_mut();
