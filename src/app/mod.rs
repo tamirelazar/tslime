@@ -423,12 +423,15 @@ pub fn print_mode(
 
     let (term_width, term_height) = get_terminal_size();
 
+    // Extract dimensions before getting blended trail
+    let sim_width = sim.width();
+    let sim_height = sim.height();
     let blended_trail = sim.trail_map_blended();
     let mut downsampled = DownsampledFrame::new(term_width, term_height);
     downsample(
         &blended_trail,
-        sim.width(),
-        sim.height(),
+        sim_width,
+        sim_height,
         term_width,
         term_height,
         &mut downsampled,
@@ -580,12 +583,15 @@ pub fn capture_frames_mode(
             sim.update(1.0);
         }
 
+        // Extract dimensions before getting blended trail
+        let sim_width = sim.width();
+        let sim_height = sim.height();
         let blended_trail = sim.trail_map_blended();
         let mut downsampled = DownsampledFrame::new(term_width, term_height);
         downsample(
             &blended_trail,
-            sim.width(),
-            sim.height(),
+            sim_width,
+            sim_height,
             term_width,
             term_height,
             &mut downsampled,
@@ -765,13 +771,16 @@ pub fn export_gif_mode(
             sim.update(1.0);
         }
 
+        // Extract dimensions before getting blended trail
+        let sim_width = sim.width();
+        let sim_height = sim.height();
         let blended_trail = sim.trail_map_blended();
         let term_width = width;
         let term_height = height;
         downsample(
-            &blended_trail,
-            sim.width(),
-            sim.height(),
+            blended_trail.as_ref(),
+            sim_width,
+            sim_height,
             term_width,
             term_height,
             &mut downsampled_frame,
@@ -887,13 +896,16 @@ pub fn export_webm_mode(
             sim.update(1.0);
         }
 
+        // Extract dimensions before getting blended trail
+        let sim_width = sim.width();
+        let sim_height = sim.height();
         let blended_trail = sim.trail_map_blended();
         let term_width = width;
         let term_height = height;
         downsample(
             &blended_trail,
-            sim.width(),
-            sim.height(),
+            sim_width,
+            sim_height,
             term_width,
             term_height,
             &mut downsampled_frame,

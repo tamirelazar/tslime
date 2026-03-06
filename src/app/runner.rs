@@ -781,39 +781,51 @@ pub fn run_simulation(
             timer.end_sim_start_render();
         }
 
+        // Extract basic sim data
+        let sim_width = sim.width();
+        let sim_height = sim.height();
+        let sim_dims = sim_width * sim_height;
+        let agent_count = sim.agent_count();
+
+        // Get blended trail first (takes &mut self)
         let blended_trail = sim.trail_map_blended();
         downsample(
             &blended_trail,
-            sim.width(),
-            sim.height(),
+            sim_width,
+            sim_height,
             term_width as usize,
             term_height as usize,
             &mut downsampled_frame,
         );
 
         // Compute auxiliary frame for trail age / temporal delta / gradient
+        // These calls happen AFTER blended_trail is dropped from the scope above
         let current_aux_frame = if runtime_state.trail_age_enabled
             || runtime_state.trail_delta_enabled
             || runtime_state.gradient_magnitude_enabled
         {
+            let trail_age = if runtime_state.trail_age_enabled {
+                sim.trail_age()
+            } else {
+                None
+            };
+            let trail_delta = if runtime_state.trail_delta_enabled {
+                sim.trail_delta()
+            } else {
+                None
+            };
+            let gradient_mag = if runtime_state.gradient_magnitude_enabled {
+                sim.gradient_magnitude()
+            } else {
+                None
+            };
+
             crate::render::downsample::downsample_aux(
-                if runtime_state.trail_age_enabled {
-                    sim.trail_age()
-                } else {
-                    None
-                },
-                if runtime_state.trail_delta_enabled {
-                    sim.trail_delta()
-                } else {
-                    None
-                },
-                if runtime_state.gradient_magnitude_enabled {
-                    sim.gradient_magnitude()
-                } else {
-                    None
-                },
-                sim.width(),
-                sim.height(),
+                trail_age,
+                trail_delta,
+                gradient_mag,
+                sim_width,
+                sim_height,
                 term_width as usize,
                 term_height as usize,
                 &mut aux_frame,
@@ -989,7 +1001,7 @@ pub fn run_simulation(
                     runtime_state.dither_mode.name(),
                     term_width as usize,
                     runtime_state.default_values,
-                    sim.agent_count(),
+                    agent_count,
                     ui_accent,
                     runtime_state.current_theme_name(),
                     &runtime_state.panel_style,
@@ -1016,7 +1028,7 @@ pub fn run_simulation(
             current_palette.clone(),
             runtime_state.dither_mode,
             term_width as usize,
-            Some(sim.agent_count()),
+            Some(agent_count),
             Some(diffusion_kernel_name),
             !runtime_state.undo_stack.is_empty(),
             !runtime_state.redo_stack.is_empty(),
@@ -1046,7 +1058,7 @@ pub fn run_simulation(
         // Dashboard overlay (merged stats + info)
         let entropy = DashboardOverlay::calculate_entropy(&blended_trail, 100);
         let trail_sum: f32 = blended_trail.iter().sum();
-        let trail_capacity = (sim.width() * sim.height()) as f32 * 10.0;
+        let trail_capacity = sim_dims as f32 * 10.0;
         let trail_density = if trail_capacity > 0.0 {
             (trail_sum / trail_capacity).min(1.0)
         } else {

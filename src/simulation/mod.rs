@@ -7,9 +7,6 @@
 //! - [`crate::simulation::trail_map`]: Pheromone trail grid and diffusion
 //! - [`crate::simulation::food`]: Food source loading from images
 
-// These methods are part of the public library API even if unused by the CLI binary
-#![allow(dead_code)]
-
 pub mod agent;
 pub mod config;
 pub mod food;
@@ -33,58 +30,75 @@ pub struct TrailHistory {
     capacity: usize,
     current_index: usize,
     count: usize,
+    /// Pre-allocated buffer for blended results to avoid per-frame allocations
+    blended_buffer: Vec<f32>,
 }
 
 impl TrailHistory {
-    /// Create a new trail history buffer with the given capacity.
-    pub fn new(capacity: usize) -> Self {
+    /// Create a new trail history buffer with the given capacity and frame size.
+    ///
+    /// All internal buffers are pre-allocated to avoid runtime allocations.
+    pub fn new(capacity: usize, frame_size: usize) -> Self {
+        let mut history = Vec::with_capacity(capacity);
+        // Pre-allocate all history buffers to avoid allocations during push()
+        for _ in 0..capacity {
+            history.push(vec![0.0f32; frame_size]);
+        }
+
         Self {
-            history: Vec::with_capacity(capacity),
+            history,
             capacity,
             current_index: 0,
             count: 0,
+            blended_buffer: vec![0.0f32; frame_size],
         }
     }
 
     /// Push a new trail map frame into the history buffer.
     ///
     /// If the buffer is full, overwrites the oldest frame.
+    /// This method never allocates - all buffers are pre-allocated.
     pub fn push(&mut self, trail_map: &[f32]) {
         if self.capacity == 0 {
             return;
         }
 
-        if self.history.len() < self.capacity {
-            self.history.push(trail_map.to_vec());
-            self.count = self.history.len();
-        } else {
-            self.history[self.current_index].copy_from_slice(trail_map);
-        }
-
+        // Buffer is already pre-allocated, just copy data
+        self.history[self.current_index].copy_from_slice(trail_map);
         self.current_index = (self.current_index + 1) % self.capacity;
+
+        // Update count until we reach capacity
+        if self.count < self.capacity {
+            self.count += 1;
+        }
     }
 
     /// Calculate the average of all frames in the history buffer.
     ///
     /// Returns `None` if the history is empty.
-    pub fn blended(&self) -> Option<Vec<f32>> {
+    /// The returned slice is valid until the next call to blended() or clear().
+    pub fn blended(&mut self) -> Option<&[f32]> {
         if self.count == 0 {
             return None;
         }
 
-        let mut result = vec![0.0f32; self.history[0].len()];
+        // Reset blended buffer
+        self.blended_buffer.fill(0.0);
+
+        // Sum all frames
         for frame in &self.history[..self.count] {
             for (i, &val) in frame.iter().enumerate() {
-                result[i] += val;
+                self.blended_buffer[i] += val;
             }
         }
 
+        // Average
         let weight = 1.0 / self.count as f32;
-        for val in &mut result {
+        for val in &mut self.blended_buffer {
             *val *= weight;
         }
 
-        Some(result)
+        Some(&self.blended_buffer)
     }
 
     /// Get the current number of frames stored.
@@ -98,8 +112,9 @@ impl TrailHistory {
     }
 
     /// Clear all history frames.
+    ///
+    /// Resets the history but keeps all allocations for reuse.
     pub fn clear(&mut self) {
-        self.history.clear();
         self.current_index = 0;
         self.count = 0;
     }
@@ -173,8 +188,9 @@ impl Simulation {
         }
 
         let sigma = config.diffusion_sigma;
+        let frame_size = width * height;
         let trail_history = if trail_history_capacity > 0 {
-            Some(TrailHistory::new(trail_history_capacity))
+            Some(TrailHistory::new(trail_history_capacity, frame_size))
         } else {
             None
         };
@@ -216,8 +232,8 @@ impl Simulation {
         let width = self.width();
         let height = self.height();
 
-        // Get trail data (this may borrow self immutably)
-        let trail = self.trail_map_blended();
+        // Get trail data into local buffer
+        let trail_data: Vec<f32> = self.trail_map_blended();
 
         // Now compute gradient using the trail data
         if let Some(ref mut gradient) = self.gradient_magnitude {
@@ -234,8 +250,8 @@ impl Simulation {
                     let rt = y * width + (x + 1);
 
                     // Central differences for gradient
-                    let gx = (trail[rt] - trail[lt]) * 0.5;
-                    let gy = (trail[dn] - trail[up]) * 0.5;
+                    let gx = (trail_data[rt] - trail_data[lt]) * 0.5;
+                    let gy = (trail_data[dn] - trail_data[up]) * 0.5;
 
                     // Gradient magnitude
                     gradient[idx] = (gx * gx + gy * gy).sqrt();
@@ -637,12 +653,18 @@ impl Simulation {
     ///
     /// Applies motion blur if enabled (via history blending) or combines
     /// multiple species trails if separate trails are enabled.
-    pub fn trail_map_blended(&self) -> Vec<f32> {
-        if let Some(ref history) = self.trail_history {
+    ///
+    /// # Performance
+    /// This method returns an owned Vec to avoid complex borrow issues.
+    /// The allocation overhead is minimal compared to the rendering work.
+    pub fn trail_map_blended(&mut self) -> Vec<f32> {
+        // Check if we have history with blended data
+        if let Some(ref mut history) = self.trail_history {
             if let Some(blended) = history.blended() {
-                return blended;
+                return blended.to_vec();
             }
         }
+
         if self.config.separate_species_trails {
             let width = self.width();
             let height = self.height();
@@ -1217,14 +1239,14 @@ mod tests {
 
     #[test]
     fn test_trail_history_creation() {
-        let history = TrailHistory::new(5);
+        let history = TrailHistory::new(5, 100);
         assert_eq!(history.capacity(), 5);
         assert_eq!(history.count(), 0);
     }
 
     #[test]
     fn test_trail_history_push_and_blend() {
-        let mut history = TrailHistory::new(3);
+        let mut history = TrailHistory::new(3, 4);
 
         let frame1 = vec![1.0, 2.0, 3.0, 4.0];
         let frame2 = vec![2.0, 4.0, 6.0, 8.0];
@@ -1242,7 +1264,7 @@ mod tests {
 
     #[test]
     fn test_trail_history_circular_buffer() {
-        let mut history = TrailHistory::new(2);
+        let mut history = TrailHistory::new(2, 2);
 
         let frame1 = vec![1.0, 1.0];
         let frame2 = vec![2.0, 2.0];
@@ -1260,13 +1282,13 @@ mod tests {
 
     #[test]
     fn test_trail_history_no_frames() {
-        let history = TrailHistory::new(3);
+        let mut history = TrailHistory::new(3, 4);
         assert!(history.blended().is_none());
     }
 
     #[test]
     fn test_trail_history_clear() {
-        let mut history = TrailHistory::new(3);
+        let mut history = TrailHistory::new(3, 2);
 
         let frame = vec![1.0, 2.0];
         history.push(&frame);
@@ -1297,10 +1319,10 @@ mod tests {
     #[test]
     fn test_trail_map_blended_without_history() {
         let config = SimConfig::default();
-        let sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
+        let mut sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
 
         let blended = sim.trail_map_blended();
-        let current = sim.trail_map().current();
+        let current = sim.trail_map().current().to_vec();
         assert_eq!(blended, current);
     }
 
@@ -1431,7 +1453,8 @@ mod tests {
             sim.update(1.0);
         }
 
-        let blended_sum: f32 = sim.trail_map_blended().iter().sum();
+        let blended = sim.trail_map_blended();
+        let blended_sum: f32 = blended.iter().sum();
         assert!(
             blended_sum > 50.0,
             "trail_map_blended() should include second species' trail when first species has 0 agents. Got sum: {}",

@@ -4,6 +4,7 @@
 //! including presets, diffusion kernels, initialization modes, and environmental effects.
 
 use image::io::Reader as ImageReader;
+use std::borrow::Cow;
 use std::path::Path;
 
 use super::agent::normalize_angle;
@@ -893,12 +894,22 @@ impl SimConfig {
     }
 
     /// Returns a combined list of all active attractors (static + mouse).
-    pub fn effective_attractors(&self) -> Vec<Attractor> {
-        let mut result = self.attractors.clone();
-        for ma in &self.mouse_attractors {
-            result.push(Attractor::new(ma.x, ma.y, ma.strength));
+    ///
+    /// # Performance
+    /// If there are no mouse attractors, returns a reference to the static attractors
+    /// without cloning. Otherwise, returns an owned vector with both static and mouse attractors.
+    pub fn effective_attractors(&self) -> Cow<'_, [Attractor]> {
+        if self.mouse_attractors.is_empty() {
+            // Fast path: no mouse attractors, return borrowed reference
+            Cow::Borrowed(&self.attractors)
+        } else {
+            // Slow path: need to combine static and mouse attractors
+            let mut result = self.attractors.clone();
+            for ma in &self.mouse_attractors {
+                result.push(Attractor::new(ma.x, ma.y, ma.strength));
+            }
+            Cow::Owned(result)
         }
-        result
     }
 }
 
@@ -1067,41 +1078,6 @@ impl Validatable for SpeciesConfig {
         }
 
         Ok(())
-    }
-}
-
-impl SimConfig {
-    /// Creates a base preset configuration with common fields set to their defaults.
-    fn base_preset() -> Self {
-        Self {
-            sensor_angle: agent_consts::DEFAULT_SENSOR_ANGLE,
-            sensor_distance: agent_consts::DEFAULT_SENSOR_DISTANCE,
-            rotation_angle: agent_consts::DEFAULT_ROTATION_ANGLE,
-            step_size: agent_consts::DEFAULT_STEP_SIZE,
-            decay_factor: trail_consts::DEFAULT_DECAY_FACTOR,
-            deposit_amount: agent_consts::DEFAULT_DEPOSIT_AMOUNT,
-            diffusion_kernel: DiffusionKernel::Gaussian,
-            diffusion_sigma: trail_consts::DEFAULT_DIFFUSION_SIGMA,
-            max_brightness: trail_consts::DEFAULT_MAX_BRIGHTNESS,
-            time_scale: time_consts::DEFAULT_TIME_SCALE,
-            attractors: Vec::new(),
-            attractor_strength: env_consts::DEFAULT_ATTRACTOR_STRENGTH,
-            mouse_attractors: Vec::new(),
-            mouse_timeout: env_consts::DEFAULT_MOUSE_TIMEOUT,
-            species_configs: vec![SpeciesConfig::default()],
-            separate_species_trails: false,
-            use_simd: true,
-            food_image_path: None,
-            food_image_invert: false,
-            food_image_scale: 1.0,
-            obstacles: Vec::new(),
-            obstacle_masks: Vec::new(),
-            wind: None,
-            terrain: TerrainType::None,
-            terrain_strength: env_consts::DEFAULT_TERRAIN_STRENGTH,
-            background_color: None,
-            preferred_init_mode: None,
-        }
     }
 }
 
