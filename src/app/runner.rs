@@ -7,6 +7,7 @@ use std::io::{self, Write};
 
 use crate::app::{apply_random_config, extract_species_rgb_colors, REFERENCE_TIME_STEP};
 use crate::cli::{self, Args, ColorMode, Mode, Palette};
+use crate::config_defaults::warmup::{TRANSITION_DURATION_FRAMES, WARMUP_SPEED_MULTIPLIER};
 use crate::config_manager;
 use crate::export::GifExporter;
 use crate::export::WebmExporter;
@@ -700,6 +701,7 @@ pub fn run_simulation(
             (term_width as usize) * (term_height as usize)
         ],
     };
+    let mut blended_trail_buffer: Vec<f32> = Vec::new();
 
     loop {
         if is_shutdown_requested() {
@@ -736,9 +738,7 @@ pub fn run_simulation(
         let in_warmup = !args.skip_warmup && runtime_state.is_in_warmup(args.warmup_frames);
 
         // Calculate transition fade factor for smooth warmup→normal transition
-        const WARMUP_SPEED_MULTIPLIER: f32 = 0.3; // 30% speed during warmup
-        const TRANSITION_DURATION_FRAMES: usize = 30; // 1 second at 30 FPS
-
+        // Uses WARMUP_SPEED_MULTIPLIER and TRANSITION_DURATION_FRAMES from config_defaults
         let frames_since_warmup = runtime_state
             .warmup_counter
             .saturating_sub(args.warmup_frames);
@@ -788,9 +788,9 @@ pub fn run_simulation(
         let agent_count = sim.agent_count();
 
         // Get blended trail first (takes &mut self)
-        let blended_trail = sim.trail_map_blended();
+        sim.trail_map_blended(&mut blended_trail_buffer);
         downsample(
-            &blended_trail,
+            &blended_trail_buffer,
             sim_width,
             sim_height,
             term_width as usize,
@@ -1056,8 +1056,8 @@ pub fn run_simulation(
         });
 
         // Dashboard overlay (merged stats + info)
-        let entropy = DashboardOverlay::calculate_entropy(&blended_trail, 100);
-        let trail_sum: f32 = blended_trail.iter().sum();
+        let entropy = DashboardOverlay::calculate_entropy(&blended_trail_buffer, 100);
+        let trail_sum: f32 = blended_trail_buffer.iter().sum();
         let trail_capacity = sim_dims as f32 * 10.0;
         let trail_density = if trail_capacity > 0.0 {
             (trail_sum / trail_capacity).min(1.0)
@@ -1070,7 +1070,7 @@ pub fn run_simulation(
         let dashboard_overlay: Option<RenderedOverlay> =
             if runtime_state.overlay_state.is_open(OverlayType::Dashboard) {
                 let elapsed = start_time.elapsed().as_secs_f32();
-                let trail_max = blended_trail.iter().fold(0.0f32, |m, &v| v.max(m));
+                let trail_max = blended_trail_buffer.iter().fold(0.0f32, |m, &v| v.max(m));
                 let memory_mb = memory_stats()
                     .map(|m| m.physical_mem as f32 / 1024.0 / 1024.0)
                     .unwrap_or(0.0);

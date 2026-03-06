@@ -35,6 +35,13 @@ pub fn normalize_angle(mut angle: f32) -> f32 {
     angle
 }
 
+/// Compile-time assertion that ATTRACTOR_MIN_DIST is positive to prevent division by zero.
+#[allow(dead_code)]
+const _: () = assert!(
+    crate::config_defaults::steering::MIN_ATTRACTOR_DISTANCE > 0.0,
+    "MIN_ATTRACTOR_DISTANCE must be positive to prevent division by zero"
+);
+
 /// Wrapper for Perlin noise generation used in terrain effects.
 pub struct NoiseWrapper {
     perlin: Perlin,
@@ -80,6 +87,7 @@ pub struct Agent {
 
 impl Agent {
     /// Create a new agent at (x, y) with the given heading and species.
+    #[inline]
     pub fn new(x: f32, y: f32, heading: f32, species_id: u8) -> Self {
         Self {
             x,
@@ -125,6 +133,8 @@ impl Agent {
     /// Update heading based on sensed values.
     ///
     /// Turns towards the strongest signal, or randomly if forward blocked.
+    /// When center is the strongest, continues straight (no rotation).
+    #[inline]
     pub fn rotate(
         &mut self,
         left: f32,
@@ -135,21 +145,33 @@ impl Agent {
     ) {
         let rotation_angle_rad = rotation_angle * PI / 180.0;
 
+        // If center is strictly strongest, continue straight
         if center > left && center > right {
-        } else if center < left && center < right {
+            // No rotation needed - center sensor shows strongest signal
+            return;
+        }
+
+        // Center is not strictly strongest - need to turn
+        if center < left && center < right {
+            // Forward is blocked on both sides - turn randomly
             if RandRng::gen(rng) {
                 self.heading -= rotation_angle_rad;
             } else {
                 self.heading += rotation_angle_rad;
             }
         } else if left > right {
+            // Left is stronger than right - turn left
             self.heading -= rotation_angle_rad;
         } else if right > left {
+            // Right is stronger than left - turn right
             self.heading += rotation_angle_rad;
         }
+        // If left == right, we continue straight (center wasn't strictly strongest,
+        // but sides are equal, so maintain current heading)
     }
 
     /// Apply steering forces from attractors (or repellers).
+    #[inline]
     pub fn apply_attractor_forces(&mut self, attractors: &[Attractor], strength_multiplier: f32) {
         if attractors.is_empty() {
             return;
@@ -164,11 +186,12 @@ impl Agent {
             let dist_sq = dx * dx + dy * dy;
 
             let dist_sq = dist_sq.max(ATTRACTOR_MIN_DIST * ATTRACTOR_MIN_DIST);
+            let dist = dist_sq.sqrt();
 
-            let force = attractor.strength * strength_multiplier / dist_sq.sqrt();
+            let force = attractor.strength * strength_multiplier / dist;
 
-            force_x += dx / dist_sq.sqrt() * force;
-            force_y += dy / dist_sq.sqrt() * force;
+            force_x += dx / dist * force;
+            force_y += dy / dist * force;
         }
 
         if force_x.abs() > FORCE_THRESHOLD || force_y.abs() > FORCE_THRESHOLD {
@@ -244,6 +267,7 @@ impl Agent {
     }
 
     /// Move agent forward and handle collisions with boundaries and obstacles.
+    #[inline]
     pub fn move_forward(
         &mut self,
         step_size: f32,
@@ -282,6 +306,7 @@ impl Agent {
     }
 
     /// Deposit pheromone at the current position.
+    #[inline]
     pub fn deposit(&self, trail: &mut [f32], width: usize, height: usize, deposit_amount: f32) {
         let x = self.x as usize;
         let y = self.y as usize;
@@ -299,6 +324,8 @@ impl Agent {
     }
 }
 
+/// Sample trail value at (x, y) with bounds checking.
+/// Returns 0.0 if out of bounds.
 #[inline]
 fn sample_trail(trail: &[f32], width: usize, height: usize, x: f32, y: f32) -> f32 {
     let ix = x.floor() as i32;

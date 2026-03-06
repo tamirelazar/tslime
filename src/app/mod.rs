@@ -1,29 +1,21 @@
+// Note: This module has many imports that are used across both mod.rs and runner.rs.
+// A full cleanup would require splitting imports properly between the two files.
 #![allow(unused_imports)]
+
+use std::io::{self, Write};
 
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, Shell};
-use crossterm::event::Event;
-use memory_stats::memory_stats;
-use std::io::{self, Write};
 
-use crate::cli;
-use crate::config_manager;
+use crate::cli::{self, Args, ColorMode, Mode};
 use crate::exploration::{Explorer, ExplorerConfig, PresetBehavior};
-use crate::render;
-use crate::simulation;
-use crate::terminal;
-
-use crate::cli::{Args, ColorMode, Mode, Palette};
 use crate::export::GifExporter;
 use crate::export::WebmExporter;
-use crate::food_image::FOOD_IMAGE_PNG;
-use crate::palette_manager;
 use crate::render::adaptive_brightness::AdaptiveBrightness;
 use crate::render::charset::Charset;
 use crate::render::dither::DitherMode;
 use crate::render::downsample::{downsample, DownsampledFrame};
 use crate::render::grid::{GridRenderer, GridStyle};
-use crate::render::options_overlay::ControlsOverlay;
 use crate::render::overlay::{
     build_notification_panel, ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay,
     KeyboardHintsOverlay, PauseOverlay, PresetComparisonOverlay, RenderedOverlay,
@@ -32,10 +24,10 @@ use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
 use crate::render::palette_editor::{
     EditorComponent, EditorMode, PaletteEditorOverlay, PaletteEditorState,
 };
+use crate::simulation;
 use crate::simulation::config::{
     Attractor, DiffusionKernel, InitMode, Preset, SimConfig, TerrainType,
 };
-use crate::simulation::food::load_logo_from_memory;
 use crate::simulation::Simulation;
 use crate::terminal::control::{
     charset_name, handle_key_event, num_palettes, palette_name, preset_name, ControlAction,
@@ -426,7 +418,8 @@ pub fn print_mode(
     // Extract dimensions before getting blended trail
     let sim_width = sim.width();
     let sim_height = sim.height();
-    let blended_trail = sim.trail_map_blended();
+    let mut blended_trail = Vec::new();
+    sim.trail_map_blended(&mut blended_trail);
     let mut downsampled = DownsampledFrame::new(term_width, term_height);
     downsample(
         &blended_trail,
@@ -578,6 +571,9 @@ pub fn capture_frames_mode(
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
+    // Pre-allocate buffer for blended trail data
+    let mut blended_trail = Vec::new();
+
     for frame_idx in 0..args.frame_count {
         for _ in 0..args.frame_skip {
             sim.update(1.0);
@@ -586,7 +582,7 @@ pub fn capture_frames_mode(
         // Extract dimensions before getting blended trail
         let sim_width = sim.width();
         let sim_height = sim.height();
-        let blended_trail = sim.trail_map_blended();
+        sim.trail_map_blended(&mut blended_trail);
         let mut downsampled = DownsampledFrame::new(term_width, term_height);
         downsample(
             &blended_trail,
@@ -765,6 +761,7 @@ pub fn export_gif_mode(
 
     let frame_skip = args.frame_skip.max(1);
     let mut downsampled_frame = DownsampledFrame::new(width, height);
+    let mut blended_trail = Vec::new();
 
     for frame_idx in 0..args.export_frames {
         for _ in 0..frame_skip {
@@ -774,11 +771,11 @@ pub fn export_gif_mode(
         // Extract dimensions before getting blended trail
         let sim_width = sim.width();
         let sim_height = sim.height();
-        let blended_trail = sim.trail_map_blended();
         let term_width = width;
         let term_height = height;
+        sim.trail_map_blended(&mut blended_trail);
         downsample(
-            blended_trail.as_ref(),
+            &blended_trail,
             sim_width,
             sim_height,
             term_width,
@@ -890,6 +887,7 @@ pub fn export_webm_mode(
 
     let frame_skip = args.frame_skip.max(1);
     let mut downsampled_frame = DownsampledFrame::new(width, height);
+    let mut blended_trail = Vec::new();
 
     for frame_idx in 0..args.export_frames {
         for _ in 0..frame_skip {
@@ -899,9 +897,9 @@ pub fn export_webm_mode(
         // Extract dimensions before getting blended trail
         let sim_width = sim.width();
         let sim_height = sim.height();
-        let blended_trail = sim.trail_map_blended();
         let term_width = width;
         let term_height = height;
+        sim.trail_map_blended(&mut blended_trail);
         downsample(
             &blended_trail,
             sim_width,

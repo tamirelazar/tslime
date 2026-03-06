@@ -139,7 +139,8 @@ impl TrailHistory {
 /// sim.update(1.0);
 ///
 /// // Get trail data for rendering
-/// let trail = sim.trail_map_blended();
+/// let mut trail = Vec::new();
+/// sim.trail_map_blended(&mut trail);
 /// ```
 pub struct Simulation {
     config: SimConfig,
@@ -668,28 +669,31 @@ impl Simulation {
     /// multiple species trails if separate trails are enabled.
     ///
     /// # Performance
-    /// This method returns an owned Vec to avoid complex borrow issues.
-    /// The allocation overhead is minimal compared to the rendering work.
-    pub fn trail_map_blended(&mut self) -> Vec<f32> {
+    /// This method writes to a pre-allocated buffer to avoid allocations.
+    /// The buffer is cleared and reused on each call.
+    pub fn trail_map_blended(&mut self, output: &mut Vec<f32>) {
+        // Clear and reuse the provided buffer
+        output.clear();
+
         // Check if we have history with blended data
         if let Some(ref mut history) = self.trail_history {
             if let Some(blended) = history.blended() {
-                return blended.to_vec();
+                output.extend_from_slice(blended);
+                return;
             }
         }
 
         if self.config.separate_species_trails {
             let width = self.width();
             let height = self.height();
-            let mut combined = vec![0.0f32; width * height];
+            output.resize(width * height, 0.0);
             for trail_map in &self.trail_maps {
                 for (i, &val) in trail_map.current().iter().enumerate() {
-                    combined[i] += val;
+                    output[i] += val;
                 }
             }
-            combined
         } else {
-            self.trail_maps[0].current().to_vec()
+            output.extend_from_slice(self.trail_maps[0].current());
         }
     }
 
@@ -847,13 +851,15 @@ impl Simulation {
         }
 
         // Compute trail age: increment where pheromone present, reset where absent
+        // Clamp dt to prevent accumulation errors from large time steps
+        let safe_dt = dt.min(1.0);
         if let Some(ref mut age) = self.trail_age {
             let current = self.trail_maps[0].current();
             let max_val = current.iter().copied().fold(0.0f32, f32::max);
             let threshold = max_val * 0.01;
             for (a, &v) in age.iter_mut().zip(current.iter()) {
                 if v > threshold {
-                    *a = (*a + dt).min(crate::config_defaults::visual_fx::AGE_MAX_SECONDS);
+                    *a = (*a + safe_dt).min(crate::config_defaults::visual_fx::AGE_MAX_SECONDS);
                 } else {
                     *a = 0.0;
                 }
@@ -1187,7 +1193,12 @@ mod tests {
             .max_by(|a, b| a.total_cmp(b))
             .unwrap();
 
-        assert!(max_after_2 < max_after_1 * 1.5);
+        assert!(
+            max_after_2 < max_after_1 * 1.5,
+            "max_after_2 ({}) should be less than max_after_1 * 1.5 ({})",
+            max_after_2,
+            max_after_1 * 1.5
+        );
     }
 
     #[test]
@@ -1354,7 +1365,8 @@ mod tests {
         let config = SimConfig::default();
         let mut sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
 
-        let blended = sim.trail_map_blended();
+        let mut blended = Vec::new();
+        sim.trail_map_blended(&mut blended);
         let current = sim.trail_map().current().to_vec();
         assert_eq!(blended, current);
     }
@@ -1429,7 +1441,9 @@ mod tests {
             sim.update(1.0);
         }
 
-        let trail_map_sum: f32 = sim.trail_map_blended().iter().sum();
+        let mut blended = Vec::new();
+        sim.trail_map_blended(&mut blended);
+        let trail_map_sum: f32 = blended.iter().sum();
         assert!(
             trail_map_sum > 100.0,
             "Combined trail map should have significant values when all species have agents, got sum: {}",
@@ -1486,7 +1500,8 @@ mod tests {
             sim.update(1.0);
         }
 
-        let blended = sim.trail_map_blended();
+        let mut blended = Vec::new();
+        sim.trail_map_blended(&mut blended);
         let blended_sum: f32 = blended.iter().sum();
         assert!(
             blended_sum > 50.0,

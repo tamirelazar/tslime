@@ -1749,12 +1749,11 @@ impl Args {
         }
         if self.mouse_attract && self.mouse_repel {
             return Err(
-                "Cannot specify both --mouse-attract and --mouse-repel. Choose one mode."
-                    .to_string(),
+                "Cannot specify both --mouse-attract and --mouse-repel. Choose one mode.".into(),
             );
         }
         if self.grid && self.grid_size == 0 {
-            return Err("grid_size must be greater than 0".to_string());
+            return Err("grid_size must be greater than 0".into());
         }
         if self.grid_opacity < 0.0 || self.grid_opacity > 1.0 {
             return Err(format!(

@@ -32,7 +32,8 @@
 //! }
 //!
 //! // Get trail map for rendering
-//! let trail = sim.trail_map_blended();
+//! let mut trail = Vec::new();
+//! sim.trail_map_blended(&mut trail);
 //! ```
 //!
 #![warn(missing_docs)]
