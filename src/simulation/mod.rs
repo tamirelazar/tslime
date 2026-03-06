@@ -7,9 +7,6 @@
 //! - [`crate::simulation::trail_map`]: Pheromone trail grid and diffusion
 //! - [`crate::simulation::food`]: Food source loading from images
 
-// These methods are part of the public library API even if unused by the CLI binary
-#![allow(dead_code)]
-
 pub mod agent;
 pub mod config;
 pub mod food;
@@ -33,58 +30,75 @@ pub struct TrailHistory {
     capacity: usize,
     current_index: usize,
     count: usize,
+    /// Pre-allocated buffer for blended results to avoid per-frame allocations
+    blended_buffer: Vec<f32>,
 }
 
 impl TrailHistory {
-    /// Create a new trail history buffer with the given capacity.
-    pub fn new(capacity: usize) -> Self {
+    /// Create a new trail history buffer with the given capacity and frame size.
+    ///
+    /// All internal buffers are pre-allocated to avoid runtime allocations.
+    pub fn new(capacity: usize, frame_size: usize) -> Self {
+        let mut history = Vec::with_capacity(capacity);
+        // Pre-allocate all history buffers to avoid allocations during push()
+        for _ in 0..capacity {
+            history.push(vec![0.0f32; frame_size]);
+        }
+
         Self {
-            history: Vec::with_capacity(capacity),
+            history,
             capacity,
             current_index: 0,
             count: 0,
+            blended_buffer: vec![0.0f32; frame_size],
         }
     }
 
     /// Push a new trail map frame into the history buffer.
     ///
     /// If the buffer is full, overwrites the oldest frame.
+    /// This method never allocates - all buffers are pre-allocated.
     pub fn push(&mut self, trail_map: &[f32]) {
         if self.capacity == 0 {
             return;
         }
 
-        if self.history.len() < self.capacity {
-            self.history.push(trail_map.to_vec());
-            self.count = self.history.len();
-        } else {
-            self.history[self.current_index].copy_from_slice(trail_map);
-        }
-
+        // Buffer is already pre-allocated, just copy data
+        self.history[self.current_index].copy_from_slice(trail_map);
         self.current_index = (self.current_index + 1) % self.capacity;
+
+        // Update count until we reach capacity
+        if self.count < self.capacity {
+            self.count += 1;
+        }
     }
 
     /// Calculate the average of all frames in the history buffer.
     ///
     /// Returns `None` if the history is empty.
-    pub fn blended(&self) -> Option<Vec<f32>> {
+    /// The returned slice is valid until the next call to blended() or clear().
+    pub fn blended(&mut self) -> Option<&[f32]> {
         if self.count == 0 {
             return None;
         }
 
-        let mut result = vec![0.0f32; self.history[0].len()];
+        // Reset blended buffer
+        self.blended_buffer.fill(0.0);
+
+        // Sum all frames
         for frame in &self.history[..self.count] {
             for (i, &val) in frame.iter().enumerate() {
-                result[i] += val;
+                self.blended_buffer[i] += val;
             }
         }
 
+        // Average
         let weight = 1.0 / self.count as f32;
-        for val in &mut result {
+        for val in &mut self.blended_buffer {
             *val *= weight;
         }
 
-        Some(result)
+        Some(&self.blended_buffer)
     }
 
     /// Get the current number of frames stored.
@@ -98,8 +112,9 @@ impl TrailHistory {
     }
 
     /// Clear all history frames.
+    ///
+    /// Resets the history but keeps all allocations for reuse.
     pub fn clear(&mut self) {
-        self.history.clear();
         self.current_index = 0;
         self.count = 0;
     }
@@ -124,7 +139,8 @@ impl TrailHistory {
 /// sim.update(1.0);
 ///
 /// // Get trail data for rendering
-/// let trail = sim.trail_map_blended();
+/// let mut trail = Vec::new();
+/// sim.trail_map_blended(&mut trail);
 /// ```
 pub struct Simulation {
     config: SimConfig,
@@ -137,6 +153,9 @@ pub struct Simulation {
     prev_trail: Option<Vec<f32>>,
     trail_delta: Option<Vec<f32>>,
     gradient_magnitude: Option<Vec<f32>>,
+    /// Pre-allocated buffer for combining separate species trails.
+    /// Only allocated when both `separate_species_trails` and trail history are enabled.
+    combined_trail_buffer: Option<Vec<f32>>,
 }
 
 impl Simulation {
@@ -173,8 +192,9 @@ impl Simulation {
         }
 
         let sigma = config.diffusion_sigma;
+        let frame_size = width * height;
         let trail_history = if trail_history_capacity > 0 {
-            Some(TrailHistory::new(trail_history_capacity))
+            Some(TrailHistory::new(trail_history_capacity, frame_size))
         } else {
             None
         };
@@ -193,6 +213,14 @@ impl Simulation {
         let noise_seed = (seed % u64::MAX) as u32;
         let noise = NoiseWrapper::new(noise_seed);
 
+        // Pre-allocate combined buffer only when needed for separate species + history
+        let combined_trail_buffer = if trail_history_capacity > 0 && config.separate_species_trails
+        {
+            Some(vec![0.0f32; frame_size])
+        } else {
+            None
+        };
+
         Self {
             config,
             agents,
@@ -204,6 +232,7 @@ impl Simulation {
             prev_trail: None,
             trail_delta: None,
             gradient_magnitude: None,
+            combined_trail_buffer,
         }
     }
 
@@ -211,43 +240,44 @@ impl Simulation {
     ///
     /// Computes the magnitude of the gradient using central differences on the
     /// simulation-resolution trail map. This is used for the edge glow visual effect.
-    fn compute_gradient_magnitude(&mut self) {
-        // Get dimensions first
-        let width = self.width();
-        let height = self.height();
+    ///
+    /// # Arguments
+    /// * `trail_data` - The trail map data to compute gradient from
+    /// * `width` - Width of the trail map
+    /// * `height` - Height of the trail map
+    /// * `gradient` - Mutable slice to store the computed gradient magnitudes
+    fn compute_gradient_magnitude(
+        trail_data: &[f32],
+        width: usize,
+        height: usize,
+        gradient: &mut [f32],
+    ) {
+        // Reset gradient buffer
+        gradient.fill(0.0);
 
-        // Get trail data (this may borrow self immutably)
-        let trail = self.trail_map_blended();
+        // Compute gradient using central differences
+        for y in 1..height - 1 {
+            for x in 1..width - 1 {
+                let idx = y * width + x;
+                let up = (y - 1) * width + x;
+                let dn = (y + 1) * width + x;
+                let lt = y * width + (x - 1);
+                let rt = y * width + (x + 1);
 
-        // Now compute gradient using the trail data
-        if let Some(ref mut gradient) = self.gradient_magnitude {
-            // Reset gradient buffer
-            gradient.fill(0.0);
+                // Central differences for gradient
+                let gx = (trail_data[rt] - trail_data[lt]) * 0.5;
+                let gy = (trail_data[dn] - trail_data[up]) * 0.5;
 
-            // Compute gradient using central differences
-            for y in 1..height - 1 {
-                for x in 1..width - 1 {
-                    let idx = y * width + x;
-                    let up = (y - 1) * width + x;
-                    let dn = (y + 1) * width + x;
-                    let lt = y * width + (x - 1);
-                    let rt = y * width + (x + 1);
-
-                    // Central differences for gradient
-                    let gx = (trail[rt] - trail[lt]) * 0.5;
-                    let gy = (trail[dn] - trail[up]) * 0.5;
-
-                    // Gradient magnitude
-                    gradient[idx] = (gx * gx + gy * gy).sqrt();
-                }
+                // Gradient magnitude
+                gradient[idx] = (gx * gx + gy * gy).sqrt();
             }
+        }
 
-            // Normalize to [0, 1]
-            let max_val = gradient.iter().copied().fold(0.0f32, f32::max);
-            if max_val > 0.0 {
-                for g in gradient.iter_mut() {
-                    *g = (*g / max_val).min(1.0);
-                }
+        // Normalize to [0, 1]
+        let max_val = gradient.iter().copied().fold(0.0f32, f32::max);
+        if max_val > 0.0 {
+            for g in gradient.iter_mut() {
+                *g = (*g / max_val).min(1.0);
             }
         }
     }
@@ -637,24 +667,42 @@ impl Simulation {
     ///
     /// Applies motion blur if enabled (via history blending) or combines
     /// multiple species trails if separate trails are enabled.
-    pub fn trail_map_blended(&self) -> Vec<f32> {
-        if let Some(ref history) = self.trail_history {
-            if let Some(blended) = history.blended() {
-                return blended;
+    ///
+    /// # Performance
+    /// This method writes to a pre-allocated buffer to avoid allocations.
+    /// The buffer is cleared and reused on each call.
+    pub fn trail_map_blended(&mut self, output: &mut Vec<f32>) {
+        // Check if we have history with blended data
+        if let Some(blended) = self.trail_history.as_mut().and_then(|h| h.blended()) {
+            let size = blended.len();
+            if output.len() != size {
+                output.resize(size, 0.0);
             }
+            output.copy_from_slice(blended);
+            return;
         }
+
         if self.config.separate_species_trails {
             let width = self.width();
             let height = self.height();
-            let mut combined = vec![0.0f32; width * height];
+            let size = width * height;
+            if output.len() != size {
+                output.resize(size, 0.0);
+            } else {
+                output.fill(0.0);
+            }
             for trail_map in &self.trail_maps {
                 for (i, &val) in trail_map.current().iter().enumerate() {
-                    combined[i] += val;
+                    output[i] += val;
                 }
             }
-            combined
         } else {
-            self.trail_maps[0].current().to_vec()
+            let source = self.trail_maps[0].current();
+            let size = source.len();
+            if output.len() != size {
+                output.resize(size, 0.0);
+            }
+            output.copy_from_slice(source);
         }
     }
 
@@ -703,48 +751,41 @@ impl Simulation {
                 let species_config = &self.config.species_configs[species_idx];
                 let trail_idx = species_idx;
 
+                let trail = self.trail_maps[trail_idx].current();
+                for agent in self
+                    .agents
+                    .iter_mut()
+                    .filter(|a| a.species_id as usize == species_idx)
                 {
-                    let trail = self.trail_maps[trail_idx].current();
-                    for agent in self
-                        .agents
-                        .iter_mut()
-                        .filter(|a| a.species_id as usize == species_idx)
-                    {
-                        let (left, center, right) = agent.sense(
-                            trail,
-                            width,
-                            height,
-                            species_config.sensor_angle,
-                            self.config.sensor_distance,
-                        );
+                    let (left, center, right) = agent.sense(
+                        trail,
+                        width,
+                        height,
+                        species_config.sensor_angle,
+                        self.config.sensor_distance,
+                    );
 
-                        agent.rotate(
-                            left,
-                            center,
-                            right,
-                            species_config.rotation_angle,
-                            &mut self.rng,
-                        );
+                    agent.rotate(
+                        left,
+                        center,
+                        right,
+                        species_config.rotation_angle,
+                        &mut self.rng,
+                    );
 
-                        agent.apply_attractor_forces(
-                            &attractors,
-                            attractor_strength,
-                            width,
-                            height,
-                        );
+                    agent.apply_attractor_forces(&attractors, attractor_strength);
 
-                        agent.apply_wind_force(wind, dt);
+                    agent.apply_wind_force(wind, dt);
 
-                        agent.apply_terrain_bias(terrain, terrain_strength, &self.noise);
+                    agent.apply_terrain_bias(terrain, terrain_strength, &self.noise);
 
-                        agent.move_forward(
-                            effective_step_size,
-                            width,
-                            height,
-                            obstacles,
-                            obstacle_masks,
-                        );
-                    }
+                    agent.move_forward(
+                        effective_step_size,
+                        width,
+                        height,
+                        obstacles,
+                        obstacle_masks,
+                    );
                 }
 
                 let trail_mut = self.trail_maps[trail_idx].current_mut();
@@ -764,39 +805,37 @@ impl Simulation {
                 .cloned()
                 .unwrap_or_default();
 
-            {
-                let trail = self.trail_maps[0].current();
-                for agent in self.agents.iter_mut() {
-                    let (left, center, right) = agent.sense(
-                        trail,
-                        width,
-                        height,
-                        species_config.sensor_angle,
-                        self.config.sensor_distance,
-                    );
+            let trail = self.trail_maps[0].current();
+            for agent in self.agents.iter_mut() {
+                let (left, center, right) = agent.sense(
+                    trail,
+                    width,
+                    height,
+                    species_config.sensor_angle,
+                    self.config.sensor_distance,
+                );
 
-                    agent.rotate(
-                        left,
-                        center,
-                        right,
-                        species_config.rotation_angle,
-                        &mut self.rng,
-                    );
+                agent.rotate(
+                    left,
+                    center,
+                    right,
+                    species_config.rotation_angle,
+                    &mut self.rng,
+                );
 
-                    agent.apply_attractor_forces(&attractors, attractor_strength, width, height);
+                agent.apply_attractor_forces(&attractors, attractor_strength);
 
-                    agent.apply_wind_force(wind, dt);
+                agent.apply_wind_force(wind, dt);
 
-                    agent.apply_terrain_bias(terrain, terrain_strength, &self.noise);
+                agent.apply_terrain_bias(terrain, terrain_strength, &self.noise);
 
-                    agent.move_forward(
-                        effective_step_size,
-                        width,
-                        height,
-                        obstacles,
-                        obstacle_masks,
-                    );
-                }
+                agent.move_forward(
+                    effective_step_size,
+                    width,
+                    height,
+                    obstacles,
+                    obstacle_masks,
+                );
             }
 
             let trail_mut = self.trail_maps[0].current_mut();
@@ -817,13 +856,15 @@ impl Simulation {
         }
 
         // Compute trail age: increment where pheromone present, reset where absent
+        // Clamp dt to prevent accumulation errors from large time steps
+        let safe_dt = dt.min(1.0);
         if let Some(ref mut age) = self.trail_age {
             let current = self.trail_maps[0].current();
             let max_val = current.iter().copied().fold(0.0f32, f32::max);
             let threshold = max_val * 0.01;
             for (a, &v) in age.iter_mut().zip(current.iter()) {
                 if v > threshold {
-                    *a = (*a + dt).min(crate::config_defaults::visual_fx::AGE_MAX_SECONDS);
+                    *a = (*a + safe_dt).min(crate::config_defaults::visual_fx::AGE_MAX_SECONDS);
                 } else {
                     *a = 0.0;
                 }
@@ -843,21 +884,25 @@ impl Simulation {
         }
 
         // Compute gradient magnitude for edge glow effect
-        if self.gradient_magnitude.is_some() {
-            self.compute_gradient_magnitude();
+        if let Some(ref mut gradient) = self.gradient_magnitude {
+            // Use primary trail map directly to avoid allocation from trail_map_blended()
+            Self::compute_gradient_magnitude(self.trail_maps[0].current(), width, height, gradient);
         }
 
         self.config.remove_expired_mouse_attractors();
 
         if let Some(ref mut history) = self.trail_history {
             if self.config.separate_species_trails {
-                let mut combined = vec![0.0f32; width * height];
-                for trail_map in &self.trail_maps {
-                    for (i, &val) in trail_map.current().iter().enumerate() {
-                        combined[i] += val;
+                // Use pre-allocated buffer to avoid allocation in hot path
+                if let Some(ref mut combined) = self.combined_trail_buffer {
+                    combined.fill(0.0);
+                    for trail_map in &self.trail_maps {
+                        for (i, &val) in trail_map.current().iter().enumerate() {
+                            combined[i] += val;
+                        }
                     }
+                    history.push(combined);
                 }
-                history.push(&combined);
             } else {
                 history.push(self.trail_maps[0].current());
             }
@@ -929,7 +974,9 @@ impl Simulation {
     /// Update the simulation configuration at runtime.
     ///
     /// Adjusts trail map buffers if the number of species trails changes.
+    /// Also manages the combined trail buffer for separate species with history.
     pub fn update_config(&mut self, config: SimConfig) {
+        let old_separate_trails = self.config.separate_species_trails;
         self.config = config;
         let num_trails = if self.config.separate_species_trails {
             self.config.species_configs.len()
@@ -942,6 +989,25 @@ impl Simulation {
                 self.height(),
                 self.config.diffusion_sigma,
             ));
+        }
+
+        // Manage combined trail buffer based on configuration changes
+        let needs_combined_buffer =
+            self.config.separate_species_trails && self.trail_history.is_some();
+
+        if needs_combined_buffer && self.combined_trail_buffer.is_none() {
+            // Need to create the buffer
+            self.combined_trail_buffer = Some(vec![0.0f32; self.width() * self.height()]);
+        } else if !needs_combined_buffer && self.combined_trail_buffer.is_some() {
+            // No longer need the buffer
+            self.combined_trail_buffer = None;
+        } else if needs_combined_buffer
+            && old_separate_trails != self.config.separate_species_trails
+        {
+            // Configuration changed, ensure buffer is cleared
+            if let Some(ref mut buf) = self.combined_trail_buffer {
+                buf.fill(0.0);
+            }
         }
     }
 
@@ -1132,7 +1198,12 @@ mod tests {
             .max_by(|a, b| a.total_cmp(b))
             .unwrap();
 
-        assert!(max_after_2 < max_after_1 * 1.5);
+        assert!(
+            max_after_2 < max_after_1 * 1.5,
+            "max_after_2 ({}) should be less than max_after_1 * 1.5 ({})",
+            max_after_2,
+            max_after_1 * 1.5
+        );
     }
 
     #[test]
@@ -1217,14 +1288,14 @@ mod tests {
 
     #[test]
     fn test_trail_history_creation() {
-        let history = TrailHistory::new(5);
+        let history = TrailHistory::new(5, 100);
         assert_eq!(history.capacity(), 5);
         assert_eq!(history.count(), 0);
     }
 
     #[test]
     fn test_trail_history_push_and_blend() {
-        let mut history = TrailHistory::new(3);
+        let mut history = TrailHistory::new(3, 4);
 
         let frame1 = vec![1.0, 2.0, 3.0, 4.0];
         let frame2 = vec![2.0, 4.0, 6.0, 8.0];
@@ -1242,7 +1313,7 @@ mod tests {
 
     #[test]
     fn test_trail_history_circular_buffer() {
-        let mut history = TrailHistory::new(2);
+        let mut history = TrailHistory::new(2, 2);
 
         let frame1 = vec![1.0, 1.0];
         let frame2 = vec![2.0, 2.0];
@@ -1260,13 +1331,13 @@ mod tests {
 
     #[test]
     fn test_trail_history_no_frames() {
-        let history = TrailHistory::new(3);
+        let mut history = TrailHistory::new(3, 4);
         assert!(history.blended().is_none());
     }
 
     #[test]
     fn test_trail_history_clear() {
-        let mut history = TrailHistory::new(3);
+        let mut history = TrailHistory::new(3, 2);
 
         let frame = vec![1.0, 2.0];
         history.push(&frame);
@@ -1297,10 +1368,11 @@ mod tests {
     #[test]
     fn test_trail_map_blended_without_history() {
         let config = SimConfig::default();
-        let sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
+        let mut sim = Simulation::new(100, 100, config, 42, InitMode::Random, 0);
 
-        let blended = sim.trail_map_blended();
-        let current = sim.trail_map().current();
+        let mut blended = Vec::new();
+        sim.trail_map_blended(&mut blended);
+        let current = sim.trail_map().current().to_vec();
         assert_eq!(blended, current);
     }
 
@@ -1374,7 +1446,9 @@ mod tests {
             sim.update(1.0);
         }
 
-        let trail_map_sum: f32 = sim.trail_map_blended().iter().sum();
+        let mut blended = Vec::new();
+        sim.trail_map_blended(&mut blended);
+        let trail_map_sum: f32 = blended.iter().sum();
         assert!(
             trail_map_sum > 100.0,
             "Combined trail map should have significant values when all species have agents, got sum: {}",
@@ -1431,7 +1505,9 @@ mod tests {
             sim.update(1.0);
         }
 
-        let blended_sum: f32 = sim.trail_map_blended().iter().sum();
+        let mut blended = Vec::new();
+        sim.trail_map_blended(&mut blended);
+        let blended_sum: f32 = blended.iter().sum();
         assert!(
             blended_sum > 50.0,
             "trail_map_blended() should include second species' trail when first species has 0 agents. Got sum: {}",

@@ -35,6 +35,13 @@ pub fn normalize_angle(mut angle: f32) -> f32 {
     angle
 }
 
+/// Compile-time assertion that ATTRACTOR_MIN_DIST is positive to prevent division by zero.
+#[allow(dead_code)]
+const _: () = assert!(
+    crate::config_defaults::steering::MIN_ATTRACTOR_DISTANCE > 0.0,
+    "MIN_ATTRACTOR_DISTANCE must be positive to prevent division by zero"
+);
+
 /// Wrapper for Perlin noise generation used in terrain effects.
 pub struct NoiseWrapper {
     perlin: Perlin,
@@ -51,6 +58,7 @@ impl NoiseWrapper {
     }
 
     /// Sample noise at the given 2D coordinates.
+    #[inline]
     pub fn get(&self, x: f64, y: f64) -> f64 {
         self.perlin.get([x, y])
     }
@@ -80,6 +88,7 @@ pub struct Agent {
 
 impl Agent {
     /// Create a new agent at (x, y) with the given heading and species.
+    #[inline]
     pub fn new(x: f32, y: f32, heading: f32, species_id: u8) -> Self {
         Self {
             x,
@@ -92,6 +101,7 @@ impl Agent {
     /// Sense the pheromone trail at left, center, and right sensors.
     ///
     /// Returns a tuple of (left, center, right) sensed values.
+    #[inline]
     pub fn sense(
         &self,
         trail: &[f32],
@@ -125,6 +135,8 @@ impl Agent {
     /// Update heading based on sensed values.
     ///
     /// Turns towards the strongest signal, or randomly if forward blocked.
+    /// When center is the strongest, continues straight (no rotation).
+    #[inline]
     pub fn rotate(
         &mut self,
         left: f32,
@@ -135,28 +147,34 @@ impl Agent {
     ) {
         let rotation_angle_rad = rotation_angle * PI / 180.0;
 
+        // If center is strictly strongest, continue straight
         if center > left && center > right {
-        } else if center < left && center < right {
+            // No rotation needed - center sensor shows strongest signal
+            return;
+        }
+
+        // Center is not strictly strongest - need to turn
+        if center < left && center < right {
+            // Forward is blocked on both sides - turn randomly
             if RandRng::gen(rng) {
                 self.heading -= rotation_angle_rad;
             } else {
                 self.heading += rotation_angle_rad;
             }
         } else if left > right {
+            // Left is stronger than right - turn left
             self.heading -= rotation_angle_rad;
         } else if right > left {
+            // Right is stronger than left - turn right
             self.heading += rotation_angle_rad;
         }
+        // If left == right, we continue straight (center wasn't strictly strongest,
+        // but sides are equal, so maintain current heading)
     }
 
     /// Apply steering forces from attractors (or repellers).
-    pub fn apply_attractor_forces(
-        &mut self,
-        attractors: &[Attractor],
-        strength_multiplier: f32,
-        _width: usize,
-        _height: usize,
-    ) {
+    #[inline]
+    pub fn apply_attractor_forces(&mut self, attractors: &[Attractor], strength_multiplier: f32) {
         if attractors.is_empty() {
             return;
         }
@@ -170,11 +188,12 @@ impl Agent {
             let dist_sq = dx * dx + dy * dy;
 
             let dist_sq = dist_sq.max(ATTRACTOR_MIN_DIST * ATTRACTOR_MIN_DIST);
+            let dist = dist_sq.sqrt();
 
-            let force = attractor.strength * strength_multiplier / dist_sq.sqrt();
+            let force = attractor.strength * strength_multiplier / dist;
 
-            force_x += dx / dist_sq.sqrt() * force;
-            force_y += dy / dist_sq.sqrt() * force;
+            force_x += dx / dist * force;
+            force_y += dy / dist * force;
         }
 
         if force_x.abs() > FORCE_THRESHOLD || force_y.abs() > FORCE_THRESHOLD {
@@ -204,9 +223,13 @@ impl Agent {
         terrain_strength: f32,
         noise: &NoiseWrapper,
     ) {
+        // Early return for no terrain effect
+        if terrain == TerrainType::None {
+            return;
+        }
+
         let seed_val = noise.seed_value() as f64;
         match terrain {
-            TerrainType::None => {}
             TerrainType::Smooth => {
                 let nx = self.x as f64 * TERRAIN_SCALE_SMOOTH as f64 + seed_val;
                 let ny = self.y as f64 * TERRAIN_SCALE_SMOOTH as f64 + seed_val;
@@ -246,10 +269,12 @@ impl Agent {
                 let combined_angle = smooth_angle + turb_angle;
                 self.apply_steering(combined_angle, TERRAIN_STRENGTH_MIXED);
             }
+            TerrainType::None => unreachable!(),
         }
     }
 
     /// Move agent forward and handle collisions with boundaries and obstacles.
+    #[inline]
     pub fn move_forward(
         &mut self,
         step_size: f32,
@@ -262,9 +287,10 @@ impl Agent {
         self.y += self.heading.sin() * step_size;
 
         for (i, obstacle) in obstacles.iter().enumerate() {
-            let mask = obstacle_masks.get(i).cloned().flatten();
-            if obstacle.contains(self.x, self.y, mask.as_ref()) {
-                self.heading = obstacle.bounce(self.x, self.y, self.heading, mask.as_ref());
+            // Use reference instead of cloning to avoid allocation in hot path
+            let mask_ref = obstacle_masks.get(i).and_then(|m| m.as_ref());
+            if obstacle.contains(self.x, self.y, mask_ref) {
+                self.heading = obstacle.bounce(self.x, self.y, self.heading, mask_ref);
                 self.x += self.heading.cos() * step_size;
                 self.y += self.heading.sin() * step_size;
             }
@@ -288,6 +314,7 @@ impl Agent {
     }
 
     /// Deposit pheromone at the current position.
+    #[inline]
     pub fn deposit(&self, trail: &mut [f32], width: usize, height: usize, deposit_amount: f32) {
         let x = self.x as usize;
         let y = self.y as usize;
@@ -305,7 +332,14 @@ impl Agent {
     }
 }
 
+/// Sample trail value at (x, y) with bounds checking.
+/// Returns 0.0 if out of bounds.
+#[inline]
 fn sample_trail(trail: &[f32], width: usize, height: usize, x: f32, y: f32) -> f32 {
+    if !x.is_finite() || !y.is_finite() {
+        return 0.0;
+    }
+
     let ix = x.floor() as i32;
     let iy = y.floor() as i32;
 
@@ -406,7 +440,7 @@ mod tests {
     fn test_apply_attractor_forces_attract() {
         let mut agent = Agent::new(100.0, 100.0, PI / 2.0, 0);
         let attractors = vec![Attractor::new(150.0, 200.0, 1.0)];
-        agent.apply_attractor_forces(&attractors, 1.0, 400, 400);
+        agent.apply_attractor_forces(&attractors, 1.0);
         assert!(
             (agent.heading - PI / 2.0).abs() < 0.15,
             "heading should adjust toward attractor, got {}",
@@ -418,7 +452,7 @@ mod tests {
     fn test_apply_attractor_forces_repel() {
         let mut agent = Agent::new(100.0, 100.0, PI / 2.0, 0);
         let attractors = vec![Attractor::new(150.0, 200.0, -1.0)];
-        agent.apply_attractor_forces(&attractors, 1.0, 400, 400);
+        agent.apply_attractor_forces(&attractors, 1.0);
         assert!(
             (agent.heading - PI / 2.0).abs() > 0.1,
             "heading should turn away from repeller, got {}",
@@ -430,7 +464,7 @@ mod tests {
     fn test_apply_attractor_forces_no_attractors() {
         let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
         let original_heading = agent.heading;
-        agent.apply_attractor_forces(&[], 1.0, 400, 400);
+        agent.apply_attractor_forces(&[], 1.0);
         assert_eq!(agent.heading, original_heading);
     }
 
@@ -441,7 +475,7 @@ mod tests {
             Attractor::new(100.0, 200.0, 1.0),
             Attractor::new(300.0, 200.0, 1.0),
         ];
-        agent.apply_attractor_forces(&attractors, 1.0, 400, 400);
+        agent.apply_attractor_forces(&attractors, 1.0);
     }
 
     #[test]

@@ -5,15 +5,24 @@ pub struct TrailHistory {
     capacity: usize,
     current_index: usize,
     count: usize,
+    frame_size: usize,
+    blended_buffer: Vec<f32>,
 }
 
 impl TrailHistory {
-    pub fn new(capacity: usize) -> Self {
+    pub fn new(capacity: usize, frame_size: usize) -> Self {
+        let mut history = Vec::with_capacity(capacity);
+        for _ in 0..capacity {
+            history.push(vec![0.0f32; frame_size]);
+        }
+
         Self {
-            history: Vec::with_capacity(capacity),
+            history,
             capacity,
             current_index: 0,
             count: 0,
+            frame_size,
+            blended_buffer: vec![0.0f32; frame_size],
         }
     }
 
@@ -22,41 +31,39 @@ impl TrailHistory {
             return;
         }
 
-        if self.history.len() < self.capacity {
-            self.history.push(trail_map.to_vec());
-            self.count = self.history.len();
-        } else {
-            self.history[self.current_index].copy_from_slice(trail_map);
-        }
-
+        self.history[self.current_index].copy_from_slice(trail_map);
         self.current_index = (self.current_index + 1) % self.capacity;
+
+        if self.count < self.capacity {
+            self.count += 1;
+        }
     }
 
-    pub fn blended(&self) -> Option<Vec<f32>> {
+    pub fn blended(&mut self) -> Option<&[f32]> {
         if self.count == 0 {
             return None;
         }
 
-        let mut result = vec![0.0f32; self.history[0].len()];
+        self.blended_buffer.fill(0.0);
+
         for frame in &self.history[..self.count] {
             for (i, &val) in frame.iter().enumerate() {
-                result[i] += val;
+                self.blended_buffer[i] += val;
             }
         }
 
         let weight = 1.0 / self.count as f32;
-        for val in &mut result {
+        for val in &mut self.blended_buffer {
             *val *= weight;
         }
 
-        Some(result)
+        Some(&self.blended_buffer)
     }
 }
 
 fn bench_trail_history_push(c: &mut Criterion) {
-    let mut history = TrailHistory::new(10);
-
     let trail_data: Vec<f32> = (0..400 * 400).map(|i| (i % 100) as f32 / 10.0).collect();
+    let mut history = TrailHistory::new(10, trail_data.len());
 
     c.bench_function("trail_history_push_10_frames", |b| {
         b.iter(|| {
@@ -72,9 +79,9 @@ fn bench_trail_history_blend_various_sizes(c: &mut Criterion) {
     for size in [3, 5, 10] {
         group.bench_function(format!("blend_{}_frames", size), |b| {
             b.iter(|| {
-                let mut history = TrailHistory::new(size);
                 let trail_data: Vec<f32> =
                     (0..400 * 400).map(|i| (i % 100) as f32 / 10.0).collect();
+                let mut history = TrailHistory::new(size, trail_data.len());
 
                 for _ in 0..size {
                     history.push(&trail_data);
@@ -104,7 +111,7 @@ fn bench_trail_history_overhead_comparison(c: &mut Criterion) {
     for history_size in [3, 5, 10] {
         group.bench_function(format!("with_history_{}", history_size), |b| {
             b.iter(|| {
-                let mut history = TrailHistory::new(history_size);
+                let mut history = TrailHistory::new(history_size, trail_data.len());
 
                 for _ in 0..history_size {
                     history.push(&trail_data);
@@ -124,7 +131,7 @@ fn bench_trail_history_blend_performance(c: &mut Criterion) {
 
     c.bench_function("trail_history_blend_400x400", |b| {
         b.iter(|| {
-            let mut history = TrailHistory::new(10);
+            let mut history = TrailHistory::new(10, trail_data.len());
 
             for _ in 0..10 {
                 history.push(&trail_data);

@@ -4,9 +4,6 @@
 //! undergoes diffusion (spreading) and decay each frame to create organic
 //! patterns.
 
-// These methods are part of the public library API even if unused by the CLI binary
-#![allow(dead_code)]
-
 /// A 2D grid storing pheromone trail values.
 ///
 /// Uses double-buffering for efficient diffusion operations.
@@ -21,16 +18,17 @@ pub struct TrailMap {
 }
 
 const GAUSSIAN_KERNEL_SIZE: usize = 5;
+const GAUSSIAN_RADIUS: i32 = 2;
 
 fn generate_gaussian_kernel(sigma: f32) -> [f32; 25] {
     let mut kernel = [0.0f32; 25];
-    let radius: i32 = 2;
     let two_sigma_sq = 2.0 * sigma * sigma;
     let mut sum = 0.0f32;
 
-    for y in -radius..=radius {
-        for x in -radius..=radius {
-            let idx = ((y + radius) * GAUSSIAN_KERNEL_SIZE as i32 + (x + radius)) as usize;
+    for y in -GAUSSIAN_RADIUS..=GAUSSIAN_RADIUS {
+        for x in -GAUSSIAN_RADIUS..=GAUSSIAN_RADIUS {
+            let idx = ((y + GAUSSIAN_RADIUS) * GAUSSIAN_KERNEL_SIZE as i32 + (x + GAUSSIAN_RADIUS))
+                as usize;
             let dist_sq = (x * x + y * y) as f32;
             kernel[idx] = (-dist_sq / two_sigma_sq).exp();
             sum += kernel[idx];
@@ -114,6 +112,7 @@ impl TrailMap {
     }
 
     /// Get the pheromone value at (x, y). Returns 0.0 if out of bounds.
+    #[inline]
     pub fn get(&self, x: usize, y: usize) -> f32 {
         if x < self.width && y < self.height {
             self.current[y * self.width + x]
@@ -225,6 +224,26 @@ impl TrailMap {
         }
     }
 
+    /// AVX-optimized 3x3 mean filter diffusion.
+    ///
+    /// This function applies a box blur (mean filter) using AVX2 SIMD instructions.
+    /// For each pixel, it computes the average of the 3x3 neighborhood (9 pixels total).
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Process pixels in chunks of 8 using AVX 256-bit registers
+    /// 2. Load 3 rows of 8 pixels each (with 1-pixel overlap for neighbors)
+    /// 3. Sum all 9 values using `_mm256_add_ps` (8 additions chained)
+    /// 4. Divide by 9 using `_mm256_div_ps`
+    /// 5. Store result back to scratch buffer
+    /// 6. Process remaining pixels with scalar fallback
+    ///
+    /// # Why Unaligned Loads (`_mm256_loadu_ps`)
+    ///
+    /// We use unaligned loads because the starting x position (1) is not guaranteed
+    /// to be 32-byte aligned. Unaligned loads have minimal performance penalty on
+    /// modern x86_64 CPUs (Sandy Bridge and later).
+    ///
     /// # Safety
     ///
     /// The caller must ensure that `current` and `scratch` slices have a length
@@ -487,6 +506,244 @@ impl TrailMap {
         }
     }
 
+    /// AVX-optimized 5x5 Gaussian blur diffusion.
+    ///
+    /// This function applies a Gaussian blur using a 5x5 kernel with AVX2 SIMD.
+    /// Unlike the mean filter, each pixel in the neighborhood has a different weight
+    /// based on the Gaussian distribution.
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Pre-load all 25 kernel weights into AVX registers (broadcast to all 8 lanes)
+    /// 2. For each pixel, load a 5x5 neighborhood (25 values total)
+    /// 3. Multiply each value by its corresponding kernel weight using `_mm256_mul_ps`
+    /// 4. Accumulate results using `_mm256_add_ps` (24 additions total)
+    /// 5. Store the weighted sum back to scratch buffer
+    /// 6. Process remaining pixels with scalar fallback
+    ///
+    /// # Memory Access Pattern
+    ///
+    /// We load 5 rows of data, 3 registers per row (covering x-2 to x+2),
+    /// with the middle register containing the main pixel data.
+    /// This minimizes memory loads while covering the full 5x5 neighborhood.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `current` and `scratch` slices have length >= width * height
+    /// - `width` >= 10 to accommodate AVX register width (8) + kernel boundary (2)
+    /// - AVX is available on the target CPU (checked via is_x86_feature_detected!("avx"))
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx")]
+    unsafe fn diffuse_gaussian_avx_impl(
+        current: &[f32],
+        scratch: &mut [f32],
+        width: usize,
+        height: usize,
+        kernel: &[f32; 25],
+    ) {
+        use std::arch::x86_64::*;
+
+        // Load all 25 kernel weights into AVX registers (broadcast to all 8 lanes)
+        let k0 = _mm256_set1_ps(kernel[0]);
+        let k1 = _mm256_set1_ps(kernel[1]);
+        let k2 = _mm256_set1_ps(kernel[2]);
+        let k3 = _mm256_set1_ps(kernel[3]);
+        let k4 = _mm256_set1_ps(kernel[4]);
+        let k5 = _mm256_set1_ps(kernel[5]);
+        let k6 = _mm256_set1_ps(kernel[6]);
+        let k7 = _mm256_set1_ps(kernel[7]);
+        let k8 = _mm256_set1_ps(kernel[8]);
+        let k9 = _mm256_set1_ps(kernel[9]);
+        let k10 = _mm256_set1_ps(kernel[10]);
+        let k11 = _mm256_set1_ps(kernel[11]);
+        let k12 = _mm256_set1_ps(kernel[12]);
+        let k13 = _mm256_set1_ps(kernel[13]);
+        let k14 = _mm256_set1_ps(kernel[14]);
+        let k15 = _mm256_set1_ps(kernel[15]);
+        let k16 = _mm256_set1_ps(kernel[16]);
+        let k17 = _mm256_set1_ps(kernel[17]);
+        let k18 = _mm256_set1_ps(kernel[18]);
+        let k19 = _mm256_set1_ps(kernel[19]);
+        let k20 = _mm256_set1_ps(kernel[20]);
+        let k21 = _mm256_set1_ps(kernel[21]);
+        let k22 = _mm256_set1_ps(kernel[22]);
+        let k23 = _mm256_set1_ps(kernel[23]);
+        let k24 = _mm256_set1_ps(kernel[24]);
+
+        let simd_width = 8;
+        // Leave room for kernel boundary on right side
+        let limit = width.saturating_sub(simd_width + GAUSSIAN_RADIUS as usize);
+
+        let mut y = GAUSSIAN_RADIUS as usize;
+
+        while y < height - GAUSSIAN_RADIUS as usize {
+            let current_row = y * width;
+            let row_minus_2 = (y - GAUSSIAN_RADIUS as usize) * width;
+            let row_minus_1 = (y - 1) * width;
+            let row_plus_1 = (y + 1) * width;
+            let row_plus_2 = (y + GAUSSIAN_RADIUS as usize) * width;
+
+            let mut x = GAUSSIAN_RADIUS as usize;
+
+            // Main SIMD loop - process 8 pixels at a time
+            while x < limit {
+                let idx = current_row + x;
+
+                // Load 5x5 neighborhood around the 8-pixel chunk
+                // Row y-2: x-2, x-1, x, x+1, x+2
+                let m2_l = _mm256_loadu_ps(current.as_ptr().add(row_minus_2 + x - 2));
+                let m2_m = _mm256_loadu_ps(current.as_ptr().add(row_minus_2 + x - 1));
+                let m2_r = _mm256_loadu_ps(current.as_ptr().add(row_minus_2 + x));
+
+                // Row y-1: x-2, x-1, x, x+1, x+2
+                let m1_l = _mm256_loadu_ps(current.as_ptr().add(row_minus_1 + x - 2));
+                let m1_m = _mm256_loadu_ps(current.as_ptr().add(row_minus_1 + x - 1));
+                let m1_r = _mm256_loadu_ps(current.as_ptr().add(row_minus_1 + x));
+
+                // Row y: x-2, x-1, x, x+1, x+2
+                let p0_l = _mm256_loadu_ps(current.as_ptr().add(current_row + x - 2));
+                let p0_m = _mm256_loadu_ps(current.as_ptr().add(current_row + x - 1));
+                let p0_r = _mm256_loadu_ps(current.as_ptr().add(current_row + x));
+
+                // Row y+1: x-2, x-1, x, x+1, x+2
+                let p1_l = _mm256_loadu_ps(current.as_ptr().add(row_plus_1 + x - 2));
+                let p1_m = _mm256_loadu_ps(current.as_ptr().add(row_plus_1 + x - 1));
+                let p1_r = _mm256_loadu_ps(current.as_ptr().add(row_plus_1 + x));
+
+                // Row y+2: x-2, x-1, x, x+1, x+2
+                let p2_l = _mm256_loadu_ps(current.as_ptr().add(row_plus_2 + x - 2));
+                let p2_m = _mm256_loadu_ps(current.as_ptr().add(row_plus_2 + x - 1));
+                let p2_r = _mm256_loadu_ps(current.as_ptr().add(row_plus_2 + x));
+
+                // Compute weighted sum using multiply-add operations
+                // Row y-2: kernels 0-4
+                let mut sum = _mm256_mul_ps(m2_l, k0);
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(m2_m, k1));
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(m2_r, k2));
+                sum = _mm256_add_ps(
+                    sum,
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(current.as_ptr().add(row_minus_2 + x + 1)),
+                        k3,
+                    ),
+                );
+                sum = _mm256_add_ps(
+                    sum,
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(current.as_ptr().add(row_minus_2 + x + 2)),
+                        k4,
+                    ),
+                );
+
+                // Row y-1: kernels 5-9
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(m1_l, k5));
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(m1_m, k6));
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(m1_r, k7));
+                sum = _mm256_add_ps(
+                    sum,
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(current.as_ptr().add(row_minus_1 + x + 1)),
+                        k8,
+                    ),
+                );
+                sum = _mm256_add_ps(
+                    sum,
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(current.as_ptr().add(row_minus_1 + x + 2)),
+                        k9,
+                    ),
+                );
+
+                // Row y: kernels 10-14
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(p0_l, k10));
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(p0_m, k11));
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(p0_r, k12));
+                sum = _mm256_add_ps(
+                    sum,
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(current.as_ptr().add(current_row + x + 1)),
+                        k13,
+                    ),
+                );
+                sum = _mm256_add_ps(
+                    sum,
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(current.as_ptr().add(current_row + x + 2)),
+                        k14,
+                    ),
+                );
+
+                // Row y+1: kernels 15-19
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(p1_l, k15));
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(p1_m, k16));
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(p1_r, k17));
+                sum = _mm256_add_ps(
+                    sum,
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(current.as_ptr().add(row_plus_1 + x + 1)),
+                        k18,
+                    ),
+                );
+                sum = _mm256_add_ps(
+                    sum,
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(current.as_ptr().add(row_plus_1 + x + 2)),
+                        k19,
+                    ),
+                );
+
+                // Row y+2: kernels 20-24
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(p2_l, k20));
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(p2_m, k21));
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(p2_r, k22));
+                sum = _mm256_add_ps(
+                    sum,
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(current.as_ptr().add(row_plus_2 + x + 1)),
+                        k23,
+                    ),
+                );
+                sum = _mm256_add_ps(
+                    sum,
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(current.as_ptr().add(row_plus_2 + x + 2)),
+                        k24,
+                    ),
+                );
+
+                // Store result
+                _mm256_storeu_ps(scratch.as_mut_ptr().add(idx), sum);
+
+                x += simd_width;
+            }
+
+            // Scalar fallback for remaining columns
+            let mut x = limit.max(GAUSSIAN_RADIUS as usize);
+            while x < width - GAUSSIAN_RADIUS as usize {
+                let idx = current_row + x;
+                let mut sum = 0.0f32;
+
+                for ky in -GAUSSIAN_RADIUS..=GAUSSIAN_RADIUS {
+                    for kx in -GAUSSIAN_RADIUS..=GAUSSIAN_RADIUS {
+                        let nx = x as i32 + kx;
+                        let ny = y as i32 + ky;
+                        let kernel_idx = ((ky + GAUSSIAN_RADIUS) * GAUSSIAN_KERNEL_SIZE as i32
+                            + (kx + GAUSSIAN_RADIUS))
+                            as usize;
+                        sum += current[(ny as usize) * width + (nx as usize)] * kernel[kernel_idx];
+                    }
+                }
+
+                scratch[idx] = sum;
+
+                x += 1;
+            }
+
+            y += 1;
+        }
+    }
+
     /// # Safety
     ///
     /// The caller must ensure that `current` and `scratch` slices have a length
@@ -531,18 +788,18 @@ impl TrailMap {
         let k24 = vdupq_n_f32(kernel[24]);
 
         let simd_width = 4;
-        let limit = width.saturating_sub(simd_width + 2);
+        let limit = width.saturating_sub(simd_width + GAUSSIAN_RADIUS as usize);
 
-        let mut y = 2usize;
+        let mut y = GAUSSIAN_RADIUS as usize;
 
-        while y < height - 2 {
+        while y < height - GAUSSIAN_RADIUS as usize {
             let current_row = y * width;
             let row_minus_1 = (y - 1) * width;
-            let row_minus_2 = (y - 2) * width;
+            let row_minus_2 = (y - GAUSSIAN_RADIUS as usize) * width;
             let row_plus_1 = (y + 1) * width;
-            let row_plus_2 = (y + 2) * width;
+            let row_plus_2 = (y + GAUSSIAN_RADIUS as usize) * width;
 
-            let mut x = 2usize;
+            let mut x = GAUSSIAN_RADIUS as usize;
 
             while x < limit {
                 let idx = current_row + x;
@@ -638,16 +895,18 @@ impl TrailMap {
                 x += simd_width;
             }
 
-            let mut x = limit.max(2);
-            while x < width - 2 {
+            let mut x = limit.max(GAUSSIAN_RADIUS as usize);
+            while x < width - GAUSSIAN_RADIUS as usize {
                 let idx = current_row + x;
                 let mut sum = 0.0f32;
 
-                for ky in -2..=2 {
-                    for kx in -2..=2 {
+                for ky in -GAUSSIAN_RADIUS..=GAUSSIAN_RADIUS {
+                    for kx in -GAUSSIAN_RADIUS..=GAUSSIAN_RADIUS {
                         let nx = x as i32 + kx;
                         let ny = y as i32 + ky;
-                        let kernel_idx = ((ky + 2) * 5 + (kx + 2)) as usize;
+                        let kernel_idx = ((ky + GAUSSIAN_RADIUS) * GAUSSIAN_KERNEL_SIZE as i32
+                            + (kx + GAUSSIAN_RADIUS))
+                            as usize;
                         sum += current[(ny as usize) * width + (nx as usize)] * kernel[kernel_idx];
                     }
                 }
@@ -686,15 +945,16 @@ impl TrailMap {
         #[cfg(not(any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")))]
         let has_simd = false;
 
-        if has_simd {
+        if has_simd && width >= 10 {
             #[cfg(target_arch = "aarch64")]
             // SAFETY: Neon feature detected, buffers sized at width*height.
             unsafe {
                 Self::diffuse_gaussian_neon_impl(current, scratch, width, height, kernel);
             }
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-            {
-                Self::diffuse_gaussian_scalar_impl(current, scratch, width, height, kernel);
+            // SAFETY: AVX feature detected, buffers sized at width*height, width >= 10.
+            unsafe {
+                Self::diffuse_gaussian_avx_impl(current, scratch, width, height, kernel);
             }
         } else {
             Self::diffuse_gaussian_scalar_impl(current, scratch, width, height, kernel);
@@ -981,6 +1241,72 @@ mod tests {
         // With width 4 and 5x5 kernel (radius 2), no pixels are processed as "inner" pixels.
         // So the value should remain unchanged.
         assert_eq!(trail.get(1, 1), 9.0);
+    }
+
+    #[test]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    fn test_diffuse_gaussian_avx_matches_scalar() {
+        use std::arch::is_x86_feature_detected;
+
+        // Skip test if AVX not available
+        if !is_x86_feature_detected!("avx") {
+            return;
+        }
+
+        let width = 64;
+        let height = 64;
+
+        // Create two trail maps with identical initial data
+        let mut trail_avx = TrailMap::new(width, height);
+        let mut trail_scalar = TrailMap::new(width, height);
+
+        // Initialize with test pattern
+        for y in 0..height {
+            for x in 0..width {
+                let value = ((x + y * width) % 100) as f32 / 100.0;
+                trail_avx.set(x, y, value);
+                trail_scalar.set(x, y, value);
+            }
+        }
+
+        // Apply AVX Gaussian diffusion directly
+        let kernel = trail_avx.gaussian_kernel;
+        unsafe {
+            Self::diffuse_gaussian_avx_impl(
+                &trail_avx.current,
+                &mut trail_avx.scratch,
+                width,
+                height,
+                &kernel,
+            );
+        }
+        trail_avx.swap_buffers();
+
+        // Apply scalar Gaussian diffusion
+        Self::diffuse_gaussian_scalar_impl(
+            &trail_scalar.current,
+            &mut trail_scalar.scratch,
+            width,
+            height,
+            &kernel,
+        );
+        trail_scalar.swap_buffers();
+
+        // Compare results (allow small floating point differences)
+        let avx_data = trail_avx.current();
+        let scalar_data = trail_scalar.current();
+
+        for i in 0..width * height {
+            let diff = (avx_data[i] - scalar_data[i]).abs();
+            assert!(
+                diff < 1e-4,
+                "Mismatch at index {}: AVX={}, Scalar={}, diff={}",
+                i,
+                avx_data[i],
+                scalar_data[i],
+                diff
+            );
+        }
     }
 }
 

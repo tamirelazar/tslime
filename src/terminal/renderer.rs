@@ -46,6 +46,8 @@ pub struct TerminalRenderer {
     background_color: Option<RgbColor>,
     ascii_contrast: f32,
     aux_frame: Option<crate::render::downsample::AuxFrame>,
+    /// Pre-allocated frame buffer to avoid per-frame allocations
+    frame_buffer: Option<crate::render::downsample::DownsampledFrame>,
     trail_age_enabled: bool,
     trail_delta_enabled: bool,
     trail_age_hue_range: f32,
@@ -88,6 +90,7 @@ impl TerminalRenderer {
             background_color,
             ascii_contrast: 1.5,
             aux_frame: None,
+            frame_buffer: None,
             trail_age_enabled: false,
             trail_delta_enabled: false,
             trail_age_hue_range: 15.0,
@@ -671,62 +674,79 @@ impl TerminalRenderer {
         // Keep track of downsampled cells for grid brightness calculation
         let mut all_downsampled_cells = Vec::new();
 
-        for (trail_map, species_color) in trail_maps {
-            let downsampled = downsample_multi_species(
-                &[(trail_map, 0)],
-                sim_width,
-                sim_height,
-                self.width,
-                self.height,
-            );
+        // Get or create pre-allocated frame buffer
+        let width = self.width;
+        let height = self.height;
+        if self
+            .frame_buffer
+            .as_ref()
+            .map(|f| f.width() != width || f.height() != height)
+            .unwrap_or(true)
+        {
+            self.frame_buffer = Some(crate::render::downsample::DownsampledFrame::new(
+                width, height,
+            ));
+        }
 
-            // Store for brightness calculation
-            if all_downsampled_cells.is_empty() {
-                all_downsampled_cells = downsampled.cells().to_vec();
-            } else {
-                // Sum cells from different species
-                for (i, cell) in downsampled.cells().iter().enumerate() {
-                    if i < all_downsampled_cells.len() {
-                        all_downsampled_cells[i].top += cell.top;
-                        all_downsampled_cells[i].bottom += cell.bottom;
+        for (trail_map, species_color) in trail_maps {
+            if let Some(ref mut downsampled) = self.frame_buffer {
+                downsample_multi_species(
+                    &[(trail_map, 0)],
+                    sim_width,
+                    sim_height,
+                    width,
+                    height,
+                    downsampled,
+                );
+
+                // Store for brightness calculation
+                if all_downsampled_cells.is_empty() {
+                    all_downsampled_cells = downsampled.cells().to_vec();
+                } else {
+                    // Sum cells from different species
+                    for (i, cell) in downsampled.cells().iter().enumerate() {
+                        if i < all_downsampled_cells.len() {
+                            all_downsampled_cells[i].top += cell.top;
+                            all_downsampled_cells[i].bottom += cell.bottom;
+                        }
                     }
                 }
-            }
 
-            let species_color_vec = vec![*species_color];
-            let species_buffer = FrameBuffer::from_downsampled(
-                downsampled.cells(),
-                self.width,
-                self.height,
-                max_trail_value,
-                self.palette.clone(),
-                self.charset.clone(),
-                self.reverse_palette,
-                self.invert_palette,
-                self.color_mode,
-                self.hue_shift,
-                self.dither_mode,
-                &mut self.error_diffusion,
-                self.intensity_mapping.as_ref(),
-                true,
-                Some(species_color_vec),
-                self.background_color,
-                self.ascii_contrast,
-                None, // aux_frame not supported for multi-species
-                false,
-                false,
-                60.0,  // default hue range
-                1.0,   // default blend
-                0.5,   // default delta strength
-                false, // gradient disabled
-                0.3,   // default gradient strength
-                TrailAgeMode::Bidirectional,
-                false,
-            );
+                let species_color_vec = vec![*species_color];
+                let species_buffer = FrameBuffer::from_downsampled(
+                    downsampled.cells(),
+                    width,
+                    height,
+                    max_trail_value,
+                    self.palette.clone(),
+                    self.charset.clone(),
+                    self.reverse_palette,
+                    self.invert_palette,
+                    self.color_mode,
+                    self.hue_shift,
+                    self.dither_mode,
+                    &mut self.error_diffusion,
+                    self.intensity_mapping.as_ref(),
+                    true,
+                    Some(species_color_vec),
+                    self.background_color,
+                    self.ascii_contrast,
+                    None, // aux_frame not supported for multi-species
+                    false,
+                    false,
+                    60.0,  // default hue range
+                    1.0,   // default blend
+                    0.5,   // default delta strength
+                    false, // gradient disabled
+                    0.3,   // default gradient strength
+                    TrailAgeMode::Bidirectional,
+                    false,
+                );
 
-            for (i, cell) in species_buffer.cells.iter().enumerate() {
-                if cell.char != ' ' {
-                    buffer.cells[i] = *cell;
+                for (i, cell) in species_buffer.cells.iter().enumerate() {
+                    if cell.char != ' ' {
+                        buffer.cells[i] = *cell;
+                    }
                 }
             }
         }

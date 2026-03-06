@@ -482,6 +482,10 @@ pub mod warmup {
     pub const DEFAULT_BRIGHTNESS_MULTIPLIER: f32 = 2.5;
     /// Default decay factor during warmup.
     pub const DEFAULT_DECAY_FACTOR: f32 = 0.99;
+    /// Speed multiplier during warmup (30% of normal speed).
+    pub const WARMUP_SPEED_MULTIPLIER: f32 = 0.3;
+    /// Transition duration in frames from warmup to normal speed (1 second at 30 FPS).
+    pub const TRANSITION_DURATION_FRAMES: usize = 30;
 }
 
 /// Food persistence defaults.

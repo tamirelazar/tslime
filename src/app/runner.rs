@@ -7,6 +7,7 @@ use std::io::{self, Write};
 
 use crate::app::{apply_random_config, extract_species_rgb_colors, REFERENCE_TIME_STEP};
 use crate::cli::{self, Args, ColorMode, Mode, Palette};
+use crate::config_defaults::warmup::{TRANSITION_DURATION_FRAMES, WARMUP_SPEED_MULTIPLIER};
 use crate::config_manager;
 use crate::export::GifExporter;
 use crate::export::WebmExporter;
@@ -524,7 +525,7 @@ pub fn run_simulation(
 
     let color_mode = capabilities.auto_select_color_mode(args.color_mode().ok());
 
-    let config = args.to_sim_config();
+    let config = args.to_sim_config().unwrap();
     let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
 
     let init_mode = args
@@ -641,7 +642,7 @@ pub fn run_simulation(
         sim.update_config(new_config);
     }
 
-    // let config = args.to_sim_config(); // Already parsed above
+    // let config = args.to_sim_config().unwrap(); // Already parsed above
     if args.species_colors {
         let species_rgb_colors = extract_species_rgb_colors(&config);
         renderer.set_species_colors(true, species_rgb_colors);
@@ -689,6 +690,19 @@ pub fn run_simulation(
         None
     };
 
+    // Pre-allocate frame buffers to avoid per-frame allocations
+    let mut downsampled_frame =
+        crate::render::downsample::DownsampledFrame::new(term_width as usize, term_height as usize);
+    let mut aux_frame = crate::render::downsample::AuxFrame {
+        width: term_width as usize,
+        height: term_height as usize,
+        cells: vec![
+            crate::render::downsample::AuxCell::default();
+            (term_width as usize) * (term_height as usize)
+        ],
+    };
+    let mut blended_trail_buffer: Vec<f32> = Vec::new();
+
     loop {
         if is_shutdown_requested() {
             break;
@@ -724,9 +738,7 @@ pub fn run_simulation(
         let in_warmup = !args.skip_warmup && runtime_state.is_in_warmup(args.warmup_frames);
 
         // Calculate transition fade factor for smooth warmup→normal transition
-        const WARMUP_SPEED_MULTIPLIER: f32 = 0.3; // 30% speed during warmup
-        const TRANSITION_DURATION_FRAMES: usize = 30; // 1 second at 30 FPS
-
+        // Uses WARMUP_SPEED_MULTIPLIER and TRANSITION_DURATION_FRAMES from config_defaults
         let frames_since_warmup = runtime_state
             .warmup_counter
             .saturating_sub(args.warmup_frames);
@@ -769,46 +781,61 @@ pub fn run_simulation(
             timer.end_sim_start_render();
         }
 
-        let blended_trail = sim.trail_map_blended();
-        let downsampled = downsample(
-            &blended_trail,
-            sim.width(),
-            sim.height(),
+        // Extract basic sim data
+        let sim_width = sim.width();
+        let sim_height = sim.height();
+        let sim_dims = sim_width * sim_height;
+        let agent_count = sim.agent_count();
+
+        // Get blended trail first (takes &mut self)
+        sim.trail_map_blended(&mut blended_trail_buffer);
+        downsample(
+            &blended_trail_buffer,
+            sim_width,
+            sim_height,
             term_width as usize,
             term_height as usize,
+            &mut downsampled_frame,
         );
 
         // Compute auxiliary frame for trail age / temporal delta / gradient
-        let aux_frame = if runtime_state.trail_age_enabled
+        // These calls happen AFTER blended_trail is dropped from the scope above
+        let current_aux_frame = if runtime_state.trail_age_enabled
             || runtime_state.trail_delta_enabled
             || runtime_state.gradient_magnitude_enabled
         {
-            Some(crate::render::downsample::downsample_aux(
-                if runtime_state.trail_age_enabled {
-                    sim.trail_age()
-                } else {
-                    None
-                },
-                if runtime_state.trail_delta_enabled {
-                    sim.trail_delta()
-                } else {
-                    None
-                },
-                if runtime_state.gradient_magnitude_enabled {
-                    sim.gradient_magnitude()
-                } else {
-                    None
-                },
-                sim.width(),
-                sim.height(),
+            let trail_age = if runtime_state.trail_age_enabled {
+                sim.trail_age()
+            } else {
+                None
+            };
+            let trail_delta = if runtime_state.trail_delta_enabled {
+                sim.trail_delta()
+            } else {
+                None
+            };
+            let gradient_mag = if runtime_state.gradient_magnitude_enabled {
+                sim.gradient_magnitude()
+            } else {
+                None
+            };
+
+            crate::render::downsample::downsample_aux(
+                trail_age,
+                trail_delta,
+                gradient_mag,
+                sim_width,
+                sim_height,
                 term_width as usize,
                 term_height as usize,
-            ))
+                &mut aux_frame,
+            );
+            Some(&aux_frame)
         } else {
             None
         };
         renderer.set_visual_fx(
-            aux_frame,
+            current_aux_frame.cloned(),
             runtime_state.trail_age_enabled,
             runtime_state.trail_delta_enabled,
             runtime_state.trail_age_hue_range,
@@ -820,9 +847,9 @@ pub fn run_simulation(
             runtime_state.trail_age_reverse,
         );
 
-        let current_config = args.to_sim_config();
+        let current_config = args.to_sim_config().unwrap();
 
-        adaptive_brightness.update(downsampled.cells());
+        adaptive_brightness.update(downsampled_frame.cells());
         let mut max_brightness = if args.auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
@@ -974,7 +1001,7 @@ pub fn run_simulation(
                     runtime_state.dither_mode.name(),
                     term_width as usize,
                     runtime_state.default_values,
-                    sim.agent_count(),
+                    agent_count,
                     ui_accent,
                     runtime_state.current_theme_name(),
                     &runtime_state.panel_style,
@@ -1001,7 +1028,7 @@ pub fn run_simulation(
             current_palette.clone(),
             runtime_state.dither_mode,
             term_width as usize,
-            Some(sim.agent_count()),
+            Some(agent_count),
             Some(diffusion_kernel_name),
             !runtime_state.undo_stack.is_empty(),
             !runtime_state.redo_stack.is_empty(),
@@ -1029,9 +1056,9 @@ pub fn run_simulation(
         });
 
         // Dashboard overlay (merged stats + info)
-        let entropy = DashboardOverlay::calculate_entropy(&blended_trail, 100);
-        let trail_sum: f32 = blended_trail.iter().sum();
-        let trail_capacity = (sim.width() * sim.height()) as f32 * 10.0;
+        let entropy = DashboardOverlay::calculate_entropy(&blended_trail_buffer, 100);
+        let trail_sum: f32 = blended_trail_buffer.iter().sum();
+        let trail_capacity = sim_dims as f32 * 10.0;
         let trail_density = if trail_capacity > 0.0 {
             (trail_sum / trail_capacity).min(1.0)
         } else {
@@ -1043,7 +1070,7 @@ pub fn run_simulation(
         let dashboard_overlay: Option<RenderedOverlay> =
             if runtime_state.overlay_state.is_open(OverlayType::Dashboard) {
                 let elapsed = start_time.elapsed().as_secs_f32();
-                let trail_max = blended_trail.iter().fold(0.0f32, |m, &v| v.max(m));
+                let trail_max = blended_trail_buffer.iter().fold(0.0f32, |m, &v| v.max(m));
                 let memory_mb = memory_stats()
                     .map(|m| m.physical_mem as f32 / 1024.0 / 1024.0)
                     .unwrap_or(0.0);
@@ -1327,7 +1354,7 @@ pub fn run_simulation(
             )?;
         } else {
             renderer.render_with_overlay(
-                downsampled.cells(),
+                downsampled_frame.cells(),
                 max_brightness.max(1.0),
                 if runtime_state.is_paused {
                     Some(runtime_state.pause_frame_counter)
@@ -1963,7 +1990,7 @@ pub fn run_simulation(
                             use crate::export::png::save_frame_as_png;
 
                             match save_frame_as_png(
-                                downsampled.cells(),
+                                downsampled_frame.cells(),
                                 term_width as usize,
                                 term_height as usize,
                                 current_palette.clone(),
@@ -2401,7 +2428,7 @@ pub fn run_simulation(
                 )?;
             } else {
                 renderer.render_with_overlay(
-                    downsampled.cells(),
+                    downsampled_frame.cells(),
                     max_brightness.max(1.0),
                     if runtime_state.is_paused {
                         Some(runtime_state.pause_frame_counter)
