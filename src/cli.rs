@@ -851,8 +851,14 @@ pub struct Args {
     /// Force ASCII character set.
     pub ascii: bool,
 
-    #[arg(long = "braille", help = "Use braille characters")]
-    /// Force Braille character set.
+    #[arg(
+        long = "braille",
+        help = "Use braille characters (may show gaps with non-default line-height)"
+    )]
+    /// Force Braille character set. Note: On terminals like Ghostty with
+    /// line-height/vertical spacing >110%, braille characters may display
+    /// with gaps between rows. Use default terminal line-height or try
+    /// half-block mode as an alternative.
     pub braille: bool,
 
     #[arg(
