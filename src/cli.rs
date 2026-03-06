@@ -318,8 +318,12 @@ impl FromStr for Preset {
             "ripple" => Ok(Preset::Ripple),
             "vortex36" | "vortex-36" | "vortex_36" => Ok(Preset::Vortex36),
             "chameleon" => Ok(Preset::Chameleon),
+            "dynamictendrils" | "dynamic-tendrils" | "dynamic_tendrils" => Ok(Preset::DynamicTendrils),
+            "morphingcoral" | "morphing-coral" | "morphing_coral" => Ok(Preset::MorphingCoral),
+            "reactiveswarm" | "reactive-swarm" | "reactive_swar" => Ok(Preset::ReactiveSwarm),
+            "duelingmodulators" | "dueling-modulators" | "dueling_modulators" => Ok(Preset::DuelingModulators),
             _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon",
+                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon, dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators",
                 s
             )),
         }
@@ -731,7 +735,7 @@ pub struct Args {
     #[arg(
         long = "preset",
         value_name = "NAME",
-        help = "Use named preset (network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon)"
+        help = "Use named preset (network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon, dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators)"
     )]
     /// Named parameter preset.
     pub preset: Option<Preset>,

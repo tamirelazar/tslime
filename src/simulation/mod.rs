@@ -206,8 +206,14 @@ impl Simulation {
         };
 
         let mut trail_maps = Vec::with_capacity(num_trails);
+        let boundary_mode = config.boundary_mode;
         for _ in 0..num_trails {
-            trail_maps.push(TrailMap::new_with_sigma(width, height, sigma));
+            trail_maps.push(TrailMap::new_with_sigma_and_boundary(
+                width,
+                height,
+                sigma,
+                boundary_mode,
+            ));
         }
 
         let noise_seed = (seed % u64::MAX) as u32;
@@ -622,21 +628,25 @@ impl Simulation {
     }
 
     /// Get the width of the simulation grid.
+    #[inline]
     pub fn width(&self) -> usize {
         self.trail_maps.first().map(|tm| tm.width()).unwrap_or(0)
     }
 
     /// Get the height of the simulation grid.
+    #[inline]
     pub fn height(&self) -> usize {
         self.trail_maps.first().map(|tm| tm.height()).unwrap_or(0)
     }
 
     /// Get the total number of agents.
+    #[inline]
     pub fn agent_count(&self) -> usize {
         self.agents.len()
     }
 
     /// Get the total number of active attractors.
+    #[inline]
     pub fn attractor_count(&self) -> usize {
         self.config.attractors.len() + self.config.mouse_attractors.len()
     }
@@ -747,6 +757,7 @@ impl Simulation {
         let separate_trails = self.config.separate_species_trails;
         let boundary_mode = self.config.boundary_mode;
         let respawn_config = self.config.respawn_config;
+        let sampling_mode = self.config.sampling_mode;
 
         if separate_trails {
             for species_idx in 0..self.config.species_configs.len() {
@@ -782,7 +793,7 @@ impl Simulation {
                         };
 
                     let (left, center, right) = if has_modulation {
-                        agent.sense_with_offsets(
+                        agent.sense_with_mode(
                             trail,
                             width,
                             height,
@@ -790,9 +801,19 @@ impl Simulation {
                             sensor_distance,
                             modulation.vertical_offset,
                             modulation.heading_offset,
+                            sampling_mode,
                         )
                     } else {
-                        agent.sense(trail, width, height, sensor_angle, sensor_distance)
+                        agent.sense_with_mode(
+                            trail,
+                            width,
+                            height,
+                            sensor_angle,
+                            sensor_distance,
+                            0.0,
+                            0.0,
+                            sampling_mode,
+                        )
                     };
 
                     agent.rotate(left, center, right, rotation_angle, &mut self.rng);
@@ -858,7 +879,7 @@ impl Simulation {
                 };
 
                 let (left, center, right) = if has_modulation {
-                    agent.sense_with_offsets(
+                    agent.sense_with_mode(
                         trail,
                         width,
                         height,
@@ -866,9 +887,19 @@ impl Simulation {
                         sensor_distance,
                         modulation.vertical_offset,
                         modulation.heading_offset,
+                        sampling_mode,
                     )
                 } else {
-                    agent.sense(trail, width, height, sensor_angle, sensor_distance)
+                    agent.sense_with_mode(
+                        trail,
+                        width,
+                        height,
+                        sensor_angle,
+                        sensor_distance,
+                        0.0,
+                        0.0,
+                        sampling_mode,
+                    )
                 };
 
                 agent.rotate(left, center, right, rotation_angle, &mut self.rng);
@@ -1068,11 +1099,13 @@ impl Simulation {
         } else {
             1
         };
+        let boundary_mode = self.config.boundary_mode;
         while self.trail_maps.len() < num_trails {
-            self.trail_maps.push(TrailMap::new_with_sigma(
+            self.trail_maps.push(TrailMap::new_with_sigma_and_boundary(
                 self.width(),
                 self.height(),
                 self.config.diffusion_sigma,
+                boundary_mode,
             ));
         }
 
@@ -1137,6 +1170,14 @@ impl Simulation {
     /// Add a temporary attractor at the given coordinates.
     pub fn add_mouse_attractor(&mut self, x: f32, y: f32, strength: f32) {
         self.config.add_mouse_attractor(x, y, strength);
+    }
+
+    /// Directly update attractors without cloning the entire config.
+    ///
+    /// This is more efficient than calling `update_config` when only
+    /// attractors need to be modified.
+    pub fn update_attractors(&mut self, attractors: Vec<crate::simulation::config::Attractor>) {
+        self.config.attractors = attractors;
     }
 
     /// Generate attractors based on a food image.

@@ -47,6 +47,9 @@ use crate::terminal::timing::FrameTimer;
 use crossterm::event::Event;
 use memory_stats::memory_stats;
 
+/// Target frame time in milliseconds for 30 FPS (33.333ms)
+const TARGET_FRAME_TIME_MS: f32 = 33.333;
+
 /// Data structure holding all overlay states for rendering.
 #[derive(Default)]
 #[allow(dead_code)]
@@ -92,24 +95,16 @@ fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeStat
             runtime_state.food_persist_counter as f32 / args.food_persist_duration as f32;
         let fade_factor: f32 = (1.0 - progress).powi(2); // Quadratic fade-out
 
-        // Update attractor strengths
-        let mut new_config = sim.config().clone();
-        new_config.attractors.clear();
-
-        for attractor in &runtime_state.initial_food_attractors {
-            new_config.attractors.push(Attractor::new(
-                attractor.x,
-                attractor.y,
-                attractor.strength * fade_factor,
-            ));
-        }
-
-        sim.update_config(new_config);
+        // Update attractor strengths without cloning entire config
+        let attractors: Vec<Attractor> = runtime_state
+            .initial_food_attractors
+            .iter()
+            .map(|a| Attractor::new(a.x, a.y, a.strength * fade_factor))
+            .collect();
+        sim.update_attractors(attractors);
     } else if runtime_state.food_persist_counter == args.food_persist_duration + 1 {
         // Remove all food attractors when duration expires
-        let mut new_config = sim.config().clone();
-        new_config.attractors.clear();
-        sim.update_config(new_config);
+        sim.update_attractors(Vec::new());
     }
 }
 
@@ -151,341 +146,6 @@ fn check_auto_reset(
             new_seed
         ));
     }
-}
-
-/// Builds all overlays for the current frame.
-///
-/// TODO: Integrate this function into run_simulation to replace inline overlay building.
-/// This is currently unused but kept for future refactoring.
-#[allow(dead_code)]
-#[allow(clippy::too_many_arguments)]
-fn build_overlays(
-    runtime_state: &mut RuntimeState,
-    term_width: usize,
-    term_height: usize,
-    sim: &Simulation,
-    current_palette: &cli::Palette,
-    ui_accent: RgbColor,
-    timer: &FrameTimer,
-    start_time: &std::time::Instant,
-    init_mode: InitMode,
-    color_mode: ColorMode,
-    charset: &Charset,
-    args: &Args,
-    entropy: f32,
-    _trail_density: f32,
-    blended_trail: &[f32],
-    seed: u64,
-) -> OverlayData {
-    let mut overlays = OverlayData::default();
-
-    // Calculate trail statistics for dashboard
-    let trail_sum: f32 = blended_trail.iter().sum();
-    let trail_capacity = (sim.width() * sim.height()) as f32 * 10.0;
-
-    // Build preset comparison overlay
-    overlays.preset_comparison = if runtime_state
-        .overlay_state
-        .is_open(OverlayType::PresetComparison)
-        && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
-    {
-        Some(PresetComparisonOverlay::build_overlay(
-            runtime_state,
-            runtime_state.comparison_preset,
-        ))
-    } else {
-        None
-    };
-    overlays.preset_comparison_pos = if overlays.preset_comparison.is_some() {
-        PresetComparisonOverlay::calculate_position(term_width, term_height)
-    } else {
-        (0, 0)
-    };
-
-    // Build palette editor overlay
-    overlays.palette_editor = if runtime_state.overlay_state.is_palette_editor_open()
-        && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
-    {
-        runtime_state
-            .overlay_state
-            .palette_editor
-            .as_ref()
-            .map(|s| PaletteEditorOverlay::build_overlay(s, &runtime_state.panel_style, ui_accent))
-    } else {
-        None
-    };
-    overlays.palette_editor_pos = if overlays.palette_editor.is_some() {
-        PaletteEditorOverlay::calculate_position(term_width, term_height)
-    } else {
-        (0, 0)
-    };
-
-    // Calculate controls position
-    overlays.controls_pos = ControlsOverlay::calculate_position(term_width, term_height);
-
-    // Build keyboard hints overlay
-    overlays.keyboard_hints = if runtime_state
-        .overlay_state
-        .is_open(OverlayType::KeyboardHints)
-        && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
-    {
-        Some(KeyboardHintsOverlay::build_overlay(ui_accent))
-    } else {
-        None
-    };
-    overlays.keyboard_hints_pos = if overlays.keyboard_hints.is_some() {
-        KeyboardHintsOverlay::calculate_position(term_width, term_height)
-    } else {
-        (0, 0)
-    };
-
-    // Build controls overlay
-    overlays.controls = if runtime_state.overlay_state.is_open(OverlayType::Controls)
-        && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
-    {
-        Some(ControlsOverlay::build_overlay(
-            runtime_state.controls_category_idx,
-            runtime_state.sensor_angle,
-            runtime_state.sensor_distance,
-            runtime_state.rotation_angle,
-            runtime_state.step_size,
-            runtime_state.decay_factor,
-            runtime_state.deposit_amount,
-            runtime_state.time_scale,
-            runtime_state.diffusion_kernel,
-            runtime_state.diffusion_sigma,
-            runtime_state.attractor_strength,
-            match runtime_state.mouse_mode {
-                MouseInteractionMode::Disabled => "Disabled",
-                MouseInteractionMode::Attract => "Attract",
-                MouseInteractionMode::Repel => "Repel",
-            },
-            runtime_state.mouse_timeout,
-            runtime_state.wind_direction,
-            runtime_state.terrain_type,
-            runtime_state.terrain_strength,
-            runtime_state.auto_normalize,
-            runtime_state.motion_blur_frames,
-            runtime_state.max_brightness,
-            runtime_state.fast_mode_enabled,
-            runtime_state.current_palette(&ALL_PALETTES).name(),
-            charset_name(&runtime_state.current_charset()),
-            runtime_state.palette_shift_speed,
-            runtime_state.invert_palette,
-            runtime_state.reverse_palette,
-            runtime_state.dither_mode.name(),
-            term_width,
-            runtime_state.default_values,
-            sim.agent_count(),
-            ui_accent,
-            runtime_state.current_theme_name(),
-            &runtime_state.panel_style,
-            runtime_state.shift_held,
-            runtime_state.trail_age_enabled,
-            runtime_state.trail_age_mode,
-            runtime_state.trail_age_reverse,
-            runtime_state.trail_delta_enabled,
-            runtime_state.gradient_magnitude_enabled,
-        ))
-    } else {
-        None
-    };
-
-    // Build status line
-    let diffusion_kernel_name = match runtime_state.diffusion_kernel {
-        DiffusionKernel::Mean3x3 => "Mean3x3",
-        DiffusionKernel::Gaussian => "Gaussian",
-    };
-    let (status_line, status_colors) = OverlayRenderer::build_status_line(
-        runtime_state.is_paused,
-        runtime_state.current_preset,
-        runtime_state.time_scale,
-        current_palette.clone(),
-        runtime_state.dither_mode,
-        term_width,
-        Some(sim.agent_count()),
-        Some(diffusion_kernel_name),
-        !runtime_state.undo_stack.is_empty(),
-        !runtime_state.redo_stack.is_empty(),
-        Some(ui_accent),
-    );
-    let status_x = OverlayRenderer::status_line_x(&status_line, term_width);
-    overlays.status = if runtime_state.any_overlay_open() || runtime_state.is_paused {
-        Some((status_line, status_x, status_colors))
-    } else {
-        None
-    };
-
-    // Build notification overlay
-    let notification_overlay: Option<RenderedOverlay> = runtime_state
-        .current_notification_full()
-        .map(|(msg, level)| build_notification_panel(msg, level, &runtime_state.panel_style));
-    overlays.notification = notification_overlay.map(|overlay| {
-        let outer_w = overlay.lines.first().map_or(0, |l| l.chars().count());
-        let notif_x = if outer_w < term_width {
-            (term_width - outer_w) / 2
-        } else {
-            0
-        };
-        let notif_y = term_height.saturating_sub(5);
-        (overlay, notif_x, notif_y)
-    });
-
-    // Build dashboard overlay
-    overlays.dashboard = if runtime_state.overlay_state.is_open(OverlayType::Dashboard) {
-        let elapsed = start_time.elapsed().as_secs_f32();
-        let trail_max = blended_trail.iter().fold(0.0f32, |m, &v| v.max(m));
-        let memory_mb = memory_stats()
-            .map(|m| m.physical_mem as f32 / 1024.0 / 1024.0)
-            .unwrap_or(0.0);
-        let frame_time_ms = timer.last_frame_ms();
-        let cpu_percent = (frame_time_ms / 33.333) * 100.0;
-
-        let init_mode_name = match init_mode {
-            InitMode::Random => "Random",
-            InitMode::CentralBurst => "Central",
-            InitMode::Circle => "Circle",
-            InitMode::Gradient => "Gradient",
-            InitMode::WaveFront => "Wave",
-            InitMode::Spiral => "Spiral",
-            InitMode::RandomClusters => "Clusters",
-            InitMode::Food => "Food",
-            InitMode::Petri => "Petri",
-        };
-
-        let color_mode_name = match color_mode {
-            ColorMode::TrueColor => "TrueColor",
-            ColorMode::Bits8 => "8",
-            ColorMode::Bits16 => "16",
-            ColorMode::Bits256 => "256",
-        };
-
-        let charset_str = match *charset {
-            Charset::HalfBlock => "HalfBlock",
-            Charset::HalfBlockDual => "HalfBlockDual",
-            Charset::Ascii => "ASCII",
-            Charset::Braille => "Braille",
-            Charset::Quadrant => "Quadrant",
-            Charset::Shade => "Shade",
-            Charset::Points => "Points",
-            Charset::Sculpted => "Sculpted",
-            Charset::CustomAscii(_) => "Custom",
-        };
-
-        let food_source = if init_mode == InitMode::Food {
-            Some(args.food.clone())
-        } else {
-            None
-        };
-
-        let current_palette = ALL_PALETTES[runtime_state.palette_index].clone();
-        let pname = palette_name(current_palette.clone());
-        let prname = preset_name(runtime_state.current_preset);
-        let palette_colors: Vec<RgbColor> = (0..78)
-            .map(|i| {
-                crate::render::palette::map_brightness_rgb(
-                    i as f32 / 77.0,
-                    current_palette.clone(),
-                    runtime_state.reverse_palette,
-                    runtime_state.invert_palette,
-                    0.0,
-                    None,
-                )
-            })
-            .collect();
-
-        let current_config = sim.config();
-
-        Some(DashboardOverlay::build_overlay(
-            sim.agent_count(),
-            trail_sum,
-            trail_capacity,
-            trail_max,
-            entropy,
-            timer.current_fps() as f32,
-            timer.average_fps() as f32,
-            timer.frame_count(),
-            elapsed,
-            sim.width(),
-            sim.height(),
-            sim.attractor_count(),
-            sim.obstacle_count(),
-            sim.species_count(),
-            memory_mb,
-            cpu_percent,
-            runtime_state.is_paused,
-            prname,
-            pname,
-            &palette_colors,
-            term_width,
-            term_height,
-            init_mode_name,
-            color_mode_name,
-            charset_str,
-            !args.simd_off,
-            current_config.decay_factor,
-            current_config.sensor_angle,
-            seed,
-            &food_source,
-            args.warmup_frames,
-            args.auto_reset,
-            ui_accent,
-            &runtime_state.panel_style,
-        ))
-    } else {
-        None
-    };
-    overlays.dashboard_pos = DashboardOverlay::calculate_position(term_width, term_height);
-
-    // Build config browser overlay
-    overlays.config_browser = if runtime_state
-        .overlay_state
-        .is_open(OverlayType::ConfigBrowser)
-        && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
-    {
-        match config_manager::list_configs() {
-            Ok(configs) => {
-                // Clamp selected index to valid range
-                runtime_state.config_browser_selected_index = runtime_state
-                    .config_browser_selected_index
-                    .min(configs.len().saturating_sub(1));
-                Some(ConfigBrowserOverlay::build_overlay(
-                    &configs,
-                    runtime_state.config_browser_selected_index,
-                ))
-            }
-            Err(_) => {
-                runtime_state.show_notification("Failed to load configurations".to_string());
-                runtime_state.overlay_state.close();
-                None
-            }
-        }
-    } else {
-        None
-    };
-    overlays.config_browser_pos = if overlays.config_browser.is_some() {
-        ConfigBrowserOverlay::calculate_position(term_width, term_height)
-    } else {
-        (0, 0)
-    };
-
-    // Build config save dialog overlay
-    overlays.config_save = if runtime_state.overlay_state.is_open(OverlayType::ConfigSave)
-        && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
-    {
-        Some(ConfigSaveOverlay::build_overlay(
-            &runtime_state.config_save_name_input,
-        ))
-    } else {
-        None
-    };
-    overlays.config_save_pos = if overlays.config_save.is_some() {
-        ConfigSaveOverlay::calculate_position(term_width, term_height)
-    } else {
-        (0, 0)
-    };
-
-    overlays
 }
 
 /// Runs the interactive simulation loop (Live or Screensaver mode).
@@ -721,6 +381,17 @@ pub fn run_simulation(
                 if let Some(grid) = &mut grid_renderer {
                     grid.initialize(term_width as usize, term_height as usize);
                 }
+                // Resize frame buffers to prevent index out of bounds panic
+                downsampled_frame = crate::render::downsample::DownsampledFrame::new(
+                    term_width as usize,
+                    term_height as usize,
+                );
+                aux_frame.width = term_width as usize;
+                aux_frame.height = term_height as usize;
+                aux_frame.cells = vec![
+                    crate::render::downsample::AuxCell::default();
+                    (term_width as usize) * (term_height as usize)
+                ];
             }
         }
 
@@ -1075,7 +746,7 @@ pub fn run_simulation(
                     .map(|m| m.physical_mem as f32 / 1024.0 / 1024.0)
                     .unwrap_or(0.0);
                 let frame_time_ms = timer.last_frame_ms();
-                let cpu_percent = (frame_time_ms / 33.333) * 100.0;
+                let cpu_percent = (frame_time_ms / TARGET_FRAME_TIME_MS) * 100.0;
 
                 let init_mode_name = match init_mode {
                     InitMode::Random => "Random",

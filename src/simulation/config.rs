@@ -80,6 +80,14 @@ pub enum Preset {
     Vortex36,
     /// Dramatic behavior shifts based on trail density.
     Chameleon,
+    /// Dynamic tendrils with trail-based sensor modulation.
+    DynamicTendrils,
+    /// Morphing coral with dramatic parameter shifts.
+    MorphingCoral,
+    /// Reactive swarm with trail-dependent behavior.
+    ReactiveSwarm,
+    /// Two-species with opposing modulation patterns.
+    DuelingModulators,
 }
 
 impl Preset {
@@ -670,6 +678,135 @@ impl Preset {
                     }),
                 }];
             }
+            Preset::DynamicTendrils => {
+                config.decay_factor = 0.92;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "tendril".to_string(),
+                    count: 25_000,
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 5.0,
+                        sensor_distance_multiplier: 45.0,
+                        sensor_distance_exponent: 0.7,
+                        sensor_angle_base: 15.0,
+                        sensor_angle_multiplier: 60.0,
+                        sensor_angle_exponent: 2.0,
+                        rotation_angle_base: 10.0,
+                        rotation_angle_multiplier: 50.0,
+                        rotation_angle_exponent: 1.5,
+                        step_size_base: 0.5,
+                        step_size_multiplier: 3.0,
+                        step_size_exponent: 1.0,
+                        ..Default::default()
+                    }),
+                    color: RgbColor::from_hex(0x00fa9a),
+                    ..Default::default()
+                }];
+            }
+            Preset::MorphingCoral => {
+                config.decay_factor = 0.88;
+                config.diffusion_kernel = DiffusionKernel::Gaussian;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "coral".to_string(),
+                    count: 30_000,
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 40.0,
+                        sensor_distance_multiplier: -35.0,
+                        sensor_distance_exponent: 0.5,
+                        sensor_angle_base: 5.0,
+                        sensor_angle_multiplier: 80.0,
+                        sensor_angle_exponent: 2.5,
+                        rotation_angle_base: 5.0,
+                        rotation_angle_multiplier: 75.0,
+                        rotation_angle_exponent: 2.0,
+                        step_size_base: 0.2,
+                        step_size_multiplier: 2.0,
+                        step_size_exponent: 1.0,
+                        trail_rescale: 2.0,
+                        ..Default::default()
+                    }),
+                    color: RgbColor::from_hex(0xff69b4),
+                    ..Default::default()
+                }];
+            }
+            Preset::ReactiveSwarm => {
+                config.decay_factor = 0.85;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "swarm".to_string(),
+                    count: 60_000,
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 25.0,
+                        sensor_distance_multiplier: -20.0,
+                        sensor_distance_exponent: 1.0,
+                        sensor_angle_base: 45.0,
+                        sensor_angle_multiplier: -30.0,
+                        sensor_angle_exponent: 1.5,
+                        rotation_angle_base: 45.0,
+                        rotation_angle_multiplier: -40.0,
+                        rotation_angle_exponent: 1.0,
+                        step_size_base: 1.5,
+                        step_size_multiplier: 2.0,
+                        step_size_exponent: 1.0,
+                        heading_offset: 5.0,
+                        ..Default::default()
+                    }),
+                    color: RgbColor::from_hex(0xffd700),
+                    ..Default::default()
+                }];
+                config.respawn_config = RespawnConfig {
+                    interval: 60,
+                    base_probability: 0.02,
+                    trail_dependent: true,
+                    max_probability_multiplier: 5.0,
+                };
+            }
+            Preset::DuelingModulators => {
+                config.decay_factor = 0.90;
+                config.separate_species_trails = true;
+                config.species_configs = vec![
+                    SpeciesConfig {
+                        name: "expander".to_string(),
+                        count: 20_000,
+                        trail_modulation: Some(PointConfig {
+                            sensor_distance_base: 10.0,
+                            sensor_distance_multiplier: 30.0,
+                            sensor_distance_exponent: 1.0,
+                            sensor_angle_base: 20.0,
+                            sensor_angle_multiplier: 40.0,
+                            sensor_angle_exponent: 1.0,
+                            rotation_angle_base: 30.0,
+                            rotation_angle_multiplier: 20.0,
+                            rotation_angle_exponent: 1.0,
+                            step_size_base: 1.0,
+                            step_size_multiplier: 0.5,
+                            step_size_exponent: 1.0,
+                            ..Default::default()
+                        }),
+                        color: RgbColor::from_hex(0x00ced1),
+                        ..Default::default()
+                    },
+                    SpeciesConfig {
+                        name: "contractor".to_string(),
+                        count: 20_000,
+                        trail_modulation: Some(PointConfig {
+                            sensor_distance_base: 40.0,
+                            sensor_distance_multiplier: -30.0,
+                            sensor_distance_exponent: 1.0,
+                            sensor_angle_base: 60.0,
+                            sensor_angle_multiplier: -30.0,
+                            sensor_angle_exponent: 1.0,
+                            rotation_angle_base: 30.0,
+                            rotation_angle_multiplier: -20.0,
+                            rotation_angle_exponent: 1.0,
+                            step_size_base: 1.0,
+                            step_size_multiplier: -0.3,
+                            step_size_exponent: 1.0,
+                            ..Default::default()
+                        }),
+                        color: RgbColor::from_hex(0xff6347),
+                        ..Default::default()
+                    },
+                ];
+            }
         }
     }
 }
@@ -789,7 +926,7 @@ impl std::str::FromStr for Wind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 /// A point attractor or repeller.
 pub struct Attractor {
     /// X coordinate.
@@ -1034,6 +1171,16 @@ pub enum BoundaryMode {
     Wrap,
 }
 
+/// Trail sampling method for agent sensing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SamplingMode {
+    /// Fast nearest-pixel sampling (default).
+    #[default]
+    Nearest,
+    /// Smooth bilinear interpolation.
+    Bilinear,
+}
+
 impl std::str::FromStr for BoundaryMode {
     type Err = String;
 
@@ -1140,7 +1287,11 @@ impl PointConfig {
     /// * `x` - Trail value at agent position (should be in [0, 1])
     ///
     /// # Returns
-    /// Computed parameters clamped to valid ranges.
+    /// A `ModulatedParams` struct containing:
+    /// - `sensor_distance`: Modulated sensor distance in pixels
+    /// - `sensor_angle`: Modulated sensor angle in degrees
+    /// - `rotation_angle`: Modulated rotation angle in degrees
+    /// - `step_size`: Modulated step size in pixels
     pub fn compute_params(&self, x: f32) -> ModulatedParams {
         // Apply rescale factor and clamp to [0, 1]
         let x = (x * self.trail_rescale).clamp(0.0, 1.0);
@@ -1323,6 +1474,8 @@ pub struct SimConfig {
     pub boundary_mode: BoundaryMode,
     /// Particle respawn configuration.
     pub respawn_config: RespawnConfig,
+    /// Trail sampling method (nearest or bilinear).
+    pub sampling_mode: SamplingMode,
 }
 
 impl SimConfig {
@@ -1417,6 +1570,7 @@ impl Default for SimConfig {
             preferred_init_mode: Some(InitMode::Food),
             boundary_mode: BoundaryMode::Bounce,
             respawn_config: RespawnConfig::default(),
+            sampling_mode: SamplingMode::Nearest,
         }
     }
 }
@@ -2018,6 +2172,17 @@ mod tests {
             Preset::ChaosEdge,
             Preset::Blob,
             Preset::Worm,
+            Preset::Pulse,
+            Preset::Coral,
+            Preset::Flocking,
+            Preset::Maze,
+            Preset::Ripple,
+            Preset::Vortex36,
+            Preset::Chameleon,
+            Preset::DynamicTendrils,
+            Preset::MorphingCoral,
+            Preset::ReactiveSwarm,
+            Preset::DuelingModulators,
         ];
         for preset in presets {
             let config: SimConfig = preset.into();

@@ -401,6 +401,7 @@ impl SavedConfig {
             preferred_init_mode: None,
             boundary_mode: crate::simulation::config::BoundaryMode::Bounce,
             respawn_config: crate::simulation::config::RespawnConfig::default(),
+            sampling_mode: crate::simulation::config::SamplingMode::Nearest,
         })
     }
 }
@@ -760,6 +761,7 @@ mod tests {
             preferred_init_mode: None,
             boundary_mode: crate::simulation::config::BoundaryMode::Bounce,
             respawn_config: crate::simulation::config::RespawnConfig::default(),
+            sampling_mode: crate::simulation::config::SamplingMode::Nearest,
         };
 
         let saved_config = SavedConfig::from_runtime(

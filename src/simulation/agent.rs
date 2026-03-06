@@ -113,7 +113,7 @@ impl Agent {
         sensor_angle: f32,
         sensor_distance: f32,
     ) -> (f32, f32, f32) {
-        self.sense_with_offsets(
+        self.sense_with_mode(
             trail,
             width,
             height,
@@ -121,6 +121,7 @@ impl Agent {
             sensor_distance,
             0.0,
             0.0,
+            super::config::SamplingMode::Nearest,
         )
     }
 
@@ -148,6 +149,44 @@ impl Agent {
         vertical_offset: f32,
         heading_offset: f32,
     ) -> (f32, f32, f32) {
+        self.sense_with_mode(
+            trail,
+            width,
+            height,
+            sensor_angle,
+            sensor_distance,
+            vertical_offset,
+            heading_offset,
+            super::config::SamplingMode::Nearest,
+        )
+    }
+
+    /// Sense the pheromone trail with offset parameters and sampling mode.
+    ///
+    /// # Arguments
+    /// * `trail` - The trail map data
+    /// * `width` - Trail map width
+    /// * `height` - Trail map height
+    /// * `sensor_angle` - Sensor angle in degrees
+    /// * `sensor_distance` - Sensor offset distance
+    /// * `vertical_offset` - Absolute vertical offset (p13)
+    /// * `heading_offset` - Heading-relative offset (p14)
+    /// * `sampling_mode` - Trail sampling method
+    ///
+    /// Returns a tuple of (left, center, right) sensed values.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn sense_with_mode(
+        &self,
+        trail: &[f32],
+        width: usize,
+        height: usize,
+        sensor_angle: f32,
+        sensor_distance: f32,
+        vertical_offset: f32,
+        heading_offset: f32,
+        sampling_mode: super::config::SamplingMode,
+    ) -> (f32, f32, f32) {
         let sensor_angle_rad = sensor_angle * PI / 180.0;
 
         let left_angle = self.heading - sensor_angle_rad;
@@ -172,9 +211,19 @@ impl Agent {
         let right_x = base_x + right_angle.cos() * sensor_distance;
         let right_y = base_y + right_angle.sin() * sensor_distance + vertical_offset;
 
-        let left = sample_trail(trail, width, height, left_x, left_y);
-        let center = sample_trail(trail, width, height, center_x, center_y);
-        let right = sample_trail(trail, width, height, right_x, right_y);
+        // Sample based on sampling mode
+        let (left, center, right) = match sampling_mode {
+            super::config::SamplingMode::Bilinear => (
+                sample_trail_bilinear(trail, width, height, left_x, left_y),
+                sample_trail_bilinear(trail, width, height, center_x, center_y),
+                sample_trail_bilinear(trail, width, height, right_x, right_y),
+            ),
+            _ => (
+                sample_trail(trail, width, height, left_x, left_y),
+                sample_trail(trail, width, height, center_x, center_y),
+                sample_trail(trail, width, height, right_x, right_y),
+            ),
+        };
 
         (left, center, right)
     }
@@ -418,6 +467,42 @@ fn sample_trail(trail: &[f32], width: usize, height: usize, x: f32, y: f32) -> f
     }
 }
 
+/// Sample trail value at (x, y) using bilinear interpolation.
+/// Returns 0.0 if out of bounds.
+#[inline]
+pub fn sample_trail_bilinear(trail: &[f32], width: usize, height: usize, x: f32, y: f32) -> f32 {
+    if !x.is_finite() || !y.is_finite() {
+        return 0.0;
+    }
+
+    let x0 = x.floor() as i32;
+    let y0 = y.floor() as i32;
+    let x1 = x0 + 1;
+    let y1 = y0 + 1;
+
+    let fx = x - x0 as f32;
+    let fy = y - y0 as f32;
+
+    // Sample 4 corners with bounds checking
+    let sample = |ix: i32, iy: i32| -> f32 {
+        if ix >= 0 && ix < width as i32 && iy >= 0 && iy < height as i32 {
+            trail[iy as usize * width + ix as usize]
+        } else {
+            0.0
+        }
+    };
+
+    let v00 = sample(x0, y0);
+    let v10 = sample(x1, y0);
+    let v01 = sample(x0, y1);
+    let v11 = sample(x1, y1);
+
+    // Bilinear interpolation
+    let v0 = v00 + (v10 - v00) * fx;
+    let v1 = v01 + (v11 - v01) * fx;
+    v0 + (v1 - v0) * fy
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -564,6 +649,10 @@ mod tests {
             Attractor::new(300.0, 200.0, 1.0),
         ];
         agent.apply_attractor_forces(&attractors, 1.0);
+        assert!(
+            agent.heading.is_finite(),
+            "heading should be finite after applying multiple attractor forces"
+        );
     }
 
     #[test]
@@ -687,6 +776,78 @@ mod tests {
         assert_eq!(sample_trail(&trail, 10, 10, 11.0, 5.0), 0.0);
         assert_eq!(sample_trail(&trail, 10, 10, 5.0, -1.0), 0.0);
         assert_eq!(sample_trail(&trail, 10, 10, 5.0, 11.0), 0.0);
+    }
+
+    #[test]
+    fn test_sample_trail_bilinear() {
+        let mut trail = vec![0.0; 100];
+        // Set up a gradient: (0,0)=0, (1,0)=10, (0,1)=20, (1,1)=30
+        trail[0] = 0.0;
+        trail[1] = 10.0;
+        trail[10] = 20.0;
+        trail[11] = 30.0;
+
+        // At (0, 0) should return 0
+        assert_eq!(sample_trail_bilinear(&trail, 10, 10, 0.0, 0.0), 0.0);
+
+        // At (1, 1) should return 30
+        assert_eq!(sample_trail_bilinear(&trail, 10, 10, 1.0, 1.0), 30.0);
+
+        // At (0.5, 0.5) should be interpolated - average of all four corners weighted
+        let result = sample_trail_bilinear(&trail, 10, 10, 0.5, 0.5);
+        // Bilinear: (0*0.5*0.5 + 10*0.5*0.5 + 20*0.5*0.5 + 30*0.5*0.5) = 15
+        assert!((result - 15.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_sample_trail_bilinear_out_of_bounds() {
+        let trail = vec![1.0; 100];
+        assert_eq!(sample_trail_bilinear(&trail, 10, 10, -1.0, 5.0), 0.0);
+        assert_eq!(sample_trail_bilinear(&trail, 10, 10, 11.0, 5.0), 0.0);
+        assert_eq!(sample_trail_bilinear(&trail, 10, 10, 5.0, -1.0), 0.0);
+        assert_eq!(sample_trail_bilinear(&trail, 10, 10, 5.0, 11.0), 0.0);
+    }
+
+    #[test]
+    fn test_sense_with_mode_bilinear() {
+        let mut trail = vec![0.0; 100 * 100];
+        // With heading=0, center sensor is at (x + sensor_distance, y) = (50+9, 50) = (59, 50)
+        // Place a high value at the center sensor position
+        trail[50 * 100 + 59] = 100.0;
+
+        let agent = Agent::new(50.0, 50.0, 0.0, 0);
+        // With nearest sampling
+        let (_l, c, _r) = agent.sense_with_mode(
+            &trail,
+            100,
+            100,
+            22.5,
+            9.0,
+            0.0,
+            0.0,
+            crate::simulation::config::SamplingMode::Nearest,
+        );
+        // Should sense the value we placed
+        assert!(
+            c > 0.0,
+            "nearest sampling should detect value at sensor position"
+        );
+
+        // With bilinear sampling
+        let (_l, c, _r) = agent.sense_with_mode(
+            &trail,
+            100,
+            100,
+            22.5,
+            9.0,
+            0.0,
+            0.0,
+            crate::simulation::config::SamplingMode::Bilinear,
+        );
+        assert!(
+            c > 0.0,
+            "bilinear sampling should detect value at sensor position"
+        );
     }
 }
 

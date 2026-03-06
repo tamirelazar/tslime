@@ -296,6 +296,10 @@ pub fn preset_name(preset: Preset) -> &'static str {
         Preset::Ripple => "Ripple",
         Preset::Vortex36 => "Vortex36",
         Preset::Chameleon => "Chameleon",
+        Preset::DynamicTendrils => "DynamicTendrils",
+        Preset::MorphingCoral => "MorphingCoral",
+        Preset::ReactiveSwarm => "ReactiveSwarm",
+        Preset::DuelingModulators => "DuelingModulators",
     }
 }
 

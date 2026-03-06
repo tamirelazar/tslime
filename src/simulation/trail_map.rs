@@ -15,6 +15,7 @@ pub struct TrailMap {
     scratch: Vec<f32>,
     gaussian_kernel: [f32; 25],
     trail_sum: f32,
+    boundary_mode: super::config::BoundaryMode,
 }
 
 const GAUSSIAN_KERNEL_SIZE: usize = 5;
@@ -54,6 +55,7 @@ impl TrailMap {
             scratch: vec![0.0; size],
             gaussian_kernel,
             trail_sum: 0.0,
+            boundary_mode: super::config::BoundaryMode::Bounce,
         }
     }
 
@@ -68,6 +70,27 @@ impl TrailMap {
             scratch: vec![0.0; size],
             gaussian_kernel,
             trail_sum: 0.0,
+            boundary_mode: super::config::BoundaryMode::Bounce,
+        }
+    }
+
+    /// Create a new trail map with custom Gaussian sigma and boundary mode.
+    pub fn new_with_sigma_and_boundary(
+        width: usize,
+        height: usize,
+        sigma: f32,
+        boundary_mode: super::config::BoundaryMode,
+    ) -> Self {
+        let size = width * height;
+        let gaussian_kernel = generate_gaussian_kernel(sigma);
+        Self {
+            width,
+            height,
+            current: vec![0.0; size],
+            scratch: vec![0.0; size],
+            gaussian_kernel,
+            trail_sum: 0.0,
+            boundary_mode,
         }
     }
 
@@ -168,29 +191,53 @@ impl TrailMap {
         let height = self.height;
         let current = &self.current;
         let scratch = &mut self.scratch;
+        let is_wrap = matches!(self.boundary_mode, super::config::BoundaryMode::Wrap);
 
         scratch.copy_from_slice(current);
 
-        for y in 1..height - 1 {
-            let row_offset = y * width;
-            for x in 1..width - 1 {
-                let idx = row_offset + x;
+        if is_wrap {
+            // Wrap-around diffusion - process all pixels with wrapping
+            let w = width as i32;
+            let h = height as i32;
+            for y in 0..height {
+                for x in 0..width {
+                    let idx = y * width + x;
+                    let mut sum = 0.0f32;
 
-                let mut sum = 0.0f32;
-                let mut count = 0;
-
-                for dy in -1..=1 {
-                    for dx in -1..=1 {
-                        let nx = x as i32 + dx;
-                        let ny = y as i32 + dy;
-                        if nx >= 0 && nx < width as i32 && ny >= 0 && ny < height as i32 {
-                            sum += current[(ny as usize) * width + (nx as usize)];
-                            count += 1;
+                    for dy in -1..=1 {
+                        for dx in -1..=1 {
+                            let nx = ((x as i32 + dx % w) + w) % w;
+                            let ny = ((y as i32 + dy % h) + h) % h;
+                            sum += current[ny as usize * width + nx as usize];
                         }
                     }
-                }
 
-                scratch[idx] = sum / count as f32;
+                    scratch[idx] = sum / 9.0;
+                }
+            }
+        } else {
+            // Clamp-based diffusion - skip edges
+            for y in 1..height - 1 {
+                let row_offset = y * width;
+                for x in 1..width - 1 {
+                    let idx = row_offset + x;
+
+                    let mut sum = 0.0f32;
+                    let mut count = 0;
+
+                    for dy in -1..=1 {
+                        for dx in -1..=1 {
+                            let nx = x as i32 + dx;
+                            let ny = y as i32 + dy;
+                            if nx >= 0 && nx < width as i32 && ny >= 0 && ny < height as i32 {
+                                sum += current[(ny as usize) * width + (nx as usize)];
+                                count += 1;
+                            }
+                        }
+                    }
+
+                    scratch[idx] = if count > 0 { sum / count as f32 } else { 0.0 };
+                }
             }
         }
 
@@ -443,31 +490,61 @@ impl TrailMap {
     pub fn diffuse_gaussian(&mut self) {
         let width = self.width;
         let height = self.height;
-        let current = &self.current;
         let scratch = &mut self.scratch;
         let kernel = &self.gaussian_kernel;
         let radius: i32 = 2;
+        let is_wrap = matches!(self.boundary_mode, super::config::BoundaryMode::Wrap);
 
-        scratch.copy_from_slice(current);
+        scratch.copy_from_slice(&self.current);
 
-        for y in 2..height - 2 {
-            let row_offset = y * width;
-            for x in 2..width - 2 {
-                let idx = row_offset + x;
+        if is_wrap {
+            // Wrap-around Gaussian diffusion - process all pixels with wrapping
+            let w = width as i32;
+            let h = height as i32;
+            let current = &self.current;
+            for y in 0..height {
+                for x in 0..width {
+                    let idx = y * width + x;
+                    let mut sum = 0.0f32;
 
-                let mut sum = 0.0f32;
-
-                for ky in -radius..=radius {
-                    for kx in -radius..=radius {
-                        let nx = x as i32 + kx;
-                        let ny = y as i32 + ky;
-                        let kernel_idx =
-                            ((ky + radius) * GAUSSIAN_KERNEL_SIZE as i32 + (kx + radius)) as usize;
-                        sum += current[(ny as usize) * width + (nx as usize)] * kernel[kernel_idx];
+                    for ky in -radius..=radius {
+                        for kx in -radius..=radius {
+                            let kernel_idx = ((ky + radius) * GAUSSIAN_KERNEL_SIZE as i32
+                                + (kx + radius))
+                                as usize;
+                            let nx = ((x as i32 + kx % w) + w) % w;
+                            let ny = ((y as i32 + ky % h) + h) % h;
+                            sum += current[ny as usize * width + nx as usize] * kernel[kernel_idx];
+                        }
                     }
-                }
 
-                scratch[idx] = sum;
+                    scratch[idx] = sum;
+                }
+            }
+        } else {
+            // Clamp-based Gaussian diffusion - skip edges
+            let current = &self.current;
+            for y in 2..height - 2 {
+                let row_offset = y * width;
+                for x in 2..width - 2 {
+                    let idx = row_offset + x;
+
+                    let mut sum = 0.0f32;
+
+                    for ky in -radius..=radius {
+                        for kx in -radius..=radius {
+                            let nx = x as i32 + kx;
+                            let ny = y as i32 + ky;
+                            let kernel_idx = ((ky + radius) * GAUSSIAN_KERNEL_SIZE as i32
+                                + (kx + radius))
+                                as usize;
+                            sum +=
+                                current[(ny as usize) * width + (nx as usize)] * kernel[kernel_idx];
+                        }
+                    }
+
+                    scratch[idx] = sum;
+                }
             }
         }
 
@@ -965,16 +1042,21 @@ impl TrailMap {
 
     /// Dispatch to the appropriate diffusion implementation.
     pub fn diffuse_with_kernel(&mut self, use_simd: bool, use_gaussian: bool) {
-        if use_simd {
+        // When using wrap boundary mode, fall back to scalar implementations
+        // since SIMD versions don't handle wrap-around efficiently
+        let use_scalar =
+            !use_simd || matches!(self.boundary_mode, super::config::BoundaryMode::Wrap);
+
+        if use_scalar {
             if use_gaussian {
-                self.diffuse_gaussian_simd();
+                self.diffuse_gaussian();
             } else {
-                self.diffuse_simd();
+                self.diffuse();
             }
         } else if use_gaussian {
-            self.diffuse_gaussian();
+            self.diffuse_gaussian_simd();
         } else {
-            self.diffuse();
+            self.diffuse_simd();
         }
     }
 
