@@ -745,11 +745,15 @@ impl Simulation {
         let terrain_strength = self.config.terrain_strength * dt;
 
         let separate_trails = self.config.separate_species_trails;
+        let boundary_mode = self.config.boundary_mode;
+        let respawn_config = self.config.respawn_config;
 
         if separate_trails {
             for species_idx in 0..self.config.species_configs.len() {
                 let species_config = &self.config.species_configs[species_idx];
                 let trail_idx = species_idx;
+                let has_modulation = species_config.trail_modulation.is_some();
+                let modulation = species_config.trail_modulation.unwrap_or_default();
 
                 let trail = self.trail_maps[trail_idx].current();
                 for agent in self
@@ -757,21 +761,41 @@ impl Simulation {
                     .iter_mut()
                     .filter(|a| a.species_id as usize == species_idx)
                 {
-                    let (left, center, right) = agent.sense(
-                        trail,
-                        width,
-                        height,
-                        species_config.sensor_angle,
-                        self.config.sensor_distance,
-                    );
+                    // Compute modulated parameters if enabled
+                    let (sensor_angle, sensor_distance, rotation_angle, step_size) =
+                        if has_modulation {
+                            let x = agent.sample_trail_at_position(trail, width, height);
+                            let params = modulation.compute_params(x);
+                            (
+                                params.sensor_angle,
+                                params.sensor_distance,
+                                params.rotation_angle,
+                                params.step_size,
+                            )
+                        } else {
+                            (
+                                species_config.sensor_angle,
+                                self.config.sensor_distance,
+                                species_config.rotation_angle,
+                                effective_step_size,
+                            )
+                        };
 
-                    agent.rotate(
-                        left,
-                        center,
-                        right,
-                        species_config.rotation_angle,
-                        &mut self.rng,
-                    );
+                    let (left, center, right) = if has_modulation {
+                        agent.sense_with_offsets(
+                            trail,
+                            width,
+                            height,
+                            sensor_angle,
+                            sensor_distance,
+                            modulation.vertical_offset,
+                            modulation.heading_offset,
+                        )
+                    } else {
+                        agent.sense(trail, width, height, sensor_angle, sensor_distance)
+                    };
+
+                    agent.rotate(left, center, right, rotation_angle, &mut self.rng);
 
                     agent.apply_attractor_forces(&attractors, attractor_strength);
 
@@ -780,11 +804,16 @@ impl Simulation {
                     agent.apply_terrain_bias(terrain, terrain_strength, &self.noise);
 
                     agent.move_forward(
-                        effective_step_size,
+                        if has_modulation {
+                            step_size * dt
+                        } else {
+                            effective_step_size
+                        },
                         width,
                         height,
                         obstacles,
                         obstacle_masks,
+                        boundary_mode,
                     );
                 }
 
@@ -804,24 +833,45 @@ impl Simulation {
                 .first()
                 .cloned()
                 .unwrap_or_default();
+            let has_modulation = species_config.trail_modulation.is_some();
+            let modulation = species_config.trail_modulation.unwrap_or_default();
 
             let trail = self.trail_maps[0].current();
             for agent in self.agents.iter_mut() {
-                let (left, center, right) = agent.sense(
-                    trail,
-                    width,
-                    height,
-                    species_config.sensor_angle,
-                    self.config.sensor_distance,
-                );
+                // Compute modulated parameters if enabled
+                let (sensor_angle, sensor_distance, rotation_angle, step_size) = if has_modulation {
+                    let x = agent.sample_trail_at_position(trail, width, height);
+                    let params = modulation.compute_params(x);
+                    (
+                        params.sensor_angle,
+                        params.sensor_distance,
+                        params.rotation_angle,
+                        params.step_size,
+                    )
+                } else {
+                    (
+                        species_config.sensor_angle,
+                        self.config.sensor_distance,
+                        species_config.rotation_angle,
+                        effective_step_size,
+                    )
+                };
 
-                agent.rotate(
-                    left,
-                    center,
-                    right,
-                    species_config.rotation_angle,
-                    &mut self.rng,
-                );
+                let (left, center, right) = if has_modulation {
+                    agent.sense_with_offsets(
+                        trail,
+                        width,
+                        height,
+                        sensor_angle,
+                        sensor_distance,
+                        modulation.vertical_offset,
+                        modulation.heading_offset,
+                    )
+                } else {
+                    agent.sense(trail, width, height, sensor_angle, sensor_distance)
+                };
+
+                agent.rotate(left, center, right, rotation_angle, &mut self.rng);
 
                 agent.apply_attractor_forces(&attractors, attractor_strength);
 
@@ -830,17 +880,52 @@ impl Simulation {
                 agent.apply_terrain_bias(terrain, terrain_strength, &self.noise);
 
                 agent.move_forward(
-                    effective_step_size,
+                    if has_modulation {
+                        step_size * dt
+                    } else {
+                        effective_step_size
+                    },
                     width,
                     height,
                     obstacles,
                     obstacle_masks,
+                    boundary_mode,
                 );
             }
 
             let trail_mut = self.trail_maps[0].current_mut();
             for agent in self.agents.iter_mut() {
                 agent.deposit(trail_mut, width, height, species_config.deposit_amount * dt);
+            }
+        }
+
+        // Handle particle respawn
+        if respawn_config.interval > 0 {
+            use rand::Rng;
+            let should_check_respawn = self
+                .agents
+                .first()
+                .is_some_and(|a| a.progress % respawn_config.interval as u8 == 0);
+            if should_check_respawn {
+                let trail = self.trail_maps[0].current();
+                for agent in &mut self.agents {
+                    agent.progress = agent.progress.wrapping_add(1);
+                    let mut probability = respawn_config.base_probability;
+                    if respawn_config.trail_dependent {
+                        let x = agent.sample_trail_at_position(trail, width, height);
+                        probability *= 1.0 + x * (respawn_config.max_probability_multiplier - 1.0);
+                    }
+                    if self.rng.gen::<f32>() < probability * dt {
+                        // Respawn at random position
+                        agent.x = self.rng.gen_range(0.0..width as f32);
+                        agent.y = self.rng.gen_range(0.0..height as f32);
+                        agent.heading = self.rng.gen_range(0.0..std::f32::consts::PI * 2.0);
+                    }
+                }
+            } else {
+                for agent in &mut self.agents {
+                    agent.progress = agent.progress.wrapping_add(1);
+                }
             }
         }
 
@@ -1424,6 +1509,7 @@ mod tests {
                     rotation_angle: 45.0,
                     step_size: 1.0,
                     deposit_amount: 5.0,
+                    trail_modulation: None,
                 },
                 SpeciesConfig {
                     name: "blue".to_string(),
@@ -1433,6 +1519,7 @@ mod tests {
                     rotation_angle: 45.0,
                     step_size: 1.0,
                     deposit_amount: 5.0,
+                    trail_modulation: None,
                 },
             ],
             separate_species_trails: true,
@@ -1483,6 +1570,7 @@ mod tests {
                     rotation_angle: 45.0,
                     step_size: 1.0,
                     deposit_amount: 5.0,
+                    trail_modulation: None,
                 },
                 SpeciesConfig {
                     name: "blue".to_string(),
@@ -1492,6 +1580,7 @@ mod tests {
                     rotation_angle: 45.0,
                     step_size: 1.0,
                     deposit_amount: 5.0,
+                    trail_modulation: None,
                 },
             ],
             separate_species_trails: true,

@@ -715,6 +715,7 @@ mod tests {
                 y: 200.0,
                 heading,
                 species_id: 0,
+                progress: 0,
             })
             .collect()
     }
@@ -736,6 +737,7 @@ mod tests {
                 y: 200.0,
                 heading: (i as f32 / 100.0) * 2.0 * PI,
                 species_id: 0,
+                progress: 0,
             })
             .collect();
         let variance = compute_heading_variance(&agents);
@@ -794,6 +796,7 @@ mod tests {
                     y: 50.0 + r * angle.sin(),
                     heading: angle + PI / 2.0, // tangent direction (counterclockwise)
                     species_id: 0,
+                    progress: 0,
                 }
             })
             .collect();

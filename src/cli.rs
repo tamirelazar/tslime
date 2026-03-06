@@ -14,7 +14,7 @@ use crate::error::ConfigError;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
-    DiffusionKernel, InitMode, Obstacle, Preset, SimConfig, TerrainType, Wind,
+    BoundaryMode, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig, TerrainType, Wind,
 };
 use crate::validation::Validatable;
 
@@ -311,8 +311,15 @@ impl FromStr for Preset {
             "chaosedge" | "chaos-edge" | "chaos_edge" => Ok(Preset::ChaosEdge),
             "blob" => Ok(Preset::Blob),
             "worm" => Ok(Preset::Worm),
+            "pulse" => Ok(Preset::Pulse),
+            "coral" => Ok(Preset::Coral),
+            "flocking" => Ok(Preset::Flocking),
+            "maze" => Ok(Preset::Maze),
+            "ripple" => Ok(Preset::Ripple),
+            "vortex36" | "vortex-36" | "vortex_36" => Ok(Preset::Vortex36),
+            "chameleon" => Ok(Preset::Chameleon),
             _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm",
+                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon",
                 s
             )),
         }
@@ -724,10 +731,26 @@ pub struct Args {
     #[arg(
         long = "preset",
         value_name = "NAME",
-        help = "Use named preset (network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, vortex, lightning, crystal, chaosedge, blob, worm)"
+        help = "Use named preset (network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon)"
     )]
     /// Named parameter preset.
     pub preset: Option<Preset>,
+
+    #[arg(
+        long = "boundary-mode",
+        value_name = "MODE",
+        help = "Boundary handling mode (bounce, wrap)"
+    )]
+    /// Boundary handling mode (bounce or wrap).
+    pub boundary_mode: Option<BoundaryMode>,
+
+    #[arg(
+        long = "respawn-interval",
+        value_name = "INT",
+        help = "Respawn agents every N frames (0 = disabled)"
+    )]
+    /// Particle respawn interval in frames.
+    pub respawn_interval: Option<u32>,
 
     #[arg(
         long = "init",
@@ -1896,6 +1919,8 @@ impl Default for Args {
             trail_delta_strength: 0.5,
             gradient_magnitude: false,
             gradient_strength: 0.3,
+            boundary_mode: None,
+            respawn_interval: None,
         }
     }
 }

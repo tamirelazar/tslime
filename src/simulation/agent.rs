@@ -71,7 +71,7 @@ impl NoiseWrapper {
 
 /// A single agent (particle) in the Physarum simulation.
 ///
-/// Each agent has a position (x, y), heading angle, and species ID.
+/// Each agent has a position (x, y), heading angle, species ID, and progress.
 /// The agent struct is kept minimal (16 bytes) for cache efficiency
 /// when processing 50,000+ agents per frame.
 #[derive(Clone, Copy)]
@@ -84,6 +84,8 @@ pub struct Agent {
     pub heading: f32,
     /// Identifier for the agent's species (used for color/config).
     pub species_id: u8,
+    /// Progress value for respawn timing (0-255, wraps around).
+    pub progress: u8,
 }
 
 impl Agent {
@@ -95,6 +97,7 @@ impl Agent {
             y,
             heading,
             species_id,
+            progress: 0,
         }
     }
 
@@ -110,26 +113,78 @@ impl Agent {
         sensor_angle: f32,
         sensor_distance: f32,
     ) -> (f32, f32, f32) {
+        self.sense_with_offsets(
+            trail,
+            width,
+            height,
+            sensor_angle,
+            sensor_distance,
+            0.0,
+            0.0,
+        )
+    }
+
+    /// Sense the pheromone trail with offset parameters (36 Points extension).
+    ///
+    /// # Arguments
+    /// * `trail` - The trail map data
+    /// * `width` - Trail map width
+    /// * `height` - Trail map height
+    /// * `sensor_angle` - Sensor angle in degrees
+    /// * `sensor_distance` - Sensor offset distance
+    /// * `vertical_offset` - Absolute vertical offset (p13)
+    /// * `heading_offset` - Heading-relative offset (p14)
+    ///
+    /// Returns a tuple of (left, center, right) sensed values.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn sense_with_offsets(
+        &self,
+        trail: &[f32],
+        width: usize,
+        height: usize,
+        sensor_angle: f32,
+        sensor_distance: f32,
+        vertical_offset: f32,
+        heading_offset: f32,
+    ) -> (f32, f32, f32) {
         let sensor_angle_rad = sensor_angle * PI / 180.0;
 
         let left_angle = self.heading - sensor_angle_rad;
         let center_angle = self.heading;
         let right_angle = self.heading + sensor_angle_rad;
 
-        let left_x = self.x + left_angle.cos() * sensor_distance;
-        let left_y = self.y + left_angle.sin() * sensor_distance;
+        // Apply heading-relative offset (p14) - offset sensors forward/back
+        let offset_x = self.heading.cos() * heading_offset;
+        let offset_y = self.heading.sin() * heading_offset;
 
-        let center_x = self.x + center_angle.cos() * sensor_distance;
-        let center_y = self.y + center_angle.sin() * sensor_distance;
+        // Base sensor positions with heading offset
+        let base_x = self.x + offset_x;
+        let base_y = self.y + offset_y;
 
-        let right_x = self.x + right_angle.cos() * sensor_distance;
-        let right_y = self.y + right_angle.sin() * sensor_distance;
+        // Calculate sensor positions
+        let left_x = base_x + left_angle.cos() * sensor_distance;
+        let left_y = base_y + left_angle.sin() * sensor_distance + vertical_offset;
+
+        let center_x = base_x + center_angle.cos() * sensor_distance;
+        let center_y = base_y + center_angle.sin() * sensor_distance + vertical_offset;
+
+        let right_x = base_x + right_angle.cos() * sensor_distance;
+        let right_y = base_y + right_angle.sin() * sensor_distance + vertical_offset;
 
         let left = sample_trail(trail, width, height, left_x, left_y);
         let center = sample_trail(trail, width, height, center_x, center_y);
         let right = sample_trail(trail, width, height, right_x, right_y);
 
         (left, center, right)
+    }
+
+    /// Sample the trail value at the agent's current position.
+    ///
+    /// Used for trail-based parameter modulation (36 Points).
+    #[inline]
+    pub fn sample_trail_at_position(&self, trail: &[f32], width: usize, height: usize) -> f32 {
+        sample_trail(trail, width, height, self.x, self.y)
     }
 
     /// Update heading based on sensed values.
@@ -282,6 +337,7 @@ impl Agent {
         height: usize,
         obstacles: &[Obstacle],
         obstacle_masks: &[Option<super::config::ObstacleMask>],
+        boundary_mode: super::config::BoundaryMode,
     ) {
         self.x += self.heading.cos() * step_size;
         self.y += self.heading.sin() * step_size;
@@ -296,20 +352,31 @@ impl Agent {
             }
         }
 
-        if self.x < 0.0 {
-            self.x = 0.0;
-            self.heading = PI - self.heading;
-        } else if self.x >= width as f32 {
-            self.x = (width - 1) as f32;
-            self.heading = PI - self.heading;
-        }
+        match boundary_mode {
+            super::config::BoundaryMode::Bounce => {
+                if self.x < 0.0 {
+                    self.x = 0.0;
+                    self.heading = PI - self.heading;
+                } else if self.x >= width as f32 {
+                    self.x = (width - 1) as f32;
+                    self.heading = PI - self.heading;
+                }
 
-        if self.y < 0.0 {
-            self.y = 0.0;
-            self.heading = -self.heading;
-        } else if self.y >= height as f32 {
-            self.y = (height - 1) as f32;
-            self.heading = -self.heading;
+                if self.y < 0.0 {
+                    self.y = 0.0;
+                    self.heading = -self.heading;
+                } else if self.y >= height as f32 {
+                    self.y = (height - 1) as f32;
+                    self.heading = -self.heading;
+                }
+            }
+            super::config::BoundaryMode::Wrap => {
+                let w = width as f32;
+                let h = height as f32;
+                // Wrap around using modulo arithmetic
+                self.x = ((self.x % w) + w) % w;
+                self.y = ((self.y % h) + h) % h;
+            }
         }
     }
 
@@ -373,7 +440,14 @@ mod tests {
     #[test]
     fn test_move_forward() {
         let mut agent = Agent::new(100.0, 100.0, 0.0, 0);
-        agent.move_forward(1.0, 400, 400, &[], &[]);
+        agent.move_forward(
+            1.0,
+            400,
+            400,
+            &[],
+            &[],
+            crate::simulation::config::BoundaryMode::Bounce,
+        );
         assert!((agent.x - 101.0).abs() < 0.001);
         assert!((agent.y - 100.0).abs() < 0.001);
     }
@@ -381,7 +455,14 @@ mod tests {
     #[test]
     fn test_move_with_heading_90() {
         let mut agent = Agent::new(100.0, 100.0, PI / 2.0, 0);
-        agent.move_forward(1.0, 400, 400, &[], &[]);
+        agent.move_forward(
+            1.0,
+            400,
+            400,
+            &[],
+            &[],
+            crate::simulation::config::BoundaryMode::Bounce,
+        );
         assert!((agent.x - 100.0).abs() < 0.001);
         assert!((agent.y - 101.0).abs() < 0.001);
     }
@@ -389,7 +470,14 @@ mod tests {
     #[test]
     fn test_boundary_handling() {
         let mut agent = Agent::new(0.5, 200.0, PI, 0);
-        agent.move_forward(2.0, 400, 400, &[], &[]);
+        agent.move_forward(
+            2.0,
+            400,
+            400,
+            &[],
+            &[],
+            crate::simulation::config::BoundaryMode::Bounce,
+        );
         assert!(agent.x >= 0.0);
     }
 
@@ -557,7 +645,14 @@ mod tests {
         }];
         let obstacle_masks = vec![None];
         // Move into circle
-        agent.move_forward(10.0, 400, 400, &obstacles, &obstacle_masks);
+        agent.move_forward(
+            10.0,
+            400,
+            400,
+            &obstacles,
+            &obstacle_masks,
+            crate::simulation::config::BoundaryMode::Bounce,
+        );
         assert!(agent.heading != 0.0);
     }
 
@@ -610,7 +705,7 @@ mod prop_tests {
             step_size in 0.0..10.0f32,
         ) {
             let mut agent = Agent::new(x, y, heading, 0);
-            agent.move_forward(step_size, 1000, 1000, &[], &[]);
+            agent.move_forward(step_size, 1000, 1000, &[], &[], crate::simulation::config::BoundaryMode::Bounce);
             prop_assert!(agent.x.is_finite());
             prop_assert!(agent.y.is_finite());
             prop_assert!(agent.heading.is_finite());
