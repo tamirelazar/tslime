@@ -221,9 +221,13 @@ impl Agent {
         terrain_strength: f32,
         noise: &NoiseWrapper,
     ) {
+        // Early return for no terrain effect
+        if terrain == TerrainType::None {
+            return;
+        }
+
         let seed_val = noise.seed_value() as f64;
         match terrain {
-            TerrainType::None => {}
             TerrainType::Smooth => {
                 let nx = self.x as f64 * TERRAIN_SCALE_SMOOTH as f64 + seed_val;
                 let ny = self.y as f64 * TERRAIN_SCALE_SMOOTH as f64 + seed_val;
@@ -263,6 +267,7 @@ impl Agent {
                 let combined_angle = smooth_angle + turb_angle;
                 self.apply_steering(combined_angle, TERRAIN_STRENGTH_MIXED);
             }
+            TerrainType::None => unreachable!(),
         }
     }
 

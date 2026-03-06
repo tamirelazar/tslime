@@ -18,16 +18,17 @@ pub struct TrailMap {
 }
 
 const GAUSSIAN_KERNEL_SIZE: usize = 5;
+const GAUSSIAN_RADIUS: i32 = 2;
 
 fn generate_gaussian_kernel(sigma: f32) -> [f32; 25] {
     let mut kernel = [0.0f32; 25];
-    let radius: i32 = 2;
     let two_sigma_sq = 2.0 * sigma * sigma;
     let mut sum = 0.0f32;
 
-    for y in -radius..=radius {
-        for x in -radius..=radius {
-            let idx = ((y + radius) * GAUSSIAN_KERNEL_SIZE as i32 + (x + radius)) as usize;
+    for y in -GAUSSIAN_RADIUS..=GAUSSIAN_RADIUS {
+        for x in -GAUSSIAN_RADIUS..=GAUSSIAN_RADIUS {
+            let idx = ((y + GAUSSIAN_RADIUS) * GAUSSIAN_KERNEL_SIZE as i32 + (x + GAUSSIAN_RADIUS))
+                as usize;
             let dist_sq = (x * x + y * y) as f32;
             kernel[idx] = (-dist_sq / two_sigma_sq).exp();
             sum += kernel[idx];
@@ -570,19 +571,19 @@ impl TrailMap {
         let k24 = _mm256_set1_ps(kernel[24]);
 
         let simd_width = 8;
-        // Leave room for 2-pixel boundary on right side
-        let limit = width.saturating_sub(simd_width + 2);
+        // Leave room for kernel boundary on right side
+        let limit = width.saturating_sub(simd_width + GAUSSIAN_RADIUS as usize);
 
-        let mut y = 2usize;
+        let mut y = GAUSSIAN_RADIUS as usize;
 
-        while y < height - 2 {
+        while y < height - GAUSSIAN_RADIUS as usize {
             let current_row = y * width;
-            let row_minus_2 = (y - 2) * width;
+            let row_minus_2 = (y - GAUSSIAN_RADIUS as usize) * width;
             let row_minus_1 = (y - 1) * width;
             let row_plus_1 = (y + 1) * width;
-            let row_plus_2 = (y + 2) * width;
+            let row_plus_2 = (y + GAUSSIAN_RADIUS as usize) * width;
 
-            let mut x = 2usize;
+            let mut x = GAUSSIAN_RADIUS as usize;
 
             // Main SIMD loop - process 8 pixels at a time
             while x < limit {
@@ -717,16 +718,18 @@ impl TrailMap {
             }
 
             // Scalar fallback for remaining columns
-            let mut x = limit.max(2);
-            while x < width - 2 {
+            let mut x = limit.max(GAUSSIAN_RADIUS as usize);
+            while x < width - GAUSSIAN_RADIUS as usize {
                 let idx = current_row + x;
                 let mut sum = 0.0f32;
 
-                for ky in -2..=2 {
-                    for kx in -2..=2 {
+                for ky in -GAUSSIAN_RADIUS..=GAUSSIAN_RADIUS {
+                    for kx in -GAUSSIAN_RADIUS..=GAUSSIAN_RADIUS {
                         let nx = x as i32 + kx;
                         let ny = y as i32 + ky;
-                        let kernel_idx = ((ky + 2) * 5 + (kx + 2)) as usize;
+                        let kernel_idx = ((ky + GAUSSIAN_RADIUS) * GAUSSIAN_KERNEL_SIZE as i32
+                            + (kx + GAUSSIAN_RADIUS))
+                            as usize;
                         sum += current[(ny as usize) * width + (nx as usize)] * kernel[kernel_idx];
                     }
                 }
@@ -784,18 +787,18 @@ impl TrailMap {
         let k24 = vdupq_n_f32(kernel[24]);
 
         let simd_width = 4;
-        let limit = width.saturating_sub(simd_width + 2);
+        let limit = width.saturating_sub(simd_width + GAUSSIAN_RADIUS as usize);
 
-        let mut y = 2usize;
+        let mut y = GAUSSIAN_RADIUS as usize;
 
-        while y < height - 2 {
+        while y < height - GAUSSIAN_RADIUS as usize {
             let current_row = y * width;
             let row_minus_1 = (y - 1) * width;
-            let row_minus_2 = (y - 2) * width;
+            let row_minus_2 = (y - GAUSSIAN_RADIUS as usize) * width;
             let row_plus_1 = (y + 1) * width;
-            let row_plus_2 = (y + 2) * width;
+            let row_plus_2 = (y + GAUSSIAN_RADIUS as usize) * width;
 
-            let mut x = 2usize;
+            let mut x = GAUSSIAN_RADIUS as usize;
 
             while x < limit {
                 let idx = current_row + x;
@@ -891,16 +894,18 @@ impl TrailMap {
                 x += simd_width;
             }
 
-            let mut x = limit.max(2);
-            while x < width - 2 {
+            let mut x = limit.max(GAUSSIAN_RADIUS as usize);
+            while x < width - GAUSSIAN_RADIUS as usize {
                 let idx = current_row + x;
                 let mut sum = 0.0f32;
 
-                for ky in -2..=2 {
-                    for kx in -2..=2 {
+                for ky in -GAUSSIAN_RADIUS..=GAUSSIAN_RADIUS {
+                    for kx in -GAUSSIAN_RADIUS..=GAUSSIAN_RADIUS {
                         let nx = x as i32 + kx;
                         let ny = y as i32 + ky;
-                        let kernel_idx = ((ky + 2) * 5 + (kx + 2)) as usize;
+                        let kernel_idx = ((ky + GAUSSIAN_RADIUS) * GAUSSIAN_KERNEL_SIZE as i32
+                            + (kx + GAUSSIAN_RADIUS))
+                            as usize;
                         sum += current[(ny as usize) * width + (nx as usize)] * kernel[kernel_idx];
                     }
                 }

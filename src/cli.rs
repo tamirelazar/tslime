@@ -1,6 +1,7 @@
-use clap::Parser;
 use std::num::ParseIntError;
 use std::str::FromStr;
+
+use clap::Parser;
 
 use crate::config_builder::ConfigBuilder;
 use crate::config_defaults::{

@@ -676,11 +676,9 @@ impl Simulation {
         output.clear();
 
         // Check if we have history with blended data
-        if let Some(ref mut history) = self.trail_history {
-            if let Some(blended) = history.blended() {
-                output.extend_from_slice(blended);
-                return;
-            }
+        if let Some(blended) = self.trail_history.as_mut().and_then(|h| h.blended()) {
+            output.extend_from_slice(blended);
+            return;
         }
 
         if self.config.separate_species_trails {

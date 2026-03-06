@@ -11,6 +11,8 @@ pub struct DownsampledFrame {
     scratch_top_right: Vec<f32>,
     scratch_bottom_left: Vec<f32>,
     scratch_bottom_right: Vec<f32>,
+    /// Pre-allocated scratch buffer for gradient magnitude computation
+    scratch_gradient: Vec<f32>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -56,6 +58,7 @@ impl DownsampledFrame {
             scratch_top_right: vec![0.0; cell_count],
             scratch_bottom_left: vec![0.0; cell_count],
             scratch_bottom_right: vec![0.0; cell_count],
+            scratch_gradient: vec![0.0; cell_count],
         }
     }
 
@@ -541,11 +544,15 @@ pub fn apply_laplacian_sharpening(frame: &mut DownsampledFrame, strength: f32) {
 /// Gx = (right - left) / 2, Gy = (bottom - top) / 2
 /// magnitude = sqrt(Gx² + Gy²)
 ///
-/// Returns a buffer of normalized gradient magnitudes in [0, 1] range.
-pub fn compute_gradient_magnitude(frame: &DownsampledFrame) -> Vec<f32> {
+/// Writes results into the frame's pre-allocated scratch_gradient buffer.
+/// Returns a reference to the buffer containing normalized gradient magnitudes in [0, 1] range.
+pub fn compute_gradient_magnitude(frame: &mut DownsampledFrame) -> &[f32] {
     let w = frame.width;
     let h = frame.height;
-    let mut magnitude = vec![0.0f32; w * h];
+    let magnitude = &mut frame.scratch_gradient;
+
+    // Reset buffer
+    magnitude.fill(0.0);
 
     if w < 3 || h < 3 {
         return magnitude;
