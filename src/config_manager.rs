@@ -368,6 +368,7 @@ impl SavedConfig {
             step_size: self.step_size,
             deposit_amount: self.deposit_amount,
             color: RgbColor::from_hex(0x228b22),
+            trail_modulation: None,
         };
 
         Ok(SimConfig {
@@ -398,6 +399,9 @@ impl SavedConfig {
             terrain_strength: 1.0,
             background_color: self.background_color.clone(),
             preferred_init_mode: None,
+            boundary_mode: crate::simulation::config::BoundaryMode::Bounce,
+            respawn_config: crate::simulation::config::RespawnConfig::default(),
+            sampling_mode: crate::simulation::config::SamplingMode::Nearest,
         })
     }
 }
@@ -741,6 +745,7 @@ mod tests {
                 step_size: state.step_size,
                 deposit_amount: state.deposit_amount,
                 color: RgbColor::from_hex(0x228b22),
+                trail_modulation: None,
             }],
             separate_species_trails: false,
             use_simd: true,
@@ -754,6 +759,9 @@ mod tests {
             terrain_strength: 1.0,
             background_color: None,
             preferred_init_mode: None,
+            boundary_mode: crate::simulation::config::BoundaryMode::Bounce,
+            respawn_config: crate::simulation::config::RespawnConfig::default(),
+            sampling_mode: crate::simulation::config::SamplingMode::Nearest,
         };
 
         let saved_config = SavedConfig::from_runtime(

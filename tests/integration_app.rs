@@ -45,6 +45,7 @@ fn test_extract_species_rgb_colors() {
                 step_size: 1.0,
                 deposit_amount: 5.0,
                 color: RgbColor::from_hex(0xff0000),
+                trail_modulation: None,
             },
             SpeciesConfig {
                 name: "blue".to_string(),
@@ -54,6 +55,7 @@ fn test_extract_species_rgb_colors() {
                 step_size: 1.5,
                 deposit_amount: 3.0,
                 color: RgbColor::from_hex(0x0000ff),
+                trail_modulation: None,
             },
         ],
         ..Default::default()
@@ -84,6 +86,7 @@ fn test_extract_species_rgb_colors_invalid_hex() {
                 step_size: 1.0,
                 deposit_amount: 5.0,
                 color: RgbColor::from_hex(0xff0000),
+                trail_modulation: None,
             },
             SpeciesConfig {
                 name: "another_valid".to_string(),
@@ -93,6 +96,7 @@ fn test_extract_species_rgb_colors_invalid_hex() {
                 step_size: 1.5,
                 deposit_amount: 3.0,
                 color: RgbColor::from_hex(0x00ff00),
+                trail_modulation: None,
             },
         ],
         ..Default::default()

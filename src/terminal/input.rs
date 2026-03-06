@@ -289,6 +289,17 @@ pub fn preset_name(preset: Preset) -> &'static str {
         Preset::ChaosEdge => "ChaosEdge",
         Preset::Blob => "Blob",
         Preset::Worm => "Worm",
+        Preset::Pulse => "Pulse",
+        Preset::Coral => "Coral",
+        Preset::Flocking => "Flocking",
+        Preset::Maze => "Maze",
+        Preset::Ripple => "Ripple",
+        Preset::Vortex36 => "Vortex36",
+        Preset::Chameleon => "Chameleon",
+        Preset::DynamicTendrils => "DynamicTendrils",
+        Preset::MorphingCoral => "MorphingCoral",
+        Preset::ReactiveSwarm => "ReactiveSwarm",
+        Preset::DuelingModulators => "DuelingModulators",
     }
 }
 

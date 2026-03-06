@@ -13,7 +13,7 @@ use crate::config_defaults::{
 };
 use crate::error::ConfigError;
 use crate::simulation::config::{
-    Attractor, DiffusionKernel, Preset, SimConfig, SpeciesConfig, TerrainType, Wind,
+    Attractor, BoundaryMode, DiffusionKernel, Preset, SimConfig, SpeciesConfig, TerrainType, Wind,
 };
 
 /// Builder for constructing SimConfig instances with validation.
@@ -49,6 +49,8 @@ pub struct ConfigBuilder {
     terrain: Option<String>,
     terrain_strength: Option<f32>,
     background_color: Option<String>,
+    boundary_mode: Option<BoundaryMode>,
+    respawn_interval: Option<u32>,
 }
 
 impl ConfigBuilder {
@@ -87,6 +89,8 @@ impl ConfigBuilder {
             terrain: Some(args.terrain.clone()),
             terrain_strength: Some(args.terrain_strength),
             background_color: args.bg_color.clone(),
+            boundary_mode: args.boundary_mode,
+            respawn_interval: args.respawn_interval,
         }
     }
 
@@ -507,6 +511,7 @@ impl ConfigBuilder {
                     step_size: s.step_size,
                     deposit_amount: s.deposit_amount,
                     color: s.color,
+                    trail_modulation: None,
                 })
                 .collect();
         } else if self.preset.is_none() {
@@ -520,6 +525,7 @@ impl ConfigBuilder {
                 step_size: self.step_size.unwrap_or(config.step_size),
                 deposit_amount: self.deposit_amount.unwrap_or(config.deposit_amount),
                 color: RgbColor::from_hex(0x228b22),
+                trail_modulation: None,
             }];
         } else if let Some(preset_species) = config.species_configs.first_mut() {
             // If using a preset, allow overriding the FIRST species' properties with CLI args if provided
@@ -555,6 +561,16 @@ impl ConfigBuilder {
 
         // Background color
         config.background_color = self.background_color;
+
+        // Boundary mode
+        if let Some(mode) = self.boundary_mode {
+            config.boundary_mode = mode;
+        }
+
+        // Respawn configuration
+        if let Some(interval) = self.respawn_interval {
+            config.respawn_config.interval = interval;
+        }
 
         Ok(config)
     }

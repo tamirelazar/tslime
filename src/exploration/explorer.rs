@@ -383,6 +383,7 @@ impl ExplorationParams {
                 step_size: self.step_size,
                 deposit_amount: self.deposit_amount,
                 color: RgbColor::from_hex(0xffffff),
+                trail_modulation: None,
             }],
             diffusion_kernel: self.diffusion_kernel,
             wind,

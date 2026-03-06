@@ -126,8 +126,10 @@ pub fn downsample(
             let sim_x_end = (((cx + 1) as f32 * x_scale).ceil() as usize).min(sim_width);
 
             let sim_y_start = (cy as f32 * y_scale) as usize;
-            let sim_y_mid = (((cy as f32 + 0.5) * y_scale).ceil() as usize).max(sim_y_start + 1);
             let sim_y_end = (((cy + 1) as f32 * y_scale).ceil() as usize).min(sim_height);
+            let sim_y_mid = (((cy as f32 + 0.5) * y_scale).floor() as usize)
+                .max(sim_y_start + 1)
+                .min(sim_y_end);
 
             let top_brightness = compute_average(
                 trail_map,
@@ -148,7 +150,7 @@ pub fn downsample(
             );
 
             // Compute quadrant values for higher resolution
-            let sim_x_mid = (((cx as f32 + 0.5) * x_scale).ceil() as usize)
+            let sim_x_mid = (((cx as f32 + 0.5) * x_scale).floor() as usize)
                 .max(sim_x_start + 1)
                 .min(sim_x_end);
 
@@ -225,8 +227,10 @@ pub fn downsample_multi_species(
             let sim_x_end = (((cx + 1) as f32 * x_scale).ceil() as usize).min(sim_width);
 
             let sim_y_start = (cy as f32 * y_scale) as usize;
-            let sim_y_mid = (((cy as f32 + 0.5) * y_scale).ceil() as usize).max(sim_y_start + 1);
             let sim_y_end = (((cy + 1) as f32 * y_scale).ceil() as usize).min(sim_height);
+            let sim_y_mid = (((cy as f32 + 0.5) * y_scale).floor() as usize)
+                .max(sim_y_start + 1)
+                .min(sim_y_end);
 
             let mut top_brightness = 0.0f32;
             let mut bottom_brightness = 0.0f32;
@@ -235,7 +239,7 @@ pub fn downsample_multi_species(
             let mut bottom_left_brightness = 0.0f32;
             let mut bottom_right_brightness = 0.0f32;
 
-            let sim_x_mid = (((cx as f32 + 0.5) * x_scale).ceil() as usize)
+            let sim_x_mid = (((cx as f32 + 0.5) * x_scale).floor() as usize)
                 .max(sim_x_start + 1)
                 .min(sim_x_end);
 
@@ -578,7 +582,6 @@ pub fn compute_gradient_magnitude(frame: &mut DownsampledFrame) -> &[f32] {
                     / 6.0
             };
 
-            let _center_val = avg(&frame.cells[idx]);
             let up_val = avg(&frame.cells[up]);
             let dn_val = avg(&frame.cells[dn]);
             let lt_val = avg(&frame.cells[lt]);
@@ -812,10 +815,10 @@ mod tests {
                 let sim_y_start = (cy as f32 * y_scale) as usize;
                 let sim_y_end = (((cy + 1) as f32 * y_scale).ceil() as usize).min(sim_height);
 
-                let sim_x_mid = (((cx as f32 + 0.5) * x_scale).ceil() as usize)
+                let sim_x_mid = (((cx as f32 + 0.5) * x_scale).floor() as usize)
                     .max(sim_x_start + 1)
                     .min(sim_x_end);
-                let sim_y_mid = (((cy as f32 + 0.5) * y_scale).ceil() as usize)
+                let sim_y_mid = (((cy as f32 + 0.5) * y_scale).floor() as usize)
                     .max(sim_y_start + 1)
                     .min(sim_y_end);
 

@@ -66,6 +66,28 @@ pub enum Preset {
     Blob,
     /// Long snaking worm-like trails.
     Worm,
+    /// Rhythmic pulsing waves with trail-based modulation.
+    Pulse,
+    /// Dense coral-like branching structures.
+    Coral,
+    /// Cohesive flocking group movement.
+    Flocking,
+    /// Complex maze-like corridor patterns.
+    Maze,
+    /// Concentric ripple patterns.
+    Ripple,
+    /// Enhanced vortex with trail modulation.
+    Vortex36,
+    /// Dramatic behavior shifts based on trail density.
+    Chameleon,
+    /// Dynamic tendrils with trail-based sensor modulation.
+    DynamicTendrils,
+    /// Morphing coral with dramatic parameter shifts.
+    MorphingCoral,
+    /// Reactive swarm with trail-dependent behavior.
+    ReactiveSwarm,
+    /// Two-species with opposing modulation patterns.
+    DuelingModulators,
 }
 
 impl Preset {
@@ -184,6 +206,7 @@ impl Preset {
                     step_size: 0.7,
                     deposit_amount: 3.0,
                     color: RgbColor::from_hex(0x8a2be2),
+                    ..Default::default()
                 }];
             }
             Preset::Fire => {
@@ -220,6 +243,7 @@ impl Preset {
                     step_size: 0.5,
                     deposit_amount: 2.0,
                     color: RgbColor::from_hex(0xffffff),
+                    ..Default::default()
                 }];
             }
             Preset::Storm => {
@@ -287,6 +311,7 @@ impl Preset {
                     step_size: 0.05,
                     deposit_amount: 0.2,
                     color: RgbColor::from_hex(0xd4ff00),
+                    ..Default::default()
                 }];
                 config.obstacles = vec![Obstacle::Circle {
                     x: 200.0,
@@ -312,6 +337,7 @@ impl Preset {
                     step_size: 1.92,
                     deposit_amount: 4.3,
                     color: RgbColor::from_hex(0x9370db),
+                    ..Default::default()
                 }];
             }
             Preset::Lightning => {
@@ -331,6 +357,7 @@ impl Preset {
                     step_size: 2.48,
                     deposit_amount: 20.0,
                     color: RgbColor::from_hex(0x00ffff),
+                    ..Default::default()
                 }];
             }
             Preset::Crystal => {
@@ -349,6 +376,7 @@ impl Preset {
                     step_size: 1.47,
                     deposit_amount: 2.1,
                     color: RgbColor::from_hex(0xb0e0e6),
+                    ..Default::default()
                 }];
             }
             Preset::ChaosEdge => {
@@ -368,6 +396,7 @@ impl Preset {
                     step_size: 0.58,
                     deposit_amount: 15.8,
                     color: RgbColor::from_hex(0xff6347),
+                    ..Default::default()
                 }];
             }
             Preset::Blob => {
@@ -387,6 +416,7 @@ impl Preset {
                     step_size: 0.92,
                     deposit_amount: 9.3,
                     color: RgbColor::from_hex(0x32cd32),
+                    ..Default::default()
                 }];
             }
             Preset::Worm => {
@@ -405,7 +435,377 @@ impl Preset {
                     step_size: 1.96,
                     deposit_amount: 6.3,
                     color: RgbColor::from_hex(0xdaa520),
+                    ..Default::default()
                 }];
+            }
+            Preset::Pulse => {
+                config.sensor_angle = 60.0;
+                config.sensor_distance = 30.0;
+                config.rotation_angle = 15.0;
+                config.step_size = 1.0;
+                config.decay_factor = 0.90;
+                config.deposit_amount = 4.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 18.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 35_000,
+                    sensor_angle: 60.0,
+                    rotation_angle: 15.0,
+                    step_size: 1.0,
+                    deposit_amount: 4.0,
+                    color: RgbColor::from_hex(0x00ced1),
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 30.0,
+                        sensor_distance_multiplier: -20.0,
+                        sensor_distance_exponent: 1.5,
+                        sensor_angle_base: 60.0,
+                        sensor_angle_multiplier: -40.0,
+                        sensor_angle_exponent: 2.0,
+                        rotation_angle_base: 15.0,
+                        rotation_angle_multiplier: 30.0,
+                        rotation_angle_exponent: 1.0,
+                        step_size_base: 1.0,
+                        step_size_multiplier: 2.0,
+                        step_size_exponent: 1.0,
+                        ..Default::default()
+                    }),
+                }];
+            }
+            Preset::Coral => {
+                config.sensor_angle = 30.0;
+                config.sensor_distance = 20.0;
+                config.rotation_angle = 45.0;
+                config.step_size = 0.3;
+                config.decay_factor = 0.92;
+                config.deposit_amount = 3.0;
+                config.diffusion_kernel = DiffusionKernel::Gaussian;
+                config.diffusion_sigma = 1.2;
+                config.max_brightness = 15.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 40_000,
+                    sensor_angle: 30.0,
+                    rotation_angle: 45.0,
+                    step_size: 0.3,
+                    deposit_amount: 3.0,
+                    color: RgbColor::from_hex(0xff7f50),
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 20.0,
+                        sensor_distance_multiplier: 10.0,
+                        sensor_distance_exponent: 0.5,
+                        sensor_angle_base: 30.0,
+                        sensor_angle_multiplier: 40.0,
+                        sensor_angle_exponent: 1.0,
+                        rotation_angle_base: 45.0,
+                        rotation_angle_multiplier: -20.0,
+                        rotation_angle_exponent: 1.0,
+                        step_size_base: 0.3,
+                        step_size_multiplier: 0.0,
+                        step_size_exponent: 1.0,
+                        ..Default::default()
+                    }),
+                }];
+            }
+            Preset::Flocking => {
+                config.sensor_angle = 45.0;
+                config.sensor_distance = 25.0;
+                config.rotation_angle = 60.0;
+                config.step_size = 1.5;
+                config.decay_factor = 0.88;
+                config.deposit_amount = 5.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 20.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 50_000,
+                    sensor_angle: 45.0,
+                    rotation_angle: 60.0,
+                    step_size: 1.5,
+                    deposit_amount: 5.0,
+                    color: RgbColor::from_hex(0x4169e1),
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 25.0,
+                        sensor_distance_multiplier: -20.0,
+                        sensor_distance_exponent: 1.0,
+                        sensor_angle_base: 45.0,
+                        sensor_angle_multiplier: 0.0,
+                        sensor_angle_exponent: 1.0,
+                        rotation_angle_base: 60.0,
+                        rotation_angle_multiplier: -50.0,
+                        rotation_angle_exponent: 1.5,
+                        step_size_base: 1.5,
+                        step_size_multiplier: 1.0,
+                        step_size_exponent: 1.0,
+                        ..Default::default()
+                    }),
+                }];
+            }
+            Preset::Maze => {
+                config.sensor_angle = 85.0;
+                config.sensor_distance = 15.0;
+                config.rotation_angle = 20.0;
+                config.step_size = 0.8;
+                config.decay_factor = 0.85;
+                config.deposit_amount = 6.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 22.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 45_000,
+                    sensor_angle: 85.0,
+                    rotation_angle: 20.0,
+                    step_size: 0.8,
+                    deposit_amount: 6.0,
+                    color: RgbColor::from_hex(0x8b4513),
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 15.0,
+                        sensor_distance_multiplier: 5.0,
+                        sensor_distance_exponent: 1.0,
+                        sensor_angle_base: 85.0,
+                        sensor_angle_multiplier: 0.0,
+                        sensor_angle_exponent: 1.0,
+                        rotation_angle_base: 20.0,
+                        rotation_angle_multiplier: 40.0,
+                        rotation_angle_exponent: 2.0,
+                        step_size_base: 0.8,
+                        step_size_multiplier: 0.4,
+                        step_size_exponent: 1.0,
+                        ..Default::default()
+                    }),
+                }];
+            }
+            Preset::Ripple => {
+                config.sensor_angle = 35.0;
+                config.sensor_distance = 12.0;
+                config.rotation_angle = 30.0;
+                config.step_size = 1.0;
+                config.decay_factor = 0.94;
+                config.deposit_amount = 3.5;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 16.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 30_000,
+                    sensor_angle: 35.0,
+                    rotation_angle: 30.0,
+                    step_size: 1.0,
+                    deposit_amount: 3.5,
+                    color: RgbColor::from_hex(0x20b2aa),
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 12.0,
+                        sensor_distance_multiplier: 8.0,
+                        sensor_distance_exponent: 0.8,
+                        sensor_angle_base: 35.0,
+                        sensor_angle_multiplier: 25.0,
+                        sensor_angle_exponent: 1.2,
+                        rotation_angle_base: 30.0,
+                        rotation_angle_multiplier: -15.0,
+                        rotation_angle_exponent: 1.0,
+                        step_size_base: 1.0,
+                        step_size_multiplier: 1.5,
+                        step_size_exponent: 1.0,
+                        vertical_offset: 5.0,
+                        ..Default::default()
+                    }),
+                }];
+            }
+            Preset::Vortex36 => {
+                config.sensor_angle = 25.2;
+                config.sensor_distance = 7.0;
+                config.rotation_angle = 46.4;
+                config.step_size = 1.92;
+                config.decay_factor = 0.96;
+                config.deposit_amount = 4.3;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 32_000,
+                    sensor_angle: 25.2,
+                    rotation_angle: 46.4,
+                    step_size: 1.92,
+                    deposit_amount: 4.3,
+                    color: RgbColor::from_hex(0x9370db),
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 4.0,
+                        sensor_distance_multiplier: 3.0,
+                        sensor_distance_exponent: 1.0,
+                        sensor_angle_base: 25.0,
+                        sensor_angle_multiplier: 10.0,
+                        sensor_angle_exponent: 1.0,
+                        rotation_angle_base: 46.0,
+                        rotation_angle_multiplier: -20.0,
+                        rotation_angle_exponent: 1.0,
+                        step_size_base: 1.9,
+                        step_size_multiplier: 0.5,
+                        step_size_exponent: 1.0,
+                        heading_offset: 3.0,
+                        ..Default::default()
+                    }),
+                }];
+            }
+            Preset::Chameleon => {
+                config.sensor_angle = 40.0;
+                config.sensor_distance = 25.0;
+                config.rotation_angle = 45.0;
+                config.step_size = 2.5;
+                config.decay_factor = 0.90;
+                config.deposit_amount = 5.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 25.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 35_000,
+                    sensor_angle: 40.0,
+                    rotation_angle: 45.0,
+                    step_size: 2.5,
+                    deposit_amount: 5.0,
+                    color: RgbColor::from_hex(0x9932cc),
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 5.0,
+                        sensor_distance_multiplier: 40.0,
+                        sensor_distance_exponent: 2.0,
+                        sensor_angle_base: 10.0,
+                        sensor_angle_multiplier: 70.0,
+                        sensor_angle_exponent: 2.0,
+                        rotation_angle_base: 5.0,
+                        rotation_angle_multiplier: 80.0,
+                        rotation_angle_exponent: 2.0,
+                        step_size_base: 0.1,
+                        step_size_multiplier: 5.0,
+                        step_size_exponent: 1.5,
+                        ..Default::default()
+                    }),
+                }];
+            }
+            Preset::DynamicTendrils => {
+                config.decay_factor = 0.92;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "tendril".to_string(),
+                    count: 25_000,
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 5.0,
+                        sensor_distance_multiplier: 45.0,
+                        sensor_distance_exponent: 0.7,
+                        sensor_angle_base: 15.0,
+                        sensor_angle_multiplier: 60.0,
+                        sensor_angle_exponent: 2.0,
+                        rotation_angle_base: 10.0,
+                        rotation_angle_multiplier: 50.0,
+                        rotation_angle_exponent: 1.5,
+                        step_size_base: 0.5,
+                        step_size_multiplier: 3.0,
+                        step_size_exponent: 1.0,
+                        ..Default::default()
+                    }),
+                    color: RgbColor::from_hex(0x00fa9a),
+                    ..Default::default()
+                }];
+            }
+            Preset::MorphingCoral => {
+                config.decay_factor = 0.88;
+                config.diffusion_kernel = DiffusionKernel::Gaussian;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "coral".to_string(),
+                    count: 30_000,
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 40.0,
+                        sensor_distance_multiplier: -35.0,
+                        sensor_distance_exponent: 0.5,
+                        sensor_angle_base: 5.0,
+                        sensor_angle_multiplier: 80.0,
+                        sensor_angle_exponent: 2.5,
+                        rotation_angle_base: 5.0,
+                        rotation_angle_multiplier: 75.0,
+                        rotation_angle_exponent: 2.0,
+                        step_size_base: 0.2,
+                        step_size_multiplier: 2.0,
+                        step_size_exponent: 1.0,
+                        trail_rescale: 2.0,
+                        ..Default::default()
+                    }),
+                    color: RgbColor::from_hex(0xff69b4),
+                    ..Default::default()
+                }];
+            }
+            Preset::ReactiveSwarm => {
+                config.decay_factor = 0.85;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "swarm".to_string(),
+                    count: 60_000,
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 25.0,
+                        sensor_distance_multiplier: -20.0,
+                        sensor_distance_exponent: 1.0,
+                        sensor_angle_base: 45.0,
+                        sensor_angle_multiplier: -30.0,
+                        sensor_angle_exponent: 1.5,
+                        rotation_angle_base: 45.0,
+                        rotation_angle_multiplier: -40.0,
+                        rotation_angle_exponent: 1.0,
+                        step_size_base: 1.5,
+                        step_size_multiplier: 2.0,
+                        step_size_exponent: 1.0,
+                        heading_offset: 5.0,
+                        ..Default::default()
+                    }),
+                    color: RgbColor::from_hex(0xffd700),
+                    ..Default::default()
+                }];
+                config.respawn_config = RespawnConfig {
+                    interval: 60,
+                    base_probability: 0.02,
+                    trail_dependent: true,
+                    max_probability_multiplier: 5.0,
+                };
+            }
+            Preset::DuelingModulators => {
+                config.decay_factor = 0.90;
+                config.separate_species_trails = true;
+                config.species_configs = vec![
+                    SpeciesConfig {
+                        name: "expander".to_string(),
+                        count: 20_000,
+                        trail_modulation: Some(PointConfig {
+                            sensor_distance_base: 10.0,
+                            sensor_distance_multiplier: 30.0,
+                            sensor_distance_exponent: 1.0,
+                            sensor_angle_base: 20.0,
+                            sensor_angle_multiplier: 40.0,
+                            sensor_angle_exponent: 1.0,
+                            rotation_angle_base: 30.0,
+                            rotation_angle_multiplier: 20.0,
+                            rotation_angle_exponent: 1.0,
+                            step_size_base: 1.0,
+                            step_size_multiplier: 0.5,
+                            step_size_exponent: 1.0,
+                            ..Default::default()
+                        }),
+                        color: RgbColor::from_hex(0x00ced1),
+                        ..Default::default()
+                    },
+                    SpeciesConfig {
+                        name: "contractor".to_string(),
+                        count: 20_000,
+                        trail_modulation: Some(PointConfig {
+                            sensor_distance_base: 40.0,
+                            sensor_distance_multiplier: -30.0,
+                            sensor_distance_exponent: 1.0,
+                            sensor_angle_base: 60.0,
+                            sensor_angle_multiplier: -30.0,
+                            sensor_angle_exponent: 1.0,
+                            rotation_angle_base: 30.0,
+                            rotation_angle_multiplier: -20.0,
+                            rotation_angle_exponent: 1.0,
+                            step_size_base: 1.0,
+                            step_size_multiplier: -0.3,
+                            step_size_exponent: 1.0,
+                            ..Default::default()
+                        }),
+                        color: RgbColor::from_hex(0xff6347),
+                        ..Default::default()
+                    },
+                ];
             }
         }
     }
@@ -526,7 +926,7 @@ impl std::str::FromStr for Wind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 /// A point attractor or repeller.
 pub struct Attractor {
     /// X coordinate.
@@ -761,6 +1161,222 @@ impl Obstacle {
     }
 }
 
+/// Boundary handling mode for agent movement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BoundaryMode {
+    /// Agents bounce/reflect at boundaries (default).
+    #[default]
+    Bounce,
+    /// Agents wrap around to opposite side (toroidal).
+    Wrap,
+}
+
+/// Trail sampling method for agent sensing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SamplingMode {
+    /// Fast nearest-pixel sampling (default).
+    #[default]
+    Nearest,
+    /// Smooth bilinear interpolation.
+    Bilinear,
+}
+
+impl std::str::FromStr for BoundaryMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "bounce" => Ok(BoundaryMode::Bounce),
+            "wrap" | "toroidal" => Ok(BoundaryMode::Wrap),
+            _ => Err(format!(
+                "Invalid boundary mode: {}. Must be one of: bounce, wrap",
+                s
+            )),
+        }
+    }
+}
+
+/// 36 Points trail-based parameter modulation configuration.
+///
+/// This enables dynamic parameter adjustment based on the trail value at each agent's position,
+/// creating diverse emergent behaviors as described in Sage Jenson's "36 Points" work.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PointConfig {
+    /// Sensor distance base value (p1).
+    pub sensor_distance_base: f32,
+    /// Sensor distance multiplier (p2).
+    pub sensor_distance_multiplier: f32,
+    /// Sensor distance exponent (p3).
+    pub sensor_distance_exponent: f32,
+
+    /// Sensor angle base value in degrees (p4).
+    pub sensor_angle_base: f32,
+    /// Sensor angle multiplier (p5).
+    pub sensor_angle_multiplier: f32,
+    /// Sensor angle exponent (p6).
+    pub sensor_angle_exponent: f32,
+
+    /// Rotation angle base value in degrees (p7).
+    pub rotation_angle_base: f32,
+    /// Rotation angle multiplier (p8).
+    pub rotation_angle_multiplier: f32,
+    /// Rotation angle exponent (p9).
+    pub rotation_angle_exponent: f32,
+
+    /// Step size base value (p10).
+    pub step_size_base: f32,
+    /// Step size multiplier (p11).
+    pub step_size_multiplier: f32,
+    /// Step size exponent (p12).
+    pub step_size_exponent: f32,
+
+    /// Absolute vertical offset in pixels (p13).
+    pub vertical_offset: f32,
+    /// Heading-relative offset in pixels (p14).
+    pub heading_offset: f32,
+    /// Trail value rescaling factor (p15).
+    pub trail_rescale: f32,
+}
+
+impl Default for PointConfig {
+    fn default() -> Self {
+        Self {
+            // Default: no modulation (multipliers = 0, exponents = 1)
+            sensor_distance_base: agent_consts::DEFAULT_SENSOR_DISTANCE,
+            sensor_distance_multiplier: 0.0,
+            sensor_distance_exponent: 1.0,
+            sensor_angle_base: agent_consts::DEFAULT_SENSOR_ANGLE,
+            sensor_angle_multiplier: 0.0,
+            sensor_angle_exponent: 1.0,
+            rotation_angle_base: agent_consts::DEFAULT_ROTATION_ANGLE,
+            rotation_angle_multiplier: 0.0,
+            rotation_angle_exponent: 1.0,
+            step_size_base: agent_consts::DEFAULT_STEP_SIZE,
+            step_size_multiplier: 0.0,
+            step_size_exponent: 1.0,
+            vertical_offset: 0.0,
+            heading_offset: 0.0,
+            trail_rescale: 1.0,
+        }
+    }
+}
+
+/// Computed modulated parameters for an agent.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ModulatedParams {
+    /// Modulated sensor distance.
+    pub sensor_distance: f32,
+    /// Modulated sensor angle in degrees.
+    pub sensor_angle: f32,
+    /// Modulated rotation angle in degrees.
+    pub rotation_angle: f32,
+    /// Modulated step size.
+    pub step_size: f32,
+}
+
+impl PointConfig {
+    /// Compute modulated parameters based on trail value x.
+    ///
+    /// Formulas:
+    /// - sensor_distance = p1 + p2 * x^p3
+    /// - sensor_angle    = p4 + p5 * x^p6
+    /// - rotation_angle  = p7 + p8 * x^p9
+    /// - step_size       = p10 + p11 * x^p12
+    ///
+    /// # Arguments
+    /// * `x` - Trail value at agent position (should be in [0, 1])
+    ///
+    /// # Returns
+    /// A `ModulatedParams` struct containing:
+    /// - `sensor_distance`: Modulated sensor distance in pixels
+    /// - `sensor_angle`: Modulated sensor angle in degrees
+    /// - `rotation_angle`: Modulated rotation angle in degrees
+    /// - `step_size`: Modulated step size in pixels
+    pub fn compute_params(&self, x: f32) -> ModulatedParams {
+        // Apply rescale factor and clamp to [0, 1]
+        let x = (x * self.trail_rescale).clamp(0.0, 1.0);
+
+        // Helper to compute modulated value with formula: base + multiplier * x^exponent
+        let compute = |base: f32, multiplier: f32, exponent: f32| -> f32 {
+            if multiplier == 0.0 || x == 0.0 {
+                base
+            } else if exponent == 1.0 {
+                base + multiplier * x
+            } else {
+                base + multiplier * x.powf(exponent)
+            }
+        };
+
+        ModulatedParams {
+            sensor_distance: compute(
+                self.sensor_distance_base,
+                self.sensor_distance_multiplier,
+                self.sensor_distance_exponent,
+            )
+            .clamp(
+                agent_consts::MIN_SENSOR_DISTANCE,
+                agent_consts::MAX_SENSOR_DISTANCE,
+            ),
+            sensor_angle: compute(
+                self.sensor_angle_base,
+                self.sensor_angle_multiplier,
+                self.sensor_angle_exponent,
+            )
+            .clamp(
+                agent_consts::MIN_SENSOR_ANGLE,
+                agent_consts::MAX_SENSOR_ANGLE,
+            ),
+            rotation_angle: compute(
+                self.rotation_angle_base,
+                self.rotation_angle_multiplier,
+                self.rotation_angle_exponent,
+            )
+            .clamp(
+                agent_consts::MIN_ROTATION_ANGLE,
+                agent_consts::MAX_ROTATION_ANGLE,
+            ),
+            step_size: compute(
+                self.step_size_base,
+                self.step_size_multiplier,
+                self.step_size_exponent,
+            )
+            .clamp(agent_consts::MIN_STEP_SIZE, agent_consts::MAX_STEP_SIZE),
+        }
+    }
+
+    /// Returns true if this config has any modulation enabled.
+    pub fn has_modulation(&self) -> bool {
+        self.sensor_distance_multiplier != 0.0
+            || self.sensor_angle_multiplier != 0.0
+            || self.rotation_angle_multiplier != 0.0
+            || self.step_size_multiplier != 0.0
+    }
+}
+
+/// Particle respawn configuration.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RespawnConfig {
+    /// Interval in frames between respawn checks (0 = disabled).
+    pub interval: u32,
+    /// Base probability of respawn when interval is reached (0.0-1.0).
+    pub base_probability: f32,
+    /// Whether respawn probability depends on trail value.
+    pub trail_dependent: bool,
+    /// Maximum respawn probability multiplier when trail is high.
+    pub max_probability_multiplier: f32,
+}
+
+impl Default for RespawnConfig {
+    fn default() -> Self {
+        Self {
+            interval: 0, // Disabled by default
+            base_probability: 0.01,
+            trail_dependent: false,
+            max_probability_multiplier: 1.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 /// Configuration for a single agent species.
 pub struct SpeciesConfig {
@@ -778,6 +1394,8 @@ pub struct SpeciesConfig {
     pub deposit_amount: f32,
     /// Color as RGB.
     pub color: RgbColor,
+    /// Trail-based parameter modulation (36 Points).
+    pub trail_modulation: Option<PointConfig>,
 }
 
 impl Default for SpeciesConfig {
@@ -790,6 +1408,7 @@ impl Default for SpeciesConfig {
             step_size: agent_consts::DEFAULT_STEP_SIZE,
             deposit_amount: agent_consts::DEFAULT_DEPOSIT_AMOUNT,
             color: RgbColor::from_hex(0x228b22), // Forest green
+            trail_modulation: None,
         }
     }
 }
@@ -851,6 +1470,12 @@ pub struct SimConfig {
     pub background_color: Option<String>,
     /// Preferred initialization mode for this config (if any).
     pub preferred_init_mode: Option<InitMode>,
+    /// Boundary handling mode (bounce or wrap).
+    pub boundary_mode: BoundaryMode,
+    /// Particle respawn configuration.
+    pub respawn_config: RespawnConfig,
+    /// Trail sampling method (nearest or bilinear).
+    pub sampling_mode: SamplingMode,
 }
 
 impl SimConfig {
@@ -943,6 +1568,9 @@ impl Default for SimConfig {
             terrain_strength: env_consts::DEFAULT_TERRAIN_STRENGTH,
             background_color: None,
             preferred_init_mode: Some(InitMode::Food),
+            boundary_mode: BoundaryMode::Bounce,
+            respawn_config: RespawnConfig::default(),
+            sampling_mode: SamplingMode::Nearest,
         }
     }
 }
@@ -1544,6 +2172,17 @@ mod tests {
             Preset::ChaosEdge,
             Preset::Blob,
             Preset::Worm,
+            Preset::Pulse,
+            Preset::Coral,
+            Preset::Flocking,
+            Preset::Maze,
+            Preset::Ripple,
+            Preset::Vortex36,
+            Preset::Chameleon,
+            Preset::DynamicTendrils,
+            Preset::MorphingCoral,
+            Preset::ReactiveSwarm,
+            Preset::DuelingModulators,
         ];
         for preset in presets {
             let config: SimConfig = preset.into();

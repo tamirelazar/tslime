@@ -335,18 +335,20 @@ fn interpolate_oklch_stops(stops: &[OklchStop], t: f32) -> RgbColor {
         return oklch_to_srgb(stops[0].l, stops[0].c, stops[0].h);
     }
 
-    // Find the two bracketing stops
+    // Binary search for the two bracketing stops
     let mut lo = 0;
     let mut hi = stops.len() - 1;
-    for (i, stop) in stops.iter().enumerate() {
-        if stop.position <= t {
-            lo = i;
-        }
-        if stop.position >= t && i < hi {
-            hi = i;
-            break;
+    while lo < hi {
+        let mid = (lo + hi + 1) / 2;
+        if stops[mid].position <= t {
+            lo = mid;
+        } else {
+            hi = mid - 1;
         }
     }
+    // lo is now the index of the largest stop position <= t
+    let lo = lo.min(stops.len() - 1);
+    let hi = (lo + 1).min(stops.len() - 1);
 
     if lo == hi {
         let s = &stops[lo];
@@ -914,19 +916,19 @@ pub fn interpolate_gradient(stops: &[GradientStop], t: f32) -> RgbColor {
         return stops[0].color;
     }
 
-    // Find the two stops to interpolate between
-    let mut lower_idx = 0;
-    let mut upper_idx = stops.len() - 1;
-
-    for (i, stop) in stops.iter().enumerate() {
-        if stop.position <= t {
-            lower_idx = i;
-        }
-        if stop.position >= t && i < upper_idx {
-            upper_idx = i;
-            break;
+    // Binary search for the two stops to interpolate between
+    let mut lo = 0;
+    let mut hi = stops.len() - 1;
+    while lo < hi {
+        let mid = (lo + hi + 1) / 2;
+        if stops[mid].position <= t {
+            lo = mid;
+        } else {
+            hi = mid - 1;
         }
     }
+    let lower_idx = lo.min(stops.len() - 1);
+    let upper_idx = (lo + 1).min(stops.len() - 1);
 
     // If we're exactly at a stop, return that color
     if (stops[lower_idx].position - t).abs() < f32::EPSILON {
