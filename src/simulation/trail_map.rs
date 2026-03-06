@@ -206,8 +206,18 @@ impl TrailMap {
 
                     for dy in -1..=1 {
                         for dx in -1..=1 {
-                            let nx = ((x as i32 + dx % w) + w) % w;
-                            let ny = ((y as i32 + dy % h) + h) % h;
+                            let mut nx = x as i32 + dx;
+                            let mut ny = y as i32 + dy;
+                            if nx < 0 {
+                                nx += w;
+                            } else if nx >= w {
+                                nx -= w;
+                            }
+                            if ny < 0 {
+                                ny += h;
+                            } else if ny >= h {
+                                ny -= h;
+                            }
                             sum += current[ny as usize * width + nx as usize];
                         }
                     }

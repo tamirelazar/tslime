@@ -423,8 +423,8 @@ impl Agent {
                 let w = width as f32;
                 let h = height as f32;
                 // Wrap around using modulo arithmetic
-                self.x = ((self.x % w) + w) % w;
-                self.y = ((self.y % h) + h) % h;
+                self.x = self.x.rem_euclid(w);
+                self.y = self.y.rem_euclid(h);
             }
         }
     }

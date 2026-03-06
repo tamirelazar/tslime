@@ -106,6 +106,7 @@ const POINT_CHAR: char = '▪';
 
 /// Estimates the visual density/weight of a character for sorting
 /// Returns a value from 0.0 (lightest) to 1.0 (darkest)
+#[inline]
 fn estimate_char_density(c: char) -> f32 {
     match c {
         // Whitespace and very light characters
@@ -742,6 +743,8 @@ pub fn map_shape_ascii(tl: f32, tr: f32, bl: f32, br: f32, contrast: f32) -> cha
     }
 
     // Find the character with the smallest squared Euclidean distance
+    // Early termination threshold: stop if we find a very close match
+    const EARLY_TERMINATION_THRESHOLD: f32 = 0.001;
     let mut best_char = ' ';
     let mut best_dist = f32::MAX;
 
@@ -763,6 +766,12 @@ pub fn map_shape_ascii(tl: f32, tr: f32, bl: f32, br: f32, contrast: f32) -> cha
         for i in 0..6 {
             let diff = v[i] - cv[i] * c_inv;
             dist += diff * diff;
+        }
+
+        // Early termination: if we've found a very close match, stop searching
+        if dist < EARLY_TERMINATION_THRESHOLD {
+            best_char = entry.ch;
+            break;
         }
 
         if dist < best_dist {
@@ -824,7 +833,8 @@ pub fn map_shape_ascii_with_neighbors(
         *val *= inv_max;
     }
 
-    // Find nearest character
+    // Find nearest character with early termination
+    const EARLY_TERMINATION_THRESHOLD: f32 = 0.001;
     let mut best_char = ' ';
     let mut best_dist = f32::MAX;
 
@@ -844,6 +854,12 @@ pub fn map_shape_ascii_with_neighbors(
         for i in 0..6 {
             let diff = v[i] - cv[i] * c_inv;
             dist += diff * diff;
+        }
+
+        // Early termination: if we've found a very close match, stop searching
+        if dist < EARLY_TERMINATION_THRESHOLD {
+            best_char = entry.ch;
+            break;
         }
 
         if dist < best_dist {

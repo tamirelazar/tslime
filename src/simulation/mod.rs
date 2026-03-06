@@ -156,6 +156,8 @@ pub struct Simulation {
     /// Pre-allocated buffer for combining separate species trails.
     /// Only allocated when both `separate_species_trails` and trail history are enabled.
     combined_trail_buffer: Option<Vec<f32>>,
+    /// Frame counter for deterministic respawn timing.
+    frame_count: u64,
 }
 
 impl Simulation {
@@ -239,6 +241,7 @@ impl Simulation {
             trail_delta: None,
             gradient_magnitude: None,
             combined_trail_buffer,
+            frame_count: 0,
         }
     }
 
@@ -738,6 +741,8 @@ impl Simulation {
     /// This performs the sense-rotate-move-deposit cycle for all agents,
     /// and then diffuses and decays the trail map.
     pub fn update(&mut self, dt: f32) {
+        self.frame_count += 1;
+
         let width = self.width();
         let height = self.height();
 
@@ -933,10 +938,7 @@ impl Simulation {
         // Handle particle respawn
         if respawn_config.interval > 0 {
             use rand::Rng;
-            let should_check_respawn = self
-                .agents
-                .first()
-                .is_some_and(|a| a.progress % respawn_config.interval as u8 == 0);
+            let should_check_respawn = self.frame_count % respawn_config.interval as u64 == 0;
             if should_check_respawn {
                 let trail = self.trail_maps[0].current();
                 for agent in &mut self.agents {
@@ -1035,6 +1037,7 @@ impl Simulation {
     ///
     /// Clears trails, re-initializes agents, and resets random state.
     pub fn reset(&mut self, seed: u64, init_mode: InitMode) {
+        self.frame_count = 0;
         self.rng = Rng::seed_from_u64(seed);
         self.agents.clear();
 
