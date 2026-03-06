@@ -1,3 +1,43 @@
+//! Terminal abstraction layer for cross-platform terminal handling.
+//!
+//! This module provides a unified interface for terminal operations across different
+//! platforms (Windows, macOS, Linux). It handles raw mode, mouse tracking, screen
+//! buffers, input polling, and rendering.
+//!
+//! # Architecture
+//!
+//! The terminal module is organized into several sub-modules:
+//!
+//! - **control**: Runtime controls and state management
+//! - **detection**: Terminal capability detection (colors, Unicode support, etc.)
+//! - **frame_buffer**: Double-buffered frame storage for efficient rendering
+//! - **input**: Non-blocking input polling for keyboard and mouse events
+//! - **renderer**: High-level terminal renderer with overlay support
+//! - **screen**: Alternate screen buffer management (enter/exit raw mode)
+//! - **signal**: Signal handling for graceful shutdown (Ctrl+C, SIGTERM)
+//! - **state**: Runtime state and control types
+//! - **timing**: Frame timing and FPS synchronization
+//!
+//! # Example
+//!
+//! ```rust,no_run
+//! use tslime::terminal::screen::TerminalScreen;
+//! use tslime::terminal::{enable_mouse_tracking, disable_mouse_tracking};
+//!
+//! // Create and setup terminal screen
+//! let mut screen = TerminalScreen::new();
+//! screen.setup().unwrap();
+//!
+//! // Enable mouse tracking
+//! enable_mouse_tracking().unwrap();
+//!
+//! // ... run your application ...
+//!
+//! // Cleanup
+//! disable_mouse_tracking().unwrap();
+//! screen.teardown().unwrap();
+//! ```
+
 /// Runtime controls and state management.
 pub mod control;
 /// Terminal capability detection.

@@ -222,6 +222,26 @@ impl TrailMap {
         }
     }
 
+    /// AVX-optimized 3x3 mean filter diffusion.
+    ///
+    /// This function applies a box blur (mean filter) using AVX2 SIMD instructions.
+    /// For each pixel, it computes the average of the 3x3 neighborhood (9 pixels total).
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Process pixels in chunks of 8 using AVX 256-bit registers
+    /// 2. Load 3 rows of 8 pixels each (with 1-pixel overlap for neighbors)
+    /// 3. Sum all 9 values using `_mm256_add_ps` (8 additions chained)
+    /// 4. Divide by 9 using `_mm256_div_ps`
+    /// 5. Store result back to scratch buffer
+    /// 6. Process remaining pixels with scalar fallback
+    ///
+    /// # Why Unaligned Loads (`_mm256_loadu_ps`)
+    ///
+    /// We use unaligned loads because the starting x position (1) is not guaranteed
+    /// to be 32-byte aligned. Unaligned loads have minimal performance penalty on
+    /// modern x86_64 CPUs (Sandy Bridge and later).
+    ///
     /// # Safety
     ///
     /// The caller must ensure that `current` and `scratch` slices have a length
@@ -484,6 +504,27 @@ impl TrailMap {
         }
     }
 
+    /// AVX-optimized 5x5 Gaussian blur diffusion.
+    ///
+    /// This function applies a Gaussian blur using a 5x5 kernel with AVX2 SIMD.
+    /// Unlike the mean filter, each pixel in the neighborhood has a different weight
+    /// based on the Gaussian distribution.
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Pre-load all 25 kernel weights into AVX registers (broadcast to all 8 lanes)
+    /// 2. For each pixel, load a 5x5 neighborhood (25 values total)
+    /// 3. Multiply each value by its corresponding kernel weight using `_mm256_mul_ps`
+    /// 4. Accumulate results using `_mm256_add_ps` (24 additions total)
+    /// 5. Store the weighted sum back to scratch buffer
+    /// 6. Process remaining pixels with scalar fallback
+    ///
+    /// # Memory Access Pattern
+    ///
+    /// We load 5 rows of data, 3 registers per row (covering x-2 to x+2),
+    /// with the middle register containing the main pixel data.
+    /// This minimizes memory loads while covering the full 5x5 neighborhood.
+    ///
     /// # Safety
     ///
     /// The caller must ensure that:
