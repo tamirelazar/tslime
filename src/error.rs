@@ -1,41 +1,81 @@
 //! Error types for tslime.
 //!
 //! This module provides structured error types using `thiserror` for consistent
-//! error handling across the codebase.
+//! error handling across the codebase when the `terminal` feature is enabled.
 
 #![allow(missing_docs)]
 
+#[cfg(feature = "terminal")]
 use thiserror::Error;
 
 /// Main error type for tslime operations.
-#[derive(Error, Debug)]
+#[cfg_attr(feature = "terminal", derive(Error))]
+#[derive(Debug)]
 pub enum TslimeError {
     /// Validation error - configuration parameter is invalid.
-    #[error("validation error: {0}")]
-    Validation(#[from] ValidationError),
+    #[cfg_attr(feature = "terminal", error("validation error: {0}"))]
+    Validation(ValidationError),
 
     /// Configuration error - problem with simulation configuration.
-    #[error("configuration error: {0}")]
-    Config(#[from] ConfigError),
+    #[cfg_attr(feature = "terminal", error("configuration error: {0}"))]
+    Config(ConfigError),
 
     /// Rendering error - problem during rendering.
-    #[error("rendering error: {0}")]
+    #[cfg_attr(feature = "terminal", error("rendering error: {0}"))]
     Render(String),
 
     /// Export error - problem during GIF/PNG/WebM export.
-    #[error("export error: {0}")]
+    #[cfg_attr(feature = "terminal", error("export error: {0}"))]
     Export(String),
 
     /// IO error - file system or terminal operation failed.
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
+    #[cfg_attr(feature = "terminal", error("io error: {0}"))]
+    Io(std::io::Error),
+}
+
+#[cfg(not(feature = "terminal"))]
+impl std::fmt::Display for TslimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TslimeError::Validation(e) => write!(f, "validation error: {e}"),
+            TslimeError::Config(e) => write!(f, "configuration error: {e}"),
+            TslimeError::Render(s) => write!(f, "rendering error: {s}"),
+            TslimeError::Export(s) => write!(f, "export error: {s}"),
+            TslimeError::Io(e) => write!(f, "io error: {e}"),
+        }
+    }
+}
+
+#[cfg(not(feature = "terminal"))]
+impl std::error::Error for TslimeError {}
+
+impl From<ValidationError> for TslimeError {
+    fn from(e: ValidationError) -> Self {
+        TslimeError::Validation(e)
+    }
+}
+
+impl From<ConfigError> for TslimeError {
+    fn from(e: ConfigError) -> Self {
+        TslimeError::Config(e)
+    }
+}
+
+impl From<std::io::Error> for TslimeError {
+    fn from(e: std::io::Error) -> Self {
+        TslimeError::Io(e)
+    }
 }
 
 /// Validation error - a configuration parameter is out of range or invalid.
-#[derive(Error, Debug, Clone)]
+#[cfg_attr(feature = "terminal", derive(Error))]
+#[derive(Debug, Clone)]
 pub enum ValidationError {
     /// Value is outside the valid range.
-    #[error("{field} must be between {min} and {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("{field} must be between {min} and {max}, got {value}")
+    )]
     OutOfRange {
         field: String,
         min: String,
@@ -44,7 +84,10 @@ pub enum ValidationError {
     },
 
     /// Value is below the minimum.
-    #[error("{field} must be at least {min}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("{field} must be at least {min}, got {value}")
+    )]
     BelowMinimum {
         field: String,
         min: String,
@@ -52,7 +95,10 @@ pub enum ValidationError {
     },
 
     /// Value is above the maximum.
-    #[error("{field} must be at most {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("{field} must be at most {max}, got {value}")
+    )]
     AboveMaximum {
         field: String,
         max: String,
@@ -60,13 +106,42 @@ pub enum ValidationError {
     },
 
     /// A required value is empty.
-    #[error("{field} cannot be empty")]
+    #[cfg_attr(feature = "terminal", error("{field} cannot be empty"))]
     Empty { field: String },
 
     /// A custom validation error.
-    #[error("{0}")]
+    #[cfg_attr(feature = "terminal", error("{0}"))]
     Custom(String),
 }
+
+#[cfg(not(feature = "terminal"))]
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValidationError::OutOfRange {
+                field,
+                min,
+                max,
+                value,
+            } => {
+                write!(f, "{field} must be between {min} and {max}, got {value}")
+            }
+            ValidationError::BelowMinimum { field, min, value } => {
+                write!(f, "{field} must be at least {min}, got {value}")
+            }
+            ValidationError::AboveMaximum { field, max, value } => {
+                write!(f, "{field} must be at most {max}, got {value}")
+            }
+            ValidationError::Empty { field } => {
+                write!(f, "{field} cannot be empty")
+            }
+            ValidationError::Custom(s) => write!(f, "{s}"),
+        }
+    }
+}
+
+#[cfg(not(feature = "terminal"))]
+impl std::error::Error for ValidationError {}
 
 impl ValidationError {
     /// Create an out-of-range error for a numeric value.
@@ -116,58 +191,98 @@ impl ValidationError {
 }
 
 /// Configuration error - problem with simulation configuration.
-#[derive(Error, Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "terminal", derive(Error))]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ConfigError {
     /// Invalid resolution dimensions.
-    #[error("resolution must be between 10x10 and 2000x2000, got {width}x{height}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("resolution must be between 10x10 and 2000x2000, got {width}x{height}")
+    )]
     InvalidResolution { width: usize, height: usize },
 
     /// Invalid FPS value.
-    #[error("fps must be between 1 and 144, got {fps}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("fps must be between 1 and 144, got {fps}")
+    )]
     InvalidFps { fps: usize },
 
     /// Invalid population count.
-    #[error("population must be between {min} and {max}, got {pop}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("population must be between {min} and {max}, got {pop}")
+    )]
     InvalidPopulation { pop: usize, min: usize, max: usize },
 
     /// Invalid sensor angle.
-    #[error("sensor angle must be between {min} and {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("sensor angle must be between {min} and {max}, got {value}")
+    )]
     InvalidSensorAngle { value: f32, min: f32, max: f32 },
 
     /// Invalid sensor distance.
-    #[error("sensor distance must be between {min} and {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("sensor distance must be between {min} and {max}, got {value}")
+    )]
     InvalidSensorDistance { value: f32, min: f32, max: f32 },
 
     /// Invalid rotation angle.
-    #[error("rotation angle must be between {min} and {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("rotation angle must be between {min} and {max}, got {value}")
+    )]
     InvalidRotationAngle { value: f32, min: f32, max: f32 },
 
     /// Invalid step size.
-    #[error("step size must be between {min} and {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("step size must be between {min} and {max}, got {value}")
+    )]
     InvalidStepSize { value: f32, min: f32, max: f32 },
 
     /// Invalid decay factor.
-    #[error("decay factor must be between {min} and {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("decay factor must be between {min} and {max}, got {value}")
+    )]
     InvalidDecayFactor { value: f32, min: f32, max: f32 },
 
     /// Invalid deposit amount.
-    #[error("deposit amount must be between {min} and {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("deposit amount must be between {min} and {max}, got {value}")
+    )]
     InvalidDepositAmount { value: f32, min: f32, max: f32 },
 
     /// Invalid max brightness.
-    #[error("max brightness must be between {min} and {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("max brightness must be between {min} and {max}, got {value}")
+    )]
     InvalidMaxBrightness { value: f32, min: f32, max: f32 },
 
     /// Invalid diffusion sigma.
-    #[error("diffusion sigma must be between {min} and {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("diffusion sigma must be between {min} and {max}, got {value}")
+    )]
     InvalidDiffusionSigma { value: f32, min: f32, max: f32 },
 
     /// Invalid time scale.
-    #[error("time scale must be between {min} and {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("time scale must be between {min} and {max}, got {value}")
+    )]
     InvalidTimeScale { value: f32, min: f32, max: f32 },
 
     /// Invalid attractor strength.
-    #[error("attractor strength must be between {min} and {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("attractor strength must be between {min} and {max}, got {value}")
+    )]
     InvalidAttractorStrength {
         /// The invalid value.
         value: f32,
@@ -178,7 +293,10 @@ pub enum ConfigError {
     },
 
     /// Invalid terrain strength.
-    #[error("terrain strength must be between {min} and {max}, got {value}")]
+    #[cfg_attr(
+        feature = "terminal",
+        error("terrain strength must be between {min} and {max}, got {value}")
+    )]
     InvalidTerrainStrength {
         /// The invalid value.
         value: f32,
@@ -189,17 +307,103 @@ pub enum ConfigError {
     },
 
     /// Failed to parse terrain type.
-    #[error("invalid terrain type: {0}")]
+    #[cfg_attr(feature = "terminal", error("invalid terrain type: {0}"))]
     InvalidTerrainType(String),
 
     /// No species configured.
-    #[error("at least one species must be configured")]
+    #[cfg_attr(feature = "terminal", error("at least one species must be configured"))]
     NoSpecies,
 
     /// Custom configuration error.
-    #[error("{0}")]
+    #[cfg_attr(feature = "terminal", error("{0}"))]
     Custom(String),
 }
+
+#[cfg(not(feature = "terminal"))]
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigError::InvalidResolution { width, height } => {
+                write!(
+                    f,
+                    "resolution must be between 10x10 and 2000x2000, got {width}x{height}"
+                )
+            }
+            ConfigError::InvalidFps { fps } => {
+                write!(f, "fps must be between 1 and 144, got {fps}")
+            }
+            ConfigError::InvalidPopulation { pop, min, max } => {
+                write!(f, "population must be between {min} and {max}, got {pop}")
+            }
+            ConfigError::InvalidSensorAngle { value, min, max } => {
+                write!(
+                    f,
+                    "sensor angle must be between {min} and {max}, got {value}"
+                )
+            }
+            ConfigError::InvalidSensorDistance { value, min, max } => {
+                write!(
+                    f,
+                    "sensor distance must be between {min} and {max}, got {value}"
+                )
+            }
+            ConfigError::InvalidRotationAngle { value, min, max } => {
+                write!(
+                    f,
+                    "rotation angle must be between {min} and {max}, got {value}"
+                )
+            }
+            ConfigError::InvalidStepSize { value, min, max } => {
+                write!(f, "step size must be between {min} and {max}, got {value}")
+            }
+            ConfigError::InvalidDecayFactor { value, min, max } => {
+                write!(
+                    f,
+                    "decay factor must be between {min} and {max}, got {value}"
+                )
+            }
+            ConfigError::InvalidDepositAmount { value, min, max } => {
+                write!(
+                    f,
+                    "deposit amount must be between {min} and {max}, got {value}"
+                )
+            }
+            ConfigError::InvalidMaxBrightness { value, min, max } => {
+                write!(
+                    f,
+                    "max brightness must be between {min} and {max}, got {value}"
+                )
+            }
+            ConfigError::InvalidDiffusionSigma { value, min, max } => {
+                write!(
+                    f,
+                    "diffusion sigma must be between {min} and {max}, got {value}"
+                )
+            }
+            ConfigError::InvalidTimeScale { value, min, max } => {
+                write!(f, "time scale must be between {min} and {max}, got {value}")
+            }
+            ConfigError::InvalidAttractorStrength { value, min, max } => {
+                write!(
+                    f,
+                    "attractor strength must be between {min} and {max}, got {value}"
+                )
+            }
+            ConfigError::InvalidTerrainStrength { value, min, max } => {
+                write!(
+                    f,
+                    "terrain strength must be between {min} and {max}, got {value}"
+                )
+            }
+            ConfigError::InvalidTerrainType(s) => write!(f, "invalid terrain type: {s}"),
+            ConfigError::NoSpecies => write!(f, "at least one species must be configured"),
+            ConfigError::Custom(s) => write!(f, "{s}"),
+        }
+    }
+}
+
+#[cfg(not(feature = "terminal"))]
+impl std::error::Error for ConfigError {}
 
 /// Result type alias using TslimeError.
 pub type Result<T> = std::result::Result<T, TslimeError>;

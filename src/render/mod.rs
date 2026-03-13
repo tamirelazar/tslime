@@ -41,15 +41,20 @@ pub mod error_diffusion;
 pub mod gradients;
 /// Background grid rendering.
 pub mod grid;
-/// Controls overlay rendering.
-pub mod options_overlay;
-/// General overlay rendering utilities (help, stats, etc.).
-pub mod overlay;
 /// Color palette definitions and conversions.
 pub mod palette;
-/// Interactive palette editor for custom color schemes.
-pub mod palette_editor;
-/// Panel styling and theme definitions.
-pub mod panel;
 /// Theme/color scheme definitions.
 pub mod theme;
+
+#[cfg(feature = "terminal")]
+/// Controls overlay rendering.
+pub mod options_overlay;
+#[cfg(feature = "terminal")]
+/// General overlay rendering utilities (help, stats, etc.).
+pub mod overlay;
+#[cfg(feature = "terminal")]
+/// Interactive palette editor for custom color schemes.
+pub mod palette_editor;
+#[cfg(feature = "terminal")]
+/// Panel styling and theme definitions.
+pub mod panel;

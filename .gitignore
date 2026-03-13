@@ -13,3 +13,7 @@ frames
 bak
 node_modules
 docs
+
+# WASM build output
+tslime-wasm/pkg/
+tslime-wasm/target/

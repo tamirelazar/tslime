@@ -1,0 +1,7 @@
+# Build output
+pkg/
+target/
+Cargo.lock
+
+# wasm-pack logs
+*.log

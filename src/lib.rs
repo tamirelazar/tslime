@@ -39,6 +39,7 @@
 #![warn(missing_docs)]
 
 /// Application entry point and high-level logic.
+#[cfg(feature = "terminal")]
 pub mod app;
 /// Command-line argument parsing and configuration.
 pub mod cli;
@@ -47,22 +48,28 @@ pub mod config_builder;
 /// Centralized configuration defaults.
 pub mod config_defaults;
 /// Configuration management (load/save/delete).
+#[cfg(feature = "terminal")]
 pub mod config_manager;
 /// Error types for structured error handling.
 pub mod error;
 /// Parameter space exploration for preset discovery.
+#[cfg(feature = "terminal")]
 pub mod exploration;
 /// Export functionality (GIF, WebM, PNG).
+#[cfg(feature = "terminal")]
 pub mod export;
 /// Overlay system (state management, rendering, input).
+#[cfg(feature = "terminal")]
 pub mod overlay;
 /// Saved palette management.
+#[cfg(feature = "terminal")]
 pub mod palette_manager;
 /// Rendering logic (ASCII/Unicode, color palettes, dithering).
 pub mod render;
 /// Core simulation logic (agents, trail map).
 pub mod simulation;
 /// Terminal handling (input, output, raw mode).
+#[cfg(feature = "terminal")]
 pub mod terminal;
 /// Validation utilities for configuration.
 pub mod validation;

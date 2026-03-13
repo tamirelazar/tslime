@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tslime Web Demo</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #111;
+            color: #fff;
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        h1 {
+            margin-bottom: 1rem;
+        }
+        
+        .description {
+            max-width: 600px;
+            text-align: center;
+            margin-bottom: 2rem;
+            opacity: 0.8;
+            line-height: 1.6;
+        }
+        
+        #tslime-canvas {
+            border: 2px solid #333;
+            border-radius: 8px;
+        }
+        
+        .controls {
+            margin-top: 1rem;
+            display: flex;
+            gap: 1rem;
+        }
+        
+        button {
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        button.primary {
+            background: #228b22;
+            color: white;
+        }
+        
+        button.primary:hover {
+            background: #2a9d2a;
+        }
+        
+        button.secondary {
+            background: #444;
+            color: white;
+        }
+        
+        button.secondary:hover {
+            background: #555;
+        }
+        
+        .stats {
+            margin-top: 1rem;
+            font-family: monospace;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <h1>🦠 Tslime Web</h1>
+    <p class="description">
+        A web-based Physarum polycephalum (slime mold) simulation using WebGL2 and WebAssembly.
+        Watch as thousands of virtual agents create organic, mesmerizing patterns.
+    </p>
+    
+    <canvas id="tslime-canvas" width="800" height="600"></canvas>
+    
+    <div class="controls">
+        <button id="start-btn" class="primary">Start</button>
+        <button id="stop-btn" class="secondary" disabled>Stop</button>
+        <button id="restart-btn" class="secondary">Restart</button>
+    </div>
+    
+    <div class="stats" id="stats"></div>
+
+    <script type="module">
+        import init, { TslimeWasm } from '../pkg/tslime_wasm.js';
+        
+        let tslime = null;
+        let animationId = null;
+        let isRunning = false;
+        let frameCount = 0;
+        let lastTime = performance.now();
+        
+        const canvas = document.getElementById('tslime-canvas');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const restartBtn = document.getElementById('restart-btn');
+        const statsEl = document.getElementById('stats');
+        
+        // Initialize
+        async function initTslime() {
+            await init();
+            tslime = new TslimeWasm(800, 600, 'tslime-canvas', Math.floor(Math.random() * 1000000));
+            tslime.render(); // Initial render
+        }
+        
+        function updateStats() {
+            const now = performance.now();
+            const fps = Math.round(frameCount / ((now - lastTime) / 1000));
+            statsEl.textContent = `FPS: ${fps} | Agents: ~${Math.round(800 * 600 * 0.01)}`;
+            
+            if (now - lastTime > 1000) {
+                frameCount = 0;
+                lastTime = now;
+            }
+        }
+        
+        function loop() {
+            if (!tslime || !isRunning) return;
+            
+            tslime.tick();
+            frameCount++;
+            updateStats();
+            
+            animationId = requestAnimationFrame(loop);
+        }
+        
+        function start() {
+            if (isRunning) return;
+            
+            isRunning = true;
+            tslime.start();
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            
+            loop();
+        }
+        
+        function stop() {
+            isRunning = false;
+            
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            
+            if (tslime) {
+                tslime.stop();
+            }
+            
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        }
+        
+        function restart() {
+            stop();
+            const seed = Math.floor(Math.random() * 1000000);
+            tslime = new TslimeWasm(800, 600, 'tslime-canvas', seed);
+            tslime.render();
+            start();
+        }
+        
+        // Event listeners
+        startBtn.addEventListener('click', start);
+        stopBtn.addEventListener('click', stop);
+        restartBtn.addEventListener('click', restart);
+        
+        // Start initialization
+        initTslime();
+    </script>
+</body>
+</html>
