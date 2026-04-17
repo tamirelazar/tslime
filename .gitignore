@@ -12,8 +12,16 @@ src/.DS_Store
 frames
 bak
 node_modules
-docs
+docs/*
+!docs/superpowers/
 
 # WASM build output
 tslime-wasm/pkg/
 tslime-wasm/target/
+
+# Export temp files
+webm_frames_*/
+tslime_frame_*.png
+
+# Superpowers brainstorming companion
+.superpowers/
