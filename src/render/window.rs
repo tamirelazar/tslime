@@ -62,12 +62,12 @@ impl Default for Window {
             aspect: Aspect::default(),
             padding: WindowPadding::Auto,
             min_sim_size: TerminalSizeThreshold {
-                width: 10,
-                height: 5,
+                width: 20,
+                height: 10,
             },
             min_frame_size: TerminalSizeThreshold {
-                width: 6,
-                height: 3,
+                width: 12,
+                height: 6,
             },
         }
     }
@@ -175,9 +175,9 @@ mod tests {
 
     #[test]
     fn test_auto_padding_minimum() {
-        // Small terminal: padding should be at least 2
+        // Terminal large enough for Normal mode: padding should be at least 2
         let w = default_window();
-        let layout = w.compute_rects(30, 20);
+        let layout = w.compute_rects(80, 40);
         assert!(layout.pad >= 2);
     }
 
