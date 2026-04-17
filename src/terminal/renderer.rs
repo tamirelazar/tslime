@@ -126,6 +126,15 @@ impl TerminalRenderer {
     /// When `None`, the simulation fills the terminal edge-to-edge (fullscreen mode).
     pub fn set_window_layout(&mut self, layout: Option<crate::render::window::WindowLayout>) {
         self.window_layout = layout;
+        // Resize error diffusion buffer to match new sim dimensions
+        let (ed_w, ed_h) = self
+            .window_layout
+            .as_ref()
+            .map(|l| (l.sim_w, l.sim_h))
+            .unwrap_or((self.width, self.height));
+        if let Some(ref mut ed) = self.error_diffusion {
+            ed.resize(ed_w, ed_h);
+        }
     }
 
     /// Set the dithering mode.
@@ -133,10 +142,15 @@ impl TerminalRenderer {
     /// This may allocate or resize error diffusion buffers.
     pub fn set_dither_mode(&mut self, mode: DitherMode) {
         self.dither_mode = mode;
+        let (ed_w, ed_h) = self
+            .window_layout
+            .as_ref()
+            .map(|l| (l.sim_w, l.sim_h))
+            .unwrap_or((self.width, self.height));
         self.error_diffusion = match mode {
             DitherMode::ErrorDiffusion { .. } | DitherMode::Hybrid { .. } => {
-                let mut ed = ErrorDiffusion::new(self.width, self.height);
-                ed.resize(self.width, self.height);
+                let mut ed = ErrorDiffusion::new(ed_w, ed_h);
+                ed.resize(ed_w, ed_h);
                 Some(ed)
             }
             _ => None,

@@ -416,8 +416,9 @@ pub fn run_simulation(
                 term_width = new_width;
                 term_height = new_height;
                 renderer.set_dimensions(term_width as usize, term_height as usize);
-                // Recompute window layout on resize
-                {
+                // Recompute window layout on resize; derive render dims from the same layout
+                // to avoid calling compute_rects a second time.
+                let (new_render_w, new_render_h) = {
                     use crate::simulation::config::ChromeStyle;
                     let new_layout = if matches!(config.chrome_style, ChromeStyle::Fullscreen) {
                         None
@@ -429,15 +430,19 @@ pub fn run_simulation(
                             Some(l)
                         }
                     };
+                    // Derive render dims from the computed layout before moving it into renderer
+                    let dims = new_layout
+                        .as_ref()
+                        .map(|l| (l.sim_w, l.sim_h))
+                        .unwrap_or((term_width as usize, term_height as usize));
                     renderer.set_window_layout(new_layout);
-                }
+                    dims
+                };
                 // Reinitialize grid with new dimensions
                 if let Some(grid) = &mut grid_renderer {
                     grid.initialize(term_width as usize, term_height as usize);
                 }
                 // Resize frame buffers to sim render dimensions (may differ in windowed mode)
-                let (new_render_w, new_render_h) =
-                    compute_render_dims(term_width as usize, term_height as usize);
                 downsampled_frame =
                     crate::render::downsample::DownsampledFrame::new(new_render_w, new_render_h);
                 aux_frame.width = new_render_w;
