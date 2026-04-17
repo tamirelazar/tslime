@@ -45,6 +45,8 @@ pub mod grid;
 pub mod palette;
 /// Theme/color scheme definitions.
 pub mod theme;
+/// Window layout geometry computation (aspect-ratio-correct sim rect).
+pub mod window;
 /// Window frame rendering for terminal display.
 pub mod window_frame;
 
