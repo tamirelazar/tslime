@@ -265,6 +265,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('>') => ControlAction::ToggleGradientMagnitude,
         KeyCode::Char('(') => ControlAction::CycleWindowFrameReverse,
         KeyCode::Char(')') => ControlAction::CycleWindowFrame,
+        KeyCode::F(11) => ControlAction::ToggleFullscreen,
         _ => ControlAction::None,
     }
 }
@@ -474,5 +475,20 @@ mod tests {
         assert_eq!(charset_name(&Charset::HalfBlock), "HalfBlock");
         assert_eq!(charset_name(&Charset::Ascii), "ASCII");
         assert_eq!(charset_name(&Charset::Braille), "Braille");
+    }
+
+    #[test]
+    fn test_f11_maps_to_toggle_fullscreen() {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        let event = KeyEvent {
+            code: KeyCode::F(11),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert!(matches!(
+            handle_key_event(&event),
+            ControlAction::ToggleFullscreen
+        ));
     }
 }

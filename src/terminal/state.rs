@@ -327,6 +327,8 @@ pub enum ControlAction {
     CycleWindowFrame,
     /// Cycle to previous window frame mode.
     CycleWindowFrameReverse,
+    /// Toggle between windowed and fullscreen mode.
+    ToggleFullscreen,
     /// No action.
     None,
 }

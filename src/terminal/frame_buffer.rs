@@ -2146,6 +2146,106 @@ impl FrameBuffer {
         }
     }
 
+    /// Draws title block and footer rows as overlays on the outer sim rows.
+    ///
+    /// Title rows are written at `(sim_x, sim_y)` and `(sim_x, sim_y+1)`.
+    /// Footer rows at `(sim_x, sim_y+sim_h-2)` and `(sim_x, sim_y+sim_h-1)`.
+    /// No-op if `sim_h < 4`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_expanded_chrome(
+        &mut self,
+        sim_x: usize,
+        sim_y: usize,
+        sim_w: usize,
+        sim_h: usize,
+        title_rows: &[String; 2],
+        footer_status: &str,
+        footer_status_colors: &[(usize, crate::render::palette::RgbColor)],
+        footer_keybinds: &str,
+        accent: crate::render::palette::RgbColor,
+        text: crate::render::palette::RgbColor,
+    ) {
+        if sim_h < 4 {
+            return;
+        }
+        let bw = self.width;
+        let bh = self.height;
+
+        // Helper closure: write a plain string at (x_start, row_y) with given fg color.
+        let write_row = |cells: &mut Vec<Cell>,
+                         row_y: usize,
+                         x_start: usize,
+                         s: &str,
+                         fg: crate::render::palette::RgbColor,
+                         max_w: usize,
+                         total_w: usize| {
+            for (i, ch) in s.chars().enumerate() {
+                if i >= max_w {
+                    break;
+                }
+                let x = x_start + i;
+                if x < total_w && row_y < bh {
+                    let idx = row_y * total_w + x;
+                    if idx < cells.len() {
+                        cells[idx].char = ch;
+                        cells[idx].fg_color_rgb = Some(fg);
+                    }
+                }
+            }
+        };
+
+        write_row(
+            &mut self.cells,
+            sim_y,
+            sim_x,
+            &title_rows[0],
+            accent,
+            sim_w,
+            bw,
+        );
+        write_row(
+            &mut self.cells,
+            sim_y + 1,
+            sim_x,
+            &title_rows[1],
+            text,
+            sim_w,
+            bw,
+        );
+        write_row(
+            &mut self.cells,
+            sim_y + sim_h - 2,
+            sim_x,
+            footer_status,
+            text,
+            sim_w,
+            bw,
+        );
+
+        // Apply per-column color overrides for footer status
+        for (col, color) in footer_status_colors {
+            let x = sim_x + col;
+            let y = sim_y + sim_h - 2;
+            if x < bw && y < bh {
+                let idx = y * bw + x;
+                if idx < self.cells.len() {
+                    self.cells[idx].fg_color_rgb = Some(*color);
+                }
+            }
+        }
+
+        let dim_text = crate::render::palette::RgbColor::new(102, 92, 84);
+        write_row(
+            &mut self.cells,
+            sim_y + sim_h - 1,
+            sim_x,
+            footer_keybinds,
+            dim_text,
+            sim_w,
+            bw,
+        );
+    }
+
     /// Get the raw RGB values for all pixels in the frame buffer.
     ///
     /// Useful for exporting the frame to an image file.

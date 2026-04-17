@@ -40,7 +40,7 @@ use crate::terminal::control::{
 use crate::terminal::detection::{log_capabilities, TerminalCapabilities};
 use crate::terminal::frame_buffer::FrameBuffer;
 use crate::terminal::input::{InputPoller, MouseEventType};
-use crate::terminal::renderer::TerminalRenderer;
+use crate::terminal::renderer::{ChromeSnapshot, TerminalRenderer};
 use crate::terminal::screen::TerminalScreen;
 use crate::terminal::signal::is_shutdown_requested;
 use crate::terminal::timing::FrameTimer;
@@ -768,11 +768,20 @@ pub fn run_simulation(
             Some(ui_accent),
         );
         let status_x = OverlayRenderer::status_line_x(&status_line, term_width as usize);
-        let status_data = if runtime_state.any_overlay_open() || runtime_state.is_paused {
-            Some((status_line, status_x, status_colors))
-        } else {
-            None
+        // In windowed mode the expanded chrome footer replaces the status bar.
+        // Only show the legacy status bar in fullscreen mode, or when explicitly
+        // enabled via `show_status_bar`.
+        let show_status = {
+            use crate::simulation::config::ChromeStyle;
+            matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
+                || runtime_state.show_status_bar
         };
+        let status_data =
+            if show_status && (runtime_state.any_overlay_open() || runtime_state.is_paused) {
+                Some((status_line, status_x, status_colors))
+            } else {
+                None
+            };
 
         let notification_overlay: Option<RenderedOverlay> = runtime_state
             .current_notification_full()
@@ -1035,6 +1044,27 @@ pub fn run_simulation(
             // Frame counter handled above
             (None, 0, 0)
         };
+
+        // Update chrome snapshot so the renderer can draw expanded chrome overlays.
+        {
+            let diffusion_kernel_str = match runtime_state.diffusion_kernel {
+                crate::simulation::config::DiffusionKernel::Mean3x3 => "Mean3x3",
+                crate::simulation::config::DiffusionKernel::Gaussian => "Gaussian",
+            };
+            renderer.set_chrome_snapshot(ChromeSnapshot {
+                chrome_state: runtime_state.chrome_state,
+                preset: runtime_state.current_preset,
+                palette: current_palette.clone(),
+                charset_str: charset_name(&runtime_state.current_charset()).to_string(),
+                population: agent_count,
+                time_scale: runtime_state.time_scale,
+                dither_mode: runtime_state.dither_mode,
+                diffusion_kernel: Some(diffusion_kernel_str.to_string()),
+                can_undo: !runtime_state.undo_stack.is_empty(),
+                can_redo: !runtime_state.redo_stack.is_empty(),
+                is_paused: runtime_state.is_paused,
+            });
+        }
 
         if args.species_colors && sim.config().separate_species_trails {
             let species_trail_maps = sim.trail_maps_for_species_colors();
@@ -1437,6 +1467,11 @@ pub fn run_simulation(
                         ControlAction::TogglePause => {
                             runtime_state.toggle_pause();
                             runtime_state.pause_just_toggled = true;
+                            if runtime_state.is_paused {
+                                runtime_state.on_pause();
+                            } else {
+                                runtime_state.on_unpause();
+                            }
                         }
                         ControlAction::Restart => {
                             sim.reset(
@@ -1503,13 +1538,24 @@ pub fn run_simulation(
                         }
                         ControlAction::ToggleKeyboardHints => {
                             runtime_state.toggle_keyboard_hints();
+                            if runtime_state.any_overlay_open() {
+                                runtime_state.on_modal_open();
+                            } else {
+                                runtime_state.on_modal_close();
+                            }
                         }
                         ControlAction::ToggleControls => {
                             runtime_state.toggle_controls();
+                            if runtime_state.any_overlay_open() {
+                                runtime_state.on_modal_open();
+                            } else {
+                                runtime_state.on_modal_close();
+                            }
                         }
                         ControlAction::CloseOverlays => {
                             if runtime_state.any_overlay_open() {
                                 runtime_state.close_all_overlays();
+                                runtime_state.on_modal_close();
                             }
                             // If no overlays open, Esc does nothing (doesn't quit)
                         }
@@ -1810,17 +1856,24 @@ pub fn run_simulation(
                         }
                         ControlAction::ToggleDashboard => {
                             runtime_state.toggle_dashboard();
+                            if runtime_state.any_overlay_open() {
+                                runtime_state.on_modal_open();
+                            } else {
+                                runtime_state.on_modal_close();
+                            }
                         }
                         ControlAction::SetIntensityMapping(_) => {}
                         ControlAction::ShowConfigBrowser => {
                             runtime_state.close_all_overlays();
                             runtime_state.overlay_state.open(OverlayType::ConfigBrowser);
                             runtime_state.config_browser_selected_index = 0;
+                            runtime_state.on_modal_open();
                         }
                         ControlAction::ShowConfigSaveDialog => {
                             runtime_state.close_all_overlays();
                             runtime_state.overlay_state.open(OverlayType::ConfigSave);
                             runtime_state.config_save_name_input.clear();
+                            runtime_state.on_modal_open();
                         }
                         ControlAction::RandomizeParams => {
                             runtime_state.randomize_params();
@@ -1966,6 +2019,28 @@ pub fn run_simulation(
                                     "Off"
                                 }
                             ));
+                        }
+                        ControlAction::ToggleFullscreen => {
+                            use crate::render::window::FallbackMode;
+                            use crate::simulation::config::ChromeStyle;
+                            if matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen) {
+                                // Restore windowed mode
+                                runtime_state.chrome_style = ChromeStyle::Minimal;
+                                let (tw, th) = crossterm::terminal::size()
+                                    .map(|(w, h)| (w as usize, h as usize))
+                                    .unwrap_or((80, 24));
+                                let l = window.compute_rects(tw, th);
+                                let layout = if matches!(l.fallback, FallbackMode::Fullscreen) {
+                                    None
+                                } else {
+                                    Some(l)
+                                };
+                                renderer.set_window_layout(layout);
+                            } else {
+                                // Switch to fullscreen
+                                runtime_state.chrome_style = ChromeStyle::Fullscreen;
+                                renderer.set_window_layout(None);
+                            }
                         }
                         ControlAction::None => {}
                     }
@@ -2137,7 +2212,17 @@ pub fn run_simulation(
                 Some(ui_accent),
             );
             let status_x = OverlayRenderer::status_line_x(&status_line, term_width as usize);
-            let status_data = Some((status_line, status_x, status_colors));
+            // Suppress status bar in windowed mode unless explicitly enabled.
+            let show_status_pause = {
+                use crate::simulation::config::ChromeStyle;
+                matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
+                    || runtime_state.show_status_bar
+            };
+            let status_data = if show_status_pause {
+                Some((status_line, status_x, status_colors))
+            } else {
+                None
+            };
 
             // Re-render with updated pause state
             if args.species_colors && sim.config().separate_species_trails {

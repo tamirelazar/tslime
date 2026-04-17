@@ -11,7 +11,7 @@ use crate::render::charset::Charset;
 use crate::render::dither::DitherMode;
 use crate::render::downsample::{downsample_multi_species, Cell as DownsampleCell};
 use crate::render::error_diffusion::ErrorDiffusion;
-use crate::render::overlay::OverlayConfig;
+use crate::render::overlay::{ExpandedChromeOverlay, OverlayConfig};
 use crate::render::palette;
 use crate::render::palette::IntensityMapping;
 use crate::render::palette::RgbColor;
@@ -24,6 +24,35 @@ use std::io::{self, Stdout};
 /// Status line data: (text, x_position, colored_spans).
 /// Each span is `(column_offset, color)`.
 type StatusLineData = Option<(String, usize, Vec<(usize, RgbColor)>)>;
+
+/// State snapshot provided by the runner for rendering expanded window chrome.
+///
+/// Populated each frame so the renderer can draw title/footer rows without
+/// reaching back into the runner's mutable state.
+pub struct ChromeSnapshot {
+    /// Current chrome state (Minimal, Expanded, ModalPane).
+    pub chrome_state: crate::terminal::state::ChromeState,
+    /// Active simulation preset.
+    pub preset: crate::simulation::config::Preset,
+    /// Active color palette.
+    pub palette: crate::cli::Palette,
+    /// Human-readable charset name (e.g. "HalfBlock").
+    pub charset_str: String,
+    /// Number of simulation agents.
+    pub population: usize,
+    /// Simulation time scale multiplier.
+    pub time_scale: f32,
+    /// Current dithering mode.
+    pub dither_mode: crate::render::dither::DitherMode,
+    /// Diffusion kernel description (e.g. "Mean3x3").
+    pub diffusion_kernel: Option<String>,
+    /// Whether undo history is non-empty.
+    pub can_undo: bool,
+    /// Whether redo history is non-empty.
+    pub can_redo: bool,
+    /// Whether simulation is paused.
+    pub is_paused: bool,
+}
 
 /// Handles the state and logic for rendering frames to the terminal.
 ///
@@ -60,6 +89,7 @@ pub struct TerminalRenderer {
     window_frame: crate::simulation::config::WindowFrame,
     window_frame_accent_color: RgbColor,
     window_layout: Option<crate::render::window::WindowLayout>,
+    chrome_snapshot: Option<ChromeSnapshot>,
 }
 
 impl TerminalRenderer {
@@ -106,6 +136,7 @@ impl TerminalRenderer {
             window_frame: crate::simulation::config::WindowFrame::None,
             window_frame_accent_color: RgbColor::new(0xFA, 0xBD, 0x2F),
             window_layout: None,
+            chrome_snapshot: None,
         }
     }
 
@@ -135,6 +166,15 @@ impl TerminalRenderer {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.resize(ed_w, ed_h);
         }
+    }
+
+    /// Set a snapshot of runtime state for expanded chrome rendering.
+    ///
+    /// Call this once per frame before `render_with_overlay` when using windowed
+    /// mode so the renderer can draw title/footer rows without needing mutable
+    /// access to `RuntimeState`.
+    pub fn set_chrome_snapshot(&mut self, s: ChromeSnapshot) {
+        self.chrome_snapshot = Some(s);
     }
 
     /// Set the dithering mode.
@@ -558,6 +598,51 @@ impl TerminalRenderer {
                 }
             } else {
                 buffer.render_window_frame(self.window_frame, accent, None);
+            }
+        }
+
+        // Draw expanded chrome (title block + footer) when in non-Minimal chrome state.
+        if let (Some(ref layout), Some(ref snap)) = (&self.window_layout, &self.chrome_snapshot) {
+            use crate::terminal::state::ChromeState;
+            if snap.chrome_state != ChromeState::Minimal {
+                let title = ExpandedChromeOverlay::build_title_block(
+                    snap.preset,
+                    snap.palette.clone(),
+                    &snap.charset_str,
+                    snap.population,
+                    layout.sim_w,
+                );
+                let (footer_status, footer_colors) = ExpandedChromeOverlay::build_footer_status(
+                    snap.is_paused,
+                    snap.preset,
+                    snap.time_scale,
+                    snap.palette.clone(),
+                    snap.dither_mode,
+                    layout.sim_w,
+                    Some(snap.population),
+                    snap.diffusion_kernel.as_deref(),
+                    snap.can_undo,
+                    snap.can_redo,
+                    Some(accent),
+                );
+                let footer_keys = ExpandedChromeOverlay::build_footer_keybinds(
+                    snap.chrome_state == ChromeState::ModalPane,
+                    layout.sim_w,
+                );
+                // Dim text color for footer secondary row
+                let text_color = RgbColor::new(168, 153, 132);
+                buffer.draw_expanded_chrome(
+                    layout.sim_x,
+                    layout.sim_y,
+                    layout.sim_w,
+                    layout.sim_h,
+                    &title,
+                    &footer_status,
+                    &footer_colors,
+                    &footer_keys,
+                    accent,
+                    text_color,
+                );
             }
         }
 
