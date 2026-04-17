@@ -1403,13 +1403,19 @@ impl RuntimeState {
         }
     }
 
-    /// Advances the fade-out animation by `dt_secs` seconds.
+    /// Duration of the chrome fade-out animation in seconds.
+    const FADE_DURATION_SECS: f32 = 0.5;
+
+    /// Advances the fade-out animation by `dt_secs` wall-clock seconds.
     ///
-    /// Decrements the progress counter (1.0 → 0.0 over 500ms).
+    /// Decrements the progress counter (1.0 → 0.0 over `FADE_DURATION_SECS`).
     /// When progress reaches 0.0, transitions to Minimal.
+    ///
+    /// `dt_secs` must be raw elapsed wall-clock time, **not** time-scale-multiplied,
+    /// so the animation completes in a consistent 500 ms regardless of simulation speed.
     pub fn advance_fade(&mut self, dt_secs: f32) {
         if let ChromeState::FadingOut(ref mut p) = self.chrome_state {
-            *p -= dt_secs / 0.5; // 500ms total
+            *p -= dt_secs / Self::FADE_DURATION_SECS;
             if *p <= 0.0 {
                 self.chrome_state = ChromeState::Minimal;
             }

@@ -465,7 +465,9 @@ pub fn run_simulation(
         let dt = dt.min(0.1);
 
         // Advance chrome fade-out animation each frame (500ms collapse animation).
-        runtime_state.advance_fade(dt);
+        // Chrome is UI, not simulation — animate at wall-clock speed regardless of time scale.
+        let dt_wall = dt / runtime_state.time_scale.max(f32::EPSILON);
+        runtime_state.advance_fade(dt_wall);
 
         // Check if we're in warmup phase
         let in_warmup = !args.skip_warmup && runtime_state.is_in_warmup(args.warmup_frames);
