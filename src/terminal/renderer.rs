@@ -57,8 +57,8 @@ pub struct TerminalRenderer {
     trail_delta_strength: f32,
     gradient_magnitude_enabled: bool,
     gradient_strength: f32,
-    border_mode: crate::simulation::config::BorderMode,
-    border_accent_color: RgbColor,
+    window_frame: crate::simulation::config::WindowFrame,
+    window_frame_accent_color: RgbColor,
 }
 
 impl TerminalRenderer {
@@ -102,19 +102,19 @@ impl TerminalRenderer {
             trail_delta_strength: 0.5,
             gradient_magnitude_enabled: false,
             gradient_strength: 0.3,
-            border_mode: crate::simulation::config::BorderMode::None,
-            border_accent_color: RgbColor::new(0xFA, 0xBD, 0x2F),
+            window_frame: crate::simulation::config::WindowFrame::None,
+            window_frame_accent_color: RgbColor::new(0xFA, 0xBD, 0x2F),
         }
     }
 
-    /// Set the border mode for rendering.
-    pub fn set_border_mode(&mut self, mode: crate::simulation::config::BorderMode) {
-        self.border_mode = mode;
+    /// Set the window frame mode for rendering.
+    pub fn set_window_frame(&mut self, mode: crate::simulation::config::WindowFrame) {
+        self.window_frame = mode;
     }
 
-    /// Set the border accent color.
-    pub fn set_border_accent_color(&mut self, color: RgbColor) {
-        self.border_accent_color = color;
+    /// Set the window frame accent color.
+    pub fn set_window_frame_accent_color(&mut self, color: RgbColor) {
+        self.window_frame_accent_color = color;
     }
 
     /// Set the dithering mode.
@@ -417,9 +417,9 @@ impl TerminalRenderer {
             self.intensity_mapping.as_ref(),
         );
 
-        // Render border if enabled (uses palette accent color)
-        if self.border_mode.is_visible() {
-            buffer.render_border(self.border_mode, accent, None);
+        // Render window frame if enabled (uses palette accent color)
+        if self.window_frame.is_visible() {
+            buffer.render_window_frame(self.window_frame, accent, None);
         }
 
         // Helper to get colors from OverlayConfig and PanelStyle

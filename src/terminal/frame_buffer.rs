@@ -140,18 +140,18 @@ impl FrameBuffer {
         &self.cells[y * self.width + x]
     }
 
-    /// Renders a border onto the frame buffer.
+    /// Renders a window frame onto the frame buffer.
     ///
-    /// Uses the provided border mode and accent color from the theme.
+    /// Uses the provided window frame mode and accent color from the theme.
     /// The activity parameter is used for reactive mode.
-    pub fn render_border(
+    pub fn render_window_frame(
         &mut self,
-        mode: crate::simulation::config::BorderMode,
+        mode: crate::simulation::config::WindowFrame,
         accent_color: RgbColor,
         activity: Option<&[f32]>,
     ) {
-        use crate::render::border::BorderRenderer;
-        let renderer = BorderRenderer::new(mode, accent_color);
+        use crate::render::window_frame::WindowFrameRenderer;
+        let renderer = WindowFrameRenderer::new(mode, accent_color);
         renderer.render(self, activity);
     }
 

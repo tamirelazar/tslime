@@ -1,43 +1,43 @@
-//! Border rendering for terminal display.
+//! Window frame rendering for terminal display.
 //!
-//! This module provides border visualization effects around the simulation area,
-//! supporting multiple styles from simple accent borders to reactive glow effects.
+//! This module provides window frame visualization effects around the simulation area,
+//! supporting multiple styles from simple accent frames to reactive glow effects.
 
 use crate::render::palette::RgbColor;
-use crate::simulation::config::BorderMode;
+use crate::simulation::config::WindowFrame;
 use crate::terminal::frame_buffer::{Cell, FrameBuffer};
 
-/// Renders borders on the frame buffer.
-pub struct BorderRenderer {
-    mode: BorderMode,
+/// Renders window frames on the frame buffer.
+pub struct WindowFrameRenderer {
+    mode: WindowFrame,
     accent_color: RgbColor,
 }
 
-impl BorderRenderer {
-    /// Creates a new border renderer with the specified mode and accent color.
-    pub fn new(mode: BorderMode, accent_color: RgbColor) -> Self {
+impl WindowFrameRenderer {
+    /// Creates a new window frame renderer with the specified mode and accent color.
+    pub fn new(mode: WindowFrame, accent_color: RgbColor) -> Self {
         Self { mode, accent_color }
     }
 
-    /// Renders the border onto the frame buffer.
+    /// Renders the window frame onto the frame buffer.
     ///
     /// The `activity` parameter is used for reactive mode and should contain
     /// activity levels (0.0-1.0) for each simulation cell.
     pub fn render(&self, buffer: &mut FrameBuffer, activity: Option<&[f32]>) {
         match self.mode {
-            BorderMode::None => {}
-            BorderMode::Negative => self.render_negative(buffer),
-            BorderMode::Accented => self.render_accented(buffer),
-            BorderMode::Glow => self.render_glow(buffer),
-            BorderMode::Reactive => {
+            WindowFrame::None => {}
+            WindowFrame::Negative => self.render_negative(buffer),
+            WindowFrame::Accented => self.render_accented(buffer),
+            WindowFrame::Glow => self.render_glow(buffer),
+            WindowFrame::Reactive => {
                 if let Some(act) = activity {
                     self.render_reactive(buffer, act);
                 } else {
                     self.render_accented(buffer);
                 }
             }
-            BorderMode::Food => self.render_food(buffer),
-            BorderMode::Frame => self.render_frame(buffer),
+            WindowFrame::Food => self.render_food(buffer),
+            WindowFrame::Frame => self.render_frame(buffer),
         }
     }
 
@@ -230,7 +230,7 @@ impl BorderRenderer {
         self.mode.reduces_display_area()
     }
 
-    /// Returns the border thickness in cells.
+    /// Returns the window frame thickness in cells.
     pub fn thickness(&self) -> usize {
         self.mode.thickness()
     }
@@ -241,10 +241,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_border_renderer_creation() {
+    fn test_window_frame_renderer_creation() {
         let color = RgbColor::new(255, 0, 0);
-        let renderer = BorderRenderer::new(BorderMode::Accented, color);
-        assert_eq!(renderer.mode, BorderMode::Accented);
+        let renderer = WindowFrameRenderer::new(WindowFrame::Accented, color);
+        assert_eq!(renderer.mode, WindowFrame::Accented);
         assert_eq!(renderer.thickness(), 1);
         assert!(!renderer.reduces_display_area());
     }
@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn test_negative_space_reduces_area() {
         let color = RgbColor::new(255, 0, 0);
-        let renderer = BorderRenderer::new(BorderMode::Negative, color);
+        let renderer = WindowFrameRenderer::new(WindowFrame::Negative, color);
         assert!(renderer.reduces_display_area());
         assert_eq!(renderer.thickness(), 2);
     }
@@ -260,7 +260,7 @@ mod tests {
     #[test]
     fn test_glow_thickness() {
         let color = RgbColor::new(255, 0, 0);
-        let renderer = BorderRenderer::new(BorderMode::Glow, color);
+        let renderer = WindowFrameRenderer::new(WindowFrame::Glow, color);
         assert_eq!(renderer.thickness(), 3);
         assert!(!renderer.reduces_display_area());
     }

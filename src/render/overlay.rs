@@ -1795,7 +1795,7 @@ mod status_line_tests {
             intensity_mapping_base: None,
             intensity_mapping_gamma: None,
             intensity_mapping_levels: None,
-            border_mode: "none".to_string(),
+            window_frame: "frame".to_string(),
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);

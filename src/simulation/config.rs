@@ -1171,11 +1171,10 @@ pub enum BoundaryMode {
     Wrap,
 }
 
-/// Border display mode for terminal visualization.
+/// Window frame display mode for terminal visualization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum BorderMode {
-    /// No border - full terminal used for simulation (default).
-    #[default]
+pub enum WindowFrame {
+    /// No frame - full terminal used for simulation.
     None,
     /// Leave 1-cell margin empty around edges.
     Negative,
@@ -1187,47 +1186,48 @@ pub enum BorderMode {
     Reactive,
     /// Food border that attracts agents.
     Food,
-    /// Frame border - negative space with visible frame around simulation area.
+    /// Thin-line frame — new default.
+    #[default]
     Frame,
 }
 
-impl BorderMode {
+impl WindowFrame {
     /// Returns true if this mode reduces simulation display area.
     pub fn reduces_display_area(&self) -> bool {
-        matches!(self, BorderMode::Negative)
+        matches!(self, WindowFrame::Negative)
     }
 
-    /// Returns the border thickness in cells.
+    /// Returns the window frame thickness in cells.
     pub fn thickness(&self) -> usize {
         match self {
-            BorderMode::None => 0,
-            BorderMode::Negative | BorderMode::Frame => 2,
-            BorderMode::Accented | BorderMode::Food => 1,
-            BorderMode::Glow => 3,
-            BorderMode::Reactive => 2,
+            WindowFrame::None => 0,
+            WindowFrame::Negative | WindowFrame::Frame => 2,
+            WindowFrame::Accented | WindowFrame::Food => 1,
+            WindowFrame::Glow => 3,
+            WindowFrame::Reactive => 2,
         }
     }
 
-    /// Returns true if border has visual rendering.
+    /// Returns true if window frame has visual rendering.
     pub fn is_visible(&self) -> bool {
-        !matches!(self, BorderMode::None | BorderMode::Negative)
+        !matches!(self, WindowFrame::None | WindowFrame::Negative)
     }
 }
 
-impl std::str::FromStr for BorderMode {
+impl std::str::FromStr for WindowFrame {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "none" => Ok(BorderMode::None),
-            "negative" => Ok(BorderMode::Negative),
-            "accented" => Ok(BorderMode::Accented),
-            "glow" => Ok(BorderMode::Glow),
-            "reactive" => Ok(BorderMode::Reactive),
-            "food" => Ok(BorderMode::Food),
-            "frame" => Ok(BorderMode::Frame),
+            "none" => Ok(WindowFrame::None),
+            "negative" => Ok(WindowFrame::Negative),
+            "accented" => Ok(WindowFrame::Accented),
+            "glow" => Ok(WindowFrame::Glow),
+            "reactive" => Ok(WindowFrame::Reactive),
+            "food" => Ok(WindowFrame::Food),
+            "frame" => Ok(WindowFrame::Frame),
             _ => Err(format!(
-                "Invalid border mode: {}. Must be one of: none, negative, accented, glow, reactive, food, frame",
+                "Invalid window frame: {}. Must be one of: none, negative, accented, glow, reactive, food, frame",
                 s
             )),
         }
@@ -1535,8 +1535,8 @@ pub struct SimConfig {
     pub preferred_init_mode: Option<InitMode>,
     /// Boundary handling mode (bounce or wrap).
     pub boundary_mode: BoundaryMode,
-    /// Border display mode for terminal visualization.
-    pub border_mode: BorderMode,
+    /// Window frame display mode for terminal visualization.
+    pub window_frame: WindowFrame,
     /// Particle respawn configuration.
     pub respawn_config: RespawnConfig,
     /// Trail sampling method (nearest or bilinear).
@@ -1634,7 +1634,7 @@ impl Default for SimConfig {
             background_color: None,
             preferred_init_mode: Some(InitMode::Food),
             boundary_mode: BoundaryMode::Bounce,
-            border_mode: BorderMode::None,
+            window_frame: WindowFrame::Frame,
             respawn_config: RespawnConfig::default(),
             sampling_mode: SamplingMode::Nearest,
         }

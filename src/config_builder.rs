@@ -13,8 +13,8 @@ use crate::config_defaults::{
 };
 use crate::error::ConfigError;
 use crate::simulation::config::{
-    Attractor, BorderMode, BoundaryMode, DiffusionKernel, Preset, SimConfig, SpeciesConfig,
-    TerrainType, Wind,
+    Attractor, BoundaryMode, DiffusionKernel, Preset, SimConfig, SpeciesConfig, TerrainType, Wind,
+    WindowFrame,
 };
 
 /// Builder for constructing SimConfig instances with validation.
@@ -51,7 +51,7 @@ pub struct ConfigBuilder {
     terrain_strength: Option<f32>,
     background_color: Option<String>,
     boundary_mode: Option<BoundaryMode>,
-    border_mode: Option<BorderMode>,
+    window_frame: Option<WindowFrame>,
     respawn_interval: Option<u32>,
 }
 
@@ -92,7 +92,7 @@ impl ConfigBuilder {
             terrain_strength: Some(args.terrain_strength),
             background_color: args.bg_color.clone(),
             boundary_mode: args.boundary_mode,
-            border_mode: args.border_mode,
+            window_frame: args.window_frame,
             respawn_interval: args.respawn_interval,
         }
     }
@@ -253,9 +253,9 @@ impl ConfigBuilder {
         self
     }
 
-    /// Sets the border mode.
-    pub fn border_mode(mut self, mode: BorderMode) -> Self {
-        self.border_mode = Some(mode);
+    /// Sets the window frame mode.
+    pub fn window_frame(mut self, mode: WindowFrame) -> Self {
+        self.window_frame = Some(mode);
         self
     }
 
@@ -576,9 +576,9 @@ impl ConfigBuilder {
             config.boundary_mode = mode;
         }
 
-        // Border mode
-        if let Some(mode) = self.border_mode {
-            config.border_mode = mode;
+        // Window frame mode
+        if let Some(mode) = self.window_frame {
+            config.window_frame = mode;
         }
 
         // Respawn configuration

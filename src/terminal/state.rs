@@ -20,7 +20,7 @@ use crate::render::options_overlay::ControlsOverlay;
 use crate::render::palette::IntensityMapping;
 use crate::render::theme::{PanelStyle, ALL_THEMES, GRUVBOX_DARK};
 use crate::simulation::config::{
-    BorderMode, DiffusionKernel, InitMode, Preset, SimConfig, TerrainType, Wind,
+    DiffusionKernel, InitMode, Preset, SimConfig, TerrainType, Wind, WindowFrame,
 };
 use crate::simulation::food::load_logo_from_memory;
 use rand::Rng;
@@ -310,10 +310,10 @@ pub enum ControlAction {
     ToggleTrailDelta,
     /// Toggle gradient magnitude edge glow.
     ToggleGradientMagnitude,
-    /// Cycle to next border mode.
-    CycleBorderMode,
-    /// Cycle to previous border mode.
-    CycleBorderModeReverse,
+    /// Cycle to next window frame mode.
+    CycleWindowFrame,
+    /// Cycle to previous window frame mode.
+    CycleWindowFrameReverse,
     /// No action.
     None,
 }
@@ -359,8 +359,8 @@ pub struct ParameterState {
     pub dither_mode: DitherMode,
     /// Motion blur frames.
     pub motion_blur_frames: usize,
-    /// Border display mode.
-    pub border_mode: BorderMode,
+    /// Window frame display mode.
+    pub window_frame: WindowFrame,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -500,8 +500,8 @@ pub struct RuntimeState {
     pub auto_normalize: bool,
     /// Motion blur frames.
     pub motion_blur_frames: usize,
-    /// Border display mode.
-    pub border_mode: BorderMode,
+    /// Window frame display mode.
+    pub window_frame: WindowFrame,
     /// Max brightness.
     pub max_brightness: f32,
     /// Fast mode enabled.
@@ -650,7 +650,7 @@ impl RuntimeState {
             terrain_strength: cli_config.terrain_strength,
             auto_normalize: false,
             motion_blur_frames: 0,
-            border_mode: cli_config.border_mode,
+            window_frame: cli_config.window_frame,
             max_brightness: cli_config.max_brightness,
             fast_mode_enabled: false,
             palette_shift_speed: PaletteShiftSpeed::Off,
@@ -717,7 +717,7 @@ impl RuntimeState {
             reverse_palette: self.reverse_palette,
             dither_mode: self.dither_mode,
             motion_blur_frames: self.motion_blur_frames,
-            border_mode: self.border_mode,
+            window_frame: self.window_frame,
         }
     }
 
@@ -742,7 +742,7 @@ impl RuntimeState {
         self.reverse_palette = state.reverse_palette;
         self.dither_mode = state.dither_mode;
         self.motion_blur_frames = state.motion_blur_frames;
-        self.border_mode = state.border_mode;
+        self.window_frame = state.window_frame;
     }
 
     /// Creates an undo checkpoint if enough time has passed.
@@ -987,31 +987,31 @@ impl RuntimeState {
         }
     }
 
-    /// Cycles to the next border mode.
-    pub fn cycle_border_mode(&mut self) {
+    /// Cycles to the next window frame mode.
+    pub fn cycle_window_frame(&mut self) {
         self.force_checkpoint();
-        self.border_mode = match self.border_mode {
-            BorderMode::None => BorderMode::Negative,
-            BorderMode::Negative => BorderMode::Accented,
-            BorderMode::Accented => BorderMode::Glow,
-            BorderMode::Glow => BorderMode::Reactive,
-            BorderMode::Reactive => BorderMode::Food,
-            BorderMode::Food => BorderMode::Frame,
-            BorderMode::Frame => BorderMode::None,
+        self.window_frame = match self.window_frame {
+            WindowFrame::None => WindowFrame::Negative,
+            WindowFrame::Negative => WindowFrame::Accented,
+            WindowFrame::Accented => WindowFrame::Glow,
+            WindowFrame::Glow => WindowFrame::Reactive,
+            WindowFrame::Reactive => WindowFrame::Food,
+            WindowFrame::Food => WindowFrame::Frame,
+            WindowFrame::Frame => WindowFrame::None,
         };
     }
 
-    /// Cycles to the previous border mode.
-    pub fn cycle_border_mode_reverse(&mut self) {
+    /// Cycles to the previous window frame mode.
+    pub fn cycle_window_frame_reverse(&mut self) {
         self.force_checkpoint();
-        self.border_mode = match self.border_mode {
-            BorderMode::None => BorderMode::Frame,
-            BorderMode::Negative => BorderMode::None,
-            BorderMode::Accented => BorderMode::Negative,
-            BorderMode::Glow => BorderMode::Accented,
-            BorderMode::Reactive => BorderMode::Glow,
-            BorderMode::Food => BorderMode::Reactive,
-            BorderMode::Frame => BorderMode::Food,
+        self.window_frame = match self.window_frame {
+            WindowFrame::None => WindowFrame::Frame,
+            WindowFrame::Negative => WindowFrame::None,
+            WindowFrame::Accented => WindowFrame::Negative,
+            WindowFrame::Glow => WindowFrame::Accented,
+            WindowFrame::Reactive => WindowFrame::Glow,
+            WindowFrame::Food => WindowFrame::Reactive,
+            WindowFrame::Frame => WindowFrame::Food,
         };
     }
 

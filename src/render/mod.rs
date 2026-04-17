@@ -27,8 +27,6 @@
 
 /// Adaptive brightness normalization logic.
 pub mod adaptive_brightness;
-/// Border rendering for terminal display.
-pub mod border;
 /// Character set definitions and mapping logic.
 pub mod charset;
 /// Standalone (non-palette) color constants.
@@ -47,6 +45,8 @@ pub mod grid;
 pub mod palette;
 /// Theme/color scheme definitions.
 pub mod theme;
+/// Window frame rendering for terminal display.
+pub mod window_frame;
 
 #[cfg(feature = "terminal")]
 /// Controls overlay rendering.
