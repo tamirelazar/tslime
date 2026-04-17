@@ -1191,3 +1191,59 @@ fn test_visual_regression_window_fullscreen() {
         }
     }
 }
+
+#[test]
+fn test_visual_regression_window_expanded() {
+    // Expanded chrome style renders a larger window border/decoration.
+    // Verifies the flag is accepted without error and produces stable output.
+    let output = capture_print_output(&["-s", "42", "--chrome-style", "expanded"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("window_expanded", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("window_expanded") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: window expanded chrome output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("window_expanded", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_window_frame_glow() {
+    // Glow window frame style renders a glowing border effect.
+    // Verifies the flag is accepted without error and produces stable output.
+    let output = capture_print_output(&["-s", "42", "--window-frame", "glow"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("window_frame_glow", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("window_frame_glow") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: window frame glow output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("window_frame_glow", &normalized).unwrap();
+        }
+    }
+}
