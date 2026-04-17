@@ -1131,3 +1131,63 @@ fn test_visual_regression_palette_shift() {
         }
     }
 }
+
+// ============== WINDOW MODE TESTS ==============
+
+#[test]
+fn test_visual_regression_window_minimal_frame() {
+    // Default windowed mode with minimal chrome (the new default as of window-mode).
+    // Print mode renders edge-to-edge regardless, so this verifies the flag is
+    // accepted without error and produces stable output.
+    let output = capture_print_output(&["-s", "42", "--chrome-style", "minimal"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("window_minimal_frame", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("window_minimal_frame") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: window minimal frame output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("window_minimal_frame", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_window_fullscreen() {
+    // Fullscreen mode (--fullscreen) opts out of the window frame, rendering
+    // edge-to-edge (same as pre-v0.2 behaviour). Verifies the flag is accepted
+    // without error and produces stable output.
+    let output = capture_print_output(&["-s", "42", "--fullscreen"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("window_fullscreen", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("window_fullscreen") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: window fullscreen output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("window_fullscreen", &normalized).unwrap();
+        }
+    }
+}

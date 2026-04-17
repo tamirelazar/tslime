@@ -362,6 +362,21 @@ In live or screensaver mode, you can adjust simulation parameters in real-time u
 | Help | `-h`, `--help` | Print help information |
 | Version | `-V`, `--version` | Print version |
 
+### Window Mode
+
+tslime runs in **windowed mode** by default: the simulation is centered in your terminal inside a thin frame, with proportional padding.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--fullscreen` | off | Render edge-to-edge without a window frame (same as before v0.2) |
+| `--chrome-style` | `minimal` | Chrome level: `minimal`, `expanded`, or `fullscreen` |
+| `--window-frame` | `frame` | Frame style: `frame`, `accented`, `glow`, `reactive`, `food`, `negative`, `none` |
+| `--aspect` | `3:2` | Window aspect ratio: `3:2`, `square`, `4:3`, `16:10`, `16:9`, or `W:H` |
+| `--window-padding` | `auto` | Outer padding in cells, or `auto` (5% of min terminal dim, ≥ 2) |
+| `--show-status-bar` | off | Force the legacy status bar visible in windowed mode |
+| `--min-sim-size` | `20x10` | Minimum sim area before dropping padding |
+| `--min-frame-size` | `12x6` | Minimum sim area before dropping the frame |
+
 ---
 
 ## 🎨 Presets
