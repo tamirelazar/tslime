@@ -681,15 +681,15 @@ impl RuntimeState {
             motion_blur_frames: 0,
             window_frame: cli_config.window_frame,
             chrome_style: cli_config.chrome_style,
-            base_chrome_state: if matches!(cli_config.chrome_style, ChromeStyle::Expanded) {
-                ChromeState::Expanded
-            } else {
-                ChromeState::Minimal
+            base_chrome_state: match cli_config.chrome_style {
+                ChromeStyle::Expanded => ChromeState::Expanded,
+                ChromeStyle::Minimal => ChromeState::Minimal,
+                ChromeStyle::Fullscreen => ChromeState::Minimal,
             },
-            chrome_state: if matches!(cli_config.chrome_style, ChromeStyle::Expanded) {
-                ChromeState::Expanded
-            } else {
-                ChromeState::Minimal
+            chrome_state: match cli_config.chrome_style {
+                ChromeStyle::Expanded => ChromeState::Expanded,
+                ChromeStyle::Minimal => ChromeState::Minimal,
+                ChromeStyle::Fullscreen => ChromeState::Minimal,
             },
             aspect: cli_config.aspect,
             window_padding: cli_config.window_padding,
@@ -1400,6 +1400,9 @@ impl RuntimeState {
     /// If base is Expanded, or base is Minimal but sim is paused: stays/returns to Expanded.
     /// If base is Minimal and not paused: collapses to Minimal.
     pub fn on_modal_close(&mut self) {
+        if self.any_overlay_open() {
+            return; // not the last overlay — don't change chrome state
+        }
         if self.base_chrome_state == ChromeState::Expanded || self.is_paused {
             self.chrome_state = ChromeState::Expanded;
         } else {
