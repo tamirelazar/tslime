@@ -1493,6 +1493,11 @@ pub fn run_simulation(
                         }
                         ControlAction::ComparePreset(preset) => {
                             runtime_state.toggle_preset_comparison(preset);
+                            if runtime_state.any_overlay_open() {
+                                runtime_state.on_modal_open();
+                            } else {
+                                runtime_state.on_modal_close();
+                            }
                         }
                         ControlAction::AdjustTimeScale(delta) => {
                             runtime_state.adjust_time_scale(delta);
@@ -1980,6 +1985,11 @@ pub fn run_simulation(
                                     .overlay_state
                                     .open_palette_editor(PaletteEditorState::new(&current_palette));
                             }
+                            if runtime_state.any_overlay_open() {
+                                runtime_state.on_modal_open();
+                            } else {
+                                runtime_state.on_modal_close();
+                            }
                         }
                         ControlAction::ToggleTrailAge => {
                             runtime_state.trail_age_enabled = !runtime_state.trail_age_enabled;
@@ -2039,6 +2049,8 @@ pub fn run_simulation(
                             } else {
                                 // Switch to fullscreen
                                 runtime_state.chrome_style = ChromeStyle::Fullscreen;
+                                runtime_state.chrome_state =
+                                    crate::terminal::state::ChromeState::Minimal;
                                 renderer.set_window_layout(None);
                             }
                         }
