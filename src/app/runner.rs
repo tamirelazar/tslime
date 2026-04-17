@@ -214,6 +214,28 @@ pub fn run_simulation(
     let (mut term_width, mut term_height) = screen.get_size()?;
     renderer.set_dimensions(term_width as usize, term_height as usize);
 
+    // Compute initial window layout for windowed (non-fullscreen) chrome styles
+    let window = crate::render::window::Window {
+        aspect: config.aspect,
+        padding: config.window_padding,
+        min_sim_size: config.min_sim_size,
+        min_frame_size: config.min_frame_size,
+    };
+    {
+        use crate::simulation::config::ChromeStyle;
+        let initial_layout = if matches!(config.chrome_style, ChromeStyle::Fullscreen) {
+            None
+        } else {
+            let l = window.compute_rects(term_width as usize, term_height as usize);
+            if matches!(l.fallback, crate::render::window::FallbackMode::Fullscreen) {
+                None
+            } else {
+                Some(l)
+            }
+        };
+        renderer.set_window_layout(initial_layout);
+    }
+
     let seed = args.seed.unwrap_or_else(|| {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -351,15 +373,31 @@ pub fn run_simulation(
         None
     };
 
+    // Compute sim render dimensions (may be smaller than terminal in windowed mode)
+    let compute_render_dims = |tw: usize, th: usize| -> (usize, usize) {
+        use crate::simulation::config::ChromeStyle;
+        if matches!(config.chrome_style, ChromeStyle::Fullscreen) {
+            return (tw, th);
+        }
+        let l = window.compute_rects(tw, th);
+        if matches!(l.fallback, crate::render::window::FallbackMode::Fullscreen) {
+            (tw, th)
+        } else {
+            (l.sim_w, l.sim_h)
+        }
+    };
+    let (initial_render_w, initial_render_h) =
+        compute_render_dims(term_width as usize, term_height as usize);
+
     // Pre-allocate frame buffers to avoid per-frame allocations
     let mut downsampled_frame =
-        crate::render::downsample::DownsampledFrame::new(term_width as usize, term_height as usize);
+        crate::render::downsample::DownsampledFrame::new(initial_render_w, initial_render_h);
     let mut aux_frame = crate::render::downsample::AuxFrame {
-        width: term_width as usize,
-        height: term_height as usize,
+        width: initial_render_w,
+        height: initial_render_h,
         cells: vec![
             crate::render::downsample::AuxCell::default();
-            (term_width as usize) * (term_height as usize)
+            initial_render_w * initial_render_h
         ],
     };
     let mut blended_trail_buffer: Vec<f32> = Vec::new();
@@ -378,20 +416,35 @@ pub fn run_simulation(
                 term_width = new_width;
                 term_height = new_height;
                 renderer.set_dimensions(term_width as usize, term_height as usize);
+                // Recompute window layout on resize
+                {
+                    use crate::simulation::config::ChromeStyle;
+                    let new_layout = if matches!(config.chrome_style, ChromeStyle::Fullscreen) {
+                        None
+                    } else {
+                        let l = window.compute_rects(term_width as usize, term_height as usize);
+                        if matches!(l.fallback, crate::render::window::FallbackMode::Fullscreen) {
+                            None
+                        } else {
+                            Some(l)
+                        }
+                    };
+                    renderer.set_window_layout(new_layout);
+                }
                 // Reinitialize grid with new dimensions
                 if let Some(grid) = &mut grid_renderer {
                     grid.initialize(term_width as usize, term_height as usize);
                 }
-                // Resize frame buffers to prevent index out of bounds panic
-                downsampled_frame = crate::render::downsample::DownsampledFrame::new(
-                    term_width as usize,
-                    term_height as usize,
-                );
-                aux_frame.width = term_width as usize;
-                aux_frame.height = term_height as usize;
+                // Resize frame buffers to sim render dimensions (may differ in windowed mode)
+                let (new_render_w, new_render_h) =
+                    compute_render_dims(term_width as usize, term_height as usize);
+                downsampled_frame =
+                    crate::render::downsample::DownsampledFrame::new(new_render_w, new_render_h);
+                aux_frame.width = new_render_w;
+                aux_frame.height = new_render_h;
                 aux_frame.cells = vec![
                     crate::render::downsample::AuxCell::default();
-                    (term_width as usize) * (term_height as usize)
+                    new_render_w * new_render_h
                 ];
             }
         }
@@ -461,12 +514,15 @@ pub fn run_simulation(
 
         // Get blended trail first (takes &mut self)
         sim.trail_map_blended(&mut blended_trail_buffer);
+        // Use sim render dimensions from downsampled_frame (may differ from terminal in windowed mode)
+        let render_w = downsampled_frame.width();
+        let render_h = downsampled_frame.height();
         downsample(
             &blended_trail_buffer,
             sim_width,
             sim_height,
-            term_width as usize,
-            term_height as usize,
+            render_w,
+            render_h,
             &mut downsampled_frame,
         );
 
@@ -498,8 +554,8 @@ pub fn run_simulation(
                 gradient_mag,
                 sim_width,
                 sim_height,
-                term_width as usize,
-                term_height as usize,
+                render_w,
+                render_h,
                 &mut aux_frame,
             );
             Some(&aux_frame)

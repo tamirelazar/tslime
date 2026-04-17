@@ -155,6 +155,44 @@ impl FrameBuffer {
         renderer.render(self, activity);
     }
 
+    /// Renders a window frame at an arbitrary position within the buffer.
+    ///
+    /// Draws a `w × h` frame at `(x, y)` within `self`. Only non-blank cells from
+    /// the frame are blitted so the sim content behind transparent frame areas is
+    /// preserved.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_window_frame_at(
+        &mut self,
+        mode: crate::simulation::config::WindowFrame,
+        accent_color: RgbColor,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        activity: Option<&[f32]>,
+    ) {
+        use crate::render::window_frame::WindowFrameRenderer;
+        // Render into a sub-buffer, then blit non-blank cells into self at (x, y)
+        let mut sub = Self::new(w, h, self.color_mode, None);
+        let renderer = WindowFrameRenderer::new(mode, accent_color);
+        renderer.render(&mut sub, activity);
+        for sy in 0..h {
+            for sx in 0..w {
+                let src_cell = &sub.cells[sy * w + sx];
+                let dst_x = x + sx;
+                let dst_y = y + sy;
+                let non_blank = src_cell.char != ' '
+                    || src_cell.fg_color_rgb.is_some()
+                    || src_cell.bg_color_rgb.is_some()
+                    || src_cell.fg_color_256.is_some()
+                    || src_cell.bg_color_256.is_some();
+                if non_blank && dst_x < self.width && dst_y < self.height {
+                    self.cells[dst_y * self.width + dst_x] = *src_cell;
+                }
+            }
+        }
+    }
+
     /// Checks whether a cell is at the outline/edge of a shape.
     ///
     /// A cell is an outline cell if any of its 4-connected neighbors (up, down,
@@ -613,6 +651,101 @@ impl FrameBuffer {
         buffer.species_rgb_colors = species_rgb_colors.unwrap_or_default();
 
         buffer
+    }
+
+    /// Create a frame buffer from downsampled simulation data, blitting the sim into a
+    /// sub-region `(sim_x, sim_y)` of a `term_w × term_h` outer buffer.
+    ///
+    /// This enables windowed mode: the simulation renders at its natural `sim_w × sim_h`
+    /// size, then the result is composited into the full terminal-sized buffer with the
+    /// surrounding cells left blank.
+    ///
+    /// When `sim_x == 0 && sim_y == 0 && sim_w == term_w && sim_h == term_h` the inner
+    /// `from_downsampled` result is returned directly (fast path — no copy).
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_downsampled_at(
+        downsampled: &[DownsampleCell],
+        sim_w: usize,
+        sim_h: usize,
+        term_w: usize,
+        term_h: usize,
+        sim_x: usize,
+        sim_y: usize,
+        max_trail_value: f32,
+        palette: Palette,
+        charset: Charset,
+        reverse_palette: bool,
+        invert_palette: bool,
+        color_mode: ColorMode,
+        hue_shift: f32,
+        dither_mode: DitherMode,
+        error_diffusion: &mut Option<ErrorDiffusion>,
+        intensity_mapping: Option<&IntensityMapping>,
+        species_colors_enabled: bool,
+        species_rgb_colors: Option<Vec<RgbColor>>,
+        background_color: Option<RgbColor>,
+        ascii_contrast: f32,
+        aux_frame: Option<&crate::render::downsample::AuxFrame>,
+        trail_age_enabled: bool,
+        trail_delta_enabled: bool,
+        trail_age_hue_range: f32,
+        trail_age_blend: f32,
+        trail_delta_strength: f32,
+        gradient_magnitude_enabled: bool,
+        gradient_strength: f32,
+        trail_age_mode: TrailAgeMode,
+        trail_age_reverse: bool,
+    ) -> Self {
+        // Build sim buffer at sim dimensions
+        let sim_buffer = Self::from_downsampled(
+            downsampled,
+            sim_w,
+            sim_h,
+            max_trail_value,
+            palette,
+            charset,
+            reverse_palette,
+            invert_palette,
+            color_mode,
+            hue_shift,
+            dither_mode,
+            error_diffusion,
+            intensity_mapping,
+            species_colors_enabled,
+            species_rgb_colors,
+            background_color,
+            ascii_contrast,
+            aux_frame,
+            trail_age_enabled,
+            trail_delta_enabled,
+            trail_age_hue_range,
+            trail_age_blend,
+            trail_delta_strength,
+            gradient_magnitude_enabled,
+            gradient_strength,
+            trail_age_mode,
+            trail_age_reverse,
+        );
+
+        // Fast path: fullscreen — no blitting needed
+        if sim_x == 0 && sim_y == 0 && sim_w == term_w && sim_h == term_h {
+            return sim_buffer;
+        }
+
+        // Create outer buffer filled with blank cells, then blit sim into it
+        let mut outer = Self::new(term_w, term_h, color_mode, background_color);
+        for y in 0..sim_h {
+            for x in 0..sim_w {
+                let src_idx = y * sim_w + x;
+                let dst_x = sim_x + x;
+                let dst_y = sim_y + y;
+                if dst_x < term_w && dst_y < term_h {
+                    let dst_idx = dst_y * term_w + dst_x;
+                    outer.cells[dst_idx] = sim_buffer.cells[src_idx];
+                }
+            }
+        }
+        outer
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3063,5 +3196,70 @@ mod tests {
         // Should NOT be overwritten
         assert_eq!(cell.char, '#');
         assert_eq!(cell.fg_color_256, Some(200));
+    }
+
+    #[test]
+    fn test_from_downsampled_at_places_cells_at_offset() {
+        // A 10×10 terminal buffer with a 4×4 sim at offset (3, 3).
+        // Cells at (3,3) and nearby should be non-blank; (0,0) should be blank.
+        let sim_w = 4;
+        let sim_h = 4;
+        let downsampled: Vec<DownsampleCell> = (0..sim_w * sim_h)
+            .map(|_| DownsampleCell {
+                top: 0.8,
+                bottom: 0.8,
+                ..Default::default()
+            })
+            .collect();
+
+        let buffer = FrameBuffer::from_downsampled_at(
+            &downsampled,
+            sim_w,
+            sim_h,
+            10,
+            10, // term_w, term_h
+            3,
+            3, // sim_x, sim_y
+            1.0,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut None,
+            None,
+            false,
+            None,
+            None,
+            1.5,
+            None,
+            false,
+            false,
+            15.0,
+            0.5,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
+        );
+        // The buffer should be 10×10
+        assert_eq!(buffer.width, 10);
+        assert_eq!(buffer.height, 10);
+        // Cell at offset (3,3) should have sim content (non-space character or colored)
+        let cell_at_offset = &buffer.cells[3 * 10 + 3];
+        let cell_at_origin = &buffer.cells[0];
+        // Origin should be blank/default
+        assert_eq!(cell_at_origin.char, ' ');
+        // Note: the exact character depends on palette/charset; just verify it differs from blank
+        // (fg_color_rgb will be Some if any trail value was rendered)
+        assert!(
+            cell_at_offset.fg_color_rgb.is_some() || cell_at_offset.char != ' ',
+            "Expected non-blank cell at sim offset but got character='{}' fg={:?}",
+            cell_at_offset.char,
+            cell_at_offset.fg_color_rgb
+        );
     }
 }

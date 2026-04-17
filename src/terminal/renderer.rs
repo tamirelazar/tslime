@@ -59,6 +59,7 @@ pub struct TerminalRenderer {
     gradient_strength: f32,
     window_frame: crate::simulation::config::WindowFrame,
     window_frame_accent_color: RgbColor,
+    window_layout: Option<crate::render::window::WindowLayout>,
 }
 
 impl TerminalRenderer {
@@ -104,6 +105,7 @@ impl TerminalRenderer {
             gradient_strength: 0.3,
             window_frame: crate::simulation::config::WindowFrame::None,
             window_frame_accent_color: RgbColor::new(0xFA, 0xBD, 0x2F),
+            window_layout: None,
         }
     }
 
@@ -115,6 +117,15 @@ impl TerminalRenderer {
     /// Set the window frame accent color.
     pub fn set_window_frame_accent_color(&mut self, color: RgbColor) {
         self.window_frame_accent_color = color;
+    }
+
+    /// Set the window layout for windowed rendering mode.
+    ///
+    /// When `Some`, the simulation is rendered at `layout.sim_w × layout.sim_h` and
+    /// composited into the full terminal buffer at `(layout.sim_x, layout.sim_y)`.
+    /// When `None`, the simulation fills the terminal edge-to-edge (fullscreen mode).
+    pub fn set_window_layout(&mut self, layout: Option<crate::render::window::WindowLayout>) {
+        self.window_layout = layout;
     }
 
     /// Set the dithering mode.
@@ -268,39 +279,101 @@ impl TerminalRenderer {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
         }
-        let buffer = FrameBuffer::from_downsampled(
-            downsampled,
-            self.width,
-            self.height,
-            max_trail_value,
-            self.palette.clone(),
-            self.charset.clone(),
-            self.reverse_palette,
-            self.invert_palette,
-            self.color_mode,
-            self.hue_shift,
-            self.dither_mode,
-            &mut self.error_diffusion,
-            self.intensity_mapping.as_ref(),
-            self.species_colors_enabled,
-            if self.species_colors_enabled {
-                Some(self.species_rgb_colors.clone())
-            } else {
-                None
-            },
-            self.background_color,
-            self.ascii_contrast,
-            self.aux_frame.as_ref(),
-            self.trail_age_enabled,
-            self.trail_delta_enabled,
-            self.trail_age_hue_range,
-            self.trail_age_blend,
-            self.trail_delta_strength,
-            self.gradient_magnitude_enabled,
-            self.gradient_strength,
-            self.trail_age_mode,
-            self.trail_age_reverse,
-        );
+        let species_colors = if self.species_colors_enabled {
+            Some(self.species_rgb_colors.clone())
+        } else {
+            None
+        };
+        let mut buffer = if let Some(ref layout) = self.window_layout {
+            FrameBuffer::from_downsampled_at(
+                downsampled,
+                layout.sim_w,
+                layout.sim_h,
+                self.width,
+                self.height,
+                layout.sim_x,
+                layout.sim_y,
+                max_trail_value,
+                self.palette.clone(),
+                self.charset.clone(),
+                self.reverse_palette,
+                self.invert_palette,
+                self.color_mode,
+                self.hue_shift,
+                self.dither_mode,
+                &mut self.error_diffusion,
+                self.intensity_mapping.as_ref(),
+                self.species_colors_enabled,
+                species_colors,
+                self.background_color,
+                self.ascii_contrast,
+                self.aux_frame.as_ref(),
+                self.trail_age_enabled,
+                self.trail_delta_enabled,
+                self.trail_age_hue_range,
+                self.trail_age_blend,
+                self.trail_delta_strength,
+                self.gradient_magnitude_enabled,
+                self.gradient_strength,
+                self.trail_age_mode,
+                self.trail_age_reverse,
+            )
+        } else {
+            FrameBuffer::from_downsampled(
+                downsampled,
+                self.width,
+                self.height,
+                max_trail_value,
+                self.palette.clone(),
+                self.charset.clone(),
+                self.reverse_palette,
+                self.invert_palette,
+                self.color_mode,
+                self.hue_shift,
+                self.dither_mode,
+                &mut self.error_diffusion,
+                self.intensity_mapping.as_ref(),
+                self.species_colors_enabled,
+                species_colors,
+                self.background_color,
+                self.ascii_contrast,
+                self.aux_frame.as_ref(),
+                self.trail_age_enabled,
+                self.trail_delta_enabled,
+                self.trail_age_hue_range,
+                self.trail_age_blend,
+                self.trail_delta_strength,
+                self.gradient_magnitude_enabled,
+                self.gradient_strength,
+                self.trail_age_mode,
+                self.trail_age_reverse,
+            )
+        };
+
+        // Draw window frame at its computed position if in windowed mode
+        if let Some(ref layout) = self.window_layout {
+            use crate::render::window::FallbackMode;
+            if !matches!(layout.fallback, FallbackMode::Fullscreen)
+                && self.window_frame.is_visible()
+            {
+                let accent = palette::palette_accent_color(
+                    &self.palette,
+                    self.reverse_palette,
+                    self.invert_palette,
+                    self.hue_shift,
+                    self.intensity_mapping.as_ref(),
+                );
+                buffer.render_window_frame_at(
+                    self.window_frame,
+                    accent,
+                    layout.frame_x,
+                    layout.frame_y,
+                    layout.frame_w,
+                    layout.frame_h,
+                    None,
+                );
+            }
+        }
 
         execute!(self.stdout, &buffer)
     }
@@ -334,39 +407,76 @@ impl TerminalRenderer {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
         }
-        let mut buffer = FrameBuffer::from_downsampled(
-            downsampled,
-            self.width,
-            self.height,
-            max_trail_value,
-            self.palette.clone(),
-            self.charset.clone(),
-            self.reverse_palette,
-            self.invert_palette,
-            self.color_mode,
-            self.hue_shift,
-            self.dither_mode,
-            &mut self.error_diffusion,
-            self.intensity_mapping.as_ref(),
-            self.species_colors_enabled,
-            if self.species_colors_enabled {
-                Some(self.species_rgb_colors.clone())
-            } else {
-                None
-            },
-            self.background_color,
-            self.ascii_contrast,
-            self.aux_frame.as_ref(),
-            self.trail_age_enabled,
-            self.trail_delta_enabled,
-            self.trail_age_hue_range,
-            self.trail_age_blend,
-            self.trail_delta_strength,
-            self.gradient_magnitude_enabled,
-            self.gradient_strength,
-            self.trail_age_mode,
-            self.trail_age_reverse,
-        );
+        let species_colors_rwo = if self.species_colors_enabled {
+            Some(self.species_rgb_colors.clone())
+        } else {
+            None
+        };
+        let mut buffer = if let Some(ref layout) = self.window_layout {
+            FrameBuffer::from_downsampled_at(
+                downsampled,
+                layout.sim_w,
+                layout.sim_h,
+                self.width,
+                self.height,
+                layout.sim_x,
+                layout.sim_y,
+                max_trail_value,
+                self.palette.clone(),
+                self.charset.clone(),
+                self.reverse_palette,
+                self.invert_palette,
+                self.color_mode,
+                self.hue_shift,
+                self.dither_mode,
+                &mut self.error_diffusion,
+                self.intensity_mapping.as_ref(),
+                self.species_colors_enabled,
+                species_colors_rwo,
+                self.background_color,
+                self.ascii_contrast,
+                self.aux_frame.as_ref(),
+                self.trail_age_enabled,
+                self.trail_delta_enabled,
+                self.trail_age_hue_range,
+                self.trail_age_blend,
+                self.trail_delta_strength,
+                self.gradient_magnitude_enabled,
+                self.gradient_strength,
+                self.trail_age_mode,
+                self.trail_age_reverse,
+            )
+        } else {
+            FrameBuffer::from_downsampled(
+                downsampled,
+                self.width,
+                self.height,
+                max_trail_value,
+                self.palette.clone(),
+                self.charset.clone(),
+                self.reverse_palette,
+                self.invert_palette,
+                self.color_mode,
+                self.hue_shift,
+                self.dither_mode,
+                &mut self.error_diffusion,
+                self.intensity_mapping.as_ref(),
+                self.species_colors_enabled,
+                species_colors_rwo,
+                self.background_color,
+                self.ascii_contrast,
+                self.aux_frame.as_ref(),
+                self.trail_age_enabled,
+                self.trail_delta_enabled,
+                self.trail_age_hue_range,
+                self.trail_age_blend,
+                self.trail_delta_strength,
+                self.gradient_magnitude_enabled,
+                self.gradient_strength,
+                self.trail_age_mode,
+                self.trail_age_reverse,
+            )
+        };
 
         // Apply pause effect based on selected style
         if let Some(fc) = pause_frame {
@@ -419,7 +529,22 @@ impl TerminalRenderer {
 
         // Render window frame if enabled (uses palette accent color)
         if self.window_frame.is_visible() {
-            buffer.render_window_frame(self.window_frame, accent, None);
+            if let Some(ref layout) = self.window_layout {
+                use crate::render::window::FallbackMode;
+                if !matches!(layout.fallback, FallbackMode::Fullscreen) {
+                    buffer.render_window_frame_at(
+                        self.window_frame,
+                        accent,
+                        layout.frame_x,
+                        layout.frame_y,
+                        layout.frame_w,
+                        layout.frame_h,
+                        None,
+                    );
+                }
+            } else {
+                buffer.render_window_frame(self.window_frame, accent, None);
+            }
         }
 
         // Helper to get colors from OverlayConfig and PanelStyle
@@ -693,9 +818,18 @@ impl TerminalRenderer {
         // Keep track of downsampled cells for grid brightness calculation
         let mut all_downsampled_cells = Vec::new();
 
-        // Get or create pre-allocated frame buffer
-        let width = self.width;
-        let height = self.height;
+        // Determine render dimensions: use sim_w/sim_h from window layout if present,
+        // otherwise fill the full terminal.
+        let (render_w, render_h, render_x, render_y) = if let Some(ref layout) = self.window_layout
+        {
+            (layout.sim_w, layout.sim_h, layout.sim_x, layout.sim_y)
+        } else {
+            (self.width, self.height, 0, 0)
+        };
+
+        // Get or create pre-allocated frame buffer at sim render dimensions
+        let width = render_w;
+        let height = render_h;
         if self
             .frame_buffer
             .as_ref()
@@ -762,9 +896,19 @@ impl TerminalRenderer {
                     false,
                 );
 
-                for (i, cell) in species_buffer.cells.iter().enumerate() {
-                    if cell.char != ' ' {
-                        buffer.cells[i] = *cell;
+                // Blit non-blank cells from species_buffer into main buffer at (render_x, render_y)
+                for sy in 0..height {
+                    for sx in 0..width {
+                        let src_idx = sy * width + sx;
+                        let src_cell = &species_buffer.cells[src_idx];
+                        if src_cell.char != ' ' {
+                            let dst_x = render_x + sx;
+                            let dst_y = render_y + sy;
+                            if dst_x < self.width && dst_y < self.height {
+                                let dst_idx = dst_y * self.width + dst_x;
+                                buffer.cells[dst_idx] = *src_cell;
+                            }
+                        }
                     }
                 }
             }
@@ -818,6 +962,26 @@ impl TerminalRenderer {
             self.hue_shift,
             self.intensity_mapping.as_ref(),
         );
+
+        // Render window frame if enabled
+        if self.window_frame.is_visible() {
+            if let Some(ref layout) = self.window_layout {
+                use crate::render::window::FallbackMode;
+                if !matches!(layout.fallback, FallbackMode::Fullscreen) {
+                    buffer.render_window_frame_at(
+                        self.window_frame,
+                        accent,
+                        layout.frame_x,
+                        layout.frame_y,
+                        layout.frame_w,
+                        layout.frame_h,
+                        None,
+                    );
+                }
+            } else {
+                buffer.render_window_frame(self.window_frame, accent, None);
+            }
+        }
 
         // Unified draw helper: main panel + rich_lines + accented title badge.
         let draw_ms_overlay = |buf: &mut FrameBuffer,
