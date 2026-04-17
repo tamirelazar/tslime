@@ -1234,6 +1234,185 @@ impl std::str::FromStr for WindowFrame {
     }
 }
 
+/// Chrome display level for window mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ChromeStyle {
+    /// Frame only, no title or footer (default).
+    #[default]
+    Minimal,
+    /// Always-visible title block + footer (sticky expanded).
+    Expanded,
+    /// No window; sim fills terminal edge-to-edge.
+    Fullscreen,
+}
+
+impl std::str::FromStr for ChromeStyle {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "minimal" => Ok(ChromeStyle::Minimal),
+            "expanded" => Ok(ChromeStyle::Expanded),
+            "fullscreen" => Ok(ChromeStyle::Fullscreen),
+            _ => Err(format!(
+                "Invalid chrome style: '{}'. Must be one of: minimal, expanded, fullscreen",
+                s
+            )),
+        }
+    }
+}
+
+/// Visual aspect ratio for the simulation window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Aspect {
+    /// Horizontal units of the aspect ratio.
+    pub width: u32,
+    /// Vertical units of the aspect ratio.
+    pub height: u32,
+}
+
+impl Default for Aspect {
+    fn default() -> Self {
+        Self {
+            width: 3,
+            height: 2,
+        }
+    }
+}
+
+impl Aspect {
+    /// Terminal cell ratio (cells_w : cells_h) for halfblock rendering.
+    ///
+    /// With halfblock, each terminal cell packs 2 vertical sim pixels and is
+    /// ~2:1 tall:wide, making halfblock pixels visually square. For a visual
+    /// aspect of W:H, the required terminal cell ratio is W : (H/2).
+    pub fn cell_ratio(&self) -> f32 {
+        self.width as f32 / (self.height as f32 / 2.0)
+    }
+}
+
+impl std::str::FromStr for Aspect {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "square" => {
+                return Ok(Self {
+                    width: 1,
+                    height: 1,
+                })
+            }
+            "4:3" => {
+                return Ok(Self {
+                    width: 4,
+                    height: 3,
+                })
+            }
+            "3:2" => {
+                return Ok(Self {
+                    width: 3,
+                    height: 2,
+                })
+            }
+            "16:10" => {
+                return Ok(Self {
+                    width: 16,
+                    height: 10,
+                })
+            }
+            "16:9" => {
+                return Ok(Self {
+                    width: 16,
+                    height: 9,
+                })
+            }
+            _ => {}
+        }
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() != 2 {
+            return Err(format!(
+                "Invalid aspect '{}'. Use W:H or preset (square, 4:3, 3:2, 16:10, 16:9)",
+                s
+            ));
+        }
+        let w = parts[0]
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid aspect width in '{}'", s))?;
+        let h = parts[1]
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid aspect height in '{}'", s))?;
+        if w == 0 || h == 0 {
+            return Err(format!("Aspect W and H must be non-zero, got '{}'", s));
+        }
+        Ok(Self {
+            width: w,
+            height: h,
+        })
+    }
+}
+
+/// Window outer padding — auto (5% of min terminal dimension, ≥ 2) or fixed cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WindowPadding {
+    /// Automatically compute padding (5% of smallest terminal dimension, minimum 2 cells).
+    #[default]
+    Auto,
+    /// Fixed padding in terminal cells.
+    Fixed(usize),
+}
+
+impl std::str::FromStr for WindowPadding {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.to_lowercase() == "auto" {
+            return Ok(Self::Auto);
+        }
+        let n = s
+            .parse::<usize>()
+            .map_err(|_| format!("Invalid window padding '{}'. Use 'auto' or an integer.", s))?;
+        Ok(Self::Fixed(n))
+    }
+}
+
+/// Minimum terminal size threshold for fallback logic (WxH format).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerminalSizeThreshold {
+    /// Minimum terminal width in columns.
+    pub width: usize,
+    /// Minimum terminal height in rows.
+    pub height: usize,
+}
+
+impl Default for TerminalSizeThreshold {
+    fn default() -> Self {
+        Self {
+            width: 20,
+            height: 10,
+        }
+    }
+}
+
+impl std::str::FromStr for TerminalSizeThreshold {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split('x').collect();
+        if parts.len() != 2 {
+            return Err(format!(
+                "Invalid size '{}'. Use WxH format, e.g. '20x10'",
+                s
+            ));
+        }
+        let w = parts[0]
+            .parse::<usize>()
+            .map_err(|_| format!("Invalid width in size '{}'", s))?;
+        let h = parts[1]
+            .parse::<usize>()
+            .map_err(|_| format!("Invalid height in size '{}'", s))?;
+        Ok(Self {
+            width: w,
+            height: h,
+        })
+    }
+}
+
 /// Trail sampling method for agent sensing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SamplingMode {
@@ -1537,6 +1716,18 @@ pub struct SimConfig {
     pub boundary_mode: BoundaryMode,
     /// Window frame display mode for terminal visualization.
     pub window_frame: WindowFrame,
+    /// Chrome display style (minimal, expanded, fullscreen).
+    pub chrome_style: ChromeStyle,
+    /// Visual aspect ratio of the simulation window.
+    pub aspect: Aspect,
+    /// Outer padding between terminal edge and window frame.
+    pub window_padding: WindowPadding,
+    /// Show legacy status bar in windowed mode (default false).
+    pub show_status_bar: bool,
+    /// Fallback threshold: below this sim size, drop padding.
+    pub min_sim_size: TerminalSizeThreshold,
+    /// Fallback threshold: below this sim size, drop the frame.
+    pub min_frame_size: TerminalSizeThreshold,
     /// Particle respawn configuration.
     pub respawn_config: RespawnConfig,
     /// Trail sampling method (nearest or bilinear).
@@ -1635,6 +1826,18 @@ impl Default for SimConfig {
             preferred_init_mode: Some(InitMode::Food),
             boundary_mode: BoundaryMode::Bounce,
             window_frame: WindowFrame::Frame,
+            chrome_style: ChromeStyle::Minimal,
+            aspect: Aspect::default(),
+            window_padding: WindowPadding::Auto,
+            show_status_bar: false,
+            min_sim_size: TerminalSizeThreshold {
+                width: 20,
+                height: 10,
+            },
+            min_frame_size: TerminalSizeThreshold {
+                width: 12,
+                height: 6,
+            },
             respawn_config: RespawnConfig::default(),
             sampling_mode: SamplingMode::Nearest,
         }
@@ -2327,5 +2530,115 @@ mod tests {
             ..Default::default()
         };
         assert!(invalid_species.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod window_type_tests {
+    use super::*;
+
+    #[test]
+    fn test_aspect_from_str_presets() {
+        assert_eq!(
+            "3:2".parse::<Aspect>().unwrap(),
+            Aspect {
+                width: 3,
+                height: 2
+            }
+        );
+        assert_eq!(
+            "square".parse::<Aspect>().unwrap(),
+            Aspect {
+                width: 1,
+                height: 1
+            }
+        );
+        assert_eq!(
+            "4:3".parse::<Aspect>().unwrap(),
+            Aspect {
+                width: 4,
+                height: 3
+            }
+        );
+        assert_eq!(
+            "16:10".parse::<Aspect>().unwrap(),
+            Aspect {
+                width: 16,
+                height: 10
+            }
+        );
+        assert_eq!(
+            "16:9".parse::<Aspect>().unwrap(),
+            Aspect {
+                width: 16,
+                height: 9
+            }
+        );
+    }
+
+    #[test]
+    fn test_aspect_from_str_custom() {
+        assert_eq!(
+            "5:3".parse::<Aspect>().unwrap(),
+            Aspect {
+                width: 5,
+                height: 3
+            }
+        );
+    }
+
+    #[test]
+    fn test_aspect_from_str_errors() {
+        assert!("0:1".parse::<Aspect>().is_err());
+        assert!("bad".parse::<Aspect>().is_err());
+        assert!("1:2:3".parse::<Aspect>().is_err());
+    }
+
+    #[test]
+    fn test_aspect_cell_ratio_3_2() {
+        let aspect = Aspect {
+            width: 3,
+            height: 2,
+        };
+        // For 3:2 visual with halfblock: cell_ratio = 3 / (2/2) = 3.0
+        assert!((aspect.cell_ratio() - 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_chrome_style_from_str() {
+        assert_eq!(
+            "minimal".parse::<ChromeStyle>().unwrap(),
+            ChromeStyle::Minimal
+        );
+        assert_eq!(
+            "expanded".parse::<ChromeStyle>().unwrap(),
+            ChromeStyle::Expanded
+        );
+        assert_eq!(
+            "fullscreen".parse::<ChromeStyle>().unwrap(),
+            ChromeStyle::Fullscreen
+        );
+        assert!("invalid".parse::<ChromeStyle>().is_err());
+    }
+
+    #[test]
+    fn test_window_padding_from_str() {
+        assert_eq!(
+            "auto".parse::<WindowPadding>().unwrap(),
+            WindowPadding::Auto
+        );
+        assert_eq!(
+            "4".parse::<WindowPadding>().unwrap(),
+            WindowPadding::Fixed(4)
+        );
+        assert!("bad".parse::<WindowPadding>().is_err());
+    }
+
+    #[test]
+    fn test_terminal_size_threshold_from_str() {
+        let t = "20x10".parse::<TerminalSizeThreshold>().unwrap();
+        assert_eq!(t.width, 20);
+        assert_eq!(t.height, 10);
+        assert!("bad".parse::<TerminalSizeThreshold>().is_err());
     }
 }

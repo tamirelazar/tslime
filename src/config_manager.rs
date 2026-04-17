@@ -409,6 +409,15 @@ impl SavedConfig {
             preferred_init_mode: None,
             boundary_mode: crate::simulation::config::BoundaryMode::Bounce,
             window_frame: parse_window_frame(&self.window_frame).unwrap_or_default(),
+            chrome_style: crate::simulation::config::ChromeStyle::default(),
+            aspect: crate::simulation::config::Aspect::default(),
+            window_padding: crate::simulation::config::WindowPadding::default(),
+            show_status_bar: false,
+            min_sim_size: crate::simulation::config::TerminalSizeThreshold::default(),
+            min_frame_size: crate::simulation::config::TerminalSizeThreshold {
+                width: 12,
+                height: 6,
+            },
             respawn_config: crate::simulation::config::RespawnConfig::default(),
             sampling_mode: crate::simulation::config::SamplingMode::Nearest,
         })
@@ -787,6 +796,15 @@ mod tests {
             respawn_config: crate::simulation::config::RespawnConfig::default(),
             sampling_mode: crate::simulation::config::SamplingMode::Nearest,
             window_frame: crate::simulation::config::WindowFrame::Frame,
+            chrome_style: crate::simulation::config::ChromeStyle::default(),
+            aspect: crate::simulation::config::Aspect::default(),
+            window_padding: crate::simulation::config::WindowPadding::default(),
+            show_status_bar: false,
+            min_sim_size: crate::simulation::config::TerminalSizeThreshold::default(),
+            min_frame_size: crate::simulation::config::TerminalSizeThreshold {
+                width: 12,
+                height: 6,
+            },
         };
 
         let saved_config = SavedConfig::from_runtime(
