@@ -1796,6 +1796,12 @@ mod status_line_tests {
             intensity_mapping_gamma: None,
             intensity_mapping_levels: None,
             window_frame: "frame".to_string(),
+            chrome_style: "minimal".to_string(),
+            aspect: "3:2".to_string(),
+            window_padding: "auto".to_string(),
+            show_status_bar: false,
+            min_sim_size: "20x10".to_string(),
+            min_frame_size: "12x6".to_string(),
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);

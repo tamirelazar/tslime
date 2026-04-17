@@ -116,6 +116,42 @@ pub struct SavedConfig {
     // Window frame
     /// Window frame display mode.
     pub window_frame: String,
+
+    // Window mode chrome / layout
+    /// Chrome display style (minimal, expanded, fullscreen).
+    #[serde(default = "default_chrome_style")]
+    pub chrome_style: String,
+    /// Visual aspect ratio (e.g. "3:2").
+    #[serde(default = "default_aspect")]
+    pub aspect: String,
+    /// Outer padding ("auto" or integer).
+    #[serde(default = "default_window_padding")]
+    pub window_padding: String,
+    /// Show legacy status bar in windowed mode.
+    #[serde(default)]
+    pub show_status_bar: bool,
+    /// Minimum sim size before dropping padding (e.g. "20x10").
+    #[serde(default = "default_min_sim_size")]
+    pub min_sim_size: String,
+    /// Minimum sim size before dropping the frame (e.g. "12x6").
+    #[serde(default = "default_min_frame_size")]
+    pub min_frame_size: String,
+}
+
+fn default_chrome_style() -> String {
+    "minimal".to_string()
+}
+fn default_aspect() -> String {
+    "3:2".to_string()
+}
+fn default_window_padding() -> String {
+    "auto".to_string()
+}
+fn default_min_sim_size() -> String {
+    "20x10".to_string()
+}
+fn default_min_frame_size() -> String {
+    "12x6".to_string()
 }
 
 impl SavedConfig {
@@ -261,6 +297,21 @@ impl SavedConfig {
             intensity_mapping_gamma: mapping_gamma,
             intensity_mapping_levels: mapping_levels,
             window_frame: format!("{:?}", sim_config.window_frame).to_lowercase(),
+            chrome_style: format!("{:?}", sim_config.chrome_style).to_lowercase(),
+            aspect: format!("{}:{}", sim_config.aspect.width, sim_config.aspect.height),
+            window_padding: match sim_config.window_padding {
+                crate::simulation::config::WindowPadding::Auto => "auto".to_string(),
+                crate::simulation::config::WindowPadding::Fixed(n) => n.to_string(),
+            },
+            show_status_bar: sim_config.show_status_bar,
+            min_sim_size: format!(
+                "{}x{}",
+                sim_config.min_sim_size.width, sim_config.min_sim_size.height
+            ),
+            min_frame_size: format!(
+                "{}x{}",
+                sim_config.min_frame_size.width, sim_config.min_frame_size.height
+            ),
         }
     }
 
@@ -291,6 +342,19 @@ impl SavedConfig {
 
         // Apply window frame
         runtime_state.window_frame = parse_window_frame(&self.window_frame).unwrap_or_default();
+
+        // Apply window mode chrome / layout fields
+        runtime_state.chrome_style = self.chrome_style.parse().unwrap_or_default();
+        runtime_state.aspect = self.aspect.parse().unwrap_or_default();
+        runtime_state.window_padding = self.window_padding.parse().unwrap_or_default();
+        runtime_state.show_status_bar = self.show_status_bar;
+        runtime_state.min_sim_size = self.min_sim_size.parse().unwrap_or_default();
+        runtime_state.min_frame_size = self.min_frame_size.parse().unwrap_or(
+            crate::simulation::config::TerminalSizeThreshold {
+                width: 12,
+                height: 6,
+            },
+        );
 
         // Apply food persistence setting
         runtime_state.food_persist_enabled = self.food_persist;
@@ -409,15 +473,17 @@ impl SavedConfig {
             preferred_init_mode: None,
             boundary_mode: crate::simulation::config::BoundaryMode::Bounce,
             window_frame: parse_window_frame(&self.window_frame).unwrap_or_default(),
-            chrome_style: crate::simulation::config::ChromeStyle::default(),
-            aspect: crate::simulation::config::Aspect::default(),
-            window_padding: crate::simulation::config::WindowPadding::default(),
-            show_status_bar: false,
-            min_sim_size: crate::simulation::config::TerminalSizeThreshold::default(),
-            min_frame_size: crate::simulation::config::TerminalSizeThreshold {
-                width: 12,
-                height: 6,
-            },
+            chrome_style: self.chrome_style.parse().unwrap_or_default(),
+            aspect: self.aspect.parse().unwrap_or_default(),
+            window_padding: self.window_padding.parse().unwrap_or_default(),
+            show_status_bar: self.show_status_bar,
+            min_sim_size: self.min_sim_size.parse().unwrap_or_default(),
+            min_frame_size: self.min_frame_size.parse().unwrap_or(
+                crate::simulation::config::TerminalSizeThreshold {
+                    width: 12,
+                    height: 6,
+                },
+            ),
             respawn_config: crate::simulation::config::RespawnConfig::default(),
             sampling_mode: crate::simulation::config::SamplingMode::Nearest,
         })
@@ -677,6 +743,12 @@ mod tests {
             intensity_mapping_gamma: None,
             intensity_mapping_levels: None,
             window_frame: "frame".to_string(),
+            chrome_style: "minimal".to_string(),
+            aspect: "3:2".to_string(),
+            window_padding: "auto".to_string(),
+            show_status_bar: false,
+            min_sim_size: "20x10".to_string(),
+            min_frame_size: "12x6".to_string(),
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -721,6 +793,12 @@ mod tests {
             intensity_mapping_gamma: None,
             intensity_mapping_levels: None,
             window_frame: "frame".to_string(),
+            chrome_style: "minimal".to_string(),
+            aspect: "3:2".to_string(),
+            window_padding: "auto".to_string(),
+            show_status_bar: false,
+            min_sim_size: "20x10".to_string(),
+            min_frame_size: "12x6".to_string(),
         };
         let sim_config = config.to_sim_config().unwrap();
         assert_eq!(sim_config.species_configs[0].count, 50000);

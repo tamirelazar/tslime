@@ -20,7 +20,8 @@ use crate::render::options_overlay::ControlsOverlay;
 use crate::render::palette::IntensityMapping;
 use crate::render::theme::{PanelStyle, ALL_THEMES, GRUVBOX_DARK};
 use crate::simulation::config::{
-    DiffusionKernel, InitMode, Preset, SimConfig, TerrainType, Wind, WindowFrame,
+    Aspect, ChromeStyle, DiffusionKernel, InitMode, Preset, SimConfig, TerminalSizeThreshold,
+    TerrainType, Wind, WindowFrame, WindowPadding,
 };
 use crate::simulation::food::load_logo_from_memory;
 use rand::Rng;
@@ -502,6 +503,18 @@ pub struct RuntimeState {
     pub motion_blur_frames: usize,
     /// Window frame display mode.
     pub window_frame: WindowFrame,
+    /// Chrome display style (minimal, expanded, fullscreen).
+    pub chrome_style: ChromeStyle,
+    /// Visual aspect ratio of the simulation window.
+    pub aspect: Aspect,
+    /// Outer padding between terminal edge and window frame.
+    pub window_padding: WindowPadding,
+    /// Show legacy status bar in windowed mode.
+    pub show_status_bar: bool,
+    /// Minimum sim size before dropping padding.
+    pub min_sim_size: TerminalSizeThreshold,
+    /// Minimum sim size before dropping the frame.
+    pub min_frame_size: TerminalSizeThreshold,
     /// Max brightness.
     pub max_brightness: f32,
     /// Fast mode enabled.
@@ -651,6 +664,12 @@ impl RuntimeState {
             auto_normalize: false,
             motion_blur_frames: 0,
             window_frame: cli_config.window_frame,
+            chrome_style: cli_config.chrome_style,
+            aspect: cli_config.aspect,
+            window_padding: cli_config.window_padding,
+            show_status_bar: cli_config.show_status_bar,
+            min_sim_size: cli_config.min_sim_size,
+            min_frame_size: cli_config.min_frame_size,
             max_brightness: cli_config.max_brightness,
             fast_mode_enabled: false,
             palette_shift_speed: PaletteShiftSpeed::Off,

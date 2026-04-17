@@ -14,8 +14,8 @@ use crate::error::ConfigError;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
-    BoundaryMode, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig, TerrainType, Wind,
-    WindowFrame,
+    Aspect, BoundaryMode, ChromeStyle, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig,
+    TerminalSizeThreshold, TerrainType, Wind, WindowFrame, WindowPadding,
 };
 use crate::validation::Validatable;
 
@@ -756,6 +756,61 @@ pub struct Args {
     )]
     /// Window frame display mode for terminal visualization.
     pub window_frame: Option<WindowFrame>,
+
+    #[arg(
+        long = "fullscreen",
+        help = "Render edge-to-edge without a window frame (shortcut for --chrome-style fullscreen)",
+        conflicts_with = "chrome_style"
+    )]
+    /// Render edge-to-edge without a window frame.
+    pub fullscreen: bool,
+
+    #[arg(
+        long = "chrome-style",
+        value_name = "STYLE",
+        help = "Chrome level: minimal (default), expanded, or fullscreen"
+    )]
+    /// Chrome display level for the window mode.
+    pub chrome_style: Option<ChromeStyle>,
+
+    #[arg(
+        long = "aspect",
+        value_name = "RATIO",
+        help = "Window aspect ratio: 3:2 (default), square, 4:3, 16:10, 16:9, or W:H"
+    )]
+    /// Visual aspect ratio of the simulation window.
+    pub aspect: Option<Aspect>,
+
+    #[arg(
+        long = "window-padding",
+        value_name = "PADDING",
+        help = "Outer padding: 'auto' (default, 5% of min dim >= 2) or an integer cell count"
+    )]
+    /// Outer padding between terminal edge and window frame.
+    pub window_padding: Option<WindowPadding>,
+
+    #[arg(
+        long = "show-status-bar",
+        help = "Force the legacy status bar visible in windowed mode"
+    )]
+    /// Show legacy status bar in windowed mode.
+    pub show_status_bar: bool,
+
+    #[arg(
+        long = "min-sim-size",
+        value_name = "WxH",
+        help = "Minimum sim size before dropping padding (default 20x10)"
+    )]
+    /// Minimum simulation size before dropping padding.
+    pub min_sim_size: Option<TerminalSizeThreshold>,
+
+    #[arg(
+        long = "min-frame-size",
+        value_name = "WxH",
+        help = "Minimum sim size before dropping the frame (default 12x6)"
+    )]
+    /// Minimum simulation size before dropping the frame.
+    pub min_frame_size: Option<TerminalSizeThreshold>,
 
     #[arg(
         long = "respawn-interval",
@@ -1940,6 +1995,13 @@ impl Default for Args {
             gradient_strength: 0.3,
             boundary_mode: None,
             window_frame: None,
+            fullscreen: false,
+            chrome_style: None,
+            aspect: None,
+            window_padding: None,
+            show_status_bar: false,
+            min_sim_size: None,
+            min_frame_size: None,
             respawn_interval: None,
         }
     }

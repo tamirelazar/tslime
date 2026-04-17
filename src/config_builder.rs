@@ -13,8 +13,8 @@ use crate::config_defaults::{
 };
 use crate::error::ConfigError;
 use crate::simulation::config::{
-    Attractor, BoundaryMode, DiffusionKernel, Preset, SimConfig, SpeciesConfig, TerrainType, Wind,
-    WindowFrame,
+    Aspect, Attractor, BoundaryMode, ChromeStyle, DiffusionKernel, Preset, SimConfig,
+    SpeciesConfig, TerminalSizeThreshold, TerrainType, Wind, WindowFrame, WindowPadding,
 };
 
 /// Builder for constructing SimConfig instances with validation.
@@ -52,6 +52,12 @@ pub struct ConfigBuilder {
     background_color: Option<String>,
     boundary_mode: Option<BoundaryMode>,
     window_frame: Option<WindowFrame>,
+    chrome_style: Option<ChromeStyle>,
+    aspect: Option<Aspect>,
+    window_padding: Option<WindowPadding>,
+    show_status_bar: Option<bool>,
+    min_sim_size: Option<TerminalSizeThreshold>,
+    min_frame_size: Option<TerminalSizeThreshold>,
     respawn_interval: Option<u32>,
 }
 
@@ -93,6 +99,20 @@ impl ConfigBuilder {
             background_color: args.bg_color.clone(),
             boundary_mode: args.boundary_mode,
             window_frame: args.window_frame,
+            chrome_style: if args.fullscreen {
+                Some(ChromeStyle::Fullscreen)
+            } else {
+                args.chrome_style
+            },
+            aspect: args.aspect,
+            window_padding: args.window_padding,
+            show_status_bar: if args.show_status_bar {
+                Some(true)
+            } else {
+                None
+            },
+            min_sim_size: args.min_sim_size,
+            min_frame_size: args.min_frame_size,
             respawn_interval: args.respawn_interval,
         }
     }
@@ -256,6 +276,42 @@ impl ConfigBuilder {
     /// Sets the window frame mode.
     pub fn window_frame(mut self, mode: WindowFrame) -> Self {
         self.window_frame = Some(mode);
+        self
+    }
+
+    /// Sets the chrome display style.
+    pub fn chrome_style(mut self, s: ChromeStyle) -> Self {
+        self.chrome_style = Some(s);
+        self
+    }
+
+    /// Sets the visual aspect ratio.
+    pub fn aspect(mut self, a: Aspect) -> Self {
+        self.aspect = Some(a);
+        self
+    }
+
+    /// Sets the outer window padding.
+    pub fn window_padding(mut self, p: WindowPadding) -> Self {
+        self.window_padding = Some(p);
+        self
+    }
+
+    /// Sets whether the legacy status bar is shown.
+    pub fn show_status_bar(mut self, v: bool) -> Self {
+        self.show_status_bar = Some(v);
+        self
+    }
+
+    /// Sets the minimum simulation size before dropping padding.
+    pub fn min_sim_size(mut self, t: TerminalSizeThreshold) -> Self {
+        self.min_sim_size = Some(t);
+        self
+    }
+
+    /// Sets the minimum simulation size before dropping the frame.
+    pub fn min_frame_size(mut self, t: TerminalSizeThreshold) -> Self {
+        self.min_frame_size = Some(t);
         self
     }
 
@@ -579,6 +635,26 @@ impl ConfigBuilder {
         // Window frame mode
         if let Some(mode) = self.window_frame {
             config.window_frame = mode;
+        }
+
+        // Chrome style, aspect, padding, status bar, size thresholds
+        if let Some(cs) = self.chrome_style {
+            config.chrome_style = cs;
+        }
+        if let Some(a) = self.aspect {
+            config.aspect = a;
+        }
+        if let Some(p) = self.window_padding {
+            config.window_padding = p;
+        }
+        if let Some(v) = self.show_status_bar {
+            config.show_status_bar = v;
+        }
+        if let Some(t) = self.min_sim_size {
+            config.min_sim_size = t;
+        }
+        if let Some(t) = self.min_frame_size {
+            config.min_frame_size = t;
         }
 
         // Respawn configuration
