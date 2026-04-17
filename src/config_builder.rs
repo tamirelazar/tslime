@@ -13,7 +13,8 @@ use crate::config_defaults::{
 };
 use crate::error::ConfigError;
 use crate::simulation::config::{
-    Attractor, BoundaryMode, DiffusionKernel, Preset, SimConfig, SpeciesConfig, TerrainType, Wind,
+    Attractor, BorderMode, BoundaryMode, DiffusionKernel, Preset, SimConfig, SpeciesConfig,
+    TerrainType, Wind,
 };
 
 /// Builder for constructing SimConfig instances with validation.
@@ -50,6 +51,7 @@ pub struct ConfigBuilder {
     terrain_strength: Option<f32>,
     background_color: Option<String>,
     boundary_mode: Option<BoundaryMode>,
+    border_mode: Option<BorderMode>,
     respawn_interval: Option<u32>,
 }
 
@@ -90,6 +92,7 @@ impl ConfigBuilder {
             terrain_strength: Some(args.terrain_strength),
             background_color: args.bg_color.clone(),
             boundary_mode: args.boundary_mode,
+            border_mode: args.border_mode,
             respawn_interval: args.respawn_interval,
         }
     }
@@ -247,6 +250,12 @@ impl ConfigBuilder {
     /// Sets the background color.
     pub fn background_color(mut self, color: String) -> Self {
         self.background_color = Some(color);
+        self
+    }
+
+    /// Sets the border mode.
+    pub fn border_mode(mut self, mode: BorderMode) -> Self {
+        self.border_mode = Some(mode);
         self
     }
 
@@ -565,6 +574,11 @@ impl ConfigBuilder {
         // Boundary mode
         if let Some(mode) = self.boundary_mode {
             config.boundary_mode = mode;
+        }
+
+        // Border mode
+        if let Some(mode) = self.border_mode {
+            config.border_mode = mode;
         }
 
         // Respawn configuration

@@ -27,6 +27,8 @@
 
 /// Adaptive brightness normalization logic.
 pub mod adaptive_brightness;
+/// Border rendering for terminal display.
+pub mod border;
 /// Character set definitions and mapping logic.
 pub mod charset;
 /// Standalone (non-palette) color constants.

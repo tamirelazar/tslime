@@ -112,6 +112,10 @@ pub struct SavedConfig {
     pub intensity_mapping_gamma: Option<f32>,
     /// Levels for quantization.
     pub intensity_mapping_levels: Option<u8>,
+
+    // Border
+    /// Border display mode.
+    pub border_mode: String,
 }
 
 impl SavedConfig {
@@ -256,6 +260,7 @@ impl SavedConfig {
             intensity_mapping_base: mapping_base,
             intensity_mapping_gamma: mapping_gamma,
             intensity_mapping_levels: mapping_levels,
+            border_mode: format!("{:?}", sim_config.border_mode).to_lowercase(),
         }
     }
 
@@ -283,6 +288,9 @@ impl SavedConfig {
         runtime_state.decay_factor = self.decay_factor;
         runtime_state.deposit_amount = self.deposit_amount;
         runtime_state.max_brightness = self.max_brightness;
+
+        // Apply border mode
+        runtime_state.border_mode = parse_border_mode(&self.border_mode).unwrap_or_default();
 
         // Apply food persistence setting
         runtime_state.food_persist_enabled = self.food_persist;
@@ -400,6 +408,7 @@ impl SavedConfig {
             background_color: self.background_color.clone(),
             preferred_init_mode: None,
             boundary_mode: crate::simulation::config::BoundaryMode::Bounce,
+            border_mode: parse_border_mode(&self.border_mode).unwrap_or_default(),
             respawn_config: crate::simulation::config::RespawnConfig::default(),
             sampling_mode: crate::simulation::config::SamplingMode::Nearest,
         })
@@ -470,6 +479,19 @@ fn parse_charset(s: &str) -> Result<Charset, String> {
         "points" => Ok(Charset::Points),
         "sculpted" => Ok(Charset::Sculpted),
         _ => Err(format!("Unknown charset: {}", s)),
+    }
+}
+
+fn parse_border_mode(s: &str) -> Result<crate::simulation::config::BorderMode, String> {
+    match s.to_lowercase().as_str() {
+        "none" => Ok(crate::simulation::config::BorderMode::None),
+        "negative" => Ok(crate::simulation::config::BorderMode::Negative),
+        "accented" => Ok(crate::simulation::config::BorderMode::Accented),
+        "glow" => Ok(crate::simulation::config::BorderMode::Glow),
+        "reactive" => Ok(crate::simulation::config::BorderMode::Reactive),
+        "food" => Ok(crate::simulation::config::BorderMode::Food),
+        "frame" => Ok(crate::simulation::config::BorderMode::Frame),
+        _ => Err(format!("Unknown border mode: {}", s)),
     }
 }
 
@@ -645,6 +667,7 @@ mod tests {
             intensity_mapping_base: None,
             intensity_mapping_gamma: None,
             intensity_mapping_levels: None,
+            border_mode: "none".to_string(),
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -688,6 +711,7 @@ mod tests {
             intensity_mapping_base: None,
             intensity_mapping_gamma: None,
             intensity_mapping_levels: None,
+            border_mode: "none".to_string(),
         };
         let sim_config = config.to_sim_config().unwrap();
         assert_eq!(sim_config.species_configs[0].count, 50000);
@@ -762,6 +786,7 @@ mod tests {
             boundary_mode: crate::simulation::config::BoundaryMode::Bounce,
             respawn_config: crate::simulation::config::RespawnConfig::default(),
             sampling_mode: crate::simulation::config::SamplingMode::Nearest,
+            border_mode: crate::simulation::config::BorderMode::None,
         };
 
         let saved_config = SavedConfig::from_runtime(

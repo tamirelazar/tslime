@@ -23,15 +23,40 @@ use std::io;
 /// A single cell in the frame buffer.
 pub struct Cell {
     /// Character to display.
-    pub(crate) char: char,
+    pub char: char,
     /// Foreground color in ANSI 256 format.
-    pub(crate) fg_color_256: Option<u8>,
+    pub fg_color_256: Option<u8>,
     /// Background color in ANSI 256 format.
-    pub(crate) bg_color_256: Option<u8>,
+    pub bg_color_256: Option<u8>,
     /// Foreground color in RGB format.
-    pub(crate) fg_color_rgb: Option<RgbColor>,
+    pub fg_color_rgb: Option<RgbColor>,
     /// Background color in RGB format.
-    pub(crate) bg_color_rgb: Option<RgbColor>,
+    pub bg_color_rgb: Option<RgbColor>,
+}
+
+impl Cell {
+    /// Creates a new cell with the given character and no colors.
+    pub fn new(ch: char) -> Self {
+        Self {
+            char: ch,
+            fg_color_256: None,
+            bg_color_256: None,
+            fg_color_rgb: None,
+            bg_color_rgb: None,
+        }
+    }
+
+    /// Sets the foreground RGB color and returns self for chaining.
+    pub fn with_fg(mut self, color: RgbColor) -> Self {
+        self.fg_color_rgb = Some(color);
+        self
+    }
+
+    /// Sets the background RGB color and returns self for chaining.
+    pub fn with_bg(mut self, color: RgbColor) -> Self {
+        self.bg_color_rgb = Some(color);
+        self
+    }
 }
 
 /// A double-buffered screen buffer for terminal rendering.
@@ -103,7 +128,8 @@ impl FrameBuffer {
         }
     }
 
-    fn set_cell(&mut self, x: usize, y: usize, cell: Cell) {
+    /// Sets a cell at the specified coordinates.
+    pub fn set_cell(&mut self, x: usize, y: usize, cell: Cell) {
         if x < self.width && y < self.height {
             self.cells[y * self.width + x] = cell;
         }
@@ -112,6 +138,21 @@ impl FrameBuffer {
     #[cfg(test)]
     fn get_cell(&self, x: usize, y: usize) -> &Cell {
         &self.cells[y * self.width + x]
+    }
+
+    /// Renders a border onto the frame buffer.
+    ///
+    /// Uses the provided border mode and accent color from the theme.
+    /// The activity parameter is used for reactive mode.
+    pub fn render_border(
+        &mut self,
+        mode: crate::simulation::config::BorderMode,
+        accent_color: RgbColor,
+        activity: Option<&[f32]>,
+    ) {
+        use crate::render::border::BorderRenderer;
+        let renderer = BorderRenderer::new(mode, accent_color);
+        renderer.render(self, activity);
     }
 
     /// Checks whether a cell is at the outline/edge of a shape.

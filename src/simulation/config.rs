@@ -1171,6 +1171,69 @@ pub enum BoundaryMode {
     Wrap,
 }
 
+/// Border display mode for terminal visualization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BorderMode {
+    /// No border - full terminal used for simulation (default).
+    #[default]
+    None,
+    /// Leave 1-cell margin empty around edges.
+    Negative,
+    /// Solid block border using accent color.
+    Accented,
+    /// Gradient border fading from accent color inward.
+    Glow,
+    /// Border responds to nearby agent activity.
+    Reactive,
+    /// Food border that attracts agents.
+    Food,
+    /// Frame border - negative space with visible frame around simulation area.
+    Frame,
+}
+
+impl BorderMode {
+    /// Returns true if this mode reduces simulation display area.
+    pub fn reduces_display_area(&self) -> bool {
+        matches!(self, BorderMode::Negative)
+    }
+
+    /// Returns the border thickness in cells.
+    pub fn thickness(&self) -> usize {
+        match self {
+            BorderMode::None => 0,
+            BorderMode::Negative | BorderMode::Frame => 2,
+            BorderMode::Accented | BorderMode::Food => 1,
+            BorderMode::Glow => 3,
+            BorderMode::Reactive => 2,
+        }
+    }
+
+    /// Returns true if border has visual rendering.
+    pub fn is_visible(&self) -> bool {
+        !matches!(self, BorderMode::None | BorderMode::Negative)
+    }
+}
+
+impl std::str::FromStr for BorderMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "none" => Ok(BorderMode::None),
+            "negative" => Ok(BorderMode::Negative),
+            "accented" => Ok(BorderMode::Accented),
+            "glow" => Ok(BorderMode::Glow),
+            "reactive" => Ok(BorderMode::Reactive),
+            "food" => Ok(BorderMode::Food),
+            "frame" => Ok(BorderMode::Frame),
+            _ => Err(format!(
+                "Invalid border mode: {}. Must be one of: none, negative, accented, glow, reactive, food, frame",
+                s
+            )),
+        }
+    }
+}
+
 /// Trail sampling method for agent sensing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SamplingMode {
@@ -1472,6 +1535,8 @@ pub struct SimConfig {
     pub preferred_init_mode: Option<InitMode>,
     /// Boundary handling mode (bounce or wrap).
     pub boundary_mode: BoundaryMode,
+    /// Border display mode for terminal visualization.
+    pub border_mode: BorderMode,
     /// Particle respawn configuration.
     pub respawn_config: RespawnConfig,
     /// Trail sampling method (nearest or bilinear).
@@ -1569,6 +1634,7 @@ impl Default for SimConfig {
             background_color: None,
             preferred_init_mode: Some(InitMode::Food),
             boundary_mode: BoundaryMode::Bounce,
+            border_mode: BorderMode::None,
             respawn_config: RespawnConfig::default(),
             sampling_mode: SamplingMode::Nearest,
         }

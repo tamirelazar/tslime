@@ -206,6 +206,7 @@ pub fn run_simulation(
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
     renderer.set_dither_mode(dither_mode);
     renderer.set_ascii_contrast(args.ascii_contrast);
+    renderer.set_border_mode(config.border_mode);
     let mut timer = FrameTimer::with_time_scale(args.fps, args.frame_delay, args.time_scale);
     timer.set_adaptive_fps(args.auto_fps);
     let input_poller = InputPoller::new();
@@ -1792,6 +1793,7 @@ pub fn run_simulation(
                                 renderer.set_invert_palette(runtime_state.invert_palette);
                                 renderer.set_reverse_palette(runtime_state.reverse_palette);
                                 renderer.set_dither_mode(runtime_state.dither_mode);
+                                renderer.set_border_mode(runtime_state.border_mode);
 
                                 runtime_state.show_notification("Undo successful".to_string());
                             } else {
@@ -1818,6 +1820,7 @@ pub fn run_simulation(
                                 renderer.set_invert_palette(runtime_state.invert_palette);
                                 renderer.set_reverse_palette(runtime_state.reverse_palette);
                                 renderer.set_dither_mode(runtime_state.dither_mode);
+                                renderer.set_border_mode(runtime_state.border_mode);
 
                                 runtime_state.show_notification("Redo successful".to_string());
                             } else {
@@ -1836,6 +1839,22 @@ pub fn run_simulation(
                             runtime_state.show_notification(format!(
                                 "Theme: {}",
                                 runtime_state.current_theme_name()
+                            ));
+                        }
+                        ControlAction::CycleBorderMode => {
+                            runtime_state.cycle_border_mode();
+                            renderer.set_border_mode(runtime_state.border_mode);
+                            runtime_state.show_notification(format!(
+                                "Border: {:?}",
+                                runtime_state.border_mode
+                            ));
+                        }
+                        ControlAction::CycleBorderModeReverse => {
+                            runtime_state.cycle_border_mode_reverse();
+                            renderer.set_border_mode(runtime_state.border_mode);
+                            runtime_state.show_notification(format!(
+                                "Border: {:?}",
+                                runtime_state.border_mode
                             ));
                         }
                         ControlAction::ShowPaletteEditor => {

@@ -161,6 +161,31 @@ impl RgbColor {
             b: (hex & 0xFF) as u8,
         }
     }
+
+    /// Returns a new color with the given alpha transparency applied.
+    ///
+    /// Alpha of 1.0 returns the original color, 0.0 returns black.
+    pub fn with_alpha(&self, alpha: f32) -> Self {
+        let alpha = alpha.clamp(0.0, 1.0);
+        Self {
+            r: (self.r as f32 * alpha) as u8,
+            g: (self.g as f32 * alpha) as u8,
+            b: (self.b as f32 * alpha) as u8,
+        }
+    }
+
+    /// Blends this color with another color using the given factor.
+    ///
+    /// Factor of 0.0 returns self, 1.0 returns other, 0.5 returns average.
+    pub fn blend(&self, other: &Self, factor: f32) -> Self {
+        let factor = factor.clamp(0.0, 1.0);
+        let inv = 1.0 - factor;
+        Self {
+            r: (self.r as f32 * inv + other.r as f32 * factor) as u8,
+            g: (self.g as f32 * inv + other.g as f32 * factor) as u8,
+            b: (self.b as f32 * inv + other.b as f32 * factor) as u8,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

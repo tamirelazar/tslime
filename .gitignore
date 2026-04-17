@@ -25,3 +25,6 @@ tslime_frame_*.png
 
 # Superpowers brainstorming companion
 .superpowers/
+
+# Git worktrees
+.worktrees/

@@ -14,7 +14,8 @@ use crate::error::ConfigError;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
-    BoundaryMode, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig, TerrainType, Wind,
+    BorderMode, BoundaryMode, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig, TerrainType,
+    Wind,
 };
 use crate::validation::Validatable;
 
@@ -747,6 +748,14 @@ pub struct Args {
     )]
     /// Boundary handling mode (bounce or wrap).
     pub boundary_mode: Option<BoundaryMode>,
+
+    #[arg(
+        long = "border",
+        value_name = "MODE",
+        help = "Border display mode (none, negative, accented, glow, reactive, food)"
+    )]
+    /// Border display mode for terminal visualization.
+    pub border_mode: Option<BorderMode>,
 
     #[arg(
         long = "respawn-interval",
@@ -1930,6 +1939,7 @@ impl Default for Args {
             gradient_magnitude: false,
             gradient_strength: 0.3,
             boundary_mode: None,
+            border_mode: None,
             respawn_interval: None,
         }
     }

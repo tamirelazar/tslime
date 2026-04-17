@@ -57,6 +57,8 @@ pub struct TerminalRenderer {
     trail_delta_strength: f32,
     gradient_magnitude_enabled: bool,
     gradient_strength: f32,
+    border_mode: crate::simulation::config::BorderMode,
+    border_accent_color: RgbColor,
 }
 
 impl TerminalRenderer {
@@ -100,7 +102,19 @@ impl TerminalRenderer {
             trail_delta_strength: 0.5,
             gradient_magnitude_enabled: false,
             gradient_strength: 0.3,
+            border_mode: crate::simulation::config::BorderMode::None,
+            border_accent_color: RgbColor::new(0xFA, 0xBD, 0x2F),
         }
+    }
+
+    /// Set the border mode for rendering.
+    pub fn set_border_mode(&mut self, mode: crate::simulation::config::BorderMode) {
+        self.border_mode = mode;
+    }
+
+    /// Set the border accent color.
+    pub fn set_border_accent_color(&mut self, color: RgbColor) {
+        self.border_accent_color = color;
     }
 
     /// Set the dithering mode.
@@ -394,7 +408,7 @@ impl TerminalRenderer {
             }
         }
 
-        // Palette accent color used for accented title badges.
+        // Palette accent color used for accented title badges and border.
         let accent = palette::palette_accent_color(
             &self.palette,
             self.reverse_palette,
@@ -402,6 +416,11 @@ impl TerminalRenderer {
             self.hue_shift,
             self.intensity_mapping.as_ref(),
         );
+
+        // Render border if enabled (uses palette accent color)
+        if self.border_mode.is_visible() {
+            buffer.render_border(self.border_mode, accent, None);
+        }
 
         // Helper to get colors from OverlayConfig and PanelStyle
         let get_overlay_colors =

@@ -263,6 +263,8 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('\'') => ControlAction::ToggleTrailAge,
         KeyCode::Char('.') => ControlAction::ToggleTrailDelta,
         KeyCode::Char('>') => ControlAction::ToggleGradientMagnitude,
+        KeyCode::Char('(') => ControlAction::CycleBorderModeReverse,
+        KeyCode::Char(')') => ControlAction::CycleBorderMode,
         _ => ControlAction::None,
     }
 }
