@@ -1957,3 +1957,148 @@ impl PauseOverlay {
         }
     }
 }
+
+// --- ExpandedChromeOverlay ---
+
+/// Builds the 2-row title block and 2-row footer for expanded window chrome.
+///
+/// This is a pure data-builder — it produces plain strings with no ANSI escape
+/// codes. The caller is responsible for positioning and rendering them into the
+/// frame buffer at the appropriate rows.
+pub struct ExpandedChromeOverlay;
+
+impl ExpandedChromeOverlay {
+    /// Builds the 2-row title block shown at the top of the window chrome.
+    ///
+    /// Returns `[row1, row2]` as plain strings (no ANSI). Row 1 contains the
+    /// app name and preset. Row 2 contains palette, charset, and agent count.
+    ///
+    /// # Parameters
+    /// - `preset`: Active simulation preset
+    /// - `palette`: Active color palette
+    /// - `charset_str`: Human-readable charset name (e.g. "HalfBlock")
+    /// - `population`: Number of agents (used to compute k-value)
+    /// - `_width`: Terminal width (reserved for future truncation logic)
+    pub fn build_title_block(
+        preset: Preset,
+        palette: Palette,
+        charset_str: &str,
+        population: usize,
+        _width: usize,
+    ) -> [String; 2] {
+        let preset_str = preset_name(preset);
+        let palette_str = palette_name(palette);
+        let pop_k = population / 1000;
+        [
+            format!("  \u{25C9} tslime \u{00B7} {}", preset_str),
+            format!(
+                "  {} palette \u{00B7} {} \u{00B7} {}k ag.",
+                palette_str, charset_str, pop_k
+            ),
+        ]
+    }
+
+    /// Builds footer row 1 (status) by delegating to `OverlayRenderer::build_status_line`.
+    ///
+    /// Returns the status string and per-character color overrides, identical to
+    /// what the status bar would show in windowed mode.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_footer_status(
+        is_paused: bool,
+        preset: Preset,
+        time_scale: f32,
+        palette: Palette,
+        dither_mode: DitherMode,
+        width: usize,
+        population: Option<usize>,
+        diffusion_kernel: Option<&str>,
+        can_undo: bool,
+        can_redo: bool,
+        accent: Option<RgbColor>,
+    ) -> (String, Vec<(usize, RgbColor)>) {
+        OverlayRenderer::build_status_line(
+            is_paused,
+            preset,
+            time_scale,
+            palette,
+            dither_mode,
+            width,
+            population,
+            diffusion_kernel,
+            can_undo,
+            can_redo,
+            accent,
+        )
+    }
+
+    /// Builds footer row 2: context-sensitive keybind hints.
+    ///
+    /// When `is_modal_open` is true (e.g. config browser overlay is showing),
+    /// the hints switch to modal navigation keys. Otherwise, the standard
+    /// running-mode shortcuts are displayed.
+    ///
+    /// # Parameters
+    /// - `is_modal_open`: Whether a modal overlay is currently focused
+    /// - `_width`: Terminal width (reserved for future truncation logic)
+    pub fn build_footer_keybinds(is_modal_open: bool, _width: usize) -> String {
+        if is_modal_open {
+            "  \u{2191}\u{2193} navigate \u{00B7} enter select \u{00B7} esc close".to_string()
+        } else {
+            "  q quit \u{00B7} h help \u{00B7} space pause \u{00B7} c cycle palette \u{00B7} \\ dashboard"
+                .to_string()
+        }
+    }
+}
+
+#[cfg(test)]
+mod expanded_chrome_tests {
+    use super::*;
+
+    #[test]
+    fn test_title_block_row1_contains_app_and_preset() {
+        let rows = ExpandedChromeOverlay::build_title_block(
+            Preset::Organic,
+            Palette::Forest,
+            "HalfBlock",
+            50_000,
+            80,
+        );
+        assert!(rows[0].contains("tslime"), "row0: {}", rows[0]);
+        assert!(
+            rows[0].contains("organic") || rows[0].contains("Organic"),
+            "row0: {}",
+            rows[0]
+        );
+    }
+
+    #[test]
+    fn test_title_block_row2_contains_palette_charset_population() {
+        let rows = ExpandedChromeOverlay::build_title_block(
+            Preset::Organic,
+            Palette::Forest,
+            "HalfBlock",
+            50_000,
+            80,
+        );
+        assert!(
+            rows[1].contains("Forest") || rows[1].contains("forest"),
+            "row1: {}",
+            rows[1]
+        );
+        assert!(rows[1].contains("HalfBlock"), "row1: {}", rows[1]);
+        assert!(rows[1].contains("50k"), "row1: {}", rows[1]);
+    }
+
+    #[test]
+    fn test_footer_keybinds_running() {
+        let hint = ExpandedChromeOverlay::build_footer_keybinds(false, 80);
+        assert!(hint.contains("q quit"), "hint: {}", hint);
+        assert!(hint.contains("space pause"), "hint: {}", hint);
+    }
+
+    #[test]
+    fn test_footer_keybinds_modal() {
+        let hint = ExpandedChromeOverlay::build_footer_keybinds(true, 80);
+        assert!(hint.contains("esc close"), "hint: {}", hint);
+    }
+}
