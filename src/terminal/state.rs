@@ -196,6 +196,18 @@ impl WindDirection {
     }
 }
 
+/// Tracks whether window chrome (title + footer) is currently visible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ChromeState {
+    /// Only the frame visible (default).
+    #[default]
+    Minimal,
+    /// Title block + footer visible.
+    Expanded,
+    /// Expanded + a modal overlay is open over the sim interior.
+    ModalPane,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Actions triggered by keyboard or other input events.
 pub enum ControlAction {
@@ -505,6 +517,10 @@ pub struct RuntimeState {
     pub window_frame: WindowFrame,
     /// Chrome display style (minimal, expanded, fullscreen).
     pub chrome_style: ChromeStyle,
+    /// User's configured chrome level (sticky base state).
+    pub base_chrome_state: ChromeState,
+    /// Current transient chrome state.
+    pub chrome_state: ChromeState,
     /// Visual aspect ratio of the simulation window.
     pub aspect: Aspect,
     /// Outer padding between terminal edge and window frame.
@@ -665,6 +681,16 @@ impl RuntimeState {
             motion_blur_frames: 0,
             window_frame: cli_config.window_frame,
             chrome_style: cli_config.chrome_style,
+            base_chrome_state: if matches!(cli_config.chrome_style, ChromeStyle::Expanded) {
+                ChromeState::Expanded
+            } else {
+                ChromeState::Minimal
+            },
+            chrome_state: if matches!(cli_config.chrome_style, ChromeStyle::Expanded) {
+                ChromeState::Expanded
+            } else {
+                ChromeState::Minimal
+            },
             aspect: cli_config.aspect,
             window_padding: cli_config.window_padding,
             show_status_bar: cli_config.show_status_bar,
@@ -1342,6 +1368,45 @@ impl RuntimeState {
         self.overlay_state.toggle(OverlayType::Dashboard);
     }
 
+    /// Called when simulation is paused.
+    ///
+    /// If the base chrome state is Minimal, expands chrome to show title + footer.
+    /// If base is Expanded, stays Expanded (no change needed).
+    pub fn on_pause(&mut self) {
+        if self.base_chrome_state == ChromeState::Minimal {
+            self.chrome_state = ChromeState::Expanded;
+        }
+    }
+
+    /// Called when simulation is unpaused.
+    ///
+    /// If base is Minimal and no modal is open, collapses chrome back to Minimal.
+    /// If base is Expanded, stays Expanded.
+    pub fn on_unpause(&mut self) {
+        if self.base_chrome_state == ChromeState::Minimal && !self.any_overlay_open() {
+            self.chrome_state = ChromeState::Minimal;
+        }
+    }
+
+    /// Called when a modal pane is opened.
+    ///
+    /// Always sets chrome to ModalPane regardless of base state.
+    pub fn on_modal_open(&mut self) {
+        self.chrome_state = ChromeState::ModalPane;
+    }
+
+    /// Called when the last modal pane is closed.
+    ///
+    /// If base is Expanded, or base is Minimal but sim is paused: stays/returns to Expanded.
+    /// If base is Minimal and not paused: collapses to Minimal.
+    pub fn on_modal_close(&mut self) {
+        if self.base_chrome_state == ChromeState::Expanded || self.is_paused {
+            self.chrome_state = ChromeState::Expanded;
+        } else {
+            self.chrome_state = ChromeState::Minimal;
+        }
+    }
+
     /// Resets all parameters to default values.
     /// If CLI overrides are available, restores those; otherwise uses preset defaults.
     pub fn reset_to_defaults(&mut self) {
@@ -1990,6 +2055,64 @@ mod tests {
         state.randomize_params();
 
         assert_eq!(state.wind_direction, WindDirection::North);
+    }
+
+    #[test]
+    fn test_chrome_base_minimal_pause_expands() {
+        let mut state = create_test_runtime_state();
+        state.base_chrome_state = ChromeState::Minimal;
+        state.chrome_state = ChromeState::Minimal;
+        state.on_pause();
+        assert_eq!(state.chrome_state, ChromeState::Expanded);
+    }
+
+    #[test]
+    fn test_chrome_base_minimal_unpause_collapses() {
+        let mut state = create_test_runtime_state();
+        state.base_chrome_state = ChromeState::Minimal;
+        state.chrome_state = ChromeState::Expanded;
+        state.is_paused = false;
+        state.on_unpause();
+        assert_eq!(state.chrome_state, ChromeState::Minimal);
+    }
+
+    #[test]
+    fn test_chrome_base_minimal_modal_open() {
+        let mut state = create_test_runtime_state();
+        state.base_chrome_state = ChromeState::Minimal;
+        state.on_modal_open();
+        assert_eq!(state.chrome_state, ChromeState::ModalPane);
+    }
+
+    #[test]
+    fn test_chrome_base_minimal_modal_close_no_pause() {
+        let mut state = create_test_runtime_state();
+        state.base_chrome_state = ChromeState::Minimal;
+        state.chrome_state = ChromeState::ModalPane;
+        state.is_paused = false;
+        state.on_modal_close();
+        assert_eq!(state.chrome_state, ChromeState::Minimal);
+    }
+
+    #[test]
+    fn test_chrome_base_minimal_modal_close_while_paused() {
+        let mut state = create_test_runtime_state();
+        state.base_chrome_state = ChromeState::Minimal;
+        state.chrome_state = ChromeState::ModalPane;
+        state.is_paused = true;
+        state.on_modal_close();
+        assert_eq!(state.chrome_state, ChromeState::Expanded);
+    }
+
+    #[test]
+    fn test_chrome_base_expanded_stays_expanded_across_pause() {
+        let mut state = create_test_runtime_state();
+        state.base_chrome_state = ChromeState::Expanded;
+        state.chrome_state = ChromeState::Expanded;
+        state.on_pause();
+        assert_eq!(state.chrome_state, ChromeState::Expanded);
+        state.on_unpause();
+        assert_eq!(state.chrome_state, ChromeState::Expanded);
     }
 
     #[test]
