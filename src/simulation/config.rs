@@ -1406,6 +1406,9 @@ impl std::str::FromStr for TerminalSizeThreshold {
         let h = parts[1]
             .parse::<usize>()
             .map_err(|_| format!("Invalid height in size '{}'", s))?;
+        if w == 0 || h == 0 {
+            return Err(format!("Size W and H must be non-zero, got '{}'", s));
+        }
         Ok(Self {
             width: w,
             height: h,
@@ -2640,5 +2643,6 @@ mod window_type_tests {
         assert_eq!(t.width, 20);
         assert_eq!(t.height, 10);
         assert!("bad".parse::<TerminalSizeThreshold>().is_err());
+        assert!("0x10".parse::<TerminalSizeThreshold>().is_err());
     }
 }
