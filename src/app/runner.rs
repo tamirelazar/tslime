@@ -464,6 +464,9 @@ pub fn run_simulation(
         // Clamp dt to avoid simulation instability during lag spikes (max 0.1s / 10 FPS)
         let dt = dt.min(0.1);
 
+        // Advance chrome fade-out animation each frame (500ms collapse animation).
+        runtime_state.advance_fade(dt);
+
         // Check if we're in warmup phase
         let in_warmup = !args.skip_warmup && runtime_state.is_in_warmup(args.warmup_frames);
 
@@ -1470,7 +1473,7 @@ pub fn run_simulation(
                             if runtime_state.is_paused {
                                 runtime_state.on_pause();
                             } else {
-                                runtime_state.on_unpause();
+                                runtime_state.on_unpause_with_fade();
                             }
                         }
                         ControlAction::Restart => {

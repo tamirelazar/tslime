@@ -2246,6 +2246,40 @@ impl FrameBuffer {
         );
     }
 
+    /// Applies an alpha multiplier to fg colors in the chrome rows (top 2 and bottom 2 rows of the sim area).
+    ///
+    /// Called each frame when `ChromeState::FadingOut` is active to blend the chrome toward black.
+    ///
+    /// # Parameters
+    /// - `sim_x`, `sim_y`: Top-left corner of the sim area.
+    /// - `sim_w`, `sim_h`: Width and height of the sim area.
+    /// - `alpha`: Multiplier in `[0.0, 1.0]`; 1.0 = fully visible, 0.0 = invisible.
+    pub fn fade_chrome_rows(
+        &mut self,
+        sim_x: usize,
+        sim_y: usize,
+        sim_w: usize,
+        sim_h: usize,
+        alpha: f32,
+    ) {
+        if sim_h < 4 {
+            return;
+        }
+        let fade_rows = [sim_y, sim_y + 1, sim_y + sim_h - 2, sim_y + sim_h - 1];
+        for row in fade_rows {
+            for x in sim_x..sim_x + sim_w {
+                if x < self.width && row < self.height {
+                    let idx = row * self.width + x;
+                    if let Some(ref mut fg) = self.cells[idx].fg_color_rgb {
+                        fg.r = (fg.r as f32 * alpha) as u8;
+                        fg.g = (fg.g as f32 * alpha) as u8;
+                        fg.b = (fg.b as f32 * alpha) as u8;
+                    }
+                }
+            }
+        }
+    }
+
     /// Get the raw RGB values for all pixels in the frame buffer.
     ///
     /// Useful for exporting the frame to an image file.

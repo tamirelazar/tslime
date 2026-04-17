@@ -602,6 +602,7 @@ impl TerminalRenderer {
         }
 
         // Draw expanded chrome (title block + footer) when in non-Minimal chrome state.
+        // This includes Expanded, ModalPane, and FadingOut (fade has content to alpha-blend).
         if let (Some(ref layout), Some(ref snap)) = (&self.window_layout, &self.chrome_snapshot) {
             use crate::terminal::state::ChromeState;
             if snap.chrome_state != ChromeState::Minimal {
@@ -642,6 +643,16 @@ impl TerminalRenderer {
                     &footer_keys,
                     accent,
                     text_color,
+                );
+            }
+            // Apply fade-out alpha when chrome is collapsing.
+            if let ChromeState::FadingOut(progress) = snap.chrome_state {
+                buffer.fade_chrome_rows(
+                    layout.sim_x,
+                    layout.sim_y,
+                    layout.sim_w,
+                    layout.sim_h,
+                    progress,
                 );
             }
         }

@@ -197,7 +197,7 @@ impl WindDirection {
 }
 
 /// Tracks whether window chrome (title + footer) is currently visible.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ChromeState {
     /// Only the frame visible (default).
     #[default]
@@ -206,6 +206,8 @@ pub enum ChromeState {
     Expanded,
     /// Expanded + a modal overlay is open over the sim interior.
     ModalPane,
+    /// Collapsing: `progress` goes from 1.0 → 0.0 over 500ms.
+    FadingOut(f32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1374,9 +1376,10 @@ impl RuntimeState {
     ///
     /// If the base chrome state is Minimal, expands chrome to show title + footer.
     /// If base is Expanded, stays Expanded (no change needed).
+    /// Also cancels any in-progress fade-out, snapping back to Expanded.
     pub fn on_pause(&mut self) {
         if self.base_chrome_state == ChromeState::Minimal {
-            self.chrome_state = ChromeState::Expanded;
+            self.chrome_state = ChromeState::Expanded; // cancels any fade
         }
     }
 
@@ -1387,6 +1390,29 @@ impl RuntimeState {
     pub fn on_unpause(&mut self) {
         if self.base_chrome_state == ChromeState::Minimal && !self.any_overlay_open() {
             self.chrome_state = ChromeState::Minimal;
+        }
+    }
+
+    /// Called when simulation is unpaused with a fade-out animation.
+    ///
+    /// If base is Minimal and no modal is open, enters FadingOut(1.0) state
+    /// so the chrome fades over 500ms before disappearing.
+    pub fn on_unpause_with_fade(&mut self) {
+        if self.base_chrome_state == ChromeState::Minimal && !self.any_overlay_open() {
+            self.chrome_state = ChromeState::FadingOut(1.0);
+        }
+    }
+
+    /// Advances the fade-out animation by `dt_secs` seconds.
+    ///
+    /// Decrements the progress counter (1.0 → 0.0 over 500ms).
+    /// When progress reaches 0.0, transitions to Minimal.
+    pub fn advance_fade(&mut self, dt_secs: f32) {
+        if let ChromeState::FadingOut(ref mut p) = self.chrome_state {
+            *p -= dt_secs / 0.5; // 500ms total
+            if *p <= 0.0 {
+                self.chrome_state = ChromeState::Minimal;
+            }
         }
     }
 
@@ -2118,6 +2144,34 @@ mod tests {
         assert_eq!(state.chrome_state, ChromeState::Expanded);
         state.on_unpause();
         assert_eq!(state.chrome_state, ChromeState::Expanded);
+    }
+
+    #[test]
+    fn test_chrome_unpause_enters_fading_state() {
+        let mut state = create_test_runtime_state();
+        state.base_chrome_state = ChromeState::Minimal;
+        state.chrome_state = ChromeState::Expanded;
+        state.is_paused = true;
+        state.on_unpause_with_fade();
+        assert!(matches!(state.chrome_state, ChromeState::FadingOut(_)));
+    }
+
+    #[test]
+    fn test_chrome_fade_snap_back_on_pause() {
+        let mut state = create_test_runtime_state();
+        state.base_chrome_state = ChromeState::Minimal;
+        state.chrome_state = ChromeState::FadingOut(0.5);
+        state.on_pause(); // should snap back to Expanded
+        assert_eq!(state.chrome_state, ChromeState::Expanded);
+    }
+
+    #[test]
+    fn test_chrome_fade_advance_to_zero() {
+        let mut state = create_test_runtime_state();
+        state.base_chrome_state = ChromeState::Minimal;
+        state.chrome_state = ChromeState::FadingOut(0.1);
+        state.advance_fade(0.2); // dt > remaining, should transition to Minimal
+        assert_eq!(state.chrome_state, ChromeState::Minimal);
     }
 
     #[test]
