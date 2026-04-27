@@ -234,7 +234,12 @@ impl KeyboardHintsOverlay {
                 Left,
                 Left,
             )
-            .add_two_col("Tab        Cycle category", "", Left, Left)
+            .add_two_col(
+                "Tab        Cycle category",
+                "F2         Choir on / off",
+                Left,
+                Left,
+            )
             .build_overlay();
         overlay.rich_lines = Some(Self::generate_rich_lines(&overlay.lines, accent));
         overlay

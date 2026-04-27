@@ -403,7 +403,7 @@ pub fn run_simulation(
     let mut blended_trail_buffer: Vec<f32> = Vec::new();
 
     #[cfg(feature = "audio")]
-    let choir = if args.choir {
+    let mut choir: Option<crate::audio::Choir> = if args.choir {
         match crate::audio::Choir::try_new(args.choir_volume.clamp(0.0, 1.0)) {
             Ok(c) => Some(c),
             Err(e) => {
@@ -2092,6 +2092,36 @@ pub fn run_simulation(
                                 runtime_state.chrome_state =
                                     crate::terminal::state::ChromeState::Minimal;
                                 renderer.set_window_layout(None);
+                            }
+                        }
+                        ControlAction::ToggleChoir => {
+                            #[cfg(feature = "audio")]
+                            {
+                                if choir.is_some() {
+                                    choir = None;
+                                    runtime_state.show_notification("Choir mode: off".to_string());
+                                } else {
+                                    match crate::audio::Choir::try_new(
+                                        args.choir_volume.clamp(0.0, 1.0),
+                                    ) {
+                                        Ok(c) => {
+                                            choir = Some(c);
+                                            runtime_state
+                                                .show_notification("Choir mode: on".to_string());
+                                        }
+                                        Err(e) => {
+                                            runtime_state.show_notification(format!(
+                                                "Choir init failed: {e}"
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                            #[cfg(not(feature = "audio"))]
+                            {
+                                runtime_state.show_notification(
+                                    "Choir requires --features audio".to_string(),
+                                );
                             }
                         }
                         ControlAction::None => {}

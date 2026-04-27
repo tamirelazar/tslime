@@ -266,6 +266,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('(') => ControlAction::CycleWindowFrameReverse,
         KeyCode::Char(')') => ControlAction::CycleWindowFrame,
         KeyCode::F(11) => ControlAction::ToggleFullscreen,
+        KeyCode::F(2) => ControlAction::ToggleChoir,
         _ => ControlAction::None,
     }
 }

@@ -331,6 +331,8 @@ pub enum ControlAction {
     CycleWindowFrameReverse,
     /// Toggle between windowed and fullscreen mode.
     ToggleFullscreen,
+    /// Toggle choir-mode audio sonification on/off.
+    ToggleChoir,
     /// No action.
     None,
 }
