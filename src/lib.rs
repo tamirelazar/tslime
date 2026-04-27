@@ -41,6 +41,9 @@
 /// Application entry point and high-level logic.
 #[cfg(feature = "terminal")]
 pub mod app;
+/// Choir-mode audio (Miranda/Adamatzky/Jones 2011 sonification).
+#[cfg(feature = "audio")]
+pub mod audio;
 /// Command-line argument parsing and configuration.
 pub mod cli;
 /// Configuration builder for creating SimConfig instances.

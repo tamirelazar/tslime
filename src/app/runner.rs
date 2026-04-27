@@ -402,6 +402,25 @@ pub fn run_simulation(
     };
     let mut blended_trail_buffer: Vec<f32> = Vec::new();
 
+    #[cfg(feature = "audio")]
+    let choir = if args.choir {
+        match crate::audio::Choir::try_new(args.choir_volume.clamp(0.0, 1.0)) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("Choir mode disabled: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    #[cfg(not(feature = "audio"))]
+    {
+        if args.choir {
+            eprintln!("--choir requires building with --features audio");
+        }
+    }
+
     loop {
         if is_shutdown_requested() {
             break;
@@ -514,6 +533,22 @@ pub fn run_simulation(
         } else {
             timer.start_sim();
             timer.end_sim_start_render();
+        }
+
+        #[cfg(feature = "audio")]
+        if let Some(ref c) = choir {
+            if runtime_state.is_paused {
+                c.silence_all();
+            } else {
+                let tm = sim.trail_map();
+                crate::audio::update_voices_from_trail(
+                    c,
+                    tm.current(),
+                    tm.width(),
+                    tm.height(),
+                    runtime_state.max_brightness.max(1.0),
+                );
+            }
         }
 
         // Extract basic sim data

@@ -1571,6 +1571,22 @@ pub struct Args {
     )]
     /// Generate shell completions.
     pub completions: Option<String>,
+
+    #[arg(
+        long = "choir",
+        help = "Enable choir-mode audio: sonify trail intensity at 8 fixed grid points (requires --features audio)"
+    )]
+    /// Enable choir-mode sonification.
+    pub choir: bool,
+
+    #[arg(
+        long = "choir-volume",
+        value_name = "0.0-1.0",
+        default_value = "0.5",
+        help = "Master volume for choir mode"
+    )]
+    /// Master volume for choir mode.
+    pub choir_volume: f32,
 }
 
 impl Args {
@@ -1979,6 +1995,8 @@ impl Default for Args {
             random: false,
             explain: false,
             completions: None,
+            choir: false,
+            choir_volume: 0.5,
             bg_color: None,
             pause_style: PauseStyle::Vignette,
             pause_logo: false,
