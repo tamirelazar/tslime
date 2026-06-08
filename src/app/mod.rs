@@ -59,6 +59,21 @@ pub fn extract_species_rgb_colors(config: &SimConfig) -> Vec<RgbColor> {
     config.species_configs.iter().map(|s| s.color).collect()
 }
 
+/// Pushes every renderer-layer cache from runtime state into the renderer.
+///
+/// This is the single source of truth for "what the renderer should reflect after a
+/// runtime-state change" (load / undo / redo / randomize / reset). Keeping it in one place
+/// prevents the per-handler drift that left charset and intensity-mapping unapplied on load.
+pub fn sync_renderer_caches(runtime_state: &RuntimeState, renderer: &mut TerminalRenderer) {
+    renderer.set_palette(runtime_state.current_palette(&ALL_PALETTES));
+    renderer.set_invert_palette(runtime_state.invert_palette);
+    renderer.set_reverse_palette(runtime_state.reverse_palette);
+    renderer.set_charset(runtime_state.current_charset());
+    renderer.set_intensity_mapping(Some(runtime_state.intensity_mapping.clone()));
+    renderer.set_window_frame(runtime_state.window_frame);
+    renderer.set_dither_mode(runtime_state.dither_mode);
+}
+
 /// Applies randomized configuration parameters to the simulation and runtime state.
 ///
 /// This updates the simulation configuration (sensors, movement, decay, etc.),
@@ -994,6 +1009,49 @@ pub fn export_webm_mode(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::cli::{ColorMode, PauseStyle};
+    use crate::render::palette::{IntensityMapping, Palette};
+    use crate::simulation::config::WindowFrame;
+    use crate::terminal::control::MouseInteractionMode;
+
+    #[test]
+    fn sync_renderer_caches_pushes_charset_and_window_frame() {
+        let mut rs = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            0,
+            0,
+            MouseInteractionMode::Disabled,
+            3.0,
+            IntensityMapping::linear(),
+            &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
+        );
+        let mut r = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            None,
+        );
+        let ascii_idx = ALL_CHARSETS
+            .iter()
+            .position(|c| *c == Charset::Ascii)
+            .unwrap();
+        rs.charset_index = ascii_idx;
+        rs.window_frame = WindowFrame::Negative;
+        sync_renderer_caches(&rs, &mut r);
+        assert_eq!(r.charset(), &rs.current_charset());
+        assert_eq!(r.window_frame(), rs.window_frame);
+    }
+
     const HELP_LINES_TOP: &str = "┌─ tslime controls ───────────────────────┐";
     const HELP_LINES_BOTTOM: &str = "└─────────────────────────────────────────┘";
     const HELP_LINES_CONTENT: [&str; 7] = [
