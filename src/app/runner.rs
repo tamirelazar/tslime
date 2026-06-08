@@ -1797,12 +1797,28 @@ pub fn run_simulation(
                             ));
                         }
                         ControlAction::AdjustMaxBrightness(delta) => {
-                            let at_bound = runtime_state.adjust_max_brightness(delta);
-                            if at_bound {
-                                runtime_state.show_notification(format!(
-                                    "Max brightness at {:.1}",
-                                    runtime_state.max_brightness
-                                ));
+                            if current_auto_normalize {
+                                // Auto-normalize drives the white-point from the
+                                // adaptive peak, so the manual control is inert.
+                                runtime_state.show_notification(
+                                    "Brightness is auto-normalized (press B to disable)"
+                                        .to_string(),
+                                );
+                            } else {
+                                let at_bound = runtime_state.adjust_max_brightness(delta);
+                                // Mirror the live value into the sim config so it is
+                                // captured on save (Ctrl+S reads sim.config()), matching
+                                // how every other adjustable parameter syncs.
+                                sim.with_config_mut(|c| {
+                                    c.max_brightness = runtime_state.max_brightness;
+                                });
+                                if at_bound {
+                                    let gain = crate::config_defaults::trail::brightness_gain(
+                                        runtime_state.max_brightness,
+                                    );
+                                    runtime_state
+                                        .show_notification(format!("Brightness at {gain:.1}×"));
+                                }
                             }
                         }
                         ControlAction::SaveFrameToPng => {

@@ -120,6 +120,38 @@ pub mod trail {
     pub const MIN_MAX_BRIGHTNESS: f32 = 1.0;
     /// Maximum max brightness.
     pub const MAX_MAX_BRIGHTNESS: f32 = 1000.0;
+
+    /// Converts a stored normalization white-point into a user-facing brightness
+    /// gain (a multiplier relative to the default white-point).
+    ///
+    /// The renderer normalizes trail values by dividing by the white-point, so a
+    /// *lower* white-point produces a *brighter* image. This inverts that
+    /// relationship for display and controls: `DEFAULT_MAX_BRIGHTNESS` maps to
+    /// `1.0×`, lower white-points map to `> 1.0×` (brighter), higher to `< 1.0×`
+    /// (dimmer).
+    ///
+    /// # Parameters
+    /// - `white_point`: stored value in [`MIN_MAX_BRIGHTNESS`], [`MAX_MAX_BRIGHTNESS`]
+    #[inline]
+    pub fn brightness_gain(white_point: f32) -> f32 {
+        DEFAULT_MAX_BRIGHTNESS / white_point.max(MIN_MAX_BRIGHTNESS)
+    }
+
+    /// Inverse of [`brightness_gain`]: converts a user-facing brightness gain
+    /// into the stored normalization white-point, clamped to the valid range.
+    ///
+    /// `1.0×` maps to [`DEFAULT_MAX_BRIGHTNESS`], higher gains map to lower
+    /// white-points (brighter), lower gains to higher white-points (dimmer).
+    /// Out-of-range gains clamp to [`MIN_MAX_BRIGHTNESS`], [`MAX_MAX_BRIGHTNESS`].
+    ///
+    /// # Parameters
+    /// - `gain`: brightness multiplier relative to the default (≈ 0.1×–100×)
+    #[inline]
+    pub fn white_point_from_gain(gain: f32) -> f32 {
+        // Guard against zero/negative gains before dividing.
+        let safe_gain = gain.max(f32::MIN_POSITIVE);
+        (DEFAULT_MAX_BRIGHTNESS / safe_gain).clamp(MIN_MAX_BRIGHTNESS, MAX_MAX_BRIGHTNESS)
+    }
 }
 
 /// Population constants.
@@ -611,6 +643,41 @@ mod tests {
         assert_eq!(agent::MAX_SENSOR_ANGLE, 90.0);
         assert_eq!(agent::MIN_STEP_SIZE, 0.01);
         assert_eq!(agent::MAX_STEP_SIZE, 10.0);
+    }
+
+    #[test]
+    fn test_brightness_gain_inverts_white_point() {
+        // Default white-point is the neutral 1.0x reference.
+        assert!((trail::brightness_gain(trail::DEFAULT_MAX_BRIGHTNESS) - 1.0).abs() < 1e-6);
+        // Lower white-point => brighter => gain above 1.0x.
+        assert!(trail::brightness_gain(trail::DEFAULT_MAX_BRIGHTNESS / 2.0) > 1.0);
+        // Higher white-point => dimmer => gain below 1.0x.
+        assert!(trail::brightness_gain(trail::DEFAULT_MAX_BRIGHTNESS * 2.0) < 1.0);
+        // Strictly monotonic decreasing in white-point.
+        assert!(trail::brightness_gain(50.0) > trail::brightness_gain(100.0));
+        assert!(trail::brightness_gain(100.0) > trail::brightness_gain(200.0));
+        // Never divides by zero, even below the clamp floor.
+        assert!(trail::brightness_gain(0.0).is_finite());
+    }
+
+    #[test]
+    fn test_white_point_from_gain_roundtrips() {
+        // Neutral gain maps to the default white-point.
+        assert!((trail::white_point_from_gain(1.0) - trail::DEFAULT_MAX_BRIGHTNESS).abs() < 1e-3);
+        // gain -> white-point -> gain round-trips within the valid range.
+        for wp in [5.0_f32, 20.0, 100.0, 400.0] {
+            let gain = trail::brightness_gain(wp);
+            assert!((trail::white_point_from_gain(gain) - wp).abs() < 1e-2);
+        }
+        // Higher gain => brighter => lower white-point.
+        assert!(trail::white_point_from_gain(2.0) < trail::white_point_from_gain(1.0));
+        // Out-of-range / zero / negative gains clamp instead of exploding.
+        assert_eq!(trail::white_point_from_gain(0.0), trail::MAX_MAX_BRIGHTNESS);
+        assert_eq!(
+            trail::white_point_from_gain(-5.0),
+            trail::MAX_MAX_BRIGHTNESS
+        );
+        assert_eq!(trail::white_point_from_gain(1e9), trail::MIN_MAX_BRIGHTNESS);
     }
 
     #[test]

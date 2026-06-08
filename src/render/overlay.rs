@@ -429,9 +429,15 @@ impl PresetComparisonOverlay {
         );
         builder = add_row(
             builder,
-            "Max Bright",
-            format!("{:.1}x", current.max_brightness),
-            format!("{:.1}x", defaults.max_brightness),
+            "Brightness",
+            format!(
+                "{:.1}x",
+                crate::config_defaults::trail::brightness_gain(current.max_brightness)
+            ),
+            format!(
+                "{:.1}x",
+                crate::config_defaults::trail::brightness_gain(defaults.max_brightness)
+            ),
             (current.max_brightness - defaults.max_brightness).abs() > 0.01,
         );
 

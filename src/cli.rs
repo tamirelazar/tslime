@@ -708,12 +708,13 @@ pub struct Args {
     pub deposit_amount: Option<f32>,
 
     #[arg(
-        long = "max-brightness",
-        value_name = "FLOAT",
-        help = concat!("Fixed maximum brightness for normalization (prevents flickering) [range: ", stringify!(trail::MIN_MAX_BRIGHTNESS), "-", stringify!(trail::MAX_MAX_BRIGHTNESS), "]")
+        long = "brightness",
+        value_name = "GAIN",
+        help = "Brightness gain; 1.0 = neutral, higher = brighter, lower = dimmer [range: 0.1-100]"
     )]
-    /// Maximum brightness for normalization.
-    pub max_brightness: Option<f32>,
+    /// Brightness gain (1.0 = neutral). Converted to an internal normalization
+    /// white-point; higher gains brighten, lower gains dim.
+    pub brightness: Option<f32>,
 
     #[arg(
         long = "diffusion-kernel",
@@ -1908,7 +1909,7 @@ impl Default for Args {
             step_size: Some(agent_consts::DEFAULT_STEP_SIZE),
             decay_factor: Some(trail_consts::DEFAULT_DECAY_FACTOR),
             deposit_amount: Some(agent_consts::DEFAULT_DEPOSIT_AMOUNT),
-            max_brightness: Some(trail_consts::DEFAULT_MAX_BRIGHTNESS),
+            brightness: Some(1.0),
             diffusion_kernel: None,
             diffusion_sigma: None,
             preset: Option::<Preset>::None,
