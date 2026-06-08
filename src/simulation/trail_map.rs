@@ -14,6 +14,8 @@ pub struct TrailMap {
     current: Vec<f32>,
     scratch: Vec<f32>,
     gaussian_kernel: [f32; 25],
+    /// The Gaussian sigma the current `gaussian_kernel` was generated from.
+    sigma: f32,
     trail_sum: f32,
     boundary_mode: super::config::BoundaryMode,
 }
@@ -54,6 +56,7 @@ impl TrailMap {
             current: vec![0.0; size],
             scratch: vec![0.0; size],
             gaussian_kernel,
+            sigma: 1.0,
             trail_sum: 0.0,
             boundary_mode: super::config::BoundaryMode::Bounce,
         }
@@ -69,6 +72,7 @@ impl TrailMap {
             current: vec![0.0; size],
             scratch: vec![0.0; size],
             gaussian_kernel,
+            sigma,
             trail_sum: 0.0,
             boundary_mode: super::config::BoundaryMode::Bounce,
         }
@@ -89,6 +93,7 @@ impl TrailMap {
             current: vec![0.0; size],
             scratch: vec![0.0; size],
             gaussian_kernel,
+            sigma,
             trail_sum: 0.0,
             boundary_mode,
         }
@@ -97,6 +102,13 @@ impl TrailMap {
     /// Update the Gaussian kernel sigma for diffusion.
     pub fn set_gaussian_sigma(&mut self, sigma: f32) {
         self.gaussian_kernel = generate_gaussian_kernel(sigma);
+        self.sigma = sigma;
+    }
+
+    /// Returns the Gaussian sigma the diffusion kernel is currently built from.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn gaussian_sigma(&self) -> f32 {
+        self.sigma
     }
 
     /// Get the width of the map.

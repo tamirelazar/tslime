@@ -5,7 +5,9 @@
 
 use std::io::{self, Write};
 
-use crate::app::{apply_random_config, extract_species_rgb_colors, REFERENCE_TIME_STEP};
+use crate::app::{
+    apply_live_params, apply_random_config, extract_species_rgb_colors, REFERENCE_TIME_STEP,
+};
 use crate::cli::{self, Args, ColorMode, Mode, Palette};
 use crate::config_defaults::warmup::{TRANSITION_DURATION_FRAMES, WARMUP_SPEED_MULTIPLIER};
 use crate::config_manager;
@@ -338,18 +340,11 @@ pub fn run_simulation(
     let mut hue_offset: f32 = 0.0;
 
     let mut current_auto_normalize = args.auto_normalize;
-    let mut _current_max_brightness = args.max_brightness.unwrap_or(100.0);
 
     // Apply initial randomization if requested
     if args.random {
         runtime_state.randomize_params();
-        apply_random_config(
-            &runtime_state,
-            sim,
-            &mut renderer,
-            &ALL_PALETTES,
-            &mut _current_max_brightness,
-        );
+        apply_random_config(&runtime_state, sim, &mut renderer, &ALL_PALETTES);
     }
 
     let start_time = std::time::Instant::now();
@@ -627,10 +622,10 @@ pub fn run_simulation(
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
         adaptive_brightness.update(downsampled_frame.cells());
-        let mut max_brightness = if args.auto_normalize {
+        let mut max_brightness = if current_auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
-            current_config.max_brightness
+            runtime_state.max_brightness
         };
 
         // Apply warmup brightness multiplier with smooth transition
@@ -1361,8 +1356,15 @@ pub fn run_simulation(
                                 continue;
                             }
                             KeyCode::Down => {
-                                // Will increment if there are configs available
-                                runtime_state.config_browser_selected_index += 1;
+                                // Bound the selection to the last config so it can't
+                                // overshoot the list (render-time clamp is kept as a
+                                // defensive guard).
+                                let last = config_manager::list_configs()
+                                    .map(|c| c.len().saturating_sub(1))
+                                    .unwrap_or(0);
+                                if runtime_state.config_browser_selected_index < last {
+                                    runtime_state.config_browser_selected_index += 1;
+                                }
                                 continue;
                             }
                             KeyCode::Enter => {
@@ -1373,15 +1375,13 @@ pub fn run_simulation(
                                     {
                                         match config.apply_to_runtime_state(&mut runtime_state) {
                                             Ok(_) => {
-                                                // Update renderer with new visual parameters
-                                                let new_palette =
-                                                    runtime_state.current_palette(&ALL_PALETTES);
-                                                renderer.set_palette(new_palette);
-                                                renderer.set_invert_palette(
-                                                    runtime_state.invert_palette,
-                                                );
-                                                renderer.set_reverse_palette(
-                                                    runtime_state.reverse_palette,
+                                                // Apply every live param (sim + renderer caches)
+                                                // through the shared path so charset, intensity
+                                                // mapping, sigma, brightness all take effect.
+                                                apply_live_params(
+                                                    &runtime_state,
+                                                    sim,
+                                                    &mut renderer,
                                                 );
 
                                                 runtime_state.show_notification(format!(
@@ -1624,9 +1624,7 @@ pub fn run_simulation(
                         }
                         ControlAction::AdjustSensorAngle(delta) => {
                             let at_bound = runtime_state.adjust_sensor_angle(delta);
-                            let mut new_config = sim.config().clone();
-                            new_config.sensor_angle = runtime_state.sensor_angle;
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| c.sensor_angle = runtime_state.sensor_angle);
                             if at_bound {
                                 runtime_state.show_notification(format!(
                                     "Sensor angle at {}°",
@@ -1636,9 +1634,9 @@ pub fn run_simulation(
                         }
                         ControlAction::AdjustSensorDistance(delta) => {
                             let at_bound = runtime_state.adjust_sensor_distance(delta);
-                            let mut new_config = sim.config().clone();
-                            new_config.sensor_distance = runtime_state.sensor_distance;
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| {
+                                c.sensor_distance = runtime_state.sensor_distance
+                            });
                             if at_bound {
                                 runtime_state.show_notification(format!(
                                     "Sensor distance at {:.1}",
@@ -1648,9 +1646,9 @@ pub fn run_simulation(
                         }
                         ControlAction::AdjustTurnAngle(delta) => {
                             let at_bound = runtime_state.adjust_rotation_angle(delta);
-                            let mut new_config = sim.config().clone();
-                            new_config.rotation_angle = runtime_state.rotation_angle;
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| {
+                                c.rotation_angle = runtime_state.rotation_angle
+                            });
                             if at_bound {
                                 runtime_state.show_notification(format!(
                                     "Turn angle at {}°",
@@ -1660,9 +1658,7 @@ pub fn run_simulation(
                         }
                         ControlAction::AdjustStepSize(delta) => {
                             let at_bound = runtime_state.adjust_step_size(delta);
-                            let mut new_config = sim.config().clone();
-                            new_config.step_size = runtime_state.step_size;
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| c.step_size = runtime_state.step_size);
                             if at_bound {
                                 runtime_state.show_notification(format!(
                                     "Step size at {:.1}",
@@ -1672,9 +1668,7 @@ pub fn run_simulation(
                         }
                         ControlAction::AdjustDecay(delta) => {
                             let at_bound = runtime_state.adjust_decay(delta);
-                            let mut new_config = sim.config().clone();
-                            new_config.decay_factor = runtime_state.decay_factor;
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| c.decay_factor = runtime_state.decay_factor);
                             if at_bound {
                                 runtime_state.show_notification(format!(
                                     "Decay factor at {:.3}",
@@ -1684,9 +1678,9 @@ pub fn run_simulation(
                         }
                         ControlAction::AdjustDeposit(delta) => {
                             let at_bound = runtime_state.adjust_deposit(delta);
-                            let mut new_config = sim.config().clone();
-                            new_config.deposit_amount = runtime_state.deposit_amount;
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| {
+                                c.deposit_amount = runtime_state.deposit_amount
+                            });
                             if at_bound {
                                 runtime_state.show_notification(format!(
                                     "Deposit amount at {:.1}",
@@ -1696,9 +1690,9 @@ pub fn run_simulation(
                         }
                         ControlAction::CycleDiffusionKernel => {
                             runtime_state.cycle_diffusion_kernel();
-                            let mut new_config = sim.config().clone();
-                            new_config.diffusion_kernel = runtime_state.diffusion_kernel;
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| {
+                                c.diffusion_kernel = runtime_state.diffusion_kernel
+                            });
                             runtime_state.show_notification(format!(
                                 "Diffusion kernel: {}",
                                 match runtime_state.diffusion_kernel {
@@ -1709,9 +1703,9 @@ pub fn run_simulation(
                         }
                         ControlAction::AdjustDiffusionSigma(delta) => {
                             let at_bound = runtime_state.adjust_diffusion_sigma(delta);
-                            let mut new_config = sim.config().clone();
-                            new_config.diffusion_sigma = runtime_state.diffusion_sigma;
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| {
+                                c.diffusion_sigma = runtime_state.diffusion_sigma
+                            });
                             if at_bound {
                                 runtime_state.show_notification(format!(
                                     "Diffusion sigma at {:.2}",
@@ -1721,9 +1715,9 @@ pub fn run_simulation(
                         }
                         ControlAction::AdjustAttractorStrength(delta) => {
                             let at_bound = runtime_state.adjust_attractor_strength(delta);
-                            let mut new_config = sim.config().clone();
-                            new_config.attractor_strength = runtime_state.attractor_strength;
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| {
+                                c.attractor_strength = runtime_state.attractor_strength
+                            });
                             if at_bound {
                                 runtime_state.show_notification(format!(
                                     "Attractor strength at {:.1}",
@@ -1744,9 +1738,9 @@ pub fn run_simulation(
                         }
                         ControlAction::CycleWindDirection => {
                             runtime_state.cycle_wind_direction();
-                            let mut new_config = sim.config().clone();
-                            new_config.wind = runtime_state.wind_direction.to_wind();
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| {
+                                c.wind = runtime_state.wind_direction.to_wind()
+                            });
                             runtime_state.show_notification(format!(
                                 "Wind: {}",
                                 runtime_state.wind_direction.name()
@@ -1754,9 +1748,9 @@ pub fn run_simulation(
                         }
                         ControlAction::CycleWindDirectionReverse => {
                             runtime_state.cycle_wind_direction_reverse();
-                            let mut new_config = sim.config().clone();
-                            new_config.wind = runtime_state.wind_direction.to_wind();
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| {
+                                c.wind = runtime_state.wind_direction.to_wind()
+                            });
                             runtime_state.show_notification(format!(
                                 "Wind: {}",
                                 runtime_state.wind_direction.name()
@@ -1764,9 +1758,9 @@ pub fn run_simulation(
                         }
                         ControlAction::AdjustTerrainStrength(delta) => {
                             let at_bound = runtime_state.adjust_terrain_strength(delta);
-                            let mut new_config = sim.config().clone();
-                            new_config.terrain_strength = runtime_state.terrain_strength;
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| {
+                                c.terrain_strength = runtime_state.terrain_strength
+                            });
                             if at_bound {
                                 runtime_state.show_notification(format!(
                                     "Terrain strength at {:.1}",
@@ -1776,9 +1770,7 @@ pub fn run_simulation(
                         }
                         ControlAction::CycleTerrainType => {
                             runtime_state.cycle_terrain_type();
-                            let mut new_config = sim.config().clone();
-                            new_config.terrain = runtime_state.terrain_type;
-                            sim.update_config(new_config);
+                            sim.with_config_mut(|c| c.terrain = runtime_state.terrain_type);
                             runtime_state.show_notification(format!(
                                 "Terrain: {}",
                                 match runtime_state.terrain_type {
@@ -1805,13 +1797,28 @@ pub fn run_simulation(
                             ));
                         }
                         ControlAction::AdjustMaxBrightness(delta) => {
-                            let at_bound = runtime_state.adjust_max_brightness(delta);
-                            _current_max_brightness = runtime_state.max_brightness;
-                            if at_bound {
-                                runtime_state.show_notification(format!(
-                                    "Max brightness at {:.1}",
-                                    runtime_state.max_brightness
-                                ));
+                            if current_auto_normalize {
+                                // Auto-normalize drives the white-point from the
+                                // adaptive peak, so the manual control is inert.
+                                runtime_state.show_notification(
+                                    "Brightness is auto-normalized (press B to disable)"
+                                        .to_string(),
+                                );
+                            } else {
+                                let at_bound = runtime_state.adjust_max_brightness(delta);
+                                // Mirror the live value into the sim config so it is
+                                // captured on save (Ctrl+S reads sim.config()), matching
+                                // how every other adjustable parameter syncs.
+                                sim.with_config_mut(|c| {
+                                    c.max_brightness = runtime_state.max_brightness;
+                                });
+                                if at_bound {
+                                    let gain = crate::config_defaults::trail::brightness_gain(
+                                        runtime_state.max_brightness,
+                                    );
+                                    runtime_state
+                                        .show_notification(format!("Brightness at {gain:.1}×"));
+                                }
                             }
                         }
                         ControlAction::SaveFrameToPng => {
@@ -1889,13 +1896,18 @@ pub fn run_simulation(
                         }
                         ControlAction::ResetToDefaults => {
                             runtime_state.reset_to_defaults();
-                            let new_config = SimConfig::from(runtime_state.current_preset);
-                            sim.update_config(new_config);
+                            // Rebuild the sim from the launch snapshot (initial run params,
+                            // including CLI flags), not the bare preset, then overlay the
+                            // restored runtime-state live fields and push renderer caches.
+                            let base = runtime_state
+                                .cli_overrides
+                                .clone()
+                                .unwrap_or_else(|| SimConfig::from(runtime_state.current_preset));
+                            sim.update_config(base);
+                            apply_live_params(&runtime_state, sim, &mut renderer);
                             timer.set_time_scale(runtime_state.time_scale);
-                            _current_max_brightness = runtime_state.max_brightness;
-                            renderer.set_invert_palette(runtime_state.invert_palette);
-                            renderer.set_reverse_palette(runtime_state.reverse_palette);
                             hue_offset = 0.0;
+                            current_auto_normalize = runtime_state.auto_normalize;
                             let notification = if runtime_state.cli_overrides.is_some() {
                                 "Reset to CLI parameters"
                             } else {
@@ -1926,38 +1938,13 @@ pub fn run_simulation(
                         }
                         ControlAction::RandomizeParams => {
                             runtime_state.randomize_params();
-                            apply_random_config(
-                                &runtime_state,
-                                sim,
-                                &mut renderer,
-                                &ALL_PALETTES,
-                                &mut _current_max_brightness,
-                            );
+                            apply_random_config(&runtime_state, sim, &mut renderer, &ALL_PALETTES);
 
                             runtime_state.show_notification("Parameters Randomized!".to_string());
                         }
                         ControlAction::Undo => {
                             if runtime_state.undo().is_some() {
-                                // Apply the undone state to simulation
-                                let mut new_config = sim.config().clone();
-                                new_config.sensor_angle = runtime_state.sensor_angle;
-                                new_config.rotation_angle = runtime_state.rotation_angle;
-                                new_config.step_size = runtime_state.step_size;
-                                new_config.decay_factor = runtime_state.decay_factor;
-                                new_config.deposit_amount = runtime_state.deposit_amount;
-                                new_config.diffusion_kernel = runtime_state.diffusion_kernel;
-                                new_config.diffusion_sigma = runtime_state.diffusion_sigma;
-                                new_config.max_brightness = runtime_state.max_brightness;
-                                new_config.terrain = runtime_state.terrain_type;
-                                new_config.terrain_strength = runtime_state.terrain_strength;
-                                sim.update_config(new_config);
-
-                                renderer.set_palette(runtime_state.current_palette(&ALL_PALETTES));
-                                renderer.set_invert_palette(runtime_state.invert_palette);
-                                renderer.set_reverse_palette(runtime_state.reverse_palette);
-                                renderer.set_dither_mode(runtime_state.dither_mode);
-                                renderer.set_window_frame(runtime_state.window_frame);
-
+                                apply_live_params(&runtime_state, sim, &mut renderer);
                                 runtime_state.show_notification("Undo successful".to_string());
                             } else {
                                 runtime_state.show_notification("Nothing to undo".to_string());
@@ -1965,26 +1952,7 @@ pub fn run_simulation(
                         }
                         ControlAction::Redo => {
                             if runtime_state.redo().is_some() {
-                                // Apply the redone state to simulation
-                                let mut new_config = sim.config().clone();
-                                new_config.sensor_angle = runtime_state.sensor_angle;
-                                new_config.rotation_angle = runtime_state.rotation_angle;
-                                new_config.step_size = runtime_state.step_size;
-                                new_config.decay_factor = runtime_state.decay_factor;
-                                new_config.deposit_amount = runtime_state.deposit_amount;
-                                new_config.diffusion_kernel = runtime_state.diffusion_kernel;
-                                new_config.diffusion_sigma = runtime_state.diffusion_sigma;
-                                new_config.max_brightness = runtime_state.max_brightness;
-                                new_config.terrain = runtime_state.terrain_type;
-                                new_config.terrain_strength = runtime_state.terrain_strength;
-                                sim.update_config(new_config);
-
-                                renderer.set_palette(runtime_state.current_palette(&ALL_PALETTES));
-                                renderer.set_invert_palette(runtime_state.invert_palette);
-                                renderer.set_reverse_palette(runtime_state.reverse_palette);
-                                renderer.set_dither_mode(runtime_state.dither_mode);
-                                renderer.set_window_frame(runtime_state.window_frame);
-
+                                apply_live_params(&runtime_state, sim, &mut renderer);
                                 runtime_state.show_notification("Redo successful".to_string());
                             } else {
                                 runtime_state.show_notification("Nothing to redo".to_string());

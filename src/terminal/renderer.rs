@@ -267,6 +267,21 @@ impl TerminalRenderer {
         self.charset = charset;
     }
 
+    /// Returns the active character set.
+    pub fn charset(&self) -> &Charset {
+        &self.charset
+    }
+
+    /// Returns the active intensity mapping, if any.
+    pub fn intensity_mapping(&self) -> Option<&IntensityMapping> {
+        self.intensity_mapping.as_ref()
+    }
+
+    /// Returns the active window frame style.
+    pub fn window_frame(&self) -> crate::simulation::config::WindowFrame {
+        self.window_frame
+    }
+
     /// Enable or disable palette inversion (light <-> dark).
     pub fn set_invert_palette(&mut self, invert: bool) {
         self.invert_palette = invert;
@@ -1320,6 +1335,27 @@ mod tests {
         renderer.set_dimensions(100, 40);
         assert_eq!(renderer.width, 100);
         assert_eq!(renderer.height, 40);
+    }
+
+    #[test]
+    fn setters_are_observable_via_getters() {
+        use crate::simulation::config::WindowFrame;
+        let mut r = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            None,
+        );
+        r.set_charset(Charset::Ascii);
+        assert_eq!(r.charset(), &Charset::Ascii);
+        r.set_window_frame(WindowFrame::Negative);
+        assert_eq!(r.window_frame(), WindowFrame::Negative);
+        r.set_intensity_mapping(None);
+        assert!(r.intensity_mapping().is_none());
     }
 
     #[test]

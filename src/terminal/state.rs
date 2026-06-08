@@ -573,6 +573,12 @@ pub struct RuntimeState {
     pub default_values: DefaultValues,
     /// CLI overrides for custom parameters (stored when launched with CLI args).
     pub cli_overrides: Option<SimConfig>,
+    /// Render-layer parameters captured at launch, restored by `reset_to_defaults`.
+    /// (`cli_overrides: SimConfig` covers sim-layer params; these cover the render layer.)
+    initial_palette_index: usize,
+    initial_charset_index: usize,
+    initial_intensity_mapping: IntensityMapping,
+    initial_window_frame: WindowFrame,
     /// Undo history stack.
     pub undo_stack: std::collections::VecDeque<ParameterState>,
     /// Redo history stack.
@@ -720,6 +726,10 @@ impl RuntimeState {
             config_save_name_input: String::new(),
             default_values,
             cli_overrides: Some(cli_config.clone()),
+            initial_palette_index,
+            initial_charset_index,
+            initial_intensity_mapping: intensity_mapping.clone(),
+            initial_window_frame: cli_config.window_frame,
             undo_stack: std::collections::VecDeque::with_capacity(50),
             redo_stack: std::collections::VecDeque::with_capacity(50),
             last_checkpoint_time: std::time::Instant::now(),
@@ -1497,6 +1507,12 @@ impl RuntimeState {
             self.terrain_strength = defaults.terrain_strength;
             self.max_brightness = defaults.max_brightness;
         }
+        // Restore render-layer params to their launch values.
+        self.palette_index = self.initial_palette_index;
+        self.charset_index = self.initial_charset_index;
+        self.intensity_mapping = self.initial_intensity_mapping.clone();
+        self.intensity_mapping_index = Self::find_intensity_mapping_index(&self.intensity_mapping);
+        self.window_frame = self.initial_window_frame;
         self.auto_normalize = false;
         self.motion_blur_frames = 0;
         self.fast_mode_enabled = false;
@@ -1658,6 +1674,20 @@ mod tests {
             false,
             false,
         )
+    }
+
+    #[test]
+    fn reset_to_defaults_restores_initial_charset_and_window_frame() {
+        use crate::simulation::config::WindowFrame;
+        let mut rs = create_test_runtime_state();
+        let initial_charset = rs.charset_index;
+        let initial_frame = rs.window_frame; // Frame, from SimConfig::default()
+                                             // Simulate runtime changes:
+        rs.charset_index = (rs.charset_index + 1) % ALL_CHARSETS.len();
+        rs.window_frame = WindowFrame::Negative; // differs from the Frame launch default
+        rs.reset_to_defaults();
+        assert_eq!(rs.charset_index, initial_charset);
+        assert_eq!(rs.window_frame, initial_frame);
     }
 
     #[test]

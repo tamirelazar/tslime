@@ -21,7 +21,7 @@ pub(crate) struct ConfigBuilder {
     step_size: Option<f32>,
     decay_factor: Option<f32>,
     deposit_amount: Option<f32>,
-    max_brightness: Option<f32>,
+    brightness: Option<f32>,
     diffusion_kernel: Option<DiffusionKernel>,
     diffusion_sigma: Option<f32>,
     time_scale: Option<f32>,
@@ -63,7 +63,7 @@ impl ConfigBuilder {
             step_size: args.step_size,
             decay_factor: args.decay_factor,
             deposit_amount: args.deposit_amount,
-            max_brightness: args.max_brightness,
+            brightness: args.brightness,
             diffusion_kernel: args.diffusion_kernel,
             diffusion_sigma: args.diffusion_sigma,
             time_scale: Some(args.time_scale),
@@ -134,8 +134,11 @@ impl ConfigBuilder {
         if let Some(v) = self.decay_factor {
             config.decay_factor = v;
         }
-        if let Some(v) = self.max_brightness {
-            config.max_brightness = v;
+        if let Some(gain) = self.brightness {
+            // CLI exposes a user-facing brightness gain; the engine stores a
+            // normalization white-point that it divides by. Convert here so the
+            // internal representation stays a white-point.
+            config.max_brightness = crate::config_defaults::trail::white_point_from_gain(gain);
         }
         if let Some(v) = self.deposit_amount {
             config.deposit_amount = v;

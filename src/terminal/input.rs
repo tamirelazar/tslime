@@ -244,10 +244,15 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('B') | KeyCode::Char('b') => ControlAction::ToggleAutoNormalize,
         KeyCode::Char('V') | KeyCode::Char('v') => ControlAction::CycleMotionBlur,
         KeyCode::Char('N') | KeyCode::Char('n') => {
+            // The control reads as brightness (up = brighter), but the engine
+            // stores a normalization white-point that it *divides* by, so a
+            // brighter image means a *lower* stored value. Un-shifted = brighter
+            // (negative delta), Shift = dimmer (positive delta), matching the
+            // increase/decrease convention of every other adjustable parameter.
             if key_event.modifiers.contains(KeyModifiers::SHIFT) {
-                ControlAction::AdjustMaxBrightness(-5.0)
-            } else {
                 ControlAction::AdjustMaxBrightness(5.0)
+            } else {
+                ControlAction::AdjustMaxBrightness(-5.0)
             }
         }
         KeyCode::Char('G') | KeyCode::Char('g') => ControlAction::SaveFrameToPng,
@@ -476,6 +481,42 @@ mod tests {
         assert_eq!(charset_name(&Charset::HalfBlock), "HalfBlock");
         assert_eq!(charset_name(&Charset::Ascii), "ASCII");
         assert_eq!(charset_name(&Charset::Braille), "Braille");
+    }
+
+    #[test]
+    fn test_brightness_keys_brighten_on_unshifted() {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        // Un-shifted 'n' must brighten. The engine divides by the stored
+        // white-point, so brighter = a *negative* delta (lower white-point).
+        let n = KeyEvent {
+            code: KeyCode::Char('n'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        match handle_key_event(&n) {
+            ControlAction::AdjustMaxBrightness(delta) => assert!(
+                delta < 0.0,
+                "un-shifted brightness key must lower the white-point (brighter), got {delta}"
+            ),
+            other => panic!("expected AdjustMaxBrightness, got {other:?}"),
+        }
+
+        // Shift+N must dim => positive delta (higher white-point).
+        let shift_n = KeyEvent {
+            code: KeyCode::Char('N'),
+            modifiers: KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        match handle_key_event(&shift_n) {
+            ControlAction::AdjustMaxBrightness(delta) => assert!(
+                delta > 0.0,
+                "shifted brightness key must raise the white-point (dimmer), got {delta}"
+            ),
+            other => panic!("expected AdjustMaxBrightness, got {other:?}"),
+        }
     }
 
     #[test]

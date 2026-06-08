@@ -471,9 +471,23 @@ impl ControlsOverlay {
                         param_row(
                             mod_marker(max_brightness, defaults.max_brightness, 0.01),
                             "N/n",
-                            "Max Bright",
-                            mini_bar((max_brightness - 1.0) / 99.0, 8),
-                            format!("{:.1}×", max_brightness),
+                            "Brightness",
+                            if auto_normalize {
+                                "────────".to_string()
+                            } else {
+                                // Brightness gain; default (1.0×) sits mid-bar so
+                                // it can read as brighter or dimmer either way.
+                                let gain =
+                                    crate::config_defaults::trail::brightness_gain(max_brightness);
+                                mini_bar((gain / 2.0).clamp(0.0, 1.0), 8)
+                            },
+                            if auto_normalize {
+                                "auto".to_string()
+                            } else {
+                                let gain =
+                                    crate::config_defaults::trail::brightness_gain(max_brightness);
+                                format!("{gain:.1}×")
+                            },
                         ),
                         Left,
                     )
@@ -1319,12 +1333,14 @@ fn test_options_overlay_shows_live_parameter_values() {
         false,
     );
 
+    // Brightness is shown as a gain relative to the default white-point, so the
+    // default value (100.0) renders as the neutral 1.0× rather than the raw value.
     assert!(
         postprocessing_overlay
             .lines
             .iter()
-            .any(|line| line.contains("100.0") || line.contains("100")),
-        "Should contain max brightness value. Got: {:?}",
+            .any(|line| line.contains("Brightness") && line.contains("1.0×")),
+        "Should contain brightness gain value. Got: {:?}",
         postprocessing_overlay.lines
     );
 
