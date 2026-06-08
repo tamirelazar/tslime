@@ -29,7 +29,7 @@ jobs:
         toolchain: ${{ matrix.rust }}
         components: rustfmt, clippy
 
-    - name: Install Linux GUI dependencies
+    - name: Install Linux dependencies (GUI + audio)
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update -qq
@@ -39,7 +39,8 @@ jobs:
           libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
           libvulkan-dev mesa-vulkan-drivers \
           libfontconfig1-dev libfreetype6-dev \
-          libegl1-mesa-dev
+          libegl1-mesa-dev \
+          libasound2-dev
 
     - name: Cache cargo registry
       uses: actions/cache@v4
