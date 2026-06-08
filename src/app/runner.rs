@@ -338,7 +338,6 @@ pub fn run_simulation(
     let mut hue_offset: f32 = 0.0;
 
     let mut current_auto_normalize = args.auto_normalize;
-    let mut _current_max_brightness = args.max_brightness.unwrap_or(100.0);
 
     // Apply initial randomization if requested
     if args.random {
@@ -621,10 +620,10 @@ pub fn run_simulation(
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
         adaptive_brightness.update(downsampled_frame.cells());
-        let mut max_brightness = if args.auto_normalize {
+        let mut max_brightness = if current_auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
-            current_config.max_brightness
+            runtime_state.max_brightness
         };
 
         // Apply warmup brightness multiplier with smooth transition
@@ -1800,7 +1799,6 @@ pub fn run_simulation(
                         }
                         ControlAction::AdjustMaxBrightness(delta) => {
                             let at_bound = runtime_state.adjust_max_brightness(delta);
-                            _current_max_brightness = runtime_state.max_brightness;
                             if at_bound {
                                 runtime_state.show_notification(format!(
                                     "Max brightness at {:.1}",
@@ -1886,7 +1884,6 @@ pub fn run_simulation(
                             let new_config = SimConfig::from(runtime_state.current_preset);
                             sim.update_config(new_config);
                             timer.set_time_scale(runtime_state.time_scale);
-                            _current_max_brightness = runtime_state.max_brightness;
                             renderer.set_invert_palette(runtime_state.invert_palette);
                             renderer.set_reverse_palette(runtime_state.reverse_palette);
                             hue_offset = 0.0;
