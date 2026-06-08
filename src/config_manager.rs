@@ -115,6 +115,7 @@ pub struct SavedConfig {
 
     // Window frame
     /// Window frame display mode.
+    #[serde(default)]
     pub window_frame: String,
 
     // Window mode chrome / layout
@@ -756,6 +757,47 @@ mod tests {
 
         assert_eq!(config.name, deserialized.name);
         assert_eq!(config.population, deserialized.population);
+    }
+
+    #[test]
+    fn test_deserialize_legacy_config_missing_window_fields() {
+        // Regression: presets.toml files written before window_frame and the
+        // window-mode chrome fields existed must still parse. Missing optional
+        // fields fall back to serde defaults rather than failing the whole load
+        // (which would break BOTH save and load, since save_config loads first).
+        let legacy = r#"
+[[preset]]
+name = "Mossy Roots"
+population = 50000
+sensor_angle = 22.5
+sensor_distance = 9.0
+rotation_angle = 45.0
+step_size = 1.0
+decay_factor = 0.5
+deposit_amount = 5.0
+max_brightness = 100.0
+diffusion_kernel = "gaussian"
+diffusion_sigma = 1.0
+palette = "moss"
+charset = "halfblock"
+reverse_palette = false
+invert_palette = false
+warmup_frames = 30
+food_persist = false
+auto_reset = false
+grid = true
+grid_style = "cross"
+init_mode = "food"
+food_path = "assets/tslime_logo.png"
+"#;
+
+        let parsed: ConfigFile =
+            toml::from_str(legacy).expect("legacy config without window_frame must parse");
+        assert_eq!(parsed.presets.len(), 1);
+        assert_eq!(parsed.presets[0].name, "Mossy Roots");
+        // window_frame defaults to empty; parse_window_frame falls back via unwrap_or_default.
+        assert_eq!(parsed.presets[0].window_frame, "");
+        assert_eq!(parsed.presets[0].chrome_style, "minimal");
     }
 
     #[test]
