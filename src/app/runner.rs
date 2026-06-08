@@ -5,7 +5,9 @@
 
 use std::io::{self, Write};
 
-use crate::app::{apply_random_config, extract_species_rgb_colors, REFERENCE_TIME_STEP};
+use crate::app::{
+    apply_live_params, apply_random_config, extract_species_rgb_colors, REFERENCE_TIME_STEP,
+};
 use crate::cli::{self, Args, ColorMode, Mode, Palette};
 use crate::config_defaults::warmup::{TRANSITION_DURATION_FRAMES, WARMUP_SPEED_MULTIPLIER};
 use crate::config_manager;
@@ -1366,15 +1368,13 @@ pub fn run_simulation(
                                     {
                                         match config.apply_to_runtime_state(&mut runtime_state) {
                                             Ok(_) => {
-                                                // Update renderer with new visual parameters
-                                                let new_palette =
-                                                    runtime_state.current_palette(&ALL_PALETTES);
-                                                renderer.set_palette(new_palette);
-                                                renderer.set_invert_palette(
-                                                    runtime_state.invert_palette,
-                                                );
-                                                renderer.set_reverse_palette(
-                                                    runtime_state.reverse_palette,
+                                                // Apply every live param (sim + renderer caches)
+                                                // through the shared path so charset, intensity
+                                                // mapping, sigma, brightness all take effect.
+                                                apply_live_params(
+                                                    &runtime_state,
+                                                    sim,
+                                                    &mut renderer,
                                                 );
 
                                                 runtime_state.show_notification(format!(
