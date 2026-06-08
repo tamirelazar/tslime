@@ -74,6 +74,36 @@ pub fn sync_renderer_caches(runtime_state: &RuntimeState, renderer: &mut Termina
     renderer.set_dither_mode(runtime_state.dither_mode);
 }
 
+/// Overlays every live (non-restart-required) parameter from runtime state onto the
+/// simulation config and renderer caches. Restart-required fields (population, grid size,
+/// init mode) are deliberately untouched — see issue #46.
+///
+/// This is the shared path for load / undo / redo / randomize. `update_config` regenerates
+/// existing trail-map kernels, so diffusion_sigma takes effect here without a separate call.
+pub fn apply_live_params(
+    runtime_state: &RuntimeState,
+    sim: &mut Simulation,
+    renderer: &mut TerminalRenderer,
+) {
+    let mut new_config = sim.config().clone();
+    new_config.sensor_angle = runtime_state.sensor_angle;
+    new_config.sensor_distance = runtime_state.sensor_distance;
+    new_config.rotation_angle = runtime_state.rotation_angle;
+    new_config.step_size = runtime_state.step_size;
+    new_config.decay_factor = runtime_state.decay_factor;
+    new_config.deposit_amount = runtime_state.deposit_amount;
+    new_config.diffusion_kernel = runtime_state.diffusion_kernel;
+    new_config.diffusion_sigma = runtime_state.diffusion_sigma;
+    new_config.max_brightness = runtime_state.max_brightness;
+    new_config.terrain = runtime_state.terrain_type;
+    new_config.terrain_strength = runtime_state.terrain_strength;
+    new_config.attractor_strength = runtime_state.attractor_strength;
+    new_config.wind = runtime_state.wind_direction.to_wind();
+    sim.update_config(new_config);
+
+    sync_renderer_caches(runtime_state, renderer);
+}
+
 /// Applies randomized configuration parameters to the simulation and runtime state.
 ///
 /// This updates the simulation configuration (sensors, movement, decay, etc.),
@@ -83,23 +113,15 @@ pub fn apply_random_config(
     sim: &mut Simulation,
     renderer: &mut TerminalRenderer,
     _palette_list: &[cli::Palette; cli::NUM_PALETTES],
-    current_max_brightness: &mut f32,
 ) {
     use rand::Rng;
     let mut rng = rand::thread_rng();
 
-    // Apply all new parameters to config
+    // Apply all live params (sim config + renderer caches) through the shared path.
+    apply_live_params(runtime_state, sim, renderer);
+
+    // Then layer randomization-only extras (attractors / obstacles) on top.
     let mut new_config = sim.config().clone();
-    new_config.sensor_angle = runtime_state.sensor_angle;
-    new_config.rotation_angle = runtime_state.rotation_angle;
-    new_config.step_size = runtime_state.step_size;
-    new_config.decay_factor = runtime_state.decay_factor;
-    new_config.deposit_amount = runtime_state.deposit_amount;
-    new_config.diffusion_kernel = runtime_state.diffusion_kernel;
-    new_config.wind = runtime_state.wind_direction.to_wind();
-    new_config.max_brightness = runtime_state.max_brightness;
-    new_config.terrain = runtime_state.terrain_type;
-    new_config.terrain_strength = runtime_state.terrain_strength;
 
     // Randomize attractors
     new_config.attractors.clear();
@@ -146,12 +168,6 @@ pub fn apply_random_config(
     let _ = new_config.load_obstacle_masks();
 
     sim.update_config(new_config);
-
-    // Update renderer with new palette
-    renderer.set_palette(runtime_state.current_palette(&ALL_PALETTES));
-
-    // Also update renderer brightness target
-    *current_max_brightness = runtime_state.max_brightness;
 }
 
 /// Generate shell completions and print to stdout
@@ -1050,6 +1066,41 @@ mod tests {
         sync_renderer_caches(&rs, &mut r);
         assert_eq!(r.charset(), &rs.current_charset());
         assert_eq!(r.window_frame(), rs.window_frame);
+    }
+
+    #[test]
+    fn apply_live_params_syncs_sim_config_and_sigma() {
+        let mut rs = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            0,
+            0,
+            MouseInteractionMode::Disabled,
+            3.0,
+            IntensityMapping::linear(),
+            &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
+        );
+        let mut sim = Simulation::new(400, 400, SimConfig::default(), 42, InitMode::Random, 0);
+        let mut r = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            None,
+        );
+        rs.sensor_angle = 37.5;
+        rs.diffusion_sigma = sim.trail_map().gaussian_sigma() + 2.0;
+        let expected_sigma = rs.diffusion_sigma;
+        apply_live_params(&rs, &mut sim, &mut r);
+        assert_eq!(sim.config().sensor_angle, 37.5);
+        assert_eq!(sim.trail_map().gaussian_sigma(), expected_sigma);
     }
 
     const HELP_LINES_TOP: &str = "┌─ tslime controls ───────────────────────┐";

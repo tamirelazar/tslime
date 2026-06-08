@@ -343,13 +343,7 @@ pub fn run_simulation(
     // Apply initial randomization if requested
     if args.random {
         runtime_state.randomize_params();
-        apply_random_config(
-            &runtime_state,
-            sim,
-            &mut renderer,
-            &ALL_PALETTES,
-            &mut _current_max_brightness,
-        );
+        apply_random_config(&runtime_state, sim, &mut renderer, &ALL_PALETTES);
     }
 
     let start_time = std::time::Instant::now();
@@ -1926,13 +1920,7 @@ pub fn run_simulation(
                         }
                         ControlAction::RandomizeParams => {
                             runtime_state.randomize_params();
-                            apply_random_config(
-                                &runtime_state,
-                                sim,
-                                &mut renderer,
-                                &ALL_PALETTES,
-                                &mut _current_max_brightness,
-                            );
+                            apply_random_config(&runtime_state, sim, &mut renderer, &ALL_PALETTES);
 
                             runtime_state.show_notification("Parameters Randomized!".to_string());
                         }
