@@ -132,11 +132,11 @@ mod tests {
         let pixels = vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255];
         exporter.add_frame_rgb(&pixels);
 
-        let output_path = "/tmp/tslime_test.gif";
-        let result = exporter.finish(output_path);
+        let output_path = std::env::temp_dir().join("tslime_test.gif");
+        let result = exporter.finish(output_path.to_str().unwrap());
         assert!(result.is_ok());
 
-        let _ = std::fs::remove_file(output_path);
+        let _ = std::fs::remove_file(&output_path);
     }
 
     #[test]
