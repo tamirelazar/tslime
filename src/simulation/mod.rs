@@ -1097,6 +1097,12 @@ impl Simulation {
     pub fn update_config(&mut self, config: SimConfig) {
         let old_separate_trails = self.config.separate_species_trails;
         self.config = config;
+        // Existing trail maps cache a precomputed Gaussian kernel; regenerate it so a
+        // changed diffusion_sigma actually takes effect (new maps below already bake it in).
+        let new_sigma = self.config.diffusion_sigma;
+        for trail_map in &mut self.trail_maps {
+            trail_map.set_gaussian_sigma(new_sigma);
+        }
         let num_trails = if self.config.separate_species_trails {
             self.config.species_configs.len()
         } else {
@@ -1236,6 +1242,17 @@ mod tests {
     use super::*;
     use crate::render::palette::RgbColor;
     use crate::simulation::config::SpeciesConfig;
+
+    #[test]
+    fn update_config_regenerates_existing_trailmap_kernels() {
+        let config = SimConfig::default();
+        let mut sim = Simulation::new(400, 400, config, 42, InitMode::Random, 0);
+        let original = sim.trail_map().gaussian_sigma();
+        let mut cfg = sim.config().clone();
+        cfg.diffusion_sigma = original + 1.5;
+        sim.update_config(cfg);
+        assert_eq!(sim.trail_map().gaussian_sigma(), original + 1.5);
+    }
 
     #[test]
     fn test_simulation_creation() {
