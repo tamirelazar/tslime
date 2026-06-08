@@ -18,9 +18,20 @@ fn main() -> io::Result<()> {
         let has_display = true;
 
         if !is_gui_child && no_tty && has_display {
+            // GUI backends (winit/iced) must run on the main thread, notably
+            // on macOS — do not move this onto a worker thread.
             return tslime::gui::run();
         }
     }
 
-    tslime::app::run()
+    // Windows gives the main thread only a 1 MiB stack (vs 8 MiB on
+    // Linux/macOS). clap building its command for the large Args struct, plus
+    // the simulation's deep call chains, overflows it at startup. Run the TUI
+    // app on a worker thread with a generous stack for cross-platform parity.
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(tslime::app::run)
+        .expect("failed to spawn tslime worker thread")
+        .join()
+        .expect("tslime worker thread panicked")
 }
