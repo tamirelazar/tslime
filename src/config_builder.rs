@@ -1,8 +1,8 @@
-//! Configuration builder for creating SimConfig instances.
+//! Internal helper for assembling [`SimConfig`] instances.
 //!
-//! This module provides a builder pattern for constructing SimConfig instances
-//! from various sources (CLI arguments, saved configs, presets) with consistent
-//! validation and default handling.
+//! This module normalizes parsed CLI [`Args`] into a [`SimConfig`], applying
+//! preset bases, per-field overrides, and species/terrain/window handling.
+//! It does not validate — validation lives in `SimConfig::try_from`.
 
 use crate::cli::{Args, AttractorArg, ObstacleArg, SpeciesArg, WindArg};
 use crate::config_defaults::population;
@@ -11,11 +11,8 @@ use crate::simulation::config::{
     SpeciesConfig, TerminalSizeThreshold, TerrainType, Wind, WindowFrame, WindowPadding,
 };
 
-/// Builder for constructing SimConfig instances with validation.
-///
-/// Provides a fluent API for setting configuration parameters with
-/// automatic validation against acceptable ranges.
-#[derive(Default)]
+/// Internal helper that normalizes parsed CLI [`Args`] into a [`SimConfig`]
+/// via [`ConfigBuilder::from_args`] + [`ConfigBuilder::assemble`].
 pub(crate) struct ConfigBuilder {
     preset: Option<Preset>,
     sensor_angle: Option<f32>,
@@ -55,16 +52,9 @@ pub(crate) struct ConfigBuilder {
     respawn_interval: Option<u32>,
 }
 
-// Fluent setters retained for ConfigBuilder's pub(crate) helper role (C2); exercised by tests.
-#[allow(dead_code)]
 impl ConfigBuilder {
-    /// Creates a new ConfigBuilder with default values.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Creates a ConfigBuilder from CLI arguments.
-    pub fn from_args(args: &Args) -> Self {
+    pub(crate) fn from_args(args: &Args) -> Self {
         Self {
             preset: args.preset,
             sensor_angle: args.sensor_angle,
@@ -111,204 +101,6 @@ impl ConfigBuilder {
             min_frame_size: args.min_frame_size,
             respawn_interval: args.respawn_interval,
         }
-    }
-
-    /// Sets the preset to use as a base configuration.
-    pub fn preset(mut self, preset: Preset) -> Self {
-        self.preset = Some(preset);
-        self
-    }
-
-    /// Sets the sensor angle.
-    pub fn sensor_angle(mut self, angle: f32) -> Self {
-        self.sensor_angle = Some(angle);
-        self
-    }
-
-    /// Sets the sensor distance.
-    pub fn sensor_distance(mut self, distance: f32) -> Self {
-        self.sensor_distance = Some(distance);
-        self
-    }
-
-    /// Sets the rotation angle.
-    pub fn rotation_angle(mut self, angle: f32) -> Self {
-        self.rotation_angle = Some(angle);
-        self
-    }
-
-    /// Sets the step size.
-    pub fn step_size(mut self, size: f32) -> Self {
-        self.step_size = Some(size);
-        self
-    }
-
-    /// Sets the decay factor.
-    pub fn decay_factor(mut self, factor: f32) -> Self {
-        self.decay_factor = Some(factor);
-        self
-    }
-
-    /// Sets the deposit amount.
-    pub fn deposit_amount(mut self, amount: f32) -> Self {
-        self.deposit_amount = Some(amount);
-        self
-    }
-
-    /// Sets the max brightness.
-    pub fn max_brightness(mut self, brightness: f32) -> Self {
-        self.max_brightness = Some(brightness);
-        self
-    }
-
-    /// Sets the diffusion kernel.
-    pub fn diffusion_kernel(mut self, kernel: DiffusionKernel) -> Self {
-        self.diffusion_kernel = Some(kernel);
-        self
-    }
-
-    /// Sets the diffusion sigma.
-    pub fn diffusion_sigma(mut self, sigma: f32) -> Self {
-        self.diffusion_sigma = Some(sigma);
-        self
-    }
-
-    /// Sets the time scale.
-    pub fn time_scale(mut self, scale: f32) -> Self {
-        self.time_scale = Some(scale);
-        self
-    }
-
-    /// Sets the population.
-    pub fn population(mut self, pop: usize) -> Self {
-        self.population = Some(pop);
-        self
-    }
-
-    /// Sets the food image path.
-    pub fn food_image_path(mut self, path: String) -> Self {
-        self.food_image_path = Some(path);
-        self
-    }
-
-    /// Sets whether to invert the food image.
-    pub fn food_image_invert(mut self, invert: bool) -> Self {
-        self.food_image_invert = Some(invert);
-        self
-    }
-
-    /// Sets the food image scale.
-    pub fn food_image_scale(mut self, scale: f32) -> Self {
-        self.food_image_scale = Some(scale);
-        self
-    }
-
-    /// Adds an attractor.
-    pub fn add_attractor(mut self, attractor: AttractorArg) -> Self {
-        self.attractors.push(attractor);
-        self
-    }
-
-    /// Sets the attractor strength.
-    pub fn attractor_strength(mut self, strength: f32) -> Self {
-        self.attractor_strength = Some(strength);
-        self
-    }
-
-    /// Adds an obstacle.
-    pub fn add_obstacle(mut self, obstacle: ObstacleArg) -> Self {
-        self.obstacles.push(obstacle);
-        self
-    }
-
-    /// Adds a species.
-    pub fn add_species(mut self, species: SpeciesArg) -> Self {
-        self.species.push(species);
-        self
-    }
-
-    /// Sets whether to use separate species trails.
-    pub fn separate_species_trails(mut self, separate: bool) -> Self {
-        self.separate_species_trails = separate;
-        self
-    }
-
-    /// Sets whether to use species colors.
-    pub fn species_colors(mut self, colors: bool) -> Self {
-        self.species_colors = colors;
-        self
-    }
-
-    /// Sets whether to use SIMD.
-    pub fn use_simd(mut self, use_simd: bool) -> Self {
-        self.use_simd = Some(use_simd);
-        self
-    }
-
-    /// Sets the wind.
-    pub fn wind(mut self, wind: WindArg) -> Self {
-        self.wind = Some(wind);
-        self
-    }
-
-    /// Sets the terrain type.
-    pub fn terrain(mut self, terrain: String) -> Self {
-        self.terrain = Some(terrain);
-        self
-    }
-
-    /// Sets the terrain strength.
-    pub fn terrain_strength(mut self, strength: f32) -> Self {
-        self.terrain_strength = Some(strength);
-        self
-    }
-
-    /// Sets the background color.
-    pub fn background_color(mut self, color: String) -> Self {
-        self.background_color = Some(color);
-        self
-    }
-
-    /// Sets the window frame mode.
-    pub fn window_frame(mut self, mode: WindowFrame) -> Self {
-        self.window_frame = Some(mode);
-        self
-    }
-
-    /// Sets the chrome display style.
-    pub fn chrome_style(mut self, s: ChromeStyle) -> Self {
-        self.chrome_style = Some(s);
-        self
-    }
-
-    /// Sets the visual aspect ratio.
-    pub fn aspect(mut self, a: Aspect) -> Self {
-        self.aspect = Some(a);
-        self
-    }
-
-    /// Sets the outer window padding.
-    pub fn window_padding(mut self, p: WindowPadding) -> Self {
-        self.window_padding = Some(p);
-        self
-    }
-
-    /// Sets whether the legacy status bar is shown.
-    pub fn show_status_bar(mut self, v: bool) -> Self {
-        self.show_status_bar = Some(v);
-        self
-    }
-
-    /// Sets the minimum simulation size before dropping padding.
-    pub fn min_sim_size(mut self, t: TerminalSizeThreshold) -> Self {
-        self.min_sim_size = Some(t);
-        self
-    }
-
-    /// Sets the minimum simulation size before dropping the frame.
-    pub fn min_frame_size(mut self, t: TerminalSizeThreshold) -> Self {
-        self.min_frame_size = Some(t);
-        self
     }
 
     /// Builds the SimConfig from the current configuration state.
@@ -510,34 +302,24 @@ impl ConfigBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_config_builder_default() {
-        let builder = ConfigBuilder::new();
-        assert!(builder.preset.is_none());
-        assert!(builder.sensor_angle.is_none());
-    }
-
-    #[test]
-    fn test_config_builder_with_preset() {
-        let builder = ConfigBuilder::new().preset(Preset::Organic);
-        assert_eq!(builder.preset, Some(Preset::Organic));
-    }
+    use crate::cli::Args;
+    use clap::Parser;
 
     #[test]
     fn test_config_builder_build_default() {
         use crate::config_defaults::agent;
-        let builder = ConfigBuilder::new();
-        let config = builder.assemble().expect("assemble should succeed");
+        let args = Args::parse_from(["tslime"]);
+        let config = ConfigBuilder::from_args(&args)
+            .assemble()
+            .expect("assemble should succeed");
         assert_eq!(config.sensor_angle, agent::DEFAULT_SENSOR_ANGLE);
         assert_eq!(config.total_population(), population::DEFAULT_POPULATION);
     }
 
     #[test]
     fn test_config_builder_build_with_overrides() {
-        let config = ConfigBuilder::new()
-            .sensor_angle(30.0)
-            .population(10000)
+        let args = Args::parse_from(["tslime", "--sensor-angle", "30", "--population", "10000"]);
+        let config = ConfigBuilder::from_args(&args)
             .assemble()
             .expect("assemble should succeed");
 
@@ -547,9 +329,8 @@ mod tests {
 
     #[test]
     fn test_config_builder_with_preset_override() {
-        let config = ConfigBuilder::new()
-            .preset(Preset::Organic)
-            .sensor_angle(15.0)
+        let args = Args::parse_from(["tslime", "--preset", "organic", "--sensor-angle", "15"]);
+        let config = ConfigBuilder::from_args(&args)
             .assemble()
             .expect("assemble should succeed");
 
