@@ -398,6 +398,12 @@ impl SavedConfig {
                 runtime_state.intensity_mapping_index = find_intensity_mapping_index(&m);
                 runtime_state.intensity_mapping = m;
             }
+        } else {
+            // No mapping recorded in the saved config — reset to the canonical default
+            // (logarithmic) so load fully restores state rather than inheriting the session's.
+            runtime_state.intensity_mapping = IntensityMapping::default();
+            runtime_state.intensity_mapping_index =
+                find_intensity_mapping_index(&runtime_state.intensity_mapping);
         }
 
         // Parameters that require simulation restart to take effect:
@@ -894,6 +900,65 @@ food_path = "assets/tslime_logo.png"
             .apply_to_runtime_state(&mut rs)
             .expect("apply_to_runtime_state must succeed");
         assert_eq!(rs.diffusion_sigma, 2.75);
+    }
+
+    #[test]
+    fn apply_to_runtime_state_resets_intensity_mapping_when_none() {
+        use crate::render::palette::IntensityMapping;
+        let mut rs = create_test_runtime_state();
+        // Put a non-default mapping into the session first (default is logarithmic).
+        rs.intensity_mapping = IntensityMapping::linear();
+        rs.intensity_mapping_index = find_intensity_mapping_index(&rs.intensity_mapping);
+
+        let config = SavedConfig {
+            name: "test_intensity_none".to_string(),
+            description: None,
+            population: 50000,
+            sensor_angle: 22.5,
+            sensor_distance: 9.0,
+            rotation_angle: 45.0,
+            step_size: 1.0,
+            decay_factor: 0.85,
+            deposit_amount: 5.0,
+            max_brightness: 20.0,
+            diffusion_kernel: "mean3x3".to_string(),
+            diffusion_sigma: 1.0,
+            palette: "heat".to_string(),
+            charset: "halfblock".to_string(),
+            reverse_palette: false,
+            invert_palette: false,
+            warmup_frames: 60,
+            food_persist: false,
+            auto_reset: false,
+            grid: false,
+            grid_style: None,
+            init_mode: "random".to_string(),
+            food_path: None,
+            background_color: None,
+            intensity_mapping: None,
+            intensity_mapping_base: None,
+            intensity_mapping_gamma: None,
+            intensity_mapping_levels: None,
+            window_frame: "frame".to_string(),
+            chrome_style: "minimal".to_string(),
+            aspect: "3:2".to_string(),
+            window_padding: "auto".to_string(),
+            show_status_bar: false,
+            min_sim_size: "20x10".to_string(),
+            min_frame_size: "12x6".to_string(),
+        };
+
+        config
+            .apply_to_runtime_state(&mut rs)
+            .expect("apply_to_runtime_state must succeed");
+
+        // Default is logarithmic(10.0); a saved config with no recorded mapping
+        // must reset the session to the canonical default, not inherit linear.
+        assert_eq!(rs.intensity_mapping, IntensityMapping::default());
+        assert_eq!(
+            rs.intensity_mapping_index,
+            find_intensity_mapping_index(&IntensityMapping::default())
+        );
     }
 
     #[test]
