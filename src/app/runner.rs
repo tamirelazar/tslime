@@ -1884,6 +1884,7 @@ pub fn run_simulation(
                             apply_live_params(&runtime_state, sim, &mut renderer);
                             timer.set_time_scale(runtime_state.time_scale);
                             hue_offset = 0.0;
+                            current_auto_normalize = runtime_state.auto_normalize;
                             let notification = if runtime_state.cli_overrides.is_some() {
                                 "Reset to CLI parameters"
                             } else {
