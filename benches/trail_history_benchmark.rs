@@ -5,7 +5,6 @@ pub struct TrailHistory {
     capacity: usize,
     current_index: usize,
     count: usize,
-    frame_size: usize,
     blended_buffer: Vec<f32>,
 }
 
@@ -21,7 +20,6 @@ impl TrailHistory {
             capacity,
             current_index: 0,
             count: 0,
-            frame_size,
             blended_buffer: vec![0.0f32; frame_size],
         }
     }
