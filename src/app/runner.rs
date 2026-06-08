@@ -1915,26 +1915,7 @@ pub fn run_simulation(
                         }
                         ControlAction::Undo => {
                             if runtime_state.undo().is_some() {
-                                // Apply the undone state to simulation
-                                sim.with_config_mut(|c| {
-                                    c.sensor_angle = runtime_state.sensor_angle;
-                                    c.rotation_angle = runtime_state.rotation_angle;
-                                    c.step_size = runtime_state.step_size;
-                                    c.decay_factor = runtime_state.decay_factor;
-                                    c.deposit_amount = runtime_state.deposit_amount;
-                                    c.diffusion_kernel = runtime_state.diffusion_kernel;
-                                    c.diffusion_sigma = runtime_state.diffusion_sigma;
-                                    c.max_brightness = runtime_state.max_brightness;
-                                    c.terrain = runtime_state.terrain_type;
-                                    c.terrain_strength = runtime_state.terrain_strength;
-                                });
-
-                                renderer.set_palette(runtime_state.current_palette(&ALL_PALETTES));
-                                renderer.set_invert_palette(runtime_state.invert_palette);
-                                renderer.set_reverse_palette(runtime_state.reverse_palette);
-                                renderer.set_dither_mode(runtime_state.dither_mode);
-                                renderer.set_window_frame(runtime_state.window_frame);
-
+                                apply_live_params(&runtime_state, sim, &mut renderer);
                                 runtime_state.show_notification("Undo successful".to_string());
                             } else {
                                 runtime_state.show_notification("Nothing to undo".to_string());
@@ -1942,26 +1923,7 @@ pub fn run_simulation(
                         }
                         ControlAction::Redo => {
                             if runtime_state.redo().is_some() {
-                                // Apply the redone state to simulation
-                                sim.with_config_mut(|c| {
-                                    c.sensor_angle = runtime_state.sensor_angle;
-                                    c.rotation_angle = runtime_state.rotation_angle;
-                                    c.step_size = runtime_state.step_size;
-                                    c.decay_factor = runtime_state.decay_factor;
-                                    c.deposit_amount = runtime_state.deposit_amount;
-                                    c.diffusion_kernel = runtime_state.diffusion_kernel;
-                                    c.diffusion_sigma = runtime_state.diffusion_sigma;
-                                    c.max_brightness = runtime_state.max_brightness;
-                                    c.terrain = runtime_state.terrain_type;
-                                    c.terrain_strength = runtime_state.terrain_strength;
-                                });
-
-                                renderer.set_palette(runtime_state.current_palette(&ALL_PALETTES));
-                                renderer.set_invert_palette(runtime_state.invert_palette);
-                                renderer.set_reverse_palette(runtime_state.reverse_palette);
-                                renderer.set_dither_mode(runtime_state.dither_mode);
-                                renderer.set_window_frame(runtime_state.window_frame);
-
+                                apply_live_params(&runtime_state, sim, &mut renderer);
                                 runtime_state.show_notification("Redo successful".to_string());
                             } else {
                                 runtime_state.show_notification("Nothing to redo".to_string());
