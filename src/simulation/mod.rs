@@ -1138,6 +1138,16 @@ impl Simulation {
         }
     }
 
+    /// Clone the current config, apply `f`, and push it back through `update_config`.
+    ///
+    /// Convenience for the single-field live adjustments in the input loop; routes through
+    /// `update_config` so trail-map kernels stay in sync (see diffusion_sigma propagation).
+    pub fn with_config_mut(&mut self, f: impl FnOnce(&mut SimConfig)) {
+        let mut config = self.config.clone();
+        f(&mut config);
+        self.update_config(config);
+    }
+
     /// Enable or disable trail age computation.
     pub fn set_compute_trail_age(&mut self, enabled: bool) {
         if enabled && self.trail_age.is_none() {
@@ -1252,6 +1262,14 @@ mod tests {
         cfg.diffusion_sigma = original + 1.5;
         sim.update_config(cfg);
         assert_eq!(sim.trail_map().gaussian_sigma(), original + 1.5);
+    }
+
+    #[test]
+    fn with_config_mut_applies_mutation() {
+        let config = SimConfig::default();
+        let mut sim = Simulation::new(400, 400, config, 42, InitMode::Random, 0);
+        sim.with_config_mut(|c| c.step_size = 3.25);
+        assert_eq!(sim.config().step_size, 3.25);
     }
 
     #[test]
