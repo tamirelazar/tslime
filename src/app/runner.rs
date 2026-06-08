@@ -1873,11 +1873,16 @@ pub fn run_simulation(
                         }
                         ControlAction::ResetToDefaults => {
                             runtime_state.reset_to_defaults();
-                            let new_config = SimConfig::from(runtime_state.current_preset);
-                            sim.update_config(new_config);
+                            // Rebuild the sim from the launch snapshot (initial run params,
+                            // including CLI flags), not the bare preset, then overlay the
+                            // restored runtime-state live fields and push renderer caches.
+                            let base = runtime_state
+                                .cli_overrides
+                                .clone()
+                                .unwrap_or_else(|| SimConfig::from(runtime_state.current_preset));
+                            sim.update_config(base);
+                            apply_live_params(&runtime_state, sim, &mut renderer);
                             timer.set_time_scale(runtime_state.time_scale);
-                            renderer.set_invert_palette(runtime_state.invert_palette);
-                            renderer.set_reverse_palette(runtime_state.reverse_palette);
                             hue_offset = 0.0;
                             let notification = if runtime_state.cli_overrides.is_some() {
                                 "Reset to CLI parameters"
