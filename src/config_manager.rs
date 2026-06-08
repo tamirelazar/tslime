@@ -331,6 +331,7 @@ impl SavedConfig {
 
         // Parse and apply diffusion kernel
         runtime_state.diffusion_kernel = parse_diffusion_kernel(&self.diffusion_kernel)?;
+        runtime_state.diffusion_sigma = self.diffusion_sigma;
 
         // Apply simulation parameters
         runtime_state.sensor_angle = self.sensor_angle;
@@ -845,6 +846,54 @@ food_path = "assets/tslime_logo.png"
         let sim_config = config.to_sim_config().unwrap();
         assert_eq!(sim_config.species_configs[0].count, 50000);
         assert_eq!(sim_config.diffusion_kernel, DiffusionKernel::Mean3x3);
+    }
+
+    #[test]
+    fn apply_to_runtime_state_sets_diffusion_sigma() {
+        let mut rs = create_test_runtime_state();
+
+        let config = SavedConfig {
+            name: "test_sigma".to_string(),
+            description: None,
+            population: 50000,
+            sensor_angle: 22.5,
+            sensor_distance: 9.0,
+            rotation_angle: 45.0,
+            step_size: 1.0,
+            decay_factor: 0.85,
+            deposit_amount: 5.0,
+            max_brightness: 20.0,
+            diffusion_kernel: "mean3x3".to_string(),
+            diffusion_sigma: 2.75,
+            palette: "heat".to_string(),
+            charset: "halfblock".to_string(),
+            reverse_palette: false,
+            invert_palette: false,
+            warmup_frames: 60,
+            food_persist: false,
+            auto_reset: false,
+            grid: false,
+            grid_style: None,
+            init_mode: "random".to_string(),
+            food_path: None,
+            background_color: None,
+            intensity_mapping: None,
+            intensity_mapping_base: None,
+            intensity_mapping_gamma: None,
+            intensity_mapping_levels: None,
+            window_frame: "frame".to_string(),
+            chrome_style: "minimal".to_string(),
+            aspect: "3:2".to_string(),
+            window_padding: "auto".to_string(),
+            show_status_bar: false,
+            min_sim_size: "20x10".to_string(),
+            min_frame_size: "12x6".to_string(),
+        };
+
+        config
+            .apply_to_runtime_state(&mut rs)
+            .expect("apply_to_runtime_state must succeed");
+        assert_eq!(rs.diffusion_sigma, 2.75);
     }
 
     #[test]
