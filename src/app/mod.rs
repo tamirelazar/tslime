@@ -349,7 +349,9 @@ pub fn run() -> io::Result<()> {
     args.validate()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
-    let config = args.to_sim_config().unwrap();
+    let config = args
+        .to_sim_config()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let palette = args
         .palette()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
@@ -430,7 +432,9 @@ pub fn print_mode(
         &mut downsampled,
     );
 
-    let config = args.to_sim_config().unwrap();
+    let config = args
+        .to_sim_config()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
     let mut adaptive_brightness =
@@ -565,7 +569,9 @@ pub fn capture_frames_mode(
         args.frame_count, args.frame_dir
     );
 
-    let config = args.to_sim_config().unwrap();
+    let config = args
+        .to_sim_config()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
     let mut adaptive_brightness =
@@ -750,7 +756,9 @@ pub fn export_gif_mode(
         output_path, width, height, args.export_frames, args.export_fps
     );
 
-    let config = args.to_sim_config().unwrap();
+    let config = args
+        .to_sim_config()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let charset = Charset::Ascii;
 
     let mut gif_exporter = GifExporter::new(width, height, output_path, args.export_fps)
@@ -877,7 +885,9 @@ pub fn export_webm_mode(
     );
     eprintln!("Note: Requires FFmpeg to be installed with libvpx-vp9 encoder");
 
-    let config = args.to_sim_config().unwrap();
+    let config = args
+        .to_sim_config()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
     let mut webm_exporter = WebmExporter::new(width, height, output_path, args.export_fps)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;

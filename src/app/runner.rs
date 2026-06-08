@@ -185,7 +185,9 @@ pub fn run_simulation(
 
     let color_mode = capabilities.auto_select_color_mode(args.color_mode().ok());
 
-    let config = args.to_sim_config().unwrap();
+    let config = args
+        .to_sim_config()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
 
     let init_mode = args
@@ -620,7 +622,9 @@ pub fn run_simulation(
             runtime_state.trail_age_reverse,
         );
 
-        let current_config = args.to_sim_config().unwrap();
+        let current_config = args
+            .to_sim_config()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
         adaptive_brightness.update(downsampled_frame.cells());
         let mut max_brightness = if args.auto_normalize {
