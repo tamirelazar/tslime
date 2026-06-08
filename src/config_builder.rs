@@ -524,31 +524,6 @@ mod tests {
         assert_eq!(builder.preset, Some(Preset::Organic));
     }
 
-    // TODO Task 5: delete — builder no longer exposes validate(); validation
-    // now runs once on the assembled SimConfig via Validatable.
-    // #[test]
-    // fn test_config_builder_validation_population() {
-    //     let builder = ConfigBuilder::new().population(500);
-    //     let result = builder.validate();
-    //     assert!(result.is_err());
-    //     assert!(matches!(
-    //         result.unwrap_err(),
-    //         ConfigError::InvalidPopulation { .. }
-    //     ));
-    // }
-
-    // TODO Task 5: delete — see above.
-    // #[test]
-    // fn test_config_builder_validation_sensor_angle() {
-    //     let builder = ConfigBuilder::new().sensor_angle(100.0);
-    //     let result = builder.validate();
-    //     assert!(result.is_err());
-    //     assert!(matches!(
-    //         result.unwrap_err(),
-    //         ConfigError::InvalidSensorAngle { .. }
-    //     ));
-    // }
-
     #[test]
     fn test_config_builder_build_default() {
         use crate::config_defaults::agent;
