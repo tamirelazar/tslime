@@ -225,6 +225,9 @@ jobs:
 
     - name: Check binary size
       run: |
+        # cargo bench leaves a bench-profile binary (no strip/LTO) in
+        # target/release; build the real release binary before measuring.
+        cargo build --release
         size target/release/tslime
         SIZE=$(stat -c%s target/release/tslime)
         MAX_SIZE=3000000
