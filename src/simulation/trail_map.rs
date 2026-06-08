@@ -1364,7 +1364,7 @@ mod tests {
         // Apply AVX Gaussian diffusion directly
         let kernel = trail_avx.gaussian_kernel;
         unsafe {
-            Self::diffuse_gaussian_avx_impl(
+            TrailMap::diffuse_gaussian_avx_impl(
                 &trail_avx.current,
                 &mut trail_avx.scratch,
                 width,
@@ -1375,7 +1375,7 @@ mod tests {
         trail_avx.swap_buffers();
 
         // Apply scalar Gaussian diffusion
-        Self::diffuse_gaussian_scalar_impl(
+        TrailMap::diffuse_gaussian_scalar_impl(
             &trail_scalar.current,
             &mut trail_scalar.scratch,
             width,

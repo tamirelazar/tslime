@@ -1,13 +1,32 @@
 use std::process::Command;
 
+/// Path to the compiled `tslime` binary, provided by Cargo for integration
+/// tests. Invoking it directly avoids nesting `cargo run` inside `cargo test`,
+/// which deadlocks on the build-directory lock (notably on Windows).
+fn tslime() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_tslime"))
+}
+
+/// Asserts the process exited successfully, surfacing the exit code and stderr
+/// in the failure message so CI logs show *why* it failed.
+fn assert_success(output: &std::process::Output, what: &str) {
+    assert!(
+        output.status.success(),
+        "{what} exited with {:?}\nstderr:\n{}\nstdout:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+}
+
 #[test]
 fn test_cli_help() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--help"])
+    let output = tslime()
+        .arg("--help")
         .output()
         .expect("failed to execute process");
 
-    assert!(output.status.success());
+    assert_success(&output, "--help");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("tslime"));
     assert!(stdout.to_lowercase().contains("usage"));
@@ -15,20 +34,20 @@ fn test_cli_help() {
 
 #[test]
 fn test_cli_explain() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--explain"])
+    let output = tslime()
+        .arg("--explain")
         .output()
         .expect("failed to execute process");
 
-    assert!(output.status.success());
+    assert_success(&output, "--explain");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("PARAMETER REFERENCE"));
 }
 
 #[test]
 fn test_cli_invalid_arg() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--invalid-argument"])
+    let output = tslime()
+        .arg("--invalid-argument")
         .output()
         .expect("failed to execute process");
 
@@ -37,12 +56,12 @@ fn test_cli_invalid_arg() {
 
 #[test]
 fn test_cli_print_mode() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--print", "--init", "random", "-s", "42"])
+    let output = tslime()
+        .args(["--print", "--init", "random", "-s", "42"])
         .output()
         .expect("failed to execute process");
 
-    assert!(output.status.success());
+    assert_success(&output, "--print");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.is_empty());
 }

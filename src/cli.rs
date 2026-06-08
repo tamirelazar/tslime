@@ -3,14 +3,12 @@ use std::str::FromStr;
 
 use clap::Parser;
 
-use crate::config_builder::ConfigBuilder;
 use crate::config_defaults::{
     agent as agent_consts, ascii, auto_reset, dither as dither_consts, dithering, environment,
     environment as env_consts, export, food, food as food_img_consts, food_persist, grid,
     intensity, intensity_mapping, palette, population, simulation, terminal, time,
     time as time_consts, trail as trail_consts, warmup,
 };
-use crate::error::ConfigError;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
@@ -1786,93 +1784,98 @@ impl Args {
 
     /// Converts CLI arguments to simulation configuration.
     ///
-    /// Uses ConfigBuilder for consistent construction and validation.
+    /// Delegates to `SimConfig::try_from(self)` (assemble + validate-once).
     /// Returns an error if validation fails.
-    pub fn to_sim_config(&self) -> Result<SimConfig, ConfigError> {
-        ConfigBuilder::from_args(self).build()
+    pub fn to_sim_config(&self) -> Result<SimConfig, crate::error::ValidationError> {
+        SimConfig::try_from(self)
     }
 
-    /// Validates CLI arguments using ConfigBuilder.
+    /// Validates arguments at the CLI boundary.
     ///
-    /// Returns an error message if any argument is invalid.
-    pub fn validate_with_builder(&self) -> Result<(), String> {
-        ConfigBuilder::from_args(self)
-            .validate()
-            .map_err(|e| e.to_string())
-    }
-
-    /// Validates arguments for correctness and safety bounds.
-    ///
-    /// Uses ConfigBuilder for simulation parameter validation, while keeping
-    /// CLI-specific validations (resolution, trail_history, etc.) inline.
+    /// Covers terminal/resolution/fps bounds and other CLI-specific options that
+    /// the post-merge `SimConfig` validator does not cover. Simulation parameter
+    /// validation happens separately via [`Args::to_sim_config`].
     #[allow(clippy::manual_range_contains)]
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), crate::error::ValidationError> {
+        use crate::error::ValidationError;
+
         // Resolution bounds - prevent excessive memory allocation
         if self.resolution.width < 10 || self.resolution.width > 2000 {
-            return Err(format!(
-                "resolution width must be between 10 and 2000, got {}",
-                self.resolution.width
+            return Err(ValidationError::out_of_range(
+                "resolution width",
+                10,
+                2000,
+                self.resolution.width,
             ));
         }
         if self.resolution.height < 10 || self.resolution.height > 2000 {
-            return Err(format!(
-                "resolution height must be between 10 and 2000, got {}",
-                self.resolution.height
+            return Err(ValidationError::out_of_range(
+                "resolution height",
+                10,
+                2000,
+                self.resolution.height,
             ));
         }
         // FPS bounds - prevent unreasonable values
         if self.fps < 1 || self.fps > 144 {
-            return Err(format!("fps must be between 1 and 144, got {}", self.fps));
+            return Err(ValidationError::out_of_range("fps", 1, 144, self.fps));
         }
 
-        // Use ConfigBuilder for simulation parameter validation
-        self.validate_with_builder()?;
-
-        // Validate terrain type (not validated by ConfigBuilder)
+        // Validate terrain type
         if self.terrain.parse::<TerrainType>().is_err() {
-            return Err(format!(
+            return Err(ValidationError::custom(format!(
                 "Invalid terrain type: {}. Must be one of: none, smooth, turbulent, mixed",
                 self.terrain
-            ));
+            )));
         }
 
         // CLI-specific validations
         if self.trail_history > 10 {
-            return Err(format!(
-                "trail_history must be between 0 and 10, got {}",
-                self.trail_history
+            return Err(ValidationError::out_of_range(
+                "trail_history",
+                0,
+                10,
+                self.trail_history,
             ));
         }
         if self.normalize_window < 1 || self.normalize_window > 100 {
-            return Err(format!(
-                "normalize_window must be between 1 and 100, got {}",
-                self.normalize_window
+            return Err(ValidationError::out_of_range(
+                "normalize_window",
+                1,
+                100,
+                self.normalize_window,
             ));
         }
         if self.dither_intensity < 0.0 || self.dither_intensity > 1.0 {
-            return Err(format!(
-                "dither_intensity must be between 0.0 and 1.0, got {}",
-                self.dither_intensity
+            return Err(ValidationError::out_of_range(
+                "dither_intensity",
+                0.0,
+                1.0,
+                self.dither_intensity,
             ));
         }
         if self.food_scale < 0.1 || self.food_scale > 5.0 {
-            return Err(format!(
-                "food_scale must be between 0.1 and 5.0, got {}",
-                self.food_scale
+            return Err(ValidationError::out_of_range(
+                "food_scale",
+                0.1,
+                5.0,
+                self.food_scale,
             ));
         }
         if self.mouse_attract && self.mouse_repel {
-            return Err(
-                "Cannot specify both --mouse-attract and --mouse-repel. Choose one mode.".into(),
-            );
+            return Err(ValidationError::custom(
+                "Cannot specify both --mouse-attract and --mouse-repel. Choose one mode.",
+            ));
         }
         if self.grid && self.grid_size == 0 {
-            return Err("grid_size must be greater than 0".into());
+            return Err(ValidationError::custom("grid_size must be greater than 0"));
         }
         if self.grid_opacity < 0.0 || self.grid_opacity > 1.0 {
-            return Err(format!(
-                "grid_opacity must be between 0.0 and 1.0, got {}",
-                self.grid_opacity
+            return Err(ValidationError::out_of_range(
+                "grid_opacity",
+                0.0,
+                1.0,
+                self.grid_opacity,
             ));
         }
         Ok(())
@@ -2201,11 +2204,15 @@ mod tests {
 
     #[test]
     fn test_validate_attractor_strength_too_low() {
+        // attractor_strength is validated post-merge via to_sim_config, not args.validate().
         let args = Args {
             attractor_strength: 0.05,
             ..Default::default()
         };
-        assert!(args.validate().is_err());
+        assert!(
+            args.to_sim_config().is_err(),
+            "attractor_strength 0.05 must be rejected"
+        );
     }
 
     #[test]
@@ -2214,7 +2221,7 @@ mod tests {
             attractor_strength: 5.0,
             ..Default::default()
         };
-        assert!(args.validate().is_ok());
+        assert!(args.to_sim_config().is_ok());
     }
 
     #[test]
@@ -2456,17 +2463,18 @@ mod tests {
 
     #[test]
     fn test_validate_terrain_strength() {
-        let args = Args {
-            terrain_strength: 0.05,
-            ..Default::default()
-        };
-        assert!(args.validate().is_err());
-
-        let args = Args {
-            terrain_strength: 10.0,
-            ..Default::default()
-        };
-        assert!(args.validate().is_err());
+        use clap::Parser;
+        // terrain_strength is validated post-merge via to_sim_config, not args.validate().
+        let args = Args::parse_from(["tslime", "--terrain-strength", "0.05"]);
+        assert!(
+            args.to_sim_config().is_err(),
+            "terrain_strength 0.05 must be rejected"
+        );
+        let args = Args::parse_from(["tslime", "--terrain-strength", "10.0"]);
+        assert!(
+            args.to_sim_config().is_err(),
+            "terrain_strength 10.0 must be rejected"
+        );
     }
 
     #[test]
@@ -2476,6 +2484,20 @@ mod tests {
             ..Default::default()
         };
         assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_args_validate_returns_validation_error() {
+        use clap::Parser;
+        // No standalone --width flag; resolution is `--resolution WxH`. 5 is below the
+        // minimum of 10, so this exercises the resolution-width bound.
+        let args = Args::parse_from(["tslime", "--resolution", "5x200"]);
+        let err = args.validate().unwrap_err();
+        // Pure range checks use the structured OutOfRange variant (C2 consolidation).
+        assert!(matches!(
+            err,
+            crate::error::ValidationError::OutOfRange { .. }
+        ));
     }
 
     #[test]

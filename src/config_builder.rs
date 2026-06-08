@@ -1,28 +1,19 @@
-#![allow(unused_imports)]
-
-//! Configuration builder for creating SimConfig instances.
+//! Internal helper for assembling [`SimConfig`] instances.
 //!
-//! This module provides a builder pattern for constructing SimConfig instances
-//! from various sources (CLI arguments, saved configs, presets) with consistent
-//! validation and default handling.
+//! This module normalizes parsed CLI [`Args`] into a [`SimConfig`], applying
+//! preset bases, per-field overrides, and species/terrain/window handling.
+//! It does not validate — validation lives in `SimConfig::try_from`.
 
 use crate::cli::{Args, AttractorArg, ObstacleArg, SpeciesArg, WindArg};
-use crate::config_defaults::{
-    agent as agent_consts, environment as env_consts, population, time, trail,
-    trail as trail_consts,
-};
-use crate::error::ConfigError;
+use crate::config_defaults::population;
 use crate::simulation::config::{
     Aspect, Attractor, BoundaryMode, ChromeStyle, DiffusionKernel, Preset, SimConfig,
     SpeciesConfig, TerminalSizeThreshold, TerrainType, Wind, WindowFrame, WindowPadding,
 };
 
-/// Builder for constructing SimConfig instances with validation.
-///
-/// Provides a fluent API for setting configuration parameters with
-/// automatic validation against acceptable ranges.
-#[derive(Default)]
-pub struct ConfigBuilder {
+/// Internal helper that normalizes parsed CLI [`Args`] into a [`SimConfig`]
+/// via [`ConfigBuilder::from_args`] + [`ConfigBuilder::assemble`].
+pub(crate) struct ConfigBuilder {
     preset: Option<Preset>,
     sensor_angle: Option<f32>,
     sensor_distance: Option<f32>,
@@ -62,13 +53,8 @@ pub struct ConfigBuilder {
 }
 
 impl ConfigBuilder {
-    /// Creates a new ConfigBuilder with default values.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Creates a ConfigBuilder from CLI arguments.
-    pub fn from_args(args: &Args) -> Self {
+    pub(crate) fn from_args(args: &Args) -> Self {
         Self {
             preset: args.preset,
             sensor_angle: args.sensor_angle,
@@ -117,368 +103,13 @@ impl ConfigBuilder {
         }
     }
 
-    /// Sets the preset to use as a base configuration.
-    pub fn preset(mut self, preset: Preset) -> Self {
-        self.preset = Some(preset);
-        self
-    }
-
-    /// Sets the sensor angle.
-    pub fn sensor_angle(mut self, angle: f32) -> Self {
-        self.sensor_angle = Some(angle);
-        self
-    }
-
-    /// Sets the sensor distance.
-    pub fn sensor_distance(mut self, distance: f32) -> Self {
-        self.sensor_distance = Some(distance);
-        self
-    }
-
-    /// Sets the rotation angle.
-    pub fn rotation_angle(mut self, angle: f32) -> Self {
-        self.rotation_angle = Some(angle);
-        self
-    }
-
-    /// Sets the step size.
-    pub fn step_size(mut self, size: f32) -> Self {
-        self.step_size = Some(size);
-        self
-    }
-
-    /// Sets the decay factor.
-    pub fn decay_factor(mut self, factor: f32) -> Self {
-        self.decay_factor = Some(factor);
-        self
-    }
-
-    /// Sets the deposit amount.
-    pub fn deposit_amount(mut self, amount: f32) -> Self {
-        self.deposit_amount = Some(amount);
-        self
-    }
-
-    /// Sets the max brightness.
-    pub fn max_brightness(mut self, brightness: f32) -> Self {
-        self.max_brightness = Some(brightness);
-        self
-    }
-
-    /// Sets the diffusion kernel.
-    pub fn diffusion_kernel(mut self, kernel: DiffusionKernel) -> Self {
-        self.diffusion_kernel = Some(kernel);
-        self
-    }
-
-    /// Sets the diffusion sigma.
-    pub fn diffusion_sigma(mut self, sigma: f32) -> Self {
-        self.diffusion_sigma = Some(sigma);
-        self
-    }
-
-    /// Sets the time scale.
-    pub fn time_scale(mut self, scale: f32) -> Self {
-        self.time_scale = Some(scale);
-        self
-    }
-
-    /// Sets the population.
-    pub fn population(mut self, pop: usize) -> Self {
-        self.population = Some(pop);
-        self
-    }
-
-    /// Sets the food image path.
-    pub fn food_image_path(mut self, path: String) -> Self {
-        self.food_image_path = Some(path);
-        self
-    }
-
-    /// Sets whether to invert the food image.
-    pub fn food_image_invert(mut self, invert: bool) -> Self {
-        self.food_image_invert = Some(invert);
-        self
-    }
-
-    /// Sets the food image scale.
-    pub fn food_image_scale(mut self, scale: f32) -> Self {
-        self.food_image_scale = Some(scale);
-        self
-    }
-
-    /// Adds an attractor.
-    pub fn add_attractor(mut self, attractor: AttractorArg) -> Self {
-        self.attractors.push(attractor);
-        self
-    }
-
-    /// Sets the attractor strength.
-    pub fn attractor_strength(mut self, strength: f32) -> Self {
-        self.attractor_strength = Some(strength);
-        self
-    }
-
-    /// Adds an obstacle.
-    pub fn add_obstacle(mut self, obstacle: ObstacleArg) -> Self {
-        self.obstacles.push(obstacle);
-        self
-    }
-
-    /// Adds a species.
-    pub fn add_species(mut self, species: SpeciesArg) -> Self {
-        self.species.push(species);
-        self
-    }
-
-    /// Sets whether to use separate species trails.
-    pub fn separate_species_trails(mut self, separate: bool) -> Self {
-        self.separate_species_trails = separate;
-        self
-    }
-
-    /// Sets whether to use species colors.
-    pub fn species_colors(mut self, colors: bool) -> Self {
-        self.species_colors = colors;
-        self
-    }
-
-    /// Sets whether to use SIMD.
-    pub fn use_simd(mut self, use_simd: bool) -> Self {
-        self.use_simd = Some(use_simd);
-        self
-    }
-
-    /// Sets the wind.
-    pub fn wind(mut self, wind: WindArg) -> Self {
-        self.wind = Some(wind);
-        self
-    }
-
-    /// Sets the terrain type.
-    pub fn terrain(mut self, terrain: String) -> Self {
-        self.terrain = Some(terrain);
-        self
-    }
-
-    /// Sets the terrain strength.
-    pub fn terrain_strength(mut self, strength: f32) -> Self {
-        self.terrain_strength = Some(strength);
-        self
-    }
-
-    /// Sets the background color.
-    pub fn background_color(mut self, color: String) -> Self {
-        self.background_color = Some(color);
-        self
-    }
-
-    /// Sets the window frame mode.
-    pub fn window_frame(mut self, mode: WindowFrame) -> Self {
-        self.window_frame = Some(mode);
-        self
-    }
-
-    /// Sets the chrome display style.
-    pub fn chrome_style(mut self, s: ChromeStyle) -> Self {
-        self.chrome_style = Some(s);
-        self
-    }
-
-    /// Sets the visual aspect ratio.
-    pub fn aspect(mut self, a: Aspect) -> Self {
-        self.aspect = Some(a);
-        self
-    }
-
-    /// Sets the outer window padding.
-    pub fn window_padding(mut self, p: WindowPadding) -> Self {
-        self.window_padding = Some(p);
-        self
-    }
-
-    /// Sets whether the legacy status bar is shown.
-    pub fn show_status_bar(mut self, v: bool) -> Self {
-        self.show_status_bar = Some(v);
-        self
-    }
-
-    /// Sets the minimum simulation size before dropping padding.
-    pub fn min_sim_size(mut self, t: TerminalSizeThreshold) -> Self {
-        self.min_sim_size = Some(t);
-        self
-    }
-
-    /// Sets the minimum simulation size before dropping the frame.
-    pub fn min_frame_size(mut self, t: TerminalSizeThreshold) -> Self {
-        self.min_frame_size = Some(t);
-        self
-    }
-
-    /// Validates the current configuration state.
-    ///
-    /// Returns Ok(()) if all parameters are within valid ranges.
-    pub fn validate(&self) -> Result<(), ConfigError> {
-        // Validate population
-        if let Some(pop) = self.population {
-            if !(population::MIN_POPULATION..=population::MAX_POPULATION).contains(&pop) {
-                return Err(ConfigError::InvalidPopulation {
-                    pop,
-                    min: population::MIN_POPULATION,
-                    max: population::MAX_POPULATION,
-                });
-            }
-        }
-
-        // Validate FPS
-        if let Some(fps) = self.fps {
-            if !(1..=144).contains(&fps) {
-                return Err(ConfigError::InvalidFps { fps });
-            }
-        }
-
-        // Validate sensor angle
-        if let Some(sa) = self.sensor_angle {
-            if !(agent_consts::MIN_SENSOR_ANGLE..=agent_consts::MAX_SENSOR_ANGLE).contains(&sa) {
-                return Err(ConfigError::InvalidSensorAngle {
-                    value: sa,
-                    min: agent_consts::MIN_SENSOR_ANGLE,
-                    max: agent_consts::MAX_SENSOR_ANGLE,
-                });
-            }
-        }
-
-        // Validate sensor distance
-        if let Some(sd) = self.sensor_distance {
-            if !(agent_consts::MIN_SENSOR_DISTANCE..=agent_consts::MAX_SENSOR_DISTANCE)
-                .contains(&sd)
-            {
-                return Err(ConfigError::InvalidSensorDistance {
-                    value: sd,
-                    min: agent_consts::MIN_SENSOR_DISTANCE,
-                    max: agent_consts::MAX_SENSOR_DISTANCE,
-                });
-            }
-        }
-
-        // Validate rotation angle
-        if let Some(ra) = self.rotation_angle {
-            if !(agent_consts::MIN_ROTATION_ANGLE..=agent_consts::MAX_ROTATION_ANGLE).contains(&ra)
-            {
-                return Err(ConfigError::InvalidRotationAngle {
-                    value: ra,
-                    min: agent_consts::MIN_ROTATION_ANGLE,
-                    max: agent_consts::MAX_ROTATION_ANGLE,
-                });
-            }
-        }
-
-        // Validate step size
-        if let Some(ss) = self.step_size {
-            if !(agent_consts::MIN_STEP_SIZE..=agent_consts::MAX_STEP_SIZE).contains(&ss) {
-                return Err(ConfigError::InvalidStepSize {
-                    value: ss,
-                    min: agent_consts::MIN_STEP_SIZE,
-                    max: agent_consts::MAX_STEP_SIZE,
-                });
-            }
-        }
-
-        // Validate decay factor
-        if let Some(df) = self.decay_factor {
-            if !(trail_consts::MIN_DECAY_FACTOR..=trail_consts::MAX_DECAY_FACTOR).contains(&df) {
-                return Err(ConfigError::InvalidDecayFactor {
-                    value: df,
-                    min: trail_consts::MIN_DECAY_FACTOR,
-                    max: trail_consts::MAX_DECAY_FACTOR,
-                });
-            }
-        }
-
-        // Validate deposit amount
-        if let Some(da) = self.deposit_amount {
-            if !(agent_consts::MIN_DEPOSIT_AMOUNT..=agent_consts::MAX_DEPOSIT_AMOUNT).contains(&da)
-            {
-                return Err(ConfigError::InvalidDepositAmount {
-                    value: da,
-                    min: agent_consts::MIN_DEPOSIT_AMOUNT,
-                    max: agent_consts::MAX_DEPOSIT_AMOUNT,
-                });
-            }
-        }
-
-        // Validate max brightness
-        if let Some(mb) = self.max_brightness {
-            if !(trail_consts::MIN_MAX_BRIGHTNESS..=trail_consts::MAX_MAX_BRIGHTNESS).contains(&mb)
-            {
-                return Err(ConfigError::InvalidMaxBrightness {
-                    value: mb,
-                    min: trail_consts::MIN_MAX_BRIGHTNESS,
-                    max: trail_consts::MAX_MAX_BRIGHTNESS,
-                });
-            }
-        }
-
-        // Validate diffusion sigma
-        if let Some(ds) = self.diffusion_sigma {
-            if !(trail_consts::MIN_DIFFUSION_SIGMA..=trail_consts::MAX_DIFFUSION_SIGMA)
-                .contains(&ds)
-            {
-                return Err(ConfigError::InvalidDiffusionSigma {
-                    value: ds,
-                    min: trail_consts::MIN_DIFFUSION_SIGMA,
-                    max: trail_consts::MAX_DIFFUSION_SIGMA,
-                });
-            }
-        }
-
-        // Validate time scale
-        if let Some(ts) = self.time_scale {
-            if !(time::MIN_TIME_SCALE..=time::MAX_TIME_SCALE).contains(&ts) {
-                return Err(ConfigError::InvalidTimeScale {
-                    value: ts,
-                    min: time::MIN_TIME_SCALE,
-                    max: time::MAX_TIME_SCALE,
-                });
-            }
-        }
-
-        // Validate attractor strength
-        if let Some(strength) = self.attractor_strength {
-            if !(env_consts::MIN_ATTRACTOR_STRENGTH..=env_consts::MAX_ATTRACTOR_STRENGTH)
-                .contains(&strength)
-            {
-                return Err(ConfigError::InvalidAttractorStrength {
-                    value: strength,
-                    min: env_consts::MIN_ATTRACTOR_STRENGTH,
-                    max: env_consts::MAX_ATTRACTOR_STRENGTH,
-                });
-            }
-        }
-
-        // Validate terrain strength
-        if let Some(ts) = self.terrain_strength {
-            if !(env_consts::MIN_TERRAIN_STRENGTH..=env_consts::MAX_TERRAIN_STRENGTH).contains(&ts)
-            {
-                return Err(ConfigError::InvalidTerrainStrength {
-                    value: ts,
-                    min: env_consts::MIN_TERRAIN_STRENGTH,
-                    max: env_consts::MAX_TERRAIN_STRENGTH,
-                });
-            }
-        }
-
-        Ok(())
-    }
-
     /// Builds the SimConfig from the current configuration state.
     ///
     /// This method applies all configured parameters to a base configuration
     /// (either from a preset or default), handling species configuration
     /// and special cases like high-FPS mode.
-    pub fn build(self) -> Result<SimConfig, ConfigError> {
-        // Validate first
-        self.validate()?;
+    pub(crate) fn assemble(self) -> Result<SimConfig, crate::error::ValidationError> {
+        // No validation here — caller validates the assembled config once.
 
         // Start with preset or default
         let mut config = if let Some(preset) = self.preset {
@@ -616,9 +247,11 @@ impl ConfigBuilder {
 
         // Terrain
         if let Some(terrain_str) = self.terrain {
-            config.terrain = terrain_str
-                .parse::<TerrainType>()
-                .map_err(|_| ConfigError::InvalidTerrainType(terrain_str))?;
+            config.terrain = terrain_str.parse::<TerrainType>().map_err(|_| {
+                crate::error::ValidationError::custom(format!(
+                    "invalid terrain type: {terrain_str}"
+                ))
+            })?;
         }
         if let Some(strength) = self.terrain_strength {
             config.terrain_strength = strength;
@@ -669,58 +302,26 @@ impl ConfigBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_config_builder_default() {
-        let builder = ConfigBuilder::new();
-        assert!(builder.preset.is_none());
-        assert!(builder.sensor_angle.is_none());
-    }
-
-    #[test]
-    fn test_config_builder_with_preset() {
-        let builder = ConfigBuilder::new().preset(Preset::Organic);
-        assert_eq!(builder.preset, Some(Preset::Organic));
-    }
-
-    #[test]
-    fn test_config_builder_validation_population() {
-        let builder = ConfigBuilder::new().population(500);
-        let result = builder.validate();
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            ConfigError::InvalidPopulation { .. }
-        ));
-    }
-
-    #[test]
-    fn test_config_builder_validation_sensor_angle() {
-        let builder = ConfigBuilder::new().sensor_angle(100.0);
-        let result = builder.validate();
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            ConfigError::InvalidSensorAngle { .. }
-        ));
-    }
+    use crate::cli::Args;
+    use clap::Parser;
 
     #[test]
     fn test_config_builder_build_default() {
         use crate::config_defaults::agent;
-        let builder = ConfigBuilder::new();
-        let config = builder.build().expect("build should succeed");
+        let args = Args::parse_from(["tslime"]);
+        let config = ConfigBuilder::from_args(&args)
+            .assemble()
+            .expect("assemble should succeed");
         assert_eq!(config.sensor_angle, agent::DEFAULT_SENSOR_ANGLE);
         assert_eq!(config.total_population(), population::DEFAULT_POPULATION);
     }
 
     #[test]
     fn test_config_builder_build_with_overrides() {
-        let config = ConfigBuilder::new()
-            .sensor_angle(30.0)
-            .population(10000)
-            .build()
-            .expect("build should succeed");
+        let args = Args::parse_from(["tslime", "--sensor-angle", "30", "--population", "10000"]);
+        let config = ConfigBuilder::from_args(&args)
+            .assemble()
+            .expect("assemble should succeed");
 
         assert_eq!(config.sensor_angle, 30.0);
         assert_eq!(config.total_population(), 10000);
@@ -728,11 +329,10 @@ mod tests {
 
     #[test]
     fn test_config_builder_with_preset_override() {
-        let config = ConfigBuilder::new()
-            .preset(Preset::Organic)
-            .sensor_angle(15.0)
-            .build()
-            .expect("build should succeed");
+        let args = Args::parse_from(["tslime", "--preset", "organic", "--sensor-angle", "15"]);
+        let config = ConfigBuilder::from_args(&args)
+            .assemble()
+            .expect("assemble should succeed");
 
         // Preset defines 22.5, but we overrode it with 15.0
         assert_eq!(config.sensor_angle, 15.0);

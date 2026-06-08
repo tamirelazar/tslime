@@ -206,9 +206,7 @@ impl FrameBuffer {
         max_trail_value: f32,
     ) -> bool {
         const EDGE_THRESHOLD: f32 = 0.05;
-        let height = if width > 0 {
-            downsampled.len() / width
-        } else {
+        let Some(height) = downsampled.len().checked_div(width) else {
             return true;
         };
 
