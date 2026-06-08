@@ -1286,6 +1286,10 @@ impl FrameBuffer {
         let mut output = String::new();
 
         if !plain_output {
+            // Begin Synchronized Update (DECSET 2026): tell the terminal to buffer
+            // this frame and repaint it atomically, preventing mid-write tearing.
+            // Terminals that don't support it ignore the sequence harmlessly.
+            output.push_str("\x1b[?2026h");
             output.push_str("\x1b[H");
         }
 
@@ -1358,6 +1362,11 @@ impl FrameBuffer {
                 || last_bg_rgb.is_some())
         {
             output.push_str("\x1b[0m");
+        }
+
+        if !plain_output {
+            // End Synchronized Update (DECRST 2026): flush the buffered frame.
+            output.push_str("\x1b[?2026l");
         }
 
         output
@@ -3027,7 +3036,9 @@ mod tests {
     fn test_build_frame_string_cursor_home() {
         let buffer = FrameBuffer::new(5, 3, ColorMode::Bits256, None);
         let frame_str = buffer.build_frame_string(false, ColorMode::Bits256);
-        assert!(frame_str.starts_with("\x1b[H"));
+        // Frame is wrapped in a synchronized-update region; cursor-home follows BSU.
+        assert!(frame_str.starts_with("\x1b[?2026h\x1b[H"));
+        assert!(frame_str.ends_with("\x1b[?2026l"));
     }
 
     #[test]
@@ -3052,7 +3063,8 @@ mod tests {
             bg_color_rgb: None,
         };
         let frame_str = buffer.build_frame_string(false, ColorMode::TrueColor);
-        assert!(frame_str.starts_with("\x1b[H"));
+        assert!(frame_str.starts_with("\x1b[?2026h\x1b[H"));
+        assert!(frame_str.ends_with("\x1b[?2026l"));
         assert!(frame_str.contains("\x1b[38;2;255;128;64m"));
     }
 
