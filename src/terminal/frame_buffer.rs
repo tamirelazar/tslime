@@ -1286,6 +1286,10 @@ impl FrameBuffer {
         let mut output = String::new();
 
         if !plain_output {
+            // Begin Synchronized Update (DECSET 2026): tell the terminal to buffer
+            // this frame and repaint it atomically, preventing mid-write tearing.
+            // Terminals that don't support it ignore the sequence harmlessly.
+            output.push_str("\x1b[?2026h");
             output.push_str("\x1b[H");
         }
 
@@ -1295,12 +1299,20 @@ impl FrameBuffer {
         let mut last_bg_rgb: Option<RgbColor> = None;
 
         for y in 0..self.height {
+            if !plain_output {
+                // Move to the start of this row once. Cells are emitted left-to-right
+                // and every glyph is single-width, so the cursor advances naturally as
+                // we print — a per-cell absolute `\x1b[y;xH` move (the old code) added
+                // ~7-10 bytes to every cell, bloating the frame ~7x. Smaller frames
+                // mean less terminal write back-pressure, which keeps FPS (and thus the
+                // fixed-step sim speed) stable while a key is held.
+                output.push_str(&format!("\x1b[{};1H", y + 1));
+            }
+
             for x in 0..self.width {
                 let cell = self.cells[y * self.width + x];
 
                 if !plain_output {
-                    output.push_str(&format!("\x1b[{};{}H", y + 1, x + 1));
-
                     match color_mode {
                         ColorMode::TrueColor => {
                             if let Some(fg) = cell.fg_color_rgb {
@@ -1358,6 +1370,11 @@ impl FrameBuffer {
                 || last_bg_rgb.is_some())
         {
             output.push_str("\x1b[0m");
+        }
+
+        if !plain_output {
+            // End Synchronized Update (DECRST 2026): flush the buffered frame.
+            output.push_str("\x1b[?2026l");
         }
 
         output
@@ -3027,7 +3044,35 @@ mod tests {
     fn test_build_frame_string_cursor_home() {
         let buffer = FrameBuffer::new(5, 3, ColorMode::Bits256, None);
         let frame_str = buffer.build_frame_string(false, ColorMode::Bits256);
-        assert!(frame_str.starts_with("\x1b[H"));
+        // Frame is wrapped in a synchronized-update region; cursor-home follows BSU.
+        assert!(frame_str.starts_with("\x1b[?2026h\x1b[H"));
+        assert!(frame_str.ends_with("\x1b[?2026l"));
+    }
+
+    #[test]
+    fn test_build_frame_string_emits_one_cursor_move_per_row() {
+        // Regression: the renderer used to emit an absolute `\x1b[y;xH` move for
+        // every cell, bloating the frame ~7x and inducing terminal write
+        // back-pressure that slowed the fixed-step sim while a key was held.
+        // Cursor moves should now appear only at the start of each row (column 1),
+        // never mid-row (e.g. column 2+).
+        let buffer = FrameBuffer::new(5, 3, ColorMode::Bits256, None);
+        let frame_str = buffer.build_frame_string(false, ColorMode::Bits256);
+
+        // No per-cell move into an inner column.
+        assert!(!frame_str.contains("\x1b[1;2H"));
+        assert!(!frame_str.contains("\x1b[2;3H"));
+        // One explicit move per row, to column 1.
+        for y in 1..=3 {
+            assert!(frame_str.contains(&format!("\x1b[{};1H", y)));
+        }
+        // Total cursor-position sequences (the leading `\x1b[H` home + one per
+        // row) stay proportional to height, not width*height.
+        let moves = frame_str.matches('H').count();
+        assert!(
+            moves <= 3 + 1,
+            "expected <= height+1 cursor moves, got {moves}"
+        );
     }
 
     #[test]
@@ -3052,7 +3097,8 @@ mod tests {
             bg_color_rgb: None,
         };
         let frame_str = buffer.build_frame_string(false, ColorMode::TrueColor);
-        assert!(frame_str.starts_with("\x1b[H"));
+        assert!(frame_str.starts_with("\x1b[?2026h\x1b[H"));
+        assert!(frame_str.ends_with("\x1b[?2026l"));
         assert!(frame_str.contains("\x1b[38;2;255;128;64m"));
     }
 

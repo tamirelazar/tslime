@@ -475,10 +475,18 @@ pub fn run_simulation(
             continue;
         }
 
+        // Wall-clock delta: used for FPS stats and UI (chrome fade), which should
+        // track real time. NOT used to step the simulation — see sim_dt below.
         let dt = timer.delta_time();
 
-        // Clamp dt to avoid simulation instability during lag spikes (max 0.1s / 10 FPS)
+        // Clamp dt to avoid UI animation jumps during lag spikes (max 0.1s / 10 FPS)
         let dt = dt.min(0.1);
+
+        // Fixed simulation timestep, decoupled from frame-write jitter. A blocked
+        // write (e.g. terminal back-pressure while holding a key) inflates wall `dt`
+        // and previously made the sim lurch forward one big step, which read as
+        // flicker. Stepping by a fixed amount keeps motion smooth regardless of I/O.
+        let sim_dt = timer.fixed_delta();
 
         // Advance chrome fade-out animation each frame (500ms collapse animation).
         // Chrome is UI, not simulation — animate at wall-clock speed regardless of time scale.
@@ -515,7 +523,7 @@ pub fn run_simulation(
             // This prevents any floating point drift that could cause simulation instability
             let speed_multiplier = speed_multiplier.clamp(WARMUP_SPEED_MULTIPLIER, 1.0);
 
-            let adjusted_dt = dt * speed_multiplier;
+            let adjusted_dt = sim_dt * speed_multiplier;
             sim.update(adjusted_dt / REFERENCE_TIME_STEP);
 
             // Harden warmup logic: Explicitly cap the counter to avoid runaway increment

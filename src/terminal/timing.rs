@@ -261,6 +261,23 @@ impl FrameTimer {
         elapsed.as_secs_f32() * self.time_scale
     }
 
+    /// Fixed simulation timestep for the current frame, scaled by time_scale.
+    ///
+    /// Unlike [`delta_time`](Self::delta_time), this is derived from the target
+    /// frame interval (`1 / target_fps`) rather than measured wall-clock elapsed.
+    /// Feeding the simulation a fixed step decouples it from frame-write jitter:
+    /// when a blocked `write` inflates a frame's wall time, the sim still advances
+    /// by a constant amount instead of lurching forward, which is what was causing
+    /// flicker under terminal back-pressure (e.g. while holding a key).
+    ///
+    /// Trade-off: under sustained real slowdown (actual FPS below target) the sim
+    /// runs slightly slow-motion rather than catching up — preferable to lurching
+    /// for a screensaver, and consistent with the existing `dt.clamp(0.1)` policy.
+    pub fn fixed_delta(&self) -> f32 {
+        let target_fps = self.target_fps.max(1) as f32;
+        (1.0 / target_fps) * self.time_scale
+    }
+
     /// Set the simulation time scale.
     pub fn set_time_scale(&mut self, time_scale: f32) {
         self.time_scale = time_scale;
@@ -339,6 +356,30 @@ mod tests {
         let timer = FrameTimer::new(30, 0.033);
         std::thread::sleep(Duration::from_millis(10));
         assert!(timer.elapsed() >= Duration::from_millis(10));
+    }
+
+    #[test]
+    fn test_fixed_delta_is_target_interval() {
+        // 30 FPS, time_scale 1.0 → fixed step of 1/30s, independent of wall time.
+        let timer = FrameTimer::with_time_scale(30, 0.033, 1.0);
+        assert!((timer.fixed_delta() - 1.0 / 30.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_fixed_delta_scales_with_time_scale_and_fps() {
+        // time_scale doubles the step; higher target_fps shrinks it.
+        let timer = FrameTimer::with_time_scale(60, 0.016, 2.0);
+        assert!((timer.fixed_delta() - 2.0 / 60.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_fixed_delta_is_deterministic_regardless_of_wall_time() {
+        // Unlike delta_time(), fixed_delta() must not change with elapsed wall time.
+        let timer = FrameTimer::with_time_scale(30, 0.033, 1.0);
+        let a = timer.fixed_delta();
+        std::thread::sleep(Duration::from_millis(20));
+        let b = timer.fixed_delta();
+        assert_eq!(a, b);
     }
 
     #[test]
