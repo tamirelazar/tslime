@@ -7,6 +7,18 @@ fn tslime() -> Command {
     Command::new(env!("CARGO_BIN_EXE_tslime"))
 }
 
+/// Asserts the process exited successfully, surfacing the exit code and stderr
+/// in the failure message so CI logs show *why* it failed.
+fn assert_success(output: &std::process::Output, what: &str) {
+    assert!(
+        output.status.success(),
+        "{what} exited with {:?}\nstderr:\n{}\nstdout:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
+}
+
 #[test]
 fn test_cli_help() {
     let output = tslime()
@@ -14,7 +26,7 @@ fn test_cli_help() {
         .output()
         .expect("failed to execute process");
 
-    assert!(output.status.success());
+    assert_success(&output, "--help");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("tslime"));
     assert!(stdout.to_lowercase().contains("usage"));
@@ -27,7 +39,7 @@ fn test_cli_explain() {
         .output()
         .expect("failed to execute process");
 
-    assert!(output.status.success());
+    assert_success(&output, "--explain");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("PARAMETER REFERENCE"));
 }
@@ -49,7 +61,7 @@ fn test_cli_print_mode() {
         .output()
         .expect("failed to execute process");
 
-    assert!(output.status.success());
+    assert_success(&output, "--print");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.is_empty());
 }
