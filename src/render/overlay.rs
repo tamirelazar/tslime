@@ -457,6 +457,30 @@ impl ConfigBrowserOverlay {
     pub const WIDTH: usize = 56;
     /// Content width (inner drawable area).
     const CONTENT_WIDTH: usize = 50; // 56 - 2(border) - 2*2(padding)
+    /// Maximum number of config rows shown at once (preserves panel height).
+    const MAX_VISIBLE_CONFIGS: usize = 9;
+
+    /// Computes the index of the first visible config so the selection stays in view.
+    ///
+    /// Returns the window start that keeps `selected` visible, anchored at the
+    /// bottom of the `[start, start + max_visible)` window. Because the selection
+    /// is always pinned to the bottom of the window, navigating upward jumps the
+    /// window so `selected` sits on the last visible row rather than the nearest
+    /// edge. The result is clamped so the window never runs past the end of the list.
+    ///
+    /// # Parameters
+    /// - `selected`: currently highlighted index (clamped to `total - 1`)
+    /// - `total`: number of configs available
+    /// - `max_visible`: number of rows the panel can display at once
+    fn config_browser_window(selected: usize, total: usize, max_visible: usize) -> usize {
+        if total <= max_visible || max_visible == 0 {
+            return 0;
+        }
+        selected
+            .min(total - 1)
+            .saturating_sub(max_visible - 1)
+            .min(total - max_visible)
+    }
 
     /// Builds the configuration list overlay.
     pub fn build_overlay(
@@ -478,8 +502,25 @@ impl ConfigBrowserOverlay {
                 .add_single("Press Ctrl+S to save current settings", Left)
                 .add_empty();
         } else {
-            builder = builder.add_empty();
-            for (i, config) in configs.iter().enumerate().take(9) {
+            let total = configs.len();
+            let start =
+                Self::config_browser_window(selected_index, total, Self::MAX_VISIBLE_CONFIGS);
+            let end = (start + Self::MAX_VISIBLE_CONFIGS).min(total);
+
+            // "Above" scroll indicator replaces the leading empty line when scrolled.
+            if start > 0 {
+                builder = builder.add_single(format!("▲ {} above", start), Left);
+            } else {
+                builder = builder.add_empty();
+            }
+
+            // Enumerate before skip so `i` stays the absolute index for marker logic.
+            for (i, config) in configs
+                .iter()
+                .enumerate()
+                .skip(start)
+                .take(Self::MAX_VISIBLE_CONFIGS)
+            {
                 let num = i + 1;
                 let selected_marker = if i == selected_index { "›" } else { " " };
                 let name = &config.name;
@@ -492,8 +533,13 @@ impl ConfigBrowserOverlay {
                 builder = builder.add_single(line, Left);
             }
 
-            if configs.len() > 9 {
-                builder = builder.add_single(format!("... and {} more", configs.len() - 9), Left);
+            // "Below" scroll indicator when more entries remain past the window.
+            // Always emit this row (blank when at the bottom) so the panel body
+            // keeps a constant row count and never changes height while scrolling.
+            if end < total {
+                builder = builder.add_single(format!("▼ {} below", total - end), Left);
+            } else {
+                builder = builder.add_empty();
             }
 
             builder = builder
@@ -1812,6 +1858,179 @@ mod status_line_tests {
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
         assert!(lines.lines.iter().any(|l| l.contains("Test Config")));
         assert!(lines.lines.iter().any(|l| l.contains("10k agents")));
+    }
+
+    fn make_saved_config(name: &str) -> crate::config_manager::SavedConfig {
+        crate::config_manager::SavedConfig {
+            name: name.to_string(),
+            description: None,
+            population: 10000,
+            sensor_angle: 0.0,
+            sensor_distance: 0.0,
+            rotation_angle: 0.0,
+            step_size: 0.0,
+            decay_factor: 0.0,
+            deposit_amount: 0.0,
+            max_brightness: 0.0,
+            diffusion_kernel: "mean3x3".to_string(),
+            diffusion_sigma: 0.0,
+            palette: "Forest".to_string(),
+            charset: "ascii".to_string(),
+            reverse_palette: false,
+            invert_palette: false,
+            warmup_frames: 0,
+            food_persist: false,
+            auto_reset: false,
+            grid: false,
+            grid_style: None,
+            init_mode: "random".to_string(),
+            food_path: None,
+            background_color: None,
+            intensity_mapping: None,
+            intensity_mapping_base: None,
+            intensity_mapping_gamma: None,
+            intensity_mapping_levels: None,
+            window_frame: "frame".to_string(),
+            chrome_style: "minimal".to_string(),
+            aspect: "3:2".to_string(),
+            window_padding: "auto".to_string(),
+            show_status_bar: false,
+            min_sim_size: "20x10".to_string(),
+            min_frame_size: "12x6".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_config_browser_window_helper() {
+        // total <= max_visible: always anchored at top.
+        assert_eq!(ConfigBrowserOverlay::config_browser_window(0, 5, 9), 0);
+        assert_eq!(ConfigBrowserOverlay::config_browser_window(4, 5, 9), 0);
+        assert_eq!(ConfigBrowserOverlay::config_browser_window(8, 9, 9), 0);
+
+        // Selection within the first window: anchored at top.
+        assert_eq!(ConfigBrowserOverlay::config_browser_window(0, 15, 9), 0);
+        assert_eq!(ConfigBrowserOverlay::config_browser_window(8, 15, 9), 0);
+
+        // Selection past the first window: scroll just enough to reveal it.
+        // selected 11/15 with max 9 -> start 3 (showing 3..12 includes 11).
+        assert_eq!(ConfigBrowserOverlay::config_browser_window(11, 15, 9), 3);
+        assert_eq!(ConfigBrowserOverlay::config_browser_window(9, 15, 9), 1);
+
+        // Selection at the end: clamp so window never runs past total.
+        // selected 14/15 with max 9 -> start 6 (showing 6..15).
+        assert_eq!(ConfigBrowserOverlay::config_browser_window(14, 15, 9), 6);
+
+        // Out-of-range selection is clamped to the last item.
+        assert_eq!(ConfigBrowserOverlay::config_browser_window(99, 15, 9), 6);
+    }
+
+    #[test]
+    fn test_config_browser_scrolls_to_selection() {
+        let configs: Vec<_> = (0..15)
+            .map(|i| make_saved_config(&format!("Config{:02}", i)))
+            .collect();
+
+        // Select an entry well beyond the first window (index 11 of 15).
+        let overlay = ConfigBrowserOverlay::build_overlay(&configs, 11);
+
+        // The selected entry must have scrolled into view, marked with the caret.
+        assert!(
+            overlay
+                .lines
+                .iter()
+                .any(|l| l.contains("›") && l.contains("Config11")),
+            "selected entry Config11 should be visible with the selection marker; got:\n{}",
+            overlay.lines.join("\n")
+        );
+
+        // Entries that scrolled off the top should no longer be rendered.
+        assert!(
+            !overlay.lines.iter().any(|l| l.contains("Config00")),
+            "Config00 should have scrolled off the top"
+        );
+
+        // An "above" indicator should be present since we scrolled down.
+        assert!(
+            overlay.lines.iter().any(|l| l.contains("above")),
+            "expected an 'above' scroll indicator; got:\n{}",
+            overlay.lines.join("\n")
+        );
+    }
+
+    #[test]
+    fn test_config_browser_top_anchored_with_below_indicator() {
+        let configs: Vec<_> = (0..15)
+            .map(|i| make_saved_config(&format!("Config{:02}", i)))
+            .collect();
+
+        let overlay = ConfigBrowserOverlay::build_overlay(&configs, 0);
+
+        // First entry visible and marked.
+        assert!(overlay
+            .lines
+            .iter()
+            .any(|l| l.contains("›") && l.contains("Config00")));
+        // A "below" indicator should be present (more configs off the bottom).
+        assert!(
+            overlay.lines.iter().any(|l| l.contains("below")),
+            "expected a 'below' scroll indicator; got:\n{}",
+            overlay.lines.join("\n")
+        );
+        // No "above" indicator when anchored at top.
+        assert!(!overlay.lines.iter().any(|l| l.contains("above")));
+    }
+
+    #[test]
+    fn test_config_browser_bottom_anchored_constant_height() {
+        let configs: Vec<_> = (0..15)
+            .map(|i| make_saved_config(&format!("Config{:02}", i)))
+            .collect();
+        let total = configs.len();
+
+        // Scrolled fully to the bottom: select the last entry (index 14 of 15).
+        let bottom = ConfigBrowserOverlay::build_overlay(&configs, total - 1);
+
+        // (a) The selected (last) entry is visible and marked.
+        assert!(
+            bottom
+                .lines
+                .iter()
+                .any(|l| l.contains("›") && l.contains("Config14")),
+            "selected last entry Config14 should be visible with the selection marker; got:\n{}",
+            bottom.lines.join("\n")
+        );
+
+        // (b) An "above" indicator is present (earlier entries scrolled off the top).
+        assert!(
+            bottom.lines.iter().any(|l| l.contains("above")),
+            "expected an 'above' scroll indicator at the bottom; got:\n{}",
+            bottom.lines.join("\n")
+        );
+
+        // (c) No "below" indicator text since there is nothing past the window.
+        assert!(
+            !bottom.lines.iter().any(|l| l.contains("below")),
+            "expected no 'below' scroll indicator at the bottom; got:\n{}",
+            bottom.lines.join("\n")
+        );
+
+        // Panel height must stay constant across scroll positions. A mid-scroll
+        // render (which DOES emit a "below" indicator) must have the same number
+        // of rows as the bottom render (which emits a blank line in its place).
+        let mid = ConfigBrowserOverlay::build_overlay(&configs, 11);
+        assert!(
+            mid.lines.iter().any(|l| l.contains("below")),
+            "mid-scroll render should still show a 'below' indicator; got:\n{}",
+            mid.lines.join("\n")
+        );
+        assert_eq!(
+            bottom.lines.len(),
+            mid.lines.len(),
+            "panel body row count must be identical at the bottom and mid-scroll \
+             (Fix 1: constant ▼ slot); bottom={}, mid={}",
+            bottom.lines.len(),
+            mid.lines.len()
+        );
     }
 }
 

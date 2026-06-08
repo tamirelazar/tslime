@@ -1356,8 +1356,15 @@ pub fn run_simulation(
                                 continue;
                             }
                             KeyCode::Down => {
-                                // Will increment if there are configs available
-                                runtime_state.config_browser_selected_index += 1;
+                                // Bound the selection to the last config so it can't
+                                // overshoot the list (render-time clamp is kept as a
+                                // defensive guard).
+                                let last = config_manager::list_configs()
+                                    .map(|c| c.len().saturating_sub(1))
+                                    .unwrap_or(0);
+                                if runtime_state.config_browser_selected_index < last {
+                                    runtime_state.config_browser_selected_index += 1;
+                                }
                                 continue;
                             }
                             KeyCode::Enter => {
