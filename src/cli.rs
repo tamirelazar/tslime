@@ -3,14 +3,12 @@ use std::str::FromStr;
 
 use clap::Parser;
 
-use crate::config_builder::ConfigBuilder;
 use crate::config_defaults::{
     agent as agent_consts, ascii, auto_reset, dither as dither_consts, dithering, environment,
     environment as env_consts, export, food, food as food_img_consts, food_persist, grid,
     intensity, intensity_mapping, palette, population, simulation, terminal, time,
     time as time_consts, trail as trail_consts, warmup,
 };
-use crate::error::ConfigError;
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
@@ -1786,18 +1784,18 @@ impl Args {
 
     /// Converts CLI arguments to simulation configuration.
     ///
-    /// Uses ConfigBuilder for consistent construction and validation.
+    /// Delegates to `SimConfig::try_from(self)` (assemble + validate-once).
     /// Returns an error if validation fails.
-    pub fn to_sim_config(&self) -> Result<SimConfig, ConfigError> {
-        ConfigBuilder::from_args(self).build()
+    pub fn to_sim_config(&self) -> Result<SimConfig, crate::error::ValidationError> {
+        SimConfig::try_from(self)
     }
 
     /// Validates CLI arguments using ConfigBuilder.
     ///
     /// Returns an error message if any argument is invalid.
     pub fn validate_with_builder(&self) -> Result<(), String> {
-        ConfigBuilder::from_args(self)
-            .validate()
+        SimConfig::try_from(self)
+            .map(|_| ())
             .map_err(|e| e.to_string())
     }
 

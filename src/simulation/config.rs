@@ -1916,6 +1916,24 @@ impl Validatable for SimConfig {
     }
 }
 
+impl TryFrom<&crate::cli::Args> for SimConfig {
+    type Error = crate::error::ValidationError;
+
+    /// Builds a validated `SimConfig` from parsed CLI args.
+    ///
+    /// Assembles the config (preset merge + CLI overrides + species/wind/terrain/obstacles),
+    /// then validates the final merged config once through [`Validatable::validate`].
+    ///
+    /// # Errors
+    /// Returns [`ValidationError`] if assembly fails (e.g. invalid terrain string) or any
+    /// merged parameter is out of range.
+    fn try_from(args: &crate::cli::Args) -> Result<Self, Self::Error> {
+        let config = crate::config_builder::ConfigBuilder::from_args(args).assemble()?;
+        config.validate()?;
+        Ok(config)
+    }
+}
+
 impl Validatable for SpeciesConfig {
     fn validate(&self) -> Result<(), ValidationError> {
         // Validate count
@@ -2465,6 +2483,41 @@ mod tests {
                 config.validate()
             );
         }
+    }
+
+    #[test]
+    fn test_try_from_args_valid() {
+        use crate::cli::Args;
+        use clap::Parser;
+        let args = Args::parse_from(["tslime"]);
+        let config = SimConfig::try_from(&args);
+        assert!(
+            config.is_ok(),
+            "default args must convert: {:?}",
+            config.err()
+        );
+    }
+
+    #[test]
+    fn test_try_from_args_rejects_out_of_range_sensor_angle() {
+        use crate::cli::Args;
+        use clap::Parser;
+        let args = Args::parse_from(["tslime", "--sensor-angle", "200"]);
+        let result = SimConfig::try_from(&args);
+        assert!(result.is_err(), "sensor_angle 200 must be rejected");
+    }
+
+    #[test]
+    fn test_try_from_args_rejects_bad_species_strict() {
+        // NEW behavior: species params are now validated post-merge.
+        use crate::cli::Args;
+        use clap::Parser;
+        let args = Args::parse_from(["tslime", "--species", "x:20000@999,45,1.0,5.0:ff0000"]);
+        let result = SimConfig::try_from(&args);
+        assert!(
+            result.is_err(),
+            "out-of-range species param must now error (was silently accepted)"
+        );
     }
 
     #[test]
