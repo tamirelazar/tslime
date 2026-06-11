@@ -1,44 +1,150 @@
-name: Release WASM
+name: Release
 
 on:
-  release:
-    types: [created]
   workflow_dispatch:
+  push:
+    tags: ['v*']
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  build-wasm:
+  hygiene:
+    name: Hygiene
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install Rust
-        uses: dtolnay/rust-action@stable
-      
-      - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-      
-      - name: Build WASM
-        working-directory: ./tslime-wasm
-        run: wasm-pack build --target web --out-dir pkg --release
-      
-      - name: Create tarball
-        run: |
-          cd tslime-wasm/pkg
-          tar -czf ../../tslime-wasm.tar.gz .
-      
-      - name: Upload to Release
-        if: github.event_name == 'release'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./tslime-wasm.tar.gz
-          asset_name: tslime-wasm.tar.gz
-          content_type: application/gzip
-      
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tslime-wasm
-          path: tslime-wasm/pkg/
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check public tree contains no dev-meta paths
+      shell: bash
+      run: ./scripts/check_tree_clean.sh
+
+  build:
+    name: Build Release
+    needs: hygiene
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_name: tslime
+            asset_name: tslime-linux-x86_64
+          - os: macos-latest
+            artifact_name: tslime
+            asset_name: tslime-macos-x86_64
+          - os: windows-latest
+            artifact_name: tslime.exe
+            asset_name: tslime-windows-x86_64.exe
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build release binary
+      run: cargo build --release --verbose
+
+    - name: Check binary size
+      if: runner.os == 'Linux'
+      run: |
+        size target/release/tslime
+        SIZE=$(stat -c%s target/release/tslime)
+        # Headroom over the ~3.1MB Linux release binary.
+        MAX_SIZE=4000000
+        if [ "$SIZE" -gt "$MAX_SIZE" ]; then
+          echo "Binary size $SIZE exceeds $MAX_SIZE limit"
+          exit 1
+        fi
+        echo "Binary size $SIZE is under $MAX_SIZE limit"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.asset_name }}
+        path: target/release/${{ matrix.artifact_name }}
+
+  gui-build:
+    name: GUI Build
+    needs: hygiene
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_name: tslime
+            asset_name: tslime-gui-linux-x86_64
+          - os: macos-latest
+            artifact_name: tslime
+            asset_name: tslime-gui-macos
+          - os: windows-latest
+            artifact_name: tslime.exe
+            asset_name: tslime-gui-windows.exe
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install Linux GUI dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends \
+          libxkbcommon-dev \
+          libwayland-dev \
+          libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+          libvulkan-dev mesa-vulkan-drivers \
+          libfontconfig1-dev libfreetype6-dev \
+          libegl1-mesa-dev
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-gui-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-gui-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-gui-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build GUI binary
+      run: cargo build --release --features gui --verbose
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.asset_name }}
+        path: target/release/${{ matrix.artifact_name }}

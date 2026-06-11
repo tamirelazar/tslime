@@ -3,12 +3,24 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [master, dev]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'assets/**'
   pull_request:
-    branches: [master]
+    branches: [master, dev]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'assets/**'
 
 env:
   CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   hygiene:
@@ -28,9 +40,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable]
-    
+        # Full cross-platform matrix only when promoting dev -> master;
+        # everything else runs on Linux to keep billable minutes down
+        # (macOS minutes bill at 10x, Windows at 2x).
+        os: ${{ (github.event_name == 'pull_request' && github.base_ref == 'master') && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -38,7 +52,6 @@ jobs:
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: ${{ matrix.rust }}
         components: rustfmt, clippy
 
     - name: Install Linux dependencies (GUI + audio)
@@ -72,184 +85,32 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
-    - name: Run cargo check
-      run: cargo check --verbose
-
     - name: Run cargo fmt check
+      if: runner.os == 'Linux'
       run: cargo fmt --all -- --check
 
-    - name: Run cargo clippy
+    # Compiling the full GUI stack (iced/wgpu) is expensive; lint it on
+    # Linux only. Release builds still compile gui on every platform.
+    - name: Run cargo clippy (all features)
+      if: runner.os == 'Linux'
       run: cargo clippy --all-targets --all-features -- -D warnings
+
+    - name: Run cargo clippy
+      if: runner.os != 'Linux'
+      run: cargo clippy --all-targets -- -D warnings
 
     - name: Run cargo test
       run: cargo test --verbose
 
-  build:
-    name: Build Release
-    needs: hygiene
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        include:
-          - os: ubuntu-latest
-            artifact_name: tslime
-            asset_name: tslime-linux-x86_64
-          - os: macos-latest
-            artifact_name: tslime
-            asset_name: tslime-macos-x86_64
-          - os: windows-latest
-            artifact_name: tslime.exe
-            asset_name: tslime-windows-x86_64.exe
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Cache cargo registry
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Cache cargo index
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Cache cargo build
-      uses: actions/cache@v4
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Build release binary
-      run: cargo build --release --verbose
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.asset_name }}
-        path: target/release/${{ matrix.artifact_name }}
-
-  gui-build:
-    name: GUI Build
-    needs: hygiene
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        include:
-          - os: ubuntu-latest
-            artifact_name: tslime
-            asset_name: tslime-gui-linux-x86_64
-          - os: macos-latest
-            artifact_name: tslime
-            asset_name: tslime-gui-macos
-          - os: windows-latest
-            artifact_name: tslime.exe
-            asset_name: tslime-gui-windows.exe
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Install Linux GUI dependencies
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends \
-          libxkbcommon-dev \
-          libwayland-dev \
-          libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
-          libvulkan-dev mesa-vulkan-drivers \
-          libfontconfig1-dev libfreetype6-dev \
-          libegl1-mesa-dev
-
-    - name: Cache cargo registry
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-gui-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Cache cargo index
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-gui-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Cache cargo build
-      uses: actions/cache@v4
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-gui-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Build GUI binary
-      run: cargo build --release --features gui --verbose
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.asset_name }}
-        path: target/release/${{ matrix.artifact_name }}
-
-  benchmarks:
-    name: Benchmarks
+  licenses:
+    name: License Check
     needs: hygiene
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Cache cargo registry
-      uses: actions/cache@v4
+    - name: Check dependency licenses
+      uses: EmbarkStudios/cargo-deny-action@v2
       with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Cache cargo index
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Cache cargo build
-      uses: actions/cache@v4
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-bench-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Run benchmarks
-      run: cargo bench --verbose
-
-    - name: Upload benchmark results
-      uses: actions/upload-artifact@v4
-      with:
-        name: benchmarks
-        path: target/criterion/
-
-    - name: Check binary size
-      run: |
-        # cargo bench leaves a bench-profile binary (no strip/LTO) in
-        # target/release; build the real release binary before measuring.
-        cargo build --release
-        size target/release/tslime
-        SIZE=$(stat -c%s target/release/tslime)
-        # Headroom over the ~3.1MB Linux release binary; this artifact is a
-        # smoke check, not the shipped binary, so the bound is intentionally loose.
-        MAX_SIZE=4000000
-        if [ $SIZE -gt $MAX_SIZE ]; then
-          echo "Binary size $SIZE exceeds $MAX_SIZE limit"
-          exit 1
-        fi
-        echo "Binary size $SIZE is under $MAX_SIZE limit"
+        command: check licenses
