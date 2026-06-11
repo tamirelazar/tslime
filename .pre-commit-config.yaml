@@ -4,3 +4,11 @@ repos:
     hooks:
       - id: clippy
         args: [--all-targets, --all-features, --, "-D", "warnings"]
+  - repo: local
+    hooks:
+      - id: tree-clean
+        name: no dev-meta paths tracked
+        entry: scripts/check_tree_clean.sh
+        language: system
+        pass_filenames: false
+        always_run: true

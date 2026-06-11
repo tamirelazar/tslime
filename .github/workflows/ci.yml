@@ -2,13 +2,29 @@ name: CI
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  hygiene:
+    name: Hygiene
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check public tree contains no dev-meta paths
+      shell: bash
+      run: ./scripts/check_tree_clean.sh
+
   test:
     name: Test
+    needs: hygiene
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -70,6 +86,7 @@ jobs:
 
   build:
     name: Build Release
+    needs: hygiene
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -121,6 +138,7 @@ jobs:
 
   gui-build:
     name: GUI Build
+    needs: hygiene
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -184,6 +202,7 @@ jobs:
 
   benchmarks:
     name: Benchmarks
+    needs: hygiene
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
