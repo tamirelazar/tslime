@@ -1,0 +1,18 @@
+# Third-Party Licenses
+
+tslime binary distributions bundle the following third-party Rust crates.
+Each license below lists the crates it applies to, followed by the license text.
+
+{{#each licenses}}
+## {{{name}}}
+
+Used by:
+{{#each used_by}}
+- [{{crate.name}} {{crate.version}}]({{#if crate.repository}}{{crate.repository}}{{else}}https://crates.io/crates/{{crate.name}}{{/if}})
+{{/each}}
+
+```
+{{{text}}}
+```
+
+{{/each}}

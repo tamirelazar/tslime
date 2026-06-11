@@ -1,0 +1,24 @@
+# cargo-deny configuration — license policy for the dependency tree.
+# Run: cargo deny check licenses
+
+[graph]
+all-features = true
+
+[licenses]
+# Permissive licenses only. Dual-licensed crates (e.g. `Apache-2.0 OR GPL-2.0-only`)
+# pass as long as one arm of the expression is allowed.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+    "0BSD",
+]
+confidence-threshold = 0.8
