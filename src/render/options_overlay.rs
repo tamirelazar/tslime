@@ -7,9 +7,9 @@ use crate::terminal::control::DefaultValues;
 use crate::terminal::control::PaletteShiftSpeed;
 use crate::terminal::control::WindDirection;
 
-/// Renders a compact horizontal progress bar.
+/// Renders a compact horizontal progress bar of `total` cells.
 ///
-/// `filled` is clamped to `[0, total]`. Uses `█` for filled cells and `░` for empty.
+/// `ratio` is clamped to `[0, 1]`. Uses `█` for filled cells and `░` for empty.
 ///
 /// Example: `mini_bar(0.25, 8)` → `"██░░░░░░"`
 fn mini_bar(ratio: f32, total: usize) -> String {
@@ -645,7 +645,7 @@ impl ControlsOverlay {
 /// Identifies parameter rows (key binding + mini bar) and applies:
 /// - Accent colour to the key chars (cols 5–7).
 /// - `accent_modified` colour to the `✱` modification marker at col 3.
-/// - Accent colour to filled bar chars (`█`/`▪`) at cols 25–32.
+/// - Accent colour to filled bar chars (`█`/`▪`) at cols 27–38.
 /// - Muted colour to empty bar chars (`░`) at the same positions.
 ///
 /// Also colors tab indicators (●/○) and the active tab name in the tab strip with accent color.
@@ -734,7 +734,7 @@ fn generate_controls_rich_lines(
             }
 
             // A param row: marker at col 3 (' ' or '✱'), space at col 4,
-            // col 5 is not another '✱' (distinguishes from the "  ⚙ modified…" footer),
+            // col 5 is not another '✱' (distinguishes from the "✱ modified…" footer),
             // and the region cols 3..47 is not all-spaces (padding rows).
             let is_param_row = n == ControlsOverlay::WIDTH
                 && matches!(chars.get(3), Some(' ') | Some('✱'))

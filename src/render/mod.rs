@@ -1,7 +1,5 @@
-//! Rendering pipeline for terminal output.
-//!
-//! This module provides the complete rendering pipeline from simulation data to terminal output.
-//! It handles downsampling, color mapping, character selection, dithering, and overlay rendering.
+//! Rendering pipeline from simulation data to terminal output: downsampling,
+//! color mapping, character selection, dithering, and overlays.
 //!
 //! # Pipeline Overview
 //!

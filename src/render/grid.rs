@@ -30,7 +30,7 @@ impl FromStr for GridStyle {
 pub struct GridRenderer {
     /// Rendering style.
     pub style: GridStyle,
-    /// Spacing between grid lines.
+    /// Number of grid cells per axis; line spacing is derived from terminal size.
     pub size: usize,
     /// Grid line color.
     pub color: RgbColor,
@@ -84,13 +84,11 @@ impl GridRenderer {
         let mut positions = Vec::with_capacity(grid_size - 1);
         let mut current_pos = 0;
 
-        // Calculate which cells get the extra spacing (center-heavy distribution)
-        // We want to add +1 to the center cells
+        // Center-heavy distribution: the middle `remainder` cells get +1 spacing
         let start_extra = (grid_size - remainder) / 2;
         let end_extra = start_extra + remainder;
 
         for i in 0..grid_size {
-            // Determine cell height
             let cell_height = if i >= start_extra && i < end_extra {
                 base_spacing + 1
             } else {

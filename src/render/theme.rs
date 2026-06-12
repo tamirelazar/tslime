@@ -37,9 +37,9 @@ pub struct PanelStyle {
     pub muted: RgbColor,
     /// Color for modified/changed parameter markers.
     pub accent_modified: RgbColor,
-    /// FPS good (≥55): displayed green.
+    /// Accent color for a healthy FPS readout (currently unused).
     pub accent_fps_good: RgbColor,
-    /// FPS warning (≥25, <55): displayed amber.
+    /// Accent color for a degraded FPS readout (currently unused).
     pub accent_fps_warn: RgbColor,
 }
 
