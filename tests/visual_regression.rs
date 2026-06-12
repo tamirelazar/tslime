@@ -1004,7 +1004,7 @@ fn test_visual_regression_truecolor_mode() {
 
 #[test]
 fn test_visual_regression_dither_mode() {
-    let output = capture_print_output(&["-s", "42", "--dither"], 80, 24);
+    let output = capture_print_output(&["-s", "42", "--dither-mode", "ordered"], 80, 24);
     let normalized = normalize_output(&output);
 
     if should_update_golden() {
