@@ -122,6 +122,15 @@ fn check_auto_reset(
     }
 }
 
+/// Returns `true` when a key event should immediately exit the application
+/// in screensaver mode.
+///
+/// Any key press exits; key release/repeat events (emitted on some platforms,
+/// e.g. Windows) are ignored so a single keystroke does not double-fire.
+fn screensaver_exit_on_key(mode: &Mode, key_event: &crossterm::event::KeyEvent) -> bool {
+    *mode == Mode::Screensaver && key_event.kind == crossterm::event::KeyEventKind::Press
+}
+
 /// Runs the interactive simulation loop (Live or Screensaver mode).
 ///
 /// Handles terminal setup, input processing, simulation updates, and rendering
@@ -130,7 +139,7 @@ fn check_auto_reset(
 pub fn run_simulation(
     sim: &mut Simulation,
     args: &Args,
-    _mode: Mode,
+    mode: Mode,
     palette: cli::Palette,
     charset: Charset,
 ) -> io::Result<()> {
@@ -1167,6 +1176,14 @@ pub fn run_simulation(
                         use crossterm::event::KeyModifiers;
                         runtime_state.shift_held =
                             key_event.modifiers.contains(KeyModifiers::SHIFT);
+                    }
+
+                    // Screensaver mode: any key press exits (mouse events and
+                    // resizes do not). Checked before overlay/control dispatch so
+                    // no other handler can swallow the event.
+                    if screensaver_exit_on_key(&mode, &key_event) {
+                        should_exit = true;
+                        break;
                     }
 
                     // GLOBAL EXIT HANDLING -- always allow 'q' to quit regardless of overlay
@@ -2363,5 +2380,54 @@ pub fn get_terminal_size() -> (usize, usize) {
     match crossterm::terminal::size() {
         Ok((w, h)) => (w as usize, h as usize),
         Err(_) => (80, 24),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode, kind: KeyEventKind) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn screensaver_exits_on_any_key_press() {
+        for code in [
+            KeyCode::Char('a'),
+            KeyCode::Char(' '),
+            KeyCode::Enter,
+            KeyCode::Esc,
+            KeyCode::Up,
+            KeyCode::F(1),
+        ] {
+            assert!(
+                screensaver_exit_on_key(&Mode::Screensaver, &key(code, KeyEventKind::Press)),
+                "expected screensaver exit for {:?}",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn screensaver_ignores_key_release_and_repeat() {
+        let release = key(KeyCode::Char('a'), KeyEventKind::Release);
+        let repeat = key(KeyCode::Char('a'), KeyEventKind::Repeat);
+        assert!(!screensaver_exit_on_key(&Mode::Screensaver, &release));
+        assert!(!screensaver_exit_on_key(&Mode::Screensaver, &repeat));
+    }
+
+    #[test]
+    fn non_screensaver_modes_never_exit_on_key() {
+        let press = key(KeyCode::Char('a'), KeyEventKind::Press);
+        for mode in [Mode::Default, Mode::Live, Mode::Print] {
+            assert!(!screensaver_exit_on_key(&mode, &press));
+        }
     }
 }
