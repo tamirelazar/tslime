@@ -42,12 +42,6 @@ Choose from 12+ built-in palettes for different moods:
 |:----:|:-----:|:----:|:-----:|
 | ![Heat](assets/demos/heat_small.gif) | ![Ocean](assets/demos/ocean_small.gif) | ![Neon](assets/demos/neon_small.gif) | ![Slime](assets/demos/slime_small.gif) |
 
-### Special Effects
-
-**Multi-species mode** - Different agents with distinct colors:
-
-![Species Demo](assets/demos/species.gif)
-
 ---
 
 ## 🌿 Overview
@@ -271,7 +265,6 @@ In live or screensaver mode, you can adjust simulation parameters in real-time u
 | `r` | Restart with same seed |
 | `+` / `-` | Adjust time scale (0.5x - 4.0x) |
 | `c` | Cycle to next palette (Shift+C for reverse) |
-| `d` | Toggle dithering |
 | `h` | Toggle help overlay (quick → options → none) |
 | `q` / `Esc` | Quit |
 
@@ -586,6 +579,21 @@ cargo test --test visual_regression
 
 ---
 
+## Experimental — help wanted
+
+Features that exist but aren't ready for the default experience. Each has a
+tracking issue describing current state and what's needed — contributions welcome.
+
+| Feature | Try it | Issue |
+|---|---|---|
+| Multi-species simulation | `cargo install tslime --features multi-species`, then `--species 'red:20k:ff0000' --species 'blue:20k:0000ff' --species-colors` | #8 |
+| Choir mode (audio) | `cargo install tslime --features audio`, then `--choir` | #9 |
+| GUI mode | `cargo build --features gui` | #10 |
+| WASM build | `tslime-wasm/` (standalone crate) | #11 |
+| Dithering | hidden flags: `--dither-mode ordered` (and `d`/`D`/`[`/`]` keys once enabled) | #12 |
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Areas of interest:
@@ -595,6 +603,9 @@ Contributions are welcome! Areas of interest:
 - **Color palettes**: Additional gradient schemes
 - **Documentation**: Examples, tutorials, translations
 - **Optimization**: SIMD, parallelization, memory improvements
+
+All current presets are experimental — feedback on which work, which don't,
+and recommendations for new ones are very welcome.
 
 ### Development Workflow
 
