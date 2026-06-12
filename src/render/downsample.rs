@@ -1,4 +1,3 @@
-#[allow(dead_code)]
 /// A frame of downsampled simulation data, ready for rendering.
 pub struct DownsampledFrame {
     width: usize,
@@ -62,13 +61,11 @@ impl DownsampledFrame {
         }
     }
 
-    #[allow(dead_code)]
     /// Returns the width of the frame in cells.
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[allow(dead_code)]
     /// Returns the height of the frame in cells.
     pub fn height(&self) -> usize {
         self.height
@@ -79,7 +76,6 @@ impl DownsampledFrame {
         &self.cells
     }
 
-    #[allow(dead_code)]
     /// Returns the cell at the specified coordinates.
     pub fn get(&self, x: usize, y: usize) -> Cell {
         if x < self.width && y < self.height {

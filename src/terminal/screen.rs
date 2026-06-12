@@ -163,13 +163,11 @@ impl TerminalScreen {
     }
 
     /// Check if the screen is currently active (raw mode enabled).
-    #[allow(dead_code)]
     pub fn is_active(&self) -> bool {
         self.is_active
     }
 
     /// Clear the screen content.
-    #[allow(dead_code)]
     pub fn clear(&mut self) -> io::Result<()> {
         if !self.is_active {
             return Ok(());

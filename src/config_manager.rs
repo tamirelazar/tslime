@@ -435,7 +435,6 @@ impl SavedConfig {
     /// This function is part of the public API but currently unused in the main application.
     /// It is retained for future use in configuration management features like
     /// "Restart with saved config" or "Export config to file".
-    #[allow(dead_code)]
     pub fn to_sim_config(&self) -> Result<SimConfig, String> {
         let diffusion_kernel = parse_diffusion_kernel(&self.diffusion_kernel)?;
         let _init_mode = parse_init_mode(&self.init_mode)?;
@@ -534,7 +533,6 @@ fn parse_diffusion_kernel(s: &str) -> Result<DiffusionKernel, String> {
 ///
 /// This function is part of the configuration parsing API but currently unused.
 /// It is retained for future use in saved configuration loading.
-#[allow(dead_code)]
 fn parse_init_mode(s: &str) -> Result<InitMode, String> {
     match s.to_lowercase().as_str() {
         "random" => Ok(InitMode::Random),
@@ -550,7 +548,6 @@ fn parse_init_mode(s: &str) -> Result<InitMode, String> {
     }
 }
 
-#[allow(dead_code)]
 fn parse_charset(s: &str) -> Result<Charset, String> {
     match s.to_lowercase().as_str() {
         "halfblock" => Ok(Charset::HalfBlock),
@@ -664,7 +661,6 @@ pub fn save_config(config: SavedConfig) -> Result<(), String> {
 /// This function is part of the public API but currently unused in the main application.
 /// It is retained for future use in configuration management features like
 /// "Load saved preset by name" or CLI config restoration.
-#[allow(dead_code)]
 pub fn load_config(name: &str) -> Result<SavedConfig, String> {
     let config_file = load_config_file()?;
 

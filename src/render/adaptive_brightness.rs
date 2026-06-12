@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 #[derive(Debug, Clone)]
 /// Manages adaptive brightness normalization to prevent screen flickering.
 ///

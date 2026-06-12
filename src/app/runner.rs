@@ -52,31 +52,6 @@ use memory_stats::memory_stats;
 /// Target frame time in milliseconds for 30 FPS (33.333ms)
 const TARGET_FRAME_TIME_MS: f32 = 33.333;
 
-/// Data structure holding all overlay states for rendering.
-#[derive(Default)]
-#[allow(dead_code)]
-#[allow(clippy::type_complexity)]
-struct OverlayData {
-    pause_logo: Option<RenderedOverlay>,
-    pause_logo_pos: (usize, usize),
-    controls: Option<RenderedOverlay>,
-    controls_pos: (usize, usize),
-    status: Option<(String, usize, Vec<(usize, RgbColor)>)>,
-    notification: Option<(RenderedOverlay, usize, usize)>,
-    dashboard: Option<RenderedOverlay>,
-    dashboard_pos: (usize, usize),
-    config_browser: Option<RenderedOverlay>,
-    config_browser_pos: (usize, usize),
-    config_save: Option<RenderedOverlay>,
-    config_save_pos: (usize, usize),
-    keyboard_hints: Option<RenderedOverlay>,
-    keyboard_hints_pos: (usize, usize),
-    preset_comparison: Option<RenderedOverlay>,
-    preset_comparison_pos: (usize, usize),
-    palette_editor: Option<RenderedOverlay>,
-    palette_editor_pos: (usize, usize),
-}
-
 /// Updates food persistence attractors with fade-out effect.
 ///
 /// Gradually reduces the strength of food attractors over time using

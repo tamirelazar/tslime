@@ -44,7 +44,6 @@ impl ControlsOverlay {
         }
     }
 
-    #[allow(dead_code)]
     /// Returns the total number of categories.
     pub fn total_categories() -> usize {
         Self::TOTAL_CATEGORIES

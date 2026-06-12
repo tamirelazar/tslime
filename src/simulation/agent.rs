@@ -36,7 +36,6 @@ pub fn normalize_angle(mut angle: f32) -> f32 {
 }
 
 /// Compile-time assertion that ATTRACTOR_MIN_DIST is positive to prevent division by zero.
-#[allow(dead_code)]
 const _: () = assert!(
     crate::config_defaults::steering::MIN_ATTRACTOR_DISTANCE > 0.0,
     "MIN_ATTRACTOR_DISTANCE must be positive to prevent division by zero"
