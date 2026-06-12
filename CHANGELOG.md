@@ -8,7 +8,7 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 First public release.
 
-- Physarum simulation (Jones 2010 model) with 29 presets and runtime parameter controls
+- Physarum simulation (Jones 2010 model) with 30 presets and runtime parameter controls
 - Terminal rendering: half-block, ASCII, braille, quadrant, shade, points, and sculpted charsets; OKLch-based color palettes
 - Screensaver and interactive modes; pause, restart, preset/palette cycling at runtime
 - GIF, PNG, and WebM export

@@ -112,15 +112,16 @@ lowercase increases and uppercase (Shift) decreases.
 | `?` | Keyboard hints |
 | `\` | Dashboard overlay |
 | `g` | Save current frame to PNG |
-| `q` / `Esc` | Quit / close overlay |
+| `q` | Quit |
+| `Esc` | Close open overlay |
 
 ## Gallery
 
 <!-- ws6: preset/palette showcase gifs -->
 
-There are 29 named presets: network, exploratory, tendrils, organic, minimal, moss,
-cosmic, fire, zen, storm, river, ethereal, vortex, lightning, crystal, chaosedge,
-blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon,
+There are 30 named presets: network, exploratory, tendrils, organic, minimal, moss,
+cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal,
+chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon,
 dynamictendrils, morphingcoral, reactiveswarm, and duelingmodulators. Palettes and
 character sets are independent of the preset and can be cycled at runtime.
 
