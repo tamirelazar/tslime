@@ -1,6 +1,7 @@
-//! Individual agent behavior for Physarum simulation.
+//! Individual agent behavior for the Physarum simulation.
 //!
-//! Each agent represents a single cell of the slime mold. Agents follow
+//! Each agent is a particle in the agent-based model of Jones (2010); see
+//! the [`crate::simulation`] module docs for the full citation. Agents follow
 //! the sense-rotate-move-deposit cycle to create emergent network patterns.
 
 use noise::{NoiseFn, Perlin};
@@ -124,16 +125,11 @@ impl Agent {
         )
     }
 
-    /// Sense the pheromone trail with offset parameters (36 Points extension).
+    /// Sense the pheromone trail with sensor offsets (36 Points extension).
     ///
-    /// # Arguments
-    /// * `trail` - The trail map data
-    /// * `width` - Trail map width
-    /// * `height` - Trail map height
-    /// * `sensor_angle` - Sensor angle in degrees
-    /// * `sensor_distance` - Sensor offset distance
-    /// * `vertical_offset` - Absolute vertical offset (p13)
-    /// * `heading_offset` - Heading-relative offset (p14)
+    /// `sensor_angle` is in degrees. `vertical_offset` (p13) shifts the
+    /// sensors vertically in grid space; `heading_offset` (p14) shifts them
+    /// along the agent's heading.
     ///
     /// Returns a tuple of (left, center, right) sensed values.
     #[inline]
@@ -160,17 +156,10 @@ impl Agent {
         )
     }
 
-    /// Sense the pheromone trail with offset parameters and sampling mode.
+    /// Sense the pheromone trail with sensor offsets and a sampling mode.
     ///
-    /// # Arguments
-    /// * `trail` - The trail map data
-    /// * `width` - Trail map width
-    /// * `height` - Trail map height
-    /// * `sensor_angle` - Sensor angle in degrees
-    /// * `sensor_distance` - Sensor offset distance
-    /// * `vertical_offset` - Absolute vertical offset (p13)
-    /// * `heading_offset` - Heading-relative offset (p14)
-    /// * `sampling_mode` - Trail sampling method
+    /// Like [`Self::sense_with_offsets`] (`sensor_angle` in degrees,
+    /// p13/p14 offsets), but sampling either nearest-pixel or bilinear.
     ///
     /// Returns a tuple of (left, center, right) sensed values.
     #[inline]
@@ -192,15 +181,13 @@ impl Agent {
         let center_angle = self.heading;
         let right_angle = self.heading + sensor_angle_rad;
 
-        // Apply heading-relative offset (p14) - offset sensors forward/back
+        // Heading-relative offset (p14) shifts the sensor origin forward/back
         let offset_x = self.heading.cos() * heading_offset;
         let offset_y = self.heading.sin() * heading_offset;
 
-        // Base sensor positions with heading offset
         let base_x = self.x + offset_x;
         let base_y = self.y + offset_y;
 
-        // Calculate sensor positions
         let left_x = base_x + left_angle.cos() * sensor_distance;
         let left_y = base_y + left_angle.sin() * sensor_distance + vertical_offset;
 
@@ -210,7 +197,6 @@ impl Agent {
         let right_x = base_x + right_angle.cos() * sensor_distance;
         let right_y = base_y + right_angle.sin() * sensor_distance + vertical_offset;
 
-        // Sample based on sampling mode
         let (left, center, right) = match sampling_mode {
             super::config::SamplingMode::Bilinear => (
                 sample_trail_bilinear(trail, width, height, left_x, left_y),
@@ -235,10 +221,12 @@ impl Agent {
         sample_trail(trail, width, height, self.x, self.y)
     }
 
-    /// Update heading based on sensed values.
+    /// Update heading based on sensed values, following the turn rules
+    /// from Jones (2010).
     ///
-    /// Turns towards the strongest signal, or randomly if forward blocked.
-    /// When center is the strongest, continues straight (no rotation).
+    /// Continues straight when center is strictly strongest, turns randomly
+    /// when both sides beat center, otherwise turns toward the stronger side.
+    /// `rotation_angle` is in degrees.
     #[inline]
     pub fn rotate(
         &mut self,
@@ -250,29 +238,23 @@ impl Agent {
     ) {
         let rotation_angle_rad = rotation_angle * PI / 180.0;
 
-        // If center is strictly strongest, continue straight
         if center > left && center > right {
-            // No rotation needed - center sensor shows strongest signal
             return;
         }
 
-        // Center is not strictly strongest - need to turn
         if center < left && center < right {
-            // Forward is blocked on both sides - turn randomly
+            // Stronger on both sides - pick one at random
             if RandRng::gen(rng) {
                 self.heading -= rotation_angle_rad;
             } else {
                 self.heading += rotation_angle_rad;
             }
         } else if left > right {
-            // Left is stronger than right - turn left
             self.heading -= rotation_angle_rad;
         } else if right > left {
-            // Right is stronger than left - turn right
             self.heading += rotation_angle_rad;
         }
-        // If left == right, we continue straight (center wasn't strictly strongest,
-        // but sides are equal, so maintain current heading)
+        // left == right (with center not strictly strongest): keep heading
     }
 
     /// Apply steering forces from attractors (or repellers).
@@ -326,7 +308,6 @@ impl Agent {
         terrain_strength: f32,
         noise: &NoiseWrapper,
     ) {
-        // Early return for no terrain effect
         if terrain == TerrainType::None {
             return;
         }
@@ -391,7 +372,7 @@ impl Agent {
         self.y += self.heading.sin() * step_size;
 
         for (i, obstacle) in obstacles.iter().enumerate() {
-            // Use reference instead of cloning to avoid allocation in hot path
+            // Borrow the mask: cloning here would allocate in a hot path
             let mask_ref = obstacle_masks.get(i).and_then(|m| m.as_ref());
             if obstacle.contains(self.x, self.y, mask_ref) {
                 self.heading = obstacle.bounce(self.x, self.y, self.heading, mask_ref);
@@ -421,7 +402,6 @@ impl Agent {
             super::config::BoundaryMode::Wrap => {
                 let w = width as f32;
                 let h = height as f32;
-                // Wrap around using modulo arithmetic
                 self.x = self.x.rem_euclid(w);
                 self.y = self.y.rem_euclid(h);
             }

@@ -1,5 +1,11 @@
 //! Simulation engine for Physarum polycephalum behavior.
 //!
+//! Implements the agent-based model from:
+//!
+//! Jones, J. (2010). "Characteristics of Pattern Formation and Evolution in
+//! Approximations of Physarum Transport Networks." Artificial Life, 16(2),
+//! 127-153. doi:10.1162/artl.2010.16.2.16202
+//!
 //! This module contains the core simulation logic including:
 //! - [`Simulation`]: The main simulation orchestrator
 //! - [`crate::simulation::agent`]: Individual agent behavior (sense, rotate, move)
@@ -63,11 +69,9 @@ impl TrailHistory {
             return;
         }
 
-        // Buffer is already pre-allocated, just copy data
         self.history[self.current_index].copy_from_slice(trail_map);
         self.current_index = (self.current_index + 1) % self.capacity;
 
-        // Update count until we reach capacity
         if self.count < self.capacity {
             self.count += 1;
         }
@@ -75,24 +79,21 @@ impl TrailHistory {
 
     /// Calculate the average of all frames in the history buffer.
     ///
-    /// Returns `None` if the history is empty.
-    /// The returned slice is valid until the next call to blended() or clear().
+    /// Returns `None` if the history is empty. The returned slice is
+    /// overwritten by the next call to `blended()`.
     pub fn blended(&mut self) -> Option<&[f32]> {
         if self.count == 0 {
             return None;
         }
 
-        // Reset blended buffer
         self.blended_buffer.fill(0.0);
 
-        // Sum all frames
         for frame in &self.history[..self.count] {
             for (i, &val) in frame.iter().enumerate() {
                 self.blended_buffer[i] += val;
             }
         }
 
-        // Average
         let weight = 1.0 / self.count as f32;
         for val in &mut self.blended_buffer {
             *val *= weight;
@@ -245,26 +246,16 @@ impl Simulation {
         }
     }
 
-    /// Compute gradient magnitude for edge glow effect.
-    ///
-    /// Computes the magnitude of the gradient using central differences on the
-    /// simulation-resolution trail map. This is used for the edge glow visual effect.
-    ///
-    /// # Arguments
-    /// * `trail_data` - The trail map data to compute gradient from
-    /// * `width` - Width of the trail map
-    /// * `height` - Height of the trail map
-    /// * `gradient` - Mutable slice to store the computed gradient magnitudes
+    /// Compute the gradient magnitude of `trail_data` into `gradient` using
+    /// central differences, normalized to [0, 1]. Used for the edge glow effect.
     fn compute_gradient_magnitude(
         trail_data: &[f32],
         width: usize,
         height: usize,
         gradient: &mut [f32],
     ) {
-        // Reset gradient buffer
         gradient.fill(0.0);
 
-        // Compute gradient using central differences
         for y in 1..height - 1 {
             for x in 1..width - 1 {
                 let idx = y * width + x;
@@ -273,11 +264,9 @@ impl Simulation {
                 let lt = y * width + (x - 1);
                 let rt = y * width + (x + 1);
 
-                // Central differences for gradient
                 let gx = (trail_data[rt] - trail_data[lt]) * 0.5;
                 let gy = (trail_data[dn] - trail_data[up]) * 0.5;
 
-                // Gradient magnitude
                 gradient[idx] = (gx * gx + gy * gy).sqrt();
             }
         }
@@ -683,7 +672,6 @@ impl Simulation {
     /// This method writes to a pre-allocated buffer to avoid allocations.
     /// The buffer is cleared and reused on each call.
     pub fn trail_map_blended(&mut self, output: &mut Vec<f32>) {
-        // Check if we have history with blended data
         if let Some(blended) = self.trail_history.as_mut().and_then(|h| h.blended()) {
             let size = blended.len();
             if output.len() != size {
@@ -773,7 +761,6 @@ impl Simulation {
                     .iter_mut()
                     .filter(|a| a.species_id as usize == species_idx)
                 {
-                    // Compute modulated parameters if enabled
                     let (sensor_angle, sensor_distance, rotation_angle, step_size) =
                         if has_modulation {
                             let x = agent.sample_trail_at_position(trail, width, height);
@@ -860,7 +847,6 @@ impl Simulation {
 
             let trail = self.trail_maps[0].current();
             for agent in self.agents.iter_mut() {
-                // Compute modulated parameters if enabled
                 let (sensor_angle, sensor_distance, rotation_angle, step_size) = if has_modulation {
                     let x = agent.sample_trail_at_position(trail, width, height);
                     let params = modulation.compute_params(x);
@@ -945,7 +931,6 @@ impl Simulation {
                         probability *= 1.0 + x * (respawn_config.max_probability_multiplier - 1.0);
                     }
                     if self.rng.gen::<f32>() < probability * dt {
-                        // Respawn at random position
                         agent.x = self.rng.gen_range(0.0..width as f32);
                         agent.y = self.rng.gen_range(0.0..height as f32);
                         agent.heading = self.rng.gen_range(0.0..std::f32::consts::PI * 2.0);
@@ -997,7 +982,6 @@ impl Simulation {
             }
         }
 
-        // Compute gradient magnitude for edge glow effect
         if let Some(ref mut gradient) = self.gradient_magnitude {
             // Use primary trail map directly to avoid allocation from trail_map_blended()
             Self::compute_gradient_magnitude(self.trail_maps[0].current(), width, height, gradient);
@@ -1080,7 +1064,6 @@ impl Simulation {
             buf.fill(0.0);
         }
 
-        // Re-seed noise
         let noise_seed = (seed % u64::MAX) as u32;
         self.noise = NoiseWrapper::new(noise_seed);
     }
@@ -1118,10 +1101,8 @@ impl Simulation {
             self.config.separate_species_trails && self.trail_history.is_some();
 
         if needs_combined_buffer && self.combined_trail_buffer.is_none() {
-            // Need to create the buffer
             self.combined_trail_buffer = Some(vec![0.0f32; self.width() * self.height()]);
         } else if !needs_combined_buffer && self.combined_trail_buffer.is_some() {
-            // No longer need the buffer
             self.combined_trail_buffer = None;
         } else if needs_combined_buffer
             && old_separate_trails != self.config.separate_species_trails
@@ -1143,14 +1124,16 @@ impl Simulation {
         self.update_config(config);
     }
 
-    /// Enable or disable trail age computation.
+    /// Enable trail age computation, allocating the buffer on first enable.
+    /// Passing `false` is currently a no-op.
     pub fn set_compute_trail_age(&mut self, enabled: bool) {
         if enabled && self.trail_age.is_none() {
             self.trail_age = Some(vec![0.0; self.width() * self.height()]);
         }
     }
 
-    /// Enable or disable trail delta computation.
+    /// Enable trail delta computation, allocating the buffers on first enable.
+    /// Passing `false` is currently a no-op.
     pub fn set_compute_trail_delta(&mut self, enabled: bool) {
         if enabled && self.trail_delta.is_none() {
             let size = self.width() * self.height();
@@ -1159,7 +1142,8 @@ impl Simulation {
         }
     }
 
-    /// Get the trail age buffer (normalized cumulative seconds above threshold).
+    /// Get the trail age buffer: per-cell seconds spent above the presence
+    /// threshold, capped at `AGE_MAX_SECONDS`.
     pub fn trail_age(&self) -> Option<&[f32]> {
         self.trail_age.as_deref()
     }
@@ -1169,7 +1153,8 @@ impl Simulation {
         self.trail_delta.as_deref()
     }
 
-    /// Enable or disable gradient magnitude computation.
+    /// Enable gradient magnitude computation, allocating the buffer on first
+    /// enable. Passing `false` is currently a no-op.
     pub fn set_compute_gradient_magnitude(&mut self, enabled: bool) {
         if enabled && self.gradient_magnitude.is_none() {
             self.gradient_magnitude = Some(vec![0.0; self.width() * self.height()]);
@@ -1222,8 +1207,8 @@ impl Simulation {
 
         let mut attractors = Vec::new();
 
-        // Sample at lower resolution to avoid too many attractors
-        let step_size = 5; // Sample every 5 pixels
+        // Sample every 5th pixel to keep the attractor count manageable
+        let step_size = 5;
 
         for y in (0..height).step_by(step_size) {
             for x in (0..width).step_by(step_size) {
@@ -1232,7 +1217,7 @@ impl Simulation {
                     attractors.push(crate::simulation::config::Attractor::new(
                         x as f32,
                         y as f32,
-                        strength * brightness, // Scale strength by brightness
+                        strength * brightness,
                     ));
                 }
             }
