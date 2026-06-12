@@ -40,7 +40,6 @@ pub struct PatternMetrics {
     /// Estimated branching factor of trail network.
     pub branching_factor: f32,
 
-    // === NEW METRICS ===
     /// Local flow coherence - how aligned are nearby agents?
     /// High = locally coherent movement (worm-like), Low = chaotic/turbulent.
     pub flow_coherence: f32,
@@ -49,8 +48,9 @@ pub struct PatternMetrics {
     /// High = concentrated (blob-like), Low = spread out.
     pub spatial_concentration: f32,
 
-    /// Path continuity - average length of unbroken trail paths.
-    /// High = long continuous trails (worm), Low = fragmented/scattered.
+    /// Path continuity - mean size of connected trail regions (proxy for
+    /// unbroken path length). High = long continuous trails (worm),
+    /// Low = fragmented/scattered.
     pub path_continuity: f32,
 }
 
@@ -99,12 +99,11 @@ impl PatternMetrics {
     }
 
     /// Score for vortex-like behavior (swirling).
-    /// Fixed: rotation should ALLOW heading variance (agents at different positions rotate)
     pub fn vortex_score(&self) -> f32 {
-        // High angular momentum is key; heading variance is actually expected in vortices
+        // High angular momentum is key; heading variance is expected in vortices
         // since agents at different radial positions face different directions
         let am = self.angular_momentum.abs();
-        // Boost score when there's moderate heading variance (0.3-0.7 is ideal for vortex)
+        // Scales linearly from 0.5 (uniform headings) to 1.0 (fully mixed)
         let variance_factor = 0.5 + self.heading_variance * 0.5;
         // Prefer moderate coverage (not too sparse, not too full)
         let coverage_factor = 1.0 - (self.coverage - 0.4).abs();
@@ -123,10 +122,9 @@ impl PatternMetrics {
     }
 
     /// Score for crystal-like behavior (stable structures).
-    /// Fixed: removed arbitrary 0.3 target, use stability + structure
     pub fn crystal_score(&self) -> f32 {
         let stability = self.temporal_stability.max(0.0);
-        // Accept wider coverage range (0.1-0.6)
+        // Full credit for coverage in 0.1-0.6, half credit outside
         let coverage_ok = if self.coverage > 0.1 && self.coverage < 0.6 {
             1.0
         } else {
@@ -140,7 +138,6 @@ impl PatternMetrics {
     }
 
     /// Score for blob-like behavior (isolated clusters).
-    /// Fixed: stronger fragmentation weight, proper coverage term, uses new metrics
     pub fn blob_score(&self) -> f32 {
         // Key: multiple disconnected regions (high fragmentation)
         let frag = (self.trail_fragmentation as f32).powf(0.7);
@@ -157,7 +154,6 @@ impl PatternMetrics {
     }
 
     /// Score for worm-like behavior (long snaking trails).
-    /// Fixed: focus on elongation + low fragmentation + sparse, uses new metrics
     pub fn worm_score(&self) -> f32 {
         // Key: highly elongated structures
         let elongation_boost = self.trail_elongation.powf(1.3);
@@ -330,7 +326,6 @@ fn compute_elongation(trail_map: &[f32], width: usize, height: usize) -> f32 {
         let dx = (max_x - min_x + 1) as f32;
         let dy = (max_y - min_y + 1) as f32;
 
-        // Elongation = max(dx/dy, dy/dx)
         let elongation = (dx / dy).max(dy / dx);
         total_elongation += elongation;
         cluster_count += 1;
@@ -574,15 +569,16 @@ fn compute_spatial_concentration(trail_map: &[f32], width: usize, height: usize)
     concentration as f32
 }
 
-/// Compute path continuity - average length of unbroken trail paths.
-/// Traces paths through the trail map.
+/// Compute path continuity: mean connected-region size (capped at 100 cells,
+/// normalized to 0-1) as a proxy for unbroken trail length.
 fn compute_path_continuity(trail_map: &[f32], width: usize, height: usize) -> f32 {
     let threshold = 0.1;
     let mut visited = vec![false; trail_map.len()];
     let mut total_length = 0u32;
     let mut path_count = 0u32;
 
-    // Find endpoints (cells with exactly 1 neighbor) and trace paths from them
+    // Seed flood fills at endpoints and junctions so corridor cells
+    // (exactly 2 neighbors) never start their own region
     for start in 0..trail_map.len() {
         if visited[start] || trail_map[start] < threshold {
             continue;
@@ -594,10 +590,7 @@ fn compute_path_continuity(trail_map: &[f32], width: usize, height: usize) -> f3
         // Count neighbors
         let neighbors = count_neighbors(trail_map, x, y, width, height, threshold);
 
-        // Start from endpoints (1 neighbor) or junction points (3+ neighbors)
-        // to trace distinct paths
         if neighbors != 2 && neighbors > 0 {
-            // Trace path from this point
             let length = trace_path_length(trail_map, &mut visited, x, y, width, height, threshold);
             if length > 1 {
                 total_length += length;
@@ -606,10 +599,10 @@ fn compute_path_continuity(trail_map: &[f32], width: usize, height: usize) -> f3
         }
     }
 
-    // Also count isolated cells that weren't visited (single points or small clusters)
+    // Sweep up components the first pass missed: closed loops (every cell
+    // has exactly 2 neighbors) and isolated single cells
     for start in 0..trail_map.len() {
         if !visited[start] && trail_map[start] >= threshold {
-            // Trace this remaining component
             let x = start % width;
             let y = start / width;
             let length = trace_path_length(trail_map, &mut visited, x, y, width, height, threshold);
@@ -652,7 +645,8 @@ fn count_neighbors(
     count
 }
 
-/// Trace path length from a starting point using DFS.
+/// Flood-fill the connected region containing the start cell and return
+/// its cell count.
 fn trace_path_length(
     trail_map: &[f32],
     visited: &mut [bool],
