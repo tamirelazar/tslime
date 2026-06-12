@@ -1199,6 +1199,7 @@ pub struct Args {
         long = "dither-mode",
         value_name = "MODE",
         default_value = dithering::DEFAULT_MODE,
+        hide = true,
         help = "Dithering mode: none, ordered, error-diffusion, hybrid"
     )]
     /// Dithering algorithm mode.
@@ -1208,6 +1209,7 @@ pub struct Args {
         long = "dither-intensity",
         value_name = "FLOAT",
         default_value_t = dithering::DEFAULT_INTENSITY,
+        hide = true,
         help = concat!("Dithering intensity for ordered/hybrid modes (0.0-1.0) [default: ", stringify!(dithering::DEFAULT_INTENSITY), "]")
     )]
     /// Intensity of dithering effect.
@@ -1217,6 +1219,7 @@ pub struct Args {
         long = "dither-matrix",
         value_name = "MATRIX",
         default_value = dithering::DEFAULT_MATRIX,
+        hide = true,
         help = "Dither matrix for ordered mode: 4x4, 8x8"
     )]
     /// Matrix size for ordered dithering.
@@ -1224,12 +1227,17 @@ pub struct Args {
 
     #[arg(
         long = "dither-swap",
+        hide = true,
         help = "Swap to next dither mode (cycle through none -> ordered -> error-diffusion -> hybrid)"
     )]
     /// Cycle through dither modes.
     pub dither_swap: bool,
 
-    #[arg(long = "error-diffusion-swap", help = "Toggle error diffusion mode")]
+    #[arg(
+        long = "error-diffusion-swap",
+        hide = true,
+        help = "Toggle error diffusion mode"
+    )]
     /// Toggle error diffusion dithering.
     pub error_diffusion_swap: bool,
 
