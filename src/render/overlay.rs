@@ -236,7 +236,13 @@ impl KeyboardHintsOverlay {
             )
             .add_two_col(
                 "Tab        Cycle category",
-                "F2         Choir on / off",
+                {
+                    #[cfg(feature = "audio")]
+                    let choir_hint = "F2         Choir on / off";
+                    #[cfg(not(feature = "audio"))]
+                    let choir_hint = "";
+                    choir_hint
+                },
                 Left,
                 Left,
             )

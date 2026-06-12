@@ -411,13 +411,6 @@ pub fn run_simulation(
     } else {
         None
     };
-    #[cfg(not(feature = "audio"))]
-    {
-        if args.choir {
-            eprintln!("--choir requires building with --features audio");
-        }
-    }
-
     loop {
         if is_shutdown_requested() {
             break;
@@ -2074,34 +2067,25 @@ pub fn run_simulation(
                                 renderer.set_window_layout(None);
                             }
                         }
+                        #[cfg(feature = "audio")]
                         ControlAction::ToggleChoir => {
-                            #[cfg(feature = "audio")]
-                            {
-                                if choir.is_some() {
-                                    choir = None;
-                                    runtime_state.show_notification("Choir mode: off".to_string());
-                                } else {
-                                    match crate::audio::Choir::try_new(
-                                        args.choir_volume.clamp(0.0, 1.0),
-                                    ) {
-                                        Ok(c) => {
-                                            choir = Some(c);
-                                            runtime_state
-                                                .show_notification("Choir mode: on".to_string());
-                                        }
-                                        Err(e) => {
-                                            runtime_state.show_notification(format!(
-                                                "Choir init failed: {e}"
-                                            ));
-                                        }
+                            if choir.is_some() {
+                                choir = None;
+                                runtime_state.show_notification("Choir mode: off".to_string());
+                            } else {
+                                match crate::audio::Choir::try_new(
+                                    args.choir_volume.clamp(0.0, 1.0),
+                                ) {
+                                    Ok(c) => {
+                                        choir = Some(c);
+                                        runtime_state
+                                            .show_notification("Choir mode: on".to_string());
+                                    }
+                                    Err(e) => {
+                                        runtime_state
+                                            .show_notification(format!("Choir init failed: {e}"));
                                     }
                                 }
-                            }
-                            #[cfg(not(feature = "audio"))]
-                            {
-                                runtime_state.show_notification(
-                                    "Choir requires --features audio".to_string(),
-                                );
                             }
                         }
                         ControlAction::None => {}

@@ -332,6 +332,7 @@ pub enum ControlAction {
     /// Toggle between windowed and fullscreen mode.
     ToggleFullscreen,
     /// Toggle choir-mode audio sonification on/off.
+    #[cfg(feature = "audio")]
     ToggleChoir,
     /// No action.
     None,
