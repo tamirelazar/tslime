@@ -477,7 +477,7 @@ pub fn print_mode(
         config.max_brightness
     };
 
-    let species_rgb_colors = if args.species_colors {
+    let species_rgb_colors = if args.species_colors_enabled() {
         Some(extract_species_rgb_colors(&config))
     } else {
         None
@@ -502,7 +502,7 @@ pub fn print_mode(
         dither_mode,
         &mut None,
         intensity_mapping.as_ref(),
-        args.species_colors,
+        args.species_colors_enabled(),
         species_rgb_colors,
         background_color,
         args.ascii_contrast,
@@ -637,7 +637,7 @@ pub fn capture_frames_mode(
             config.max_brightness
         };
 
-        let species_rgb_colors = if args.species_colors {
+        let species_rgb_colors = if args.species_colors_enabled() {
             Some(extract_species_rgb_colors(&config))
         } else {
             None
@@ -660,7 +660,7 @@ pub fn capture_frames_mode(
             args.dither_mode().unwrap_or(DitherMode::None),
             &mut None,
             intensity_mapping.as_ref(),
-            args.species_colors,
+            args.species_colors_enabled(),
             species_rgb_colors,
             background_color,
             args.ascii_contrast,
@@ -829,7 +829,7 @@ pub fn export_gif_mode(
             config.max_brightness
         };
 
-        let species_rgb_colors = if args.species_colors {
+        let species_rgb_colors = if args.species_colors_enabled() {
             Some(extract_species_rgb_colors(&config))
         } else {
             None
@@ -852,7 +852,7 @@ pub fn export_gif_mode(
             args.dither_mode().unwrap_or(DitherMode::None),
             &mut None,
             intensity_mapping.as_ref(),
-            args.species_colors,
+            args.species_colors_enabled(),
             species_rgb_colors,
             background_color,
             args.ascii_contrast,
@@ -957,7 +957,7 @@ pub fn export_webm_mode(
             config.max_brightness
         };
 
-        let species_rgb_colors = if args.species_colors {
+        let species_rgb_colors = if args.species_colors_enabled() {
             Some(extract_species_rgb_colors(&config))
         } else {
             None
@@ -980,7 +980,7 @@ pub fn export_webm_mode(
             args.dither_mode().unwrap_or(DitherMode::None),
             &mut None,
             intensity_mapping.as_ref(),
-            args.species_colors,
+            args.species_colors_enabled(),
             species_rgb_colors,
             background_color,
             args.ascii_contrast,

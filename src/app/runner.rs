@@ -330,7 +330,7 @@ pub fn run_simulation(
     }
 
     // let config = args.to_sim_config().unwrap(); // Already parsed above
-    if args.species_colors {
+    if args.species_colors_enabled() {
         let species_rgb_colors = extract_species_rgb_colors(&config);
         renderer.set_species_colors(true, species_rgb_colors);
     }
@@ -1113,7 +1113,7 @@ pub fn run_simulation(
             });
         }
 
-        if args.species_colors && sim.config().separate_species_trails {
+        if args.species_colors_enabled() && sim.config().separate_species_trails {
             let species_trail_maps = sim.trail_maps_for_species_colors();
             let species_rgb_colors = extract_species_rgb_colors(&current_config);
             let combined: Vec<_> = species_trail_maps
@@ -2287,7 +2287,7 @@ pub fn run_simulation(
             };
 
             // Re-render with updated pause state
-            if args.species_colors && sim.config().separate_species_trails {
+            if args.species_colors_enabled() && sim.config().separate_species_trails {
                 let species_trail_maps = sim.trail_maps_for_species_colors();
                 let species_rgb_colors = extract_species_rgb_colors(&current_config);
                 let combined: Vec<_> = species_trail_maps
