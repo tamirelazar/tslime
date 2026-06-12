@@ -1184,7 +1184,7 @@ pub enum WindowFrame {
     Glow,
     /// Border responds to nearby agent activity.
     Reactive,
-    /// Food border that attracts agents.
+    /// Food-themed decorative border (visual only; does not affect the sim).
     Food,
     /// Thin-line frame (default).
     #[default]
