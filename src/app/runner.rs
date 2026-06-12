@@ -209,6 +209,9 @@ pub fn run_simulation(
     );
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
     renderer.set_dither_mode(dither_mode);
+    // Dither is dev-only for v0.1.0: runtime keys work only when it was
+    // explicitly enabled at startup via the (hidden) CLI flags.
+    let dither_unlocked = !matches!(dither_mode, DitherMode::None);
     renderer.set_ascii_contrast(args.ascii_contrast);
     renderer.set_window_frame(config.window_frame);
     let mut timer = FrameTimer::with_time_scale(args.fps, args.frame_delay, args.time_scale);
@@ -330,7 +333,7 @@ pub fn run_simulation(
     }
 
     // let config = args.to_sim_config().unwrap(); // Already parsed above
-    if args.species_colors {
+    if args.species_colors_enabled() {
         let species_rgb_colors = extract_species_rgb_colors(&config);
         renderer.set_species_colors(true, species_rgb_colors);
     }
@@ -411,13 +414,6 @@ pub fn run_simulation(
     } else {
         None
     };
-    #[cfg(not(feature = "audio"))]
-    {
-        if args.choir {
-            eprintln!("--choir requires building with --features audio");
-        }
-    }
-
     loop {
         if is_shutdown_requested() {
             break;
@@ -1113,7 +1109,7 @@ pub fn run_simulation(
             });
         }
 
-        if args.species_colors && sim.config().separate_species_trails {
+        if args.species_colors_enabled() && sim.config().separate_species_trails {
             let species_trail_maps = sim.trail_maps_for_species_colors();
             let species_rgb_colors = extract_species_rgb_colors(&current_config);
             let combined: Vec<_> = species_trail_maps
@@ -1582,16 +1578,37 @@ pub fn run_simulation(
                             ));
                         }
                         ControlAction::ToggleDither => {
-                            runtime_state.toggle_dither();
-                            renderer.set_dither_mode(runtime_state.dither_mode);
+                            if dither_unlocked {
+                                runtime_state.toggle_dither();
+                                renderer.set_dither_mode(runtime_state.dither_mode);
+                            } else {
+                                runtime_state.show_notification(
+                                    "Dither is dev-only - see help-wanted issues on GitHub"
+                                        .to_string(),
+                                );
+                            }
                         }
                         ControlAction::CycleDitherMode => {
-                            runtime_state.cycle_dither_mode();
-                            renderer.set_dither_mode(runtime_state.dither_mode);
+                            if dither_unlocked {
+                                runtime_state.cycle_dither_mode();
+                                renderer.set_dither_mode(runtime_state.dither_mode);
+                            } else {
+                                runtime_state.show_notification(
+                                    "Dither is dev-only - see help-wanted issues on GitHub"
+                                        .to_string(),
+                                );
+                            }
                         }
                         ControlAction::AdjustDitherIntensity(delta) => {
-                            runtime_state.adjust_dither_intensity(delta);
-                            renderer.set_dither_mode(runtime_state.dither_mode);
+                            if dither_unlocked {
+                                runtime_state.adjust_dither_intensity(delta);
+                                renderer.set_dither_mode(runtime_state.dither_mode);
+                            } else {
+                                runtime_state.show_notification(
+                                    "Dither is dev-only - see help-wanted issues on GitHub"
+                                        .to_string(),
+                                );
+                            }
                         }
                         ControlAction::ToggleKeyboardHints => {
                             runtime_state.toggle_keyboard_hints();
@@ -2074,34 +2091,25 @@ pub fn run_simulation(
                                 renderer.set_window_layout(None);
                             }
                         }
+                        #[cfg(feature = "audio")]
                         ControlAction::ToggleChoir => {
-                            #[cfg(feature = "audio")]
-                            {
-                                if choir.is_some() {
-                                    choir = None;
-                                    runtime_state.show_notification("Choir mode: off".to_string());
-                                } else {
-                                    match crate::audio::Choir::try_new(
-                                        args.choir_volume.clamp(0.0, 1.0),
-                                    ) {
-                                        Ok(c) => {
-                                            choir = Some(c);
-                                            runtime_state
-                                                .show_notification("Choir mode: on".to_string());
-                                        }
-                                        Err(e) => {
-                                            runtime_state.show_notification(format!(
-                                                "Choir init failed: {e}"
-                                            ));
-                                        }
+                            if choir.is_some() {
+                                choir = None;
+                                runtime_state.show_notification("Choir mode: off".to_string());
+                            } else {
+                                match crate::audio::Choir::try_new(
+                                    args.choir_volume.clamp(0.0, 1.0),
+                                ) {
+                                    Ok(c) => {
+                                        choir = Some(c);
+                                        runtime_state
+                                            .show_notification("Choir mode: on".to_string());
+                                    }
+                                    Err(e) => {
+                                        runtime_state
+                                            .show_notification(format!("Choir init failed: {e}"));
                                     }
                                 }
-                            }
-                            #[cfg(not(feature = "audio"))]
-                            {
-                                runtime_state.show_notification(
-                                    "Choir requires --features audio".to_string(),
-                                );
                             }
                         }
                         ControlAction::None => {}
@@ -2287,7 +2295,7 @@ pub fn run_simulation(
             };
 
             // Re-render with updated pause state
-            if args.species_colors && sim.config().separate_species_trails {
+            if args.species_colors_enabled() && sim.config().separate_species_trails {
                 let species_trail_maps = sim.trail_maps_for_species_colors();
                 let species_rgb_colors = extract_species_rgb_colors(&current_config);
                 let combined: Vec<_> = species_trail_maps

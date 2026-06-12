@@ -102,6 +102,14 @@ jobs:
     - name: Run cargo test
       run: cargo test --verbose
 
+    # Gated feature code (multi-species, audio, gui) is not compiled by the
+    # default build; run lib tests with all features so refactors cannot
+    # silently break it. Linux only: deps are installed above and the full
+    # GUI stack is too expensive to build on the paid runners.
+    - name: Run cargo test (all features, lib)
+      if: runner.os == 'Linux'
+      run: cargo test --all-features --lib
+
   licenses:
     name: License Check
     needs: hygiene

@@ -224,7 +224,7 @@ impl KeyboardHintsOverlay {
             )
             .add_two_col(
                 "?          Keyboard hints",
-                "[ / ]      Dither strength",
+                "[ / ]      Dither (dev)",
                 Left,
                 Left,
             )
@@ -236,7 +236,13 @@ impl KeyboardHintsOverlay {
             )
             .add_two_col(
                 "Tab        Cycle category",
-                "F2         Choir on / off",
+                {
+                    #[cfg(feature = "audio")]
+                    let choir_hint = "F2         Choir on / off";
+                    #[cfg(not(feature = "audio"))]
+                    let choir_hint = "";
+                    choir_hint
+                },
                 Left,
                 Left,
             )
@@ -294,6 +300,21 @@ impl KeyboardHintsOverlay {
                     let trimmed = col_text.trim_start();
 
                     if trimmed.is_empty() {
+                        continue;
+                    }
+
+                    // Dev-only entries: muted gray for the whole column.
+                    if col_text.contains("(dev)") {
+                        let gray = RgbColor {
+                            r: 128,
+                            g: 128,
+                            b: 128,
+                        };
+                        for (i, &c) in col_chars.iter().enumerate() {
+                            if c != ' ' {
+                                rich[col_start + i] = (c, Some(gray), None);
+                            }
+                        }
                         continue;
                     }
 
@@ -1196,12 +1217,16 @@ impl DashboardOverlay {
 
         // Extra info: species/attractors/obstacles (left) | empty (right)
         if attractor_count > 0 || obstacle_count > 0 || species_count > 1 {
+            #[cfg(feature = "multi-species")]
+            let spc_segment = format!("Spc:{} ", species_count);
+            #[cfg(not(feature = "multi-species"))]
+            let spc_segment = String::new();
             lines.push(format!(
                 "{:<cw$}",
                 Self::build_two_col_row(
                     &format!(
-                        "  Spc:{} Att:{} Obs:{}",
-                        species_count, attractor_count, obstacle_count
+                        "  {}Att:{} Obs:{}",
+                        spc_segment, attractor_count, obstacle_count
                     ),
                     ""
                 )

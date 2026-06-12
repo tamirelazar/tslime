@@ -25,6 +25,8 @@ gui = ["dep:iced", "dep:iced_term"]
 terminal = ["dep:crossterm", "dep:signal-hook", "dep:memory-stats", "dep:thiserror"]
 # audio (choir mode) opt-in: cargo build --features audio
 audio = ["dep:cpal"]
+# multi-species is experimental: cargo build --features multi-species
+multi-species = []
 
 [dependencies]
 crossterm = { version = "0.27", optional = true }

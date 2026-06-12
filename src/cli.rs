@@ -1199,6 +1199,7 @@ pub struct Args {
         long = "dither-mode",
         value_name = "MODE",
         default_value = dithering::DEFAULT_MODE,
+        hide = true,
         help = "Dithering mode: none, ordered, error-diffusion, hybrid"
     )]
     /// Dithering algorithm mode.
@@ -1208,6 +1209,7 @@ pub struct Args {
         long = "dither-intensity",
         value_name = "FLOAT",
         default_value_t = dithering::DEFAULT_INTENSITY,
+        hide = true,
         help = concat!("Dithering intensity for ordered/hybrid modes (0.0-1.0) [default: ", stringify!(dithering::DEFAULT_INTENSITY), "]")
     )]
     /// Intensity of dithering effect.
@@ -1217,6 +1219,7 @@ pub struct Args {
         long = "dither-matrix",
         value_name = "MATRIX",
         default_value = dithering::DEFAULT_MATRIX,
+        hide = true,
         help = "Dither matrix for ordered mode: 4x4, 8x8"
     )]
     /// Matrix size for ordered dithering.
@@ -1224,15 +1227,21 @@ pub struct Args {
 
     #[arg(
         long = "dither-swap",
+        hide = true,
         help = "Swap to next dither mode (cycle through none -> ordered -> error-diffusion -> hybrid)"
     )]
     /// Cycle through dither modes.
     pub dither_swap: bool,
 
-    #[arg(long = "error-diffusion-swap", help = "Toggle error diffusion mode")]
+    #[arg(
+        long = "error-diffusion-swap",
+        hide = true,
+        help = "Toggle error diffusion mode"
+    )]
     /// Toggle error diffusion dithering.
     pub error_diffusion_swap: bool,
 
+    #[cfg(feature = "multi-species")]
     #[arg(
         long = "species",
         value_name = "SPEC",
@@ -1241,6 +1250,7 @@ pub struct Args {
     /// List of agent species.
     pub species: Vec<SpeciesArg>,
 
+    #[cfg(feature = "multi-species")]
     #[arg(
         long = "separate-species-trails",
         help = "Each species maintains its own separate trail map (higher memory, allows species-specific patterns)"
@@ -1248,6 +1258,7 @@ pub struct Args {
     /// Use separate trail maps for each species.
     pub separate_species_trails: bool,
 
+    #[cfg(feature = "multi-species")]
     #[arg(
         long = "species-colors",
         help = "Enable species-specific rendering using each species' configured color. Automatically enables --separate-species-trails."
@@ -1571,13 +1582,15 @@ pub struct Args {
     /// Generate shell completions.
     pub completions: Option<String>,
 
+    #[cfg(feature = "audio")]
     #[arg(
         long = "choir",
-        help = "Enable choir-mode audio: sonify trail intensity at 8 fixed grid points (requires --features audio)"
+        help = "Enable choir-mode audio: sonify trail intensity at 8 fixed grid points"
     )]
     /// Enable choir-mode sonification.
     pub choir: bool,
 
+    #[cfg(feature = "audio")]
     #[arg(
         long = "choir-volume",
         value_name = "0.0-1.0",
@@ -1749,6 +1762,39 @@ impl Args {
             ))),
             _ => Err(format!("Invalid logo mapping: {}", self.logo_mapping)),
         }
+    }
+
+    /// Species list from the CLI.
+    #[cfg(feature = "multi-species")]
+    pub fn species_list(&self) -> &[SpeciesArg] {
+        &self.species
+    }
+    /// Species list from the CLI (always empty; build with `--features multi-species` to enable).
+    #[cfg(not(feature = "multi-species"))]
+    pub fn species_list(&self) -> &[SpeciesArg] {
+        &[]
+    }
+
+    /// Whether each species keeps its own trail map.
+    #[cfg(feature = "multi-species")]
+    pub fn separate_species_trails_enabled(&self) -> bool {
+        self.separate_species_trails
+    }
+    /// Whether each species keeps its own trail map (always false without `--features multi-species`).
+    #[cfg(not(feature = "multi-species"))]
+    pub fn separate_species_trails_enabled(&self) -> bool {
+        false
+    }
+
+    /// Whether species-specific color rendering is enabled.
+    #[cfg(feature = "multi-species")]
+    pub fn species_colors_enabled(&self) -> bool {
+        self.species_colors
+    }
+    /// Whether species-specific color rendering is enabled (always false without `--features multi-species`).
+    #[cfg(not(feature = "multi-species"))]
+    pub fn species_colors_enabled(&self) -> bool {
+        false
     }
 
     /// Parses the dither mode string.
@@ -1960,8 +2006,11 @@ impl Default for Args {
             dither_matrix: "4x4".to_string(),
             dither_swap: false,
             error_diffusion_swap: false,
+            #[cfg(feature = "multi-species")]
             species: Vec::new(),
+            #[cfg(feature = "multi-species")]
             separate_species_trails: false,
+            #[cfg(feature = "multi-species")]
             species_colors: false,
             simd_off: false,
             wind: None,
@@ -1999,7 +2048,9 @@ impl Default for Args {
             random: false,
             explain: false,
             completions: None,
+            #[cfg(feature = "audio")]
             choir: false,
+            #[cfg(feature = "audio")]
             choir_volume: 0.5,
             bg_color: None,
             pause_style: PauseStyle::Vignette,

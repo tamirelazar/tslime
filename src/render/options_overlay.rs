@@ -437,7 +437,7 @@ impl ControlsOverlay {
                         param_row(
                             " ",
                             "d/D",
-                            "Dither Mode",
+                            "Dither (dev)",
                             "────────".to_string(),
                             dither_mode_name.to_string(),
                         ),
@@ -689,6 +689,21 @@ fn generate_controls_rich_lines(
                             _ => None,
                         };
                         (c, fg, None)
+                    })
+                    .collect();
+            }
+
+            // Dev-only rows: muted gray, overriding token coloring.
+            if line.contains("(dev)") {
+                prev_was_indicator = false;
+                return chars
+                    .iter()
+                    .map(|&c| {
+                        if c == '█' || c == ' ' {
+                            (c, None, None)
+                        } else {
+                            (c, Some(muted_color), None)
+                        }
                     })
                     .collect();
             }

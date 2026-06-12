@@ -2508,6 +2508,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "multi-species")]
     fn test_try_from_args_rejects_bad_species_strict() {
         // NEW behavior: species params are now validated post-merge.
         use crate::cli::Args;
@@ -2517,6 +2518,17 @@ mod tests {
         assert!(
             result.is_err(),
             "out-of-range species param must now error (was silently accepted)"
+        );
+    }
+
+    #[test]
+    #[cfg(not(feature = "multi-species"))]
+    fn test_species_flag_rejected_without_feature() {
+        use crate::cli::Args;
+        use clap::Parser;
+        assert!(
+            Args::try_parse_from(["tslime", "--species", "x:1000"]).is_err(),
+            "--species must be unknown without multi-species feature"
         );
     }
 
