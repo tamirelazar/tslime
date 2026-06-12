@@ -224,7 +224,7 @@ impl KeyboardHintsOverlay {
             )
             .add_two_col(
                 "?          Keyboard hints",
-                "[ / ]      Dither strength",
+                "[ / ]      Dither (dev)",
                 Left,
                 Left,
             )
@@ -300,6 +300,21 @@ impl KeyboardHintsOverlay {
                     let trimmed = col_text.trim_start();
 
                     if trimmed.is_empty() {
+                        continue;
+                    }
+
+                    // Dev-only entries: muted gray for the whole column.
+                    if col_text.contains("(dev)") {
+                        let gray = RgbColor {
+                            r: 128,
+                            g: 128,
+                            b: 128,
+                        };
+                        for (i, &c) in col_chars.iter().enumerate() {
+                            if c != ' ' {
+                                rich[col_start + i] = (c, Some(gray), None);
+                            }
+                        }
                         continue;
                     }
 
