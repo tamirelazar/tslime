@@ -68,7 +68,6 @@ pub struct FrameTimer {
 
 impl FrameTimer {
     #[cfg(test)]
-    #[allow(dead_code)]
     /// Create a new frame timer with the specified FPS and frame delay.
     pub fn new(fps: usize, frame_delay_seconds: f32) -> Self {
         Self::with_time_scale(fps, frame_delay_seconds, 1.0)
@@ -146,28 +145,24 @@ impl FrameTimer {
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     /// Get the target FPS setting.
     pub fn target_fps(&self) -> usize {
         self.target_fps
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     /// Get the frame delay duration.
     pub fn frame_delay(&self) -> Duration {
         self.frame_delay
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     /// Set the target FPS.
     pub fn set_target_fps(&mut self, fps: usize) {
         self.target_fps = fps;
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     /// Set the frame delay in seconds.
     pub fn set_frame_delay(&mut self, frame_delay_seconds: f32) {
         self.frame_delay = Duration::from_secs_f32(frame_delay_seconds);

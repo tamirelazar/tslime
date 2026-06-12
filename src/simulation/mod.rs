@@ -664,13 +664,11 @@ impl Simulation {
         self.config.species_configs.len()
     }
 
-    #[allow(dead_code)]
     /// Get references to all trail maps.
     pub fn trail_maps(&self) -> &[TrailMap] {
         &self.trail_maps
     }
 
-    #[allow(dead_code)]
     /// Get a reference to the primary trail map.
     pub fn trail_map(&self) -> &TrailMap {
         &self.trail_maps[0]
@@ -724,13 +722,11 @@ impl Simulation {
         self.trail_maps.iter().map(|tm| tm.current()).collect()
     }
 
-    #[allow(dead_code)]
     /// Get a mutable reference to the primary trail map.
     pub fn trail_map_mut(&mut self) -> &mut TrailMap {
         &mut self.trail_maps[0]
     }
 
-    #[allow(dead_code)]
     /// Get the current simulation configuration.
     pub fn config(&self) -> &SimConfig {
         &self.config
@@ -1027,7 +1023,6 @@ impl Simulation {
         }
     }
 
-    #[allow(dead_code)]
     /// Get a reference to the agent list.
     pub fn agents(&self) -> &[Agent] {
         &self.agents

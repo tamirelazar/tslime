@@ -2595,7 +2595,6 @@ pub fn palette_accent_color(
     map_brightness_rgb(0.85, palette.clone(), reverse, invert, hue_offset, mapping)
 }
 
-#[allow(dead_code)]
 /// Generates an ANSI escape sequence for a truecolor foreground or background.
 pub fn truecolor_ansi(r: u8, g: u8, b: u8, is_fg: bool) -> String {
     format!("\x1b[{};2;{};{};{}m", if is_fg { 38 } else { 48 }, r, g, b)

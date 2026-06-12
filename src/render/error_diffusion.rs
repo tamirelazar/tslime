@@ -11,13 +11,10 @@ mod fs_coeff {
     pub const DOWN_RIGHT: f32 = 1.0 / 16.0;
 
     /// Coefficients for serpentine (right-to-left) scanning.
+    /// Vertical coefficients (down, down_right) are shared with the parent module.
     pub mod serpentine {
         pub const RIGHT: f32 = 3.0 / 16.0;
         pub const DOWN_LEFT: f32 = 7.0 / 16.0;
-        #[allow(dead_code)]
-        pub const DOWN: f32 = 5.0 / 16.0;
-        #[allow(dead_code)]
-        pub const DOWN_RIGHT: f32 = 1.0 / 16.0;
     }
 }
 

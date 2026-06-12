@@ -175,7 +175,6 @@ impl GridRenderer {
         opacity.clamp(0.0, 1.0)
     }
 
-    #[allow(dead_code)]
     /// Blends the grid color with the underlying cell color.
     pub fn blend_color(
         &self,

@@ -29,7 +29,6 @@ pub struct InputPoller {
 
 impl InputPoller {
     /// Create a new input poller with zero timeout (non-blocking).
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             poll_timeout: Duration::from_millis(0),
@@ -37,7 +36,6 @@ impl InputPoller {
     }
 
     /// Set the timeout duration for polling operations.
-    #[allow(dead_code)]
     pub fn set_poll_timeout(&mut self, timeout: Duration) {
         self.poll_timeout = timeout;
     }
@@ -47,7 +45,6 @@ impl InputPoller {
     /// Returns `Ok(Some(KeyEvent))` if a key was pressed within the timeout.
     /// Returns `Ok(None)` if no key was pressed.
     /// Returns `Err` if polling failed.
-    #[allow(dead_code)]
     pub fn poll_keypress(&self) -> io::Result<Option<KeyEvent>> {
         if event::poll(self.poll_timeout)? {
             if let Event::Key(key_event) = event::read()? {
@@ -63,7 +60,6 @@ impl InputPoller {
     ///
     /// Returns `Ok(Some((MousePosition, MouseEventType)))` if a relevant mouse event occurred.
     /// Ignores mouse up and scroll events for now.
-    #[allow(dead_code)]
     pub fn poll_mouse_event(&self) -> io::Result<Option<(MousePosition, MouseEventType)>> {
         if event::poll(self.poll_timeout)? {
             if let Event::Mouse(mouse_event) = event::read()? {

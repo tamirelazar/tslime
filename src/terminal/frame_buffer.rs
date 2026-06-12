@@ -506,7 +506,7 @@ impl FrameBuffer {
     /// This helper function is currently only used in tests but is retained
     /// as it may be useful for future features like automatic brightness normalization
     /// or exposure adjustment.
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     fn max_brightness(frame: &[DownsampleCell]) -> f32 {
         frame
             .iter()
@@ -1261,7 +1261,6 @@ impl FrameBuffer {
         }
     }
 
-    #[allow(dead_code)]
     fn ansi_color_code(color: u8, is_fg: bool) -> String {
         if is_fg {
             format!("\x1b[38;5;{}m", color)
@@ -1270,7 +1269,6 @@ impl FrameBuffer {
         }
     }
 
-    #[allow(dead_code)]
     fn truecolor_code(r: u8, g: u8, b: u8, is_fg: bool) -> String {
         if is_fg {
             format!("\x1b[38;2;{};{};{}m", r, g, b)
@@ -2321,7 +2319,6 @@ impl FrameBuffer {
 /// Render a single frame to stdout.
 ///
 /// This is a convenience wrapper around creating a `FrameBuffer` and writing it.
-#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 pub fn render_frame(
     downsampled: &[DownsampleCell],
