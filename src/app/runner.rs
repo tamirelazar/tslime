@@ -209,6 +209,9 @@ pub fn run_simulation(
     );
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
     renderer.set_dither_mode(dither_mode);
+    // Dither is dev-only for v0.1.0: runtime keys work only when it was
+    // explicitly enabled at startup via the (hidden) CLI flags.
+    let dither_unlocked = !matches!(dither_mode, DitherMode::None);
     renderer.set_ascii_contrast(args.ascii_contrast);
     renderer.set_window_frame(config.window_frame);
     let mut timer = FrameTimer::with_time_scale(args.fps, args.frame_delay, args.time_scale);
@@ -1575,16 +1578,37 @@ pub fn run_simulation(
                             ));
                         }
                         ControlAction::ToggleDither => {
-                            runtime_state.toggle_dither();
-                            renderer.set_dither_mode(runtime_state.dither_mode);
+                            if dither_unlocked {
+                                runtime_state.toggle_dither();
+                                renderer.set_dither_mode(runtime_state.dither_mode);
+                            } else {
+                                runtime_state.show_notification(
+                                    "Dither is dev-only - see help-wanted issues on GitHub"
+                                        .to_string(),
+                                );
+                            }
                         }
                         ControlAction::CycleDitherMode => {
-                            runtime_state.cycle_dither_mode();
-                            renderer.set_dither_mode(runtime_state.dither_mode);
+                            if dither_unlocked {
+                                runtime_state.cycle_dither_mode();
+                                renderer.set_dither_mode(runtime_state.dither_mode);
+                            } else {
+                                runtime_state.show_notification(
+                                    "Dither is dev-only - see help-wanted issues on GitHub"
+                                        .to_string(),
+                                );
+                            }
                         }
                         ControlAction::AdjustDitherIntensity(delta) => {
-                            runtime_state.adjust_dither_intensity(delta);
-                            renderer.set_dither_mode(runtime_state.dither_mode);
+                            if dither_unlocked {
+                                runtime_state.adjust_dither_intensity(delta);
+                                renderer.set_dither_mode(runtime_state.dither_mode);
+                            } else {
+                                runtime_state.show_notification(
+                                    "Dither is dev-only - see help-wanted issues on GitHub"
+                                        .to_string(),
+                                );
+                            }
                         }
                         ControlAction::ToggleKeyboardHints => {
                             runtime_state.toggle_keyboard_hints();
