@@ -99,13 +99,16 @@ pub fn print_parameter_explanations() {
     println!("    • clusters: Multiple random clusters");
     println!("    • food: Load from image (see --food)");
 
-    println!("\n  --species <SPEC>");
-    println!("    Define multiple species with different behaviors.");
-    println!("    Format: 'name:count@sensor_angle,rotation_angle,step_size,deposit:color'");
-    println!(
-        "    Example: --species 'red:20k@22.5,45,1.0,5.0:ff0000,blue:30k@30,60,1.5,3.0:0000ff'"
-    );
-    println!("    Enables multi-species simulations with distinct movement patterns.");
+    #[cfg(feature = "multi-species")]
+    {
+        println!("\n  --species <SPEC>");
+        println!("    Define multiple species with different behaviors.");
+        println!("    Format: 'name:count@sensor_angle,rotation_angle,step_size,deposit:color'");
+        println!(
+            "    Example: --species 'red:20k@22.5,45,1.0,5.0:ff0000,blue:30k@30,60,1.5,3.0:0000ff'"
+        );
+        println!("    Enables multi-species simulations with distinct movement patterns.");
+    }
 
     println!("\n\nENVIRONMENTAL FORCES");
     println!("─────────────────────────────────────────────────────────────────────────");
@@ -242,8 +245,11 @@ pub fn print_parameter_explanations() {
     println!("\n  # Chaotic exploration");
     println!("  tslime --sensor-angle 45 --rotation-angle 60 --sensor-distance 15");
 
-    println!("\n  # Multi-species competition");
-    println!("  tslime --species 'red:20k:ff0000,blue:20k:0000ff' --separate-species-trails");
+    #[cfg(feature = "multi-species")]
+    {
+        println!("\n  # Multi-species competition");
+        println!("  tslime --species 'red:20k:ff0000,blue:20k:0000ff' --separate-species-trails");
+    }
 
     println!("\n  # Wind-driven river pattern");
     println!("  tslime --preset river --wind 0.3,0.0");

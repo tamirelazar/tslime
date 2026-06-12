@@ -1196,12 +1196,16 @@ impl DashboardOverlay {
 
         // Extra info: species/attractors/obstacles (left) | empty (right)
         if attractor_count > 0 || obstacle_count > 0 || species_count > 1 {
+            #[cfg(feature = "multi-species")]
+            let spc_segment = format!("Spc:{} ", species_count);
+            #[cfg(not(feature = "multi-species"))]
+            let spc_segment = String::new();
             lines.push(format!(
                 "{:<cw$}",
                 Self::build_two_col_row(
                     &format!(
-                        "  Spc:{} Att:{} Obs:{}",
-                        species_count, attractor_count, obstacle_count
+                        "  {}Att:{} Obs:{}",
+                        spc_segment, attractor_count, obstacle_count
                     ),
                     ""
                 )
