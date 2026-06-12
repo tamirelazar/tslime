@@ -6,7 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Saves a single simulation frame as a PNG image.
 ///
-/// Converts the downsampled grid into an image using the specified palette and settings.
+/// Converts the downsampled grid into an image using the specified palette and
+/// settings. Each cell renders as two stacked pixels (top/bottom halves), so
+/// the image is `width` x `height * 2`. The file is written to the working
+/// directory with a timestamp-based name, which is returned.
 #[allow(clippy::too_many_arguments)]
 pub fn save_frame_as_png(
     downsampled: &[Cell],
@@ -75,14 +78,14 @@ pub fn save_frame_as_png(
 }
 
 fn generate_timestamp() -> String {
-    // Get current time since UNIX_EPOCH
-    // SystemTime::now() is guaranteed to be after UNIX_EPOCH on all modern systems
+    // SystemTime::now() is after UNIX_EPOCH on any modern system, so expect() is safe
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time is before 1970 - this should never happen on modern systems")
         .as_millis();
 
-    // Add nanoseconds for additional uniqueness to avoid collisions
+    // Meant to disambiguate same-millisecond frames, but elapsed() on a fresh
+    // Instant is near-zero, so this adds little real uniqueness
     let nanos = std::time::Instant::now().elapsed().subsec_nanos();
     format!("tslime_frame_{:013}_{:09}.png", millis, nanos)
 }
@@ -180,7 +183,7 @@ mod tests {
         assert!(filename.ends_with(".png"));
 
         let parts: Vec<&str> = filename.split('_').collect();
-        // New format: tslime_frame_MILLIS_NANOS.png (4 parts)
+        // Format: tslime_frame_MILLIS_NANOS.png (4 underscore-separated parts)
         assert_eq!(parts.len(), 4);
         assert_eq!(parts[0], "tslime");
         assert_eq!(parts[1], "frame");

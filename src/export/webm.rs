@@ -14,7 +14,9 @@ pub struct WebmExporter {
 impl WebmExporter {
     /// Creates a new WebM exporter.
     ///
-    /// Initializes a temporary directory for storing individual frames.
+    /// The output path argument is ignored here; pass the path to
+    /// [`finish`](Self::finish) instead. Creates a temporary directory for
+    /// staging individual frames.
     pub fn new(
         width: usize,
         height: usize,
@@ -65,7 +67,9 @@ impl WebmExporter {
 
     /// Finalizes the export by invoking FFmpeg.
     ///
-    /// Compiles the temporary frames into a WebM video and cleans up the temp dir.
+    /// Encodes the staged frames as lossless VP9 (libvpx-vp9, yuva420p) into
+    /// a WebM at `output_path`, then removes the temp dir. Requires `ffmpeg`
+    /// on PATH.
     pub fn finish(&mut self, output_path: &str) -> Result<(), String> {
         if self.frames.is_empty() {
             return Err("No frames to export".to_string());
@@ -167,7 +171,6 @@ mod tests {
         let pixels = vec![255u8; 12]; // 2x2 RGB = 12 bytes
         let result = exporter.add_frame_png(&pixels);
         assert!(result.is_ok());
-        // Don't check frame count here as Drop may have cleaned up
     }
 
     #[test]
