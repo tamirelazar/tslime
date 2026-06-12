@@ -31,11 +31,7 @@ use std::ops::RangeInclusive;
 /// }
 /// ```
 pub trait Validatable {
-    /// Validates the configuration and returns an error if invalid.
-    ///
-    /// # Returns
-    /// - `Ok(())` if the configuration is valid
-    /// - `Err(ValidationError)` with a descriptive error if invalid
+    /// Validates the configuration, returning a descriptive error if invalid.
     fn validate(&self) -> Result<(), ValidationError>;
 }
 
@@ -77,8 +73,7 @@ impl<T: PartialOrd + std::fmt::Display + Clone> RangeRule<T> {
 }
 
 impl RangeRule<f32> {
-    /// Validates that a value is within the range.
-    /// Specialized implementation for f32 to avoid Clone issues.
+    /// By-value convenience over the generic by-reference [`validate`](Self::validate).
     pub fn validate_f32(&self, value: f32) -> Result<(), ValidationError> {
         if value < self.min || value > self.max {
             Err(ValidationError::out_of_range(
@@ -91,8 +86,7 @@ impl RangeRule<f32> {
 }
 
 impl RangeRule<usize> {
-    /// Validates that a value is within the range.
-    /// Specialized implementation for usize to avoid Clone issues.
+    /// By-value convenience over the generic by-reference [`validate`](Self::validate).
     pub fn validate_usize(&self, value: usize) -> Result<(), ValidationError> {
         if value < self.min || value > self.max {
             Err(ValidationError::out_of_range(
@@ -188,20 +182,8 @@ pub mod rules {
     );
 }
 
-/// Validates that a value falls within an inclusive range.
-///
-/// # Type Parameters
-/// * `T` - The type of value to validate (must implement PartialOrd)
-///
-/// # Arguments
-/// * `value` - The value to validate
-/// * `min` - The minimum acceptable value (inclusive)
-/// * `max` - The maximum acceptable value (inclusive)
-/// * `name` - The name of the parameter for error messages
-///
-/// # Returns
-/// - `Ok(())` if the value is within range
-/// - `Err(ValidationError)` with a descriptive error message if out of range
+/// Validates that `value` falls within the inclusive range `min..=max`;
+/// `name` labels the parameter in the error message.
 ///
 /// # Examples
 /// ```
@@ -223,16 +205,8 @@ pub fn validate_range<T: PartialOrd + std::fmt::Display>(
     }
 }
 
-/// Validates that a value is at least a minimum value.
-///
-/// # Arguments
-/// * `value` - The value to validate
-/// * `min` - The minimum acceptable value (inclusive)
-/// * `name` - The name of the parameter for error messages
-///
-/// # Returns
-/// - `Ok(())` if the value meets the minimum
-/// - `Err(ValidationError)` with a descriptive error message if too small
+/// Validates that `value` is at least `min` (inclusive); `name` labels the
+/// parameter in the error message.
 pub fn validate_min<T: PartialOrd + std::fmt::Display>(
     value: T,
     min: T,
@@ -245,16 +219,8 @@ pub fn validate_min<T: PartialOrd + std::fmt::Display>(
     }
 }
 
-/// Validates that a value is at most a maximum value.
-///
-/// # Arguments
-/// * `value` - The value to validate
-/// * `max` - The maximum acceptable value (inclusive)
-/// * `name` - The name of the parameter for error messages
-///
-/// # Returns
-/// - `Ok(())` if the value meets the maximum
-/// - `Err(ValidationError)` with a descriptive error message if too large
+/// Validates that `value` is at most `max` (inclusive); `name` labels the
+/// parameter in the error message.
 pub fn validate_max<T: PartialOrd + std::fmt::Display>(
     value: T,
     max: T,
@@ -267,15 +233,7 @@ pub fn validate_max<T: PartialOrd + std::fmt::Display>(
     }
 }
 
-/// Validates that a string is not empty.
-///
-/// # Arguments
-/// * `value` - The string to validate
-/// * `name` - The name of the parameter for error messages
-///
-/// # Returns
-/// - `Ok(())` if the string is not empty
-/// - `Err(ValidationError)` with a descriptive error message if empty
+/// Validates that a string is non-empty after trimming whitespace.
 pub fn validate_not_empty(value: &str, name: &str) -> Result<(), ValidationError> {
     if value.trim().is_empty() {
         Err(ValidationError::empty(name))
@@ -284,15 +242,7 @@ pub fn validate_not_empty(value: &str, name: &str) -> Result<(), ValidationError
     }
 }
 
-/// Validates that a vector is not empty.
-///
-/// # Arguments
-/// * `value` - The vector to validate
-/// * `name` - The name of the parameter for error messages
-///
-/// # Returns
-/// - `Ok(())` if the vector is not empty
-/// - `Err(ValidationError)` with a descriptive error message if empty
+/// Validates that a slice is not empty.
 pub fn validate_vec_not_empty<T>(value: &[T], name: &str) -> Result<(), ValidationError> {
     if value.is_empty() {
         Err(ValidationError::custom(format!("{} cannot be empty", name)))

@@ -294,8 +294,6 @@ impl PaletteEditorState {
     /// Adjust the hue of the selected color(s) by `delta` degrees.
     /// Also updates stored_hues to preserve the new hue value.
     pub fn adjust_hue(&mut self, delta: f32) {
-        // Apply the hue adjustment using stored hues as base when current hue is NaN
-        // This single call handles both color update and stored_hues sync
         self.adjust_oklch_with_hue_override(delta);
     }
 
@@ -402,7 +400,7 @@ impl PaletteEditorState {
         }
     }
 
-    /// Apply the current palette colors (for immediate preview during editing).
+    /// Returns the current colors as a `Palette::Custom` (used for live preview).
     pub fn to_palette(&self) -> Palette {
         Palette::Custom(self.colors.to_vec())
     }
@@ -638,13 +636,12 @@ fn build_slider_bar(frac: f32) -> String {
 ///
 /// Layout (rows are 0-indexed within overlay content):
 /// 0  top border
-/// 1  gradient strip    ← ▄ with fg=color(t), bg=color(t+Δ)
-/// 2  empty
-/// 3  stop selector     ← ◆ diamonds colored by stop color
+/// 1-2  empty
+/// 3  stop selector     ← ◉/○ indicators colored by stop color
 /// 4  swatch labels
 /// 5  empty
-/// 6  color info        ← ◆ swatch colored by stop color
-/// 7  separator
+/// 6  separator
+/// 7  empty
 /// 8  L slider label
 /// 9  L slider          ← lightness gradient track
 /// 10 empty
@@ -658,7 +655,7 @@ fn build_slider_bar(frac: f32) -> String {
 /// 18-24 hint rows
 /// 25 empty
 /// 26 separator
-/// 27 gradient preview strip
+/// 27 gradient preview strip ← ▄ with fg=color(t), bg=color(t+Δ)
 fn build_editor_rich_lines(
     state: &PaletteEditorState,
     lines: &[String],

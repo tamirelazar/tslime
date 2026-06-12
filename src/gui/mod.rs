@@ -53,7 +53,7 @@ impl App {
         let settings = iced_term::settings::Settings {
             font: iced_term::settings::FontSettings {
                 size: 14.0,
-                scale_factor: 1.20, // ~35% extra line height, matching Ghostty config
+                scale_factor: 1.20, // extra line height, matching Ghostty config
                 font_type: FIRA_CODE_NERD_FONT,
             },
             theme: iced_term::settings::ThemeSettings::new(Box::new(gruvbox_material_dark())),

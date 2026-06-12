@@ -1,8 +1,8 @@
 //! Parameter space exploration for discovering optimal presets.
 //!
-//! This module provides tools for mathematically analyzing the parameter space
-//! of the Physarum simulation to discover parameters that produce specific
-//! emergent behaviors.
+//! Searches the Physarum simulation's parameter space, scoring candidates
+//! with pattern metrics to find parameters that produce specific emergent
+//! behaviors.
 
 pub mod explorer;
 pub mod metrics;

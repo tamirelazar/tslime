@@ -1184,9 +1184,9 @@ pub enum WindowFrame {
     Glow,
     /// Border responds to nearby agent activity.
     Reactive,
-    /// Food border that attracts agents.
+    /// Food-themed decorative border (visual only; does not affect the sim).
     Food,
-    /// Thin-line frame — new default.
+    /// Thin-line frame (default).
     #[default]
     Frame,
 }
@@ -1669,7 +1669,7 @@ pub struct SimConfig {
     pub rotation_angle: f32,
     /// Agent speed (pixels/step).
     pub step_size: f32,
-    /// Trail decay factor (0.0-1.0).
+    /// Trail decay factor (0.5-0.9999).
     pub decay_factor: f32,
     /// Amount of trail deposited per step.
     pub deposit_amount: f32,
@@ -1677,7 +1677,7 @@ pub struct SimConfig {
     pub diffusion_kernel: DiffusionKernel,
     /// Sigma for Gaussian diffusion.
     pub diffusion_sigma: f32,
-    /// Max brightness for normalization.
+    /// White-point divisor for brightness normalization (higher = darker).
     pub max_brightness: f32,
     /// Time scale multiplier (0.1-10.0).
     pub time_scale: f32,

@@ -172,8 +172,9 @@ fn estimate_char_density(c: char) -> f32 {
 
 /// Maps two vertical subpixels to a Braille character.
 ///
-/// Uses Braille patterns to represent 2-pixel height with variable horizontal density.
-/// Note: This is a simplified mapping that uses dot patterns to approximate intensity.
+/// Simplified intensity mapping: `top` fills the left dot column and `bottom`
+/// the right column (0-3 dots each), approximating brightness rather than
+/// true subpixel layout.
 pub fn map_braille_subpixel(top: f32, bottom: f32, threshold: f32) -> char {
     let top = top.clamp(0.0, 1.0);
     let bottom = bottom.clamp(0.0, 1.0);
@@ -199,30 +200,16 @@ pub fn map_braille_subpixel(top: f32, bottom: f32, threshold: f32) -> char {
     char::from_u32(0x2800 + combined_mask as u32).unwrap_or(' ')
 }
 
-/// Maps brightness to a shade character (░▒▓█).
-///
-/// Uses averaged brightness for smooth density gradients.
-/// Returns one of 5 characters based on brightness level.
-///
-/// # Arguments
-/// * `brightness` - Value from 0.0 to 1.0
-///
-/// # Returns
-/// One of: ' ' (0-20%), '░' (20-40%), '▒' (40-60%), '▓' (60-80%), '█' (80-100%)
+/// Maps brightness (0.0-1.0) to one of 5 shade characters (' ' ░ ▒ ▓ █)
+/// by rounding to the nearest level (boundaries at 12.5%, 37.5%, 62.5%, 87.5%).
 pub fn map_shade(brightness: f32) -> char {
     let b = brightness.clamp(0.0, 1.0);
     let index = (b * (SHADE_CHARS.len() - 1) as f32).round() as usize;
     SHADE_CHARS[index]
 }
 
-/// Maps brightness to point character with threshold.
-///
-/// Returns ▪ if above threshold, space otherwise.
+/// Returns ▪ if `brightness` exceeds `threshold`, space otherwise.
 /// Best for sparse particle visualization.
-///
-/// # Arguments
-/// * `brightness` - Value from 0.0 to 1.0
-/// * `threshold` - Minimum brightness to show a point (e.g., 0.15)
 pub fn map_point(brightness: f32, threshold: f32) -> char {
     if brightness > threshold {
         POINT_CHAR
@@ -231,9 +218,8 @@ pub fn map_point(brightness: f32, threshold: f32) -> char {
     }
 }
 
-/// Maps four quadrant brightness values to a Unicode quadrant character
-/// Each quadrant can be either on (bright) or off (dark) based on a threshold
-/// Returns characters from U+1FB00-U+1FB0F (Legacy Computing Symbols)
+/// Maps four quadrant brightness values to a Unicode block element
+/// (U+2580-U+259F). Each quadrant is on or off based on `threshold`.
 pub fn map_quadrant(
     top_left: f32,
     top_right: f32,
@@ -275,10 +261,8 @@ pub fn map_quadrant(
 
 /// Maps a brightness value to a character from the selected charset.
 ///
-/// # Arguments
-/// * `top` - Brightness of the top subpixel (or overall cell).
-/// * `bottom` - Optional brightness of the bottom subpixel (for half-block/braille).
-/// * `charset` - The character set to use.
+/// `top` is the top-subpixel (or overall cell) brightness; `bottom` is the
+/// optional bottom-subpixel brightness used by braille/shade/points modes.
 pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
     match charset {
         Charset::HalfBlock | Charset::HalfBlockDual => {
@@ -711,16 +695,10 @@ fn enhance_directional_contrast(v: &mut [f32; 6], neighbors: &[[f32; 6]], expone
 
 /// Maps spatial brightness distribution to an ASCII character using shape vectors.
 ///
-/// Constructs a 6D shape vector from the cell's quadrant values and finds the
-/// character whose visual density distribution best matches, using squared
-/// Euclidean distance.
-///
-/// # Arguments
-/// * `tl` - Top-left quadrant brightness (0.0-1.0)
-/// * `tr` - Top-right quadrant brightness
-/// * `bl` - Bottom-left quadrant brightness
-/// * `br` - Bottom-right quadrant brightness
-/// * `contrast` - Contrast enhancement exponent (1.0 = none, 2.0 = strong)
+/// Constructs a 6D shape vector from the cell's quadrant brightness values
+/// (0.0-1.0) and finds the character whose visual density distribution best
+/// matches, using squared Euclidean distance. `contrast` is the enhancement
+/// exponent (1.0 = none, 2.0 = strong).
 pub fn map_shape_ascii(tl: f32, tr: f32, bl: f32, br: f32, contrast: f32) -> char {
     // Construct 2×3 shape vector from 2×2 quadrant data
     // Middle row is estimated as the average of top and bottom halves
@@ -785,12 +763,8 @@ pub fn map_shape_ascii(tl: f32, tr: f32, bl: f32, br: f32, contrast: f32) -> cha
 
 /// Shape-vector ASCII matching with directional contrast using neighbor data.
 ///
-/// Like `map_shape_ascii` but takes neighboring cells to enhance boundaries.
-///
-/// # Arguments
-/// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values for this cell
-/// * `neighbor_quads` - Slice of `[tl, tr, bl, br]` arrays from adjacent cells
-/// * `contrast` - Contrast enhancement exponent (1.0 = none, 2.0 = strong)
+/// Like `map_shape_ascii`, but also sharpens boundaries against adjacent
+/// cells: `neighbor_quads` holds `[tl, tr, bl, br]` arrays for each neighbor.
 pub fn map_shape_ascii_with_neighbors(
     tl: f32,
     tr: f32,
@@ -880,13 +854,9 @@ pub fn map_shape_ascii_with_neighbors(
 
 /// Maps spatial brightness to a braille character using 8-position sampling.
 ///
-/// Interpolates the 4 quadrant values to 8 positions matching the 2×4
-/// braille dot layout, thresholds each independently, and returns the
-/// corresponding Unicode braille character (U+2800–U+28FF).
-///
-/// # Arguments
-/// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values (0.0–1.0)
-/// * `threshold` - Minimum brightness for a dot to be "on" (e.g. 0.05)
+/// Interpolates the 4 quadrant brightness values (0.0-1.0) to 8 positions
+/// matching the 2×4 braille dot layout, thresholds each dot independently,
+/// and returns the corresponding braille character (U+2800-U+28FF).
 pub fn map_shape_braille(tl: f32, tr: f32, bl: f32, br: f32, threshold: f32) -> char {
     // Interpolate 8 positions across the 2×4 braille grid.
     // Row weights: row0=1.0/0.0, row1=0.67/0.33, row2=0.33/0.67, row3=0.0/1.0
@@ -948,12 +918,9 @@ pub fn map_shape_braille(tl: f32, tr: f32, bl: f32, br: f32, threshold: f32) -> 
 
 /// Selects an outline character based on quadrant brightness distribution.
 ///
-/// Uses quadrant blocks for corners, half blocks for straight edges,
-/// and triangle fills (◢◣◤◥) for diagonal contours. This is used
-/// by Sculpted mode for cells at the boundary of shapes.
-///
-/// # Arguments
-/// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values (0.0–1.0)
+/// Uses quadrant blocks for corners, half blocks for straight edges, and
+/// triangle fills (◢◣◤◥) for diagonal contours. Used by Sculpted mode
+/// for cells at the boundary of shapes.
 pub fn map_sculpted_outline(tl: f32, tr: f32, bl: f32, br: f32) -> char {
     use crate::config_defaults::threshold;
 

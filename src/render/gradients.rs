@@ -5,6 +5,9 @@
 //! - 256-color ANSI indices (11 stops) — for terminals without true-color support
 //! - Legacy RGB (11 stops) — kept for reference and 256-color fallback calculation
 //! - OKLch perceptual color space (11 stops) — the primary source for true-color rendering
+//!
+//! OKLch stop definitions follow Björn Ottosson's OKLab color space; see
+//! `palette.rs` (`oklch_to_srgb`) for the conversion chain and full reference.
 
 use crate::cli::Palette;
 use crate::render::palette::{OklchStop, RgbColor};

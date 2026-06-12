@@ -8,9 +8,9 @@ use crate::render::palette_editor::PaletteEditorState;
 
 /// Centralized state for all overlays.
 ///
-/// This struct provides a single source of truth for overlay visibility,
-/// replacing the scattered boolean flags (show_controls, show_dashboard, etc.)
-/// that previously existed in RuntimeState.
+/// Single source of truth for overlay visibility, replacing the scattered
+/// boolean flags (`show_controls`, `show_dashboard`, etc.) formerly in
+/// `RuntimeState`.
 ///
 /// # Example
 /// ```
@@ -64,8 +64,7 @@ impl OverlayState {
 
     /// Opens the specified overlay, closing any currently open overlay.
     ///
-    /// This enforces mutual exclusivity - only one overlay can be open at a time.
-    /// If you need to open an overlay without closing others, use `open_exclusive`.
+    /// This enforces mutual exclusivity — only one overlay can be open at a time.
     ///
     /// # Example
     /// ```
@@ -136,8 +135,7 @@ impl OverlayState {
 
     /// Opens the palette editor with the given initial state.
     ///
-    /// This is a convenience method that handles the palette_editor state
-    /// in addition to setting the active overlay.
+    /// Sets the palette editor sub-state in addition to the active overlay.
     pub fn open_palette_editor(&mut self, state: PaletteEditorState) {
         self.palette_editor = Some(state);
         self.open(OverlayType::PaletteEditor);

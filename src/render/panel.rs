@@ -115,7 +115,7 @@ impl Padding {
         }
     }
 
-    /// Creates padding with horizontal and vertical values (alias for vertical).
+    /// Like [`Padding::vertical`], but takes the horizontal value first.
     pub fn horizontal(horizontal: usize, vertical: usize) -> Self {
         Self {
             top: vertical,

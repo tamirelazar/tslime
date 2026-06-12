@@ -162,7 +162,7 @@ pub fn print_parameter_explanations() {
     println!("    Character set for rendering.");
     println!("    • --ascii: ASCII characters only (widest compatibility)");
     println!("    • --braille: Braille Unicode characters (2× vertical resolution)");
-    println!("    • --quadrant: Quadrant blocks (4× vertical resolution)");
+    println!("    • --quadrant: Quadrant blocks (2×2 subpixels per cell)");
 
     println!("\n  --resolution <WxH> (default: 400x200)");
     println!("    Internal simulation grid size.");
@@ -257,6 +257,6 @@ pub fn print_parameter_explanations() {
     println!("\n  # High-res export");
     println!("  tslime --resolution 800x400 --export-gif output.gif --export-frames 100");
 
-    println!("\n\nFor more information, visit: https://github.com/yourusername/tslime");
+    println!("\n\nFor more information, visit: https://github.com/tamirelazar/tslime");
     println!();
 }

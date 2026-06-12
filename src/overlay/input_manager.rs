@@ -1,11 +1,12 @@
 //! Centralized overlay input handling.
 //!
-//! SINGLE SOURCE OF TRUTH for overlay input behavior:
+//! Single source of truth for overlay input behavior:
 //! 1. All overlays toggle on their keybind (open → close, closed → open)
-//! 2. All overlays close on Escape (if closes_on_escape())
-//! 3. When an overlay is open, keys that would toggle a DIFFERENT overlay are blocked
-//! 4. All other keys pass through normally (e.g., 'c' for cycle palette works)
-//! 5. To switch overlays: close current, then open new
+//! 2. All overlays close on Escape if `closes_on_escape()`, unless they
+//!    handle Escape internally, in which case the key is delegated
+//! 3. While an overlay is open, keys that would toggle a different overlay are blocked
+//! 4. All other keys pass through normally (e.g., 'c' for cycle palette)
+//! 5. To switch overlays: close the current one, then open the new one
 
 use crate::overlay::{OverlayState, OverlayType};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -21,7 +22,7 @@ pub enum OverlayInputResult {
     NotHandled,
 }
 
-/// Centralized overlay input manager - SINGLE SOURCE OF TRUTH
+/// Applies the overlay input rules described in the module docs.
 pub struct OverlayInputManager;
 
 impl OverlayInputManager {
@@ -52,10 +53,9 @@ impl OverlayInputManager {
             return OverlayInputResult::CloseOverlay;
         }
 
-        // Rule 3: Block keys that would toggle a different overlay
-        // This prevents accidental overlay switching
-        // NOTE: Don't block Control-modified keys (Ctrl+S, Ctrl+L, etc.) as these
-        // are typically handled by the active overlay, not toggle keys
+        // Rule 3: Block keys that would toggle a different overlay.
+        // Don't block Control-modified keys (Ctrl+S, Ctrl+L, etc.) — these are
+        // typically handled by the active overlay, not toggle keys.
         if !key.modifiers.contains(KeyModifiers::CONTROL) {
             if let KeyCode::Char(c) = key.code {
                 if let Some(other) = OverlayType::from_toggle_key(c, key.modifiers) {
@@ -66,8 +66,7 @@ impl OverlayInputManager {
             }
         }
 
-        // Rule 4: Let all other keys pass through
-        // Keys like 'c' (cycle palette), Space (pause), etc. should work
+        // Rule 4: Let all other keys (cycle palette, pause, etc.) pass through
         OverlayInputResult::NotHandled
     }
 }

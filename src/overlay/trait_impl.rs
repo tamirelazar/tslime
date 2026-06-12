@@ -12,50 +12,26 @@ use crate::render::theme::PanelStyle;
 /// This trait defines the common behavior that all overlays must implement,
 /// including building their content, calculating position, and declaring
 /// their input handling characteristics.
-///
-/// # Type Parameters
-///
-/// * `BuildData` - The type of data needed to build this overlay.
-///   This varies by overlay type (e.g., `RgbColor` for keyboard hints,
-///   `ControlsData` for controls overlay).
 pub trait Overlay {
     /// The type of data needed to build this overlay.
     ///
-    /// This allows different overlays to require different parameters
-    /// while maintaining a consistent interface.
+    /// Varies by overlay (e.g., `RgbColor` for keyboard hints,
+    /// `ControlsData` for the controls overlay).
     type BuildData;
 
     /// Returns the overlay type enum variant for this overlay.
-    ///
-    /// This is used to identify the overlay type at runtime.
     fn overlay_type() -> OverlayType;
 
-    /// Builds the overlay content into a `RenderedOverlay`.
-    ///
-    /// # Parameters
-    ///
-    /// * `data` - The build data specific to this overlay type
-    /// * `style` - The current panel style for theming
-    ///
-    /// # Returns
-    ///
-    /// A `RenderedOverlay` containing the lines and optional rich color data.
+    /// Builds the overlay content into a `RenderedOverlay` (lines plus
+    /// optional rich color data) from the overlay-specific build data and
+    /// the current panel style.
     fn build(data: &Self::BuildData, style: &PanelStyle) -> RenderedOverlay;
 
-    /// Calculates the centered position for the overlay on screen.
+    /// Calculates the (x, y) of the overlay's top-left corner from the
+    /// terminal and overlay dimensions (both (width, height)).
     ///
-    /// The default implementation centers the overlay on the terminal.
-    /// Overlays can override this for custom positioning (e.g., top-left,
-    /// bottom-right, etc.).
-    ///
-    /// # Parameters
-    ///
-    /// * `term_size` - The terminal dimensions as (width, height)
-    /// * `overlay_size` - The overlay dimensions as (width, height)
-    ///
-    /// # Returns
-    ///
-    /// The (x, y) coordinates for the top-left corner of the overlay.
+    /// The default implementation centers the overlay; override for custom
+    /// placement (see the `*_position` helpers).
     fn calculate_position(
         term_size: (usize, usize),
         overlay_size: (usize, usize),

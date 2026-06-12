@@ -265,7 +265,8 @@ pub fn oklch_to_srgb(l: f32, c: f32, h_deg: f32) -> RgbColor {
     let b = c * h_rad.sin();
 
     // Step 2: OKLab → LMS (cube roots of cone responses)
-    // Coefficients from Björn Ottosson's OKLab paper (2020).
+    // Coefficients from Björn Ottosson, "A perceptual color space for image
+    // processing" (2020), https://bottosson.github.io/posts/oklab/
     let l_ = l + 0.396_337_8 * a + 0.215_803_76 * b;
     let m_ = l - 0.105_561_35 * a - 0.063_854_17 * b;
     let s_ = l - 0.089_484_18 * a - 1.291_485_5 * b;
@@ -275,6 +276,8 @@ pub fn oklch_to_srgb(l: f32, c: f32, h_deg: f32) -> RgbColor {
     let lms_s = s_ * s_ * s_;
 
     // Step 3: LMS → linear sRGB
+    // Red-row M/S constants predate Ottosson's 2021 matrix update (deltas ~1e-5,
+    // visually negligible); green/blue rows and srgb_to_oklch match the updated post.
     let r_lin = 4.076_741_7 * lms_l - 3.307_736_3 * lms_m + 0.230_910_13 * lms_s;
     let g_lin = -1.268_438 * lms_l + 2.609_757_4 * lms_m - 0.341_319_4 * lms_s;
     let b_lin = -0.004_196_077 * lms_l - 0.703_418_6 * lms_m + 1.707_614_7 * lms_s;
@@ -435,7 +438,7 @@ fn oklch_stops_to_gradient(stops: &[OklchStop], n: usize) -> Vec<GradientStop> {
 /// All functions guarantee: f(0) = 0, f(1) = 1, and monotonically increasing output.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub enum MappingFunction {
-    /// Linear: f(x) = x (current behavior)
+    /// Linear: f(x) = x
     #[default]
     Linear,
 
@@ -797,7 +800,7 @@ impl IntensityMapping {
 
 // Convenience constructors (pre-validated, cannot fail)
 impl IntensityMapping {
-    /// Linear mapping (current behavior).
+    /// Linear mapping.
     pub fn linear() -> Self {
         Self {
             segments: vec![MappingSegment {
@@ -927,8 +930,7 @@ impl Default for IntensityMapping {
     }
 }
 
-/// Interpolates smoothly between gradient stops
-/// Supports any number of control points for continuous color mapping
+/// Interpolates linearly between gradient stops; supports any number of control points.
 #[inline]
 pub fn interpolate_gradient(stops: &[GradientStop], t: f32) -> RgbColor {
     let t = t.clamp(0.0, 1.0);
@@ -2246,9 +2248,11 @@ pub fn rotate_hue(hsv: HsvColor, degrees: f32) -> HsvColor {
     }
 }
 
-/// Finds the nearest ANSI 256 color code for a given RGB color.
+/// Approximates the nearest ANSI 256 color code for an RGB color.
 ///
-/// Uses Euclidean distance in RGB space to find the best match.
+/// Near-gray colors snap to the grayscale ramp (232-255), close matches to the
+/// 16 system colors are taken directly, and everything else rounds into the
+/// 6×6×6 color cube — a fast heuristic, not an exhaustive nearest search.
 #[inline]
 pub fn rgb_to_256(rgb: RgbColor) -> u8 {
     let gray_diff = (rgb.r as i16 - rgb.g as i16).abs()
@@ -2362,17 +2366,11 @@ thread_local! {
     static CUSTOM_STOPS_CACHE: std::cell::RefCell<Option<(Vec<RgbColor>, Vec<GradientStop>)>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Get gradient stops for a palette (supports continuous interpolation).
+/// Returns gradient stops for a palette (always a cloned `Vec`).
 ///
-/// For built-in palettes, returns a reference to pre-computed stops from the static cache.
-/// For custom palettes, uses thread-local storage to avoid repeated allocations for the same palette.
-///
-/// # Arguments
-/// * `palette` - The palette to get gradient stops for
-///
-/// # Returns
-/// A slice of gradient stops. For built-in palettes, this is a reference to static data.
-/// For custom palettes, this may reference thread-local storage.
+/// Built-in palettes clone from the global static cache; custom palettes are
+/// cached in thread-local storage keyed on the color list, so repeated calls
+/// with the same palette avoid recomputing the stops.
 pub(crate) fn get_gradient_stops(palette: &Palette) -> Vec<GradientStop> {
     match palette {
         Palette::Custom(colors) => {
@@ -2418,18 +2416,7 @@ fn invert_color(color_code: u8) -> u8 {
     invert_256_color(color_code)
 }
 
-/// Computes RGB color for a given brightness from custom palette colors.
-///
-/// Performs linear interpolation between the palette colors based on the brightness value.
-/// This avoids memory leaks by computing the color on-demand rather than pre-computing
-/// and leaking a gradient array.
-///
-/// # Parameters
-/// - `colors`: The custom palette colors
-/// - `brightness`: Input intensity value (0.0 to 1.0)
-///
-/// # Returns
-/// The interpolated RGB color for the given brightness.
+/// Linearly interpolates between custom palette colors for a brightness in [0, 1].
 fn interpolate_custom_color(colors: &[RgbColor], brightness: f32) -> RgbColor {
     let num_colors = colors.len();
     if num_colors == 0 {
@@ -2457,21 +2444,10 @@ fn interpolate_custom_color(colors: &[RgbColor], brightness: f32) -> RgbColor {
     }
 }
 
-/// Maps brightness to an ANSI 256 color based on the selected palette.
+/// Maps brightness (0.0-1.0) to an ANSI 256 color code for the selected palette.
 ///
-/// Supports built-in palettes with pre-computed gradients and custom palettes
-/// with on-demand interpolation. Custom palette colors are interpolated
-/// directly without memory allocation or leaks.
-///
-/// # Parameters
-/// - `brightness`: Input intensity value (0.0 to 1.0)
-/// - `palette`: Color palette to use
-/// - `reverse`: If true, inverts the intensity (dark becomes bright)
-/// - `invert`: If true, inverts the final color
-/// - `mapping`: Optional non-linear intensity mapping
-///
-/// # Returns
-/// The ANSI 256 color code for the given brightness and palette settings.
+/// `reverse` flips the intensity before lookup, `invert` hue-rotates the final
+/// color by 180°, and `mapping` applies an optional non-linear intensity curve.
 pub fn map_brightness(
     brightness: f32,
     palette: Palette,
@@ -2493,8 +2469,7 @@ pub fn map_brightness(
     // Get the color based on palette type
     let color = match &palette {
         Palette::Custom(colors) => {
-            // For custom palettes, interpolate directly to RGB then convert to 256-color
-            // This avoids memory leaks from Box::leak
+            // Custom palettes: interpolate to RGB, then convert to 256-color
             let rgb = interpolate_custom_color(colors, brightness);
             rgb_to_256(rgb)
         }
@@ -2529,17 +2504,11 @@ fn invert_rgb(rgb: RgbColor) -> RgbColor {
     }
 }
 
-/// Maps brightness to an RGB color based on the selected palette.
+/// Maps brightness (0.0-1.0) to an RGB color for the selected palette.
 ///
-/// Supports smooth gradients, reversing, inverting, hue shifting, and non-linear mapping.
-///
-/// # Parameters
-/// - `brightness`: Input intensity value (0.0 to 1.0)
-/// - `palette`: Color palette to use
-/// - `reverse`: If true, inverts the intensity (dark becomes bright)
-/// - `invert`: If true, inverts the final color
-/// - `hue_shift`: Rotate the hue by this many degrees
-/// - `mapping`: Optional non-linear intensity mapping
+/// `reverse` flips the intensity before lookup, `invert` complements the final
+/// RGB color, `hue_shift` rotates the hue by that many degrees, and `mapping`
+/// applies an optional non-linear intensity curve.
 pub fn map_brightness_rgb(
     brightness: f32,
     palette: Palette,

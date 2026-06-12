@@ -101,7 +101,7 @@ pub mod steering {
 
 /// Trail map constants.
 pub mod trail {
-    /// Default decay factor (0.0-1.0).
+    /// Default trail decay factor (valid range 0.5-0.9999).
     pub const DEFAULT_DECAY_FACTOR: f32 = 0.5;
     /// Default diffusion sigma for Gaussian kernel.
     pub const DEFAULT_DIFFUSION_SIGMA: f32 = 1.0;
@@ -196,9 +196,9 @@ pub mod environment {
     pub const MIN_TERRAIN_STRENGTH: f32 = 0.1;
     /// Maximum terrain strength.
     pub const MAX_TERRAIN_STRENGTH: f32 = 5.0;
-    /// Wind component range (-1.0 to 1.0).
+    /// Minimum wind component.
     pub const MIN_WIND_COMPONENT: f32 = -1.0;
-    /// Wind component range (-1.0 to 1.0).
+    /// Maximum wind component.
     pub const MAX_WIND_COMPONENT: f32 = 1.0;
     /// Minimum wind vector magnitude (for validation).
     pub const MIN_WIND_MAGNITUDE: f32 = 0.001;

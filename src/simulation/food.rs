@@ -9,19 +9,9 @@ use std::path::Path;
 
 /// Load an image from bytes and convert it to a scaled grayscale brightness map.
 ///
-/// This is used for the embedded default food image.
-///
-/// # Arguments
-///
-/// * `bytes` - The image data as bytes.
-/// * `target_width` - The width of the simulation grid.
-/// * `target_height` - The height of the simulation grid.
-/// * `invert` - Whether to invert the brightness values (dark becomes light).
-/// * `scale` - Scale factor for the image relative to the target dimensions.
-///
-/// # Returns
-///
-/// A `Vec<f32>` representing the brightness map in row-major order, or an error string.
+/// Used for the embedded default food image. `scale` sizes the image relative
+/// to the grid dimensions; `invert` flips brightness (dark becomes light).
+/// Returns the brightness map in row-major order.
 pub fn load_image_from_memory(
     bytes: &[u8],
     target_width: usize,
@@ -70,22 +60,12 @@ pub fn load_logo_from_memory(
     Ok(grayscale)
 }
 
-/// Load an image and convert it to a scaled grayscale brightness map.
+/// Load an image file and convert it to a scaled grayscale brightness map.
 ///
-/// The image is resized to fit within the target dimensions while maintaining aspect ratio,
-/// and centered in the resulting buffer.
-///
-/// # Arguments
-///
-/// * `image_path` - Path to the image file.
-/// * `target_width` - The width of the simulation grid.
-/// * `target_height` - The height of the simulation grid.
-/// * `invert` - Whether to invert the brightness values (dark becomes light).
-/// * `scale` - Scale factor for the image relative to the target dimensions.
-///
-/// # Returns
-///
-/// A `Vec<f32>` representing the brightness map in row-major order, or an error string.
+/// The image is resized to `scale` x the grid dimensions (its own aspect
+/// ratio is not preserved) and centered in the resulting buffer. `invert`
+/// flips brightness (dark becomes light). Returns the brightness map in
+/// row-major order.
 pub fn load_image_grayscale(
     image_path: &str,
     target_width: usize,
@@ -175,16 +155,8 @@ fn process_image(
     Ok(result)
 }
 
-/// Get the brightness value at a specific coordinate.
-///
+/// Get the brightness value at (x, y), where `width` is the row stride.
 /// Returns 0.0 if the coordinates are out of bounds.
-///
-/// # Arguments
-///
-/// * `brightness_map` - The linear buffer containing brightness values.
-/// * `width` - The width of the grid (stride).
-/// * `x` - The x-coordinate.
-/// * `y` - The y-coordinate.
 pub fn get_brightness_at(brightness_map: &[f32], width: usize, x: usize, y: usize) -> f32 {
     if x >= width || y * width + x >= brightness_map.len() {
         return 0.0;

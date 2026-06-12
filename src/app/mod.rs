@@ -1,5 +1,5 @@
-// Note: This module has many imports that are used across both mod.rs and runner.rs.
-// A full cleanup would require splitting imports properly between the two files.
+// Imports are shared unevenly between mod.rs and runner.rs; splitting them
+// cleanly between the two files is deferred.
 #![allow(unused_imports)]
 
 use std::io::{self, Write};
@@ -48,13 +48,10 @@ pub mod explanations;
 /// Interactive simulation runner.
 pub mod runner;
 
-// Re-export commonly used functions
 pub use explanations::print_parameter_explanations;
 pub use runner::{get_terminal_size, run_simulation};
 
-/// Extracts the RGB colors for each species defined in the configuration.
-///
-/// Returns a vector of `RgbColor` corresponding to the species order.
+/// Extracts each species' RGB color from the config, in species order.
 pub fn extract_species_rgb_colors(config: &SimConfig) -> Vec<RgbColor> {
     config.species_configs.iter().map(|s| s.color).collect()
 }
@@ -123,7 +120,6 @@ pub fn apply_random_config(
     // Then layer randomization-only extras (attractors / obstacles) on top.
     let mut new_config = sim.config().clone();
 
-    // Randomize attractors
     new_config.attractors.clear();
     if rng.gen_bool(0.5) {
         let num_attractors = rng.gen_range(1..5);
@@ -138,13 +134,11 @@ pub fn apply_random_config(
         }
     }
 
-    // Randomize obstacles
     new_config.obstacles.clear();
     if rng.gen_bool(0.4) {
         let num_obstacles = rng.gen_range(1..4);
         for _ in 0..num_obstacles {
             if rng.gen_bool(0.5) {
-                // Circle
                 new_config
                     .obstacles
                     .push(simulation::config::Obstacle::Circle {
@@ -153,7 +147,6 @@ pub fn apply_random_config(
                         radius: rng.gen_range(10.0..40.0),
                     });
             } else {
-                // Rect
                 new_config
                     .obstacles
                     .push(simulation::config::Obstacle::Rect {
@@ -246,7 +239,6 @@ fn run_exploration(args: &Args) -> io::Result<()> {
     let top_k = 3; // Refine top 3 candidates
 
     if let Some(behavior) = target_behavior {
-        // Optimize for single behavior using hybrid search
         println!("Optimizing for: {:?} (hybrid search)", behavior);
         println!("  Random exploration: {} iterations", random_iters);
         println!(
@@ -304,7 +296,6 @@ fn run_exploration(args: &Args) -> io::Result<()> {
         println!("Rust code:");
         println!("{}", result.params.to_rust_code(&format!("{:?}", behavior)));
     } else {
-        // Optimize for all behaviors using hybrid search
         println!("Optimizing all behaviors using hybrid search:");
         println!("  Random exploration: {} iterations", random_iters);
         println!(
@@ -359,19 +350,17 @@ fn run_exploration(args: &Args) -> io::Result<()> {
 pub fn run() -> io::Result<()> {
     let args = Args::parse();
 
-    // Handle --completions flag early
+    // Informational flags print and exit before arg validation.
     if let Some(shell) = &args.completions {
         generate_completions(shell)?;
         return Ok(());
     }
 
-    // Handle --explain flag early, before any other processing
     if args.explain {
         print_parameter_explanations();
         return Ok(());
     }
 
-    // Handle --explore flag for parameter space exploration
     if args.explore {
         run_exploration(&args)?;
         return Ok(());
@@ -397,7 +386,6 @@ pub fn run() -> io::Result<()> {
 
     let mut init_mode = args.init.unwrap_or(InitMode::Food);
 
-    // If user didn't specify init mode, check if the config has a preference
     if args.init.is_none() {
         if let Some(preferred) = config.preferred_init_mode {
             init_mode = preferred;
@@ -432,9 +420,8 @@ pub fn run() -> io::Result<()> {
 
 /// Executes the "Print" mode.
 ///
-/// Runs the simulation for one step (or more if needed) and outputs a single
-/// frame to stdout, then exits. Useful for generating static images or
-/// piping output.
+/// Advances the simulation one step and writes a single frame to stdout,
+/// then exits. Useful for generating static images or piping output.
 pub fn print_mode(
     sim: &mut Simulation,
     args: &Args,
@@ -448,7 +435,6 @@ pub fn print_mode(
 
     let (term_width, term_height) = get_terminal_size();
 
-    // Extract dimensions before getting blended trail
     let sim_width = sim.width();
     let sim_height = sim.height();
     let mut blended_trail = Vec::new();
@@ -518,7 +504,6 @@ pub fn print_mode(
         false,
     );
 
-    // Apply grid rendering if enabled
     if args.grid {
         let grid_style = args.grid_style.parse().unwrap_or(GridStyle::Cross);
         let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor {
@@ -547,7 +532,6 @@ pub fn print_mode(
             0.0
         };
 
-        // Apply grid to each position
         for y in 0..term_height {
             for x in 0..term_width {
                 if grid_renderer.is_grid_position(x, y, term_width, term_height) {
@@ -608,7 +592,7 @@ pub fn capture_frames_mode(
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
-    // Pre-allocate buffer for blended trail data
+    // Reused across frames so trail_map_blended doesn't reallocate per frame.
     let mut blended_trail = Vec::new();
 
     for frame_idx in 0..args.frame_count {
@@ -616,7 +600,6 @@ pub fn capture_frames_mode(
             sim.update(1.0);
         }
 
-        // Extract dimensions before getting blended trail
         let sim_width = sim.width();
         let sim_height = sim.height();
         sim.trail_map_blended(&mut blended_trail);
@@ -676,7 +659,6 @@ pub fn capture_frames_mode(
             false,
         );
 
-        // Apply grid rendering if enabled
         if args.grid {
             let grid_style = args.grid_style.parse().unwrap_or(GridStyle::Cross);
             let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor {
@@ -705,7 +687,6 @@ pub fn capture_frames_mode(
                 0.0
             };
 
-            // Apply grid to each position
             for y in 0..term_height {
                 for x in 0..term_width {
                     if grid_renderer.is_grid_position(x, y, term_width, term_height) {
@@ -807,7 +788,6 @@ pub fn export_gif_mode(
             sim.update(1.0);
         }
 
-        // Extract dimensions before getting blended trail
         let sim_width = sim.width();
         let sim_height = sim.height();
         let term_width = width;
@@ -935,7 +915,6 @@ pub fn export_webm_mode(
             sim.update(1.0);
         }
 
-        // Extract dimensions before getting blended trail
         let sim_width = sim.width();
         let sim_height = sim.height();
         let term_width = width;

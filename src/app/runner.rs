@@ -49,7 +49,7 @@ use crate::terminal::timing::FrameTimer;
 use crossterm::event::Event;
 use memory_stats::memory_stats;
 
-/// Target frame time in milliseconds for 30 FPS (33.333ms)
+/// Target frame time at 30 FPS, in milliseconds.
 const TARGET_FRAME_TIME_MS: f32 = 33.333;
 
 /// Updates food persistence attractors with fade-out effect.
@@ -67,7 +67,6 @@ fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeStat
     runtime_state.food_persist_counter += 1;
 
     if runtime_state.food_persist_counter <= args.food_persist_duration {
-        // Calculate fade factor using quadratic easing
         let progress =
             runtime_state.food_persist_counter as f32 / args.food_persist_duration as f32;
         let fade_factor: f32 = (1.0 - progress).powi(2); // Quadratic fade-out
@@ -107,13 +106,11 @@ fn check_auto_reset(
     );
 
     if should_reset {
-        // Generate new seed
         let new_seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
 
-        // Reset simulation
         sim.reset(new_seed, init_mode);
         runtime_state.reset_collapse_counter();
         runtime_state.reset_warmup();
@@ -299,7 +296,6 @@ pub fn run_simulation(
             0.3,
         );
 
-        // Apply initial food attractors to simulation
         let mut new_config = sim.config().clone();
         new_config
             .attractors
@@ -307,7 +303,6 @@ pub fn run_simulation(
         sim.update_config(new_config);
     }
 
-    // let config = args.to_sim_config().unwrap(); // Already parsed above
     if args.species_colors_enabled() {
         let species_rgb_colors = extract_species_rgb_colors(&config);
         renderer.set_species_colors(true, species_rgb_colors);
@@ -319,7 +314,6 @@ pub fn run_simulation(
 
     let mut current_auto_normalize = args.auto_normalize;
 
-    // Apply initial randomization if requested
     if args.random {
         runtime_state.randomize_params();
         apply_random_config(&runtime_state, sim, &mut renderer, &ALL_PALETTES);
@@ -327,7 +321,6 @@ pub fn run_simulation(
 
     let start_time = std::time::Instant::now();
 
-    // Initialize grid renderer if enabled
     let mut grid_renderer = if args.grid {
         let grid_style = args.grid_style.parse().unwrap_or(GridStyle::Cross);
         let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor {
@@ -446,8 +439,9 @@ pub fn run_simulation(
             continue;
         }
 
-        // Wall-clock delta: used for FPS stats and UI (chrome fade), which should
-        // track real time. NOT used to step the simulation — see sim_dt below.
+        // Per-frame elapsed time, scaled by time_scale (NOT raw wall clock). Used
+        // for UI effects (hue shift, chrome fade via dt_wall below) — never to step
+        // the simulation, which uses the fixed timestep sim_dt.
         let dt = timer.delta_time();
 
         // Clamp dt to avoid UI animation jumps during lag spikes (max 0.1s / 10 FPS)
@@ -459,22 +453,20 @@ pub fn run_simulation(
         // flicker. Stepping by a fixed amount keeps motion smooth regardless of I/O.
         let sim_dt = timer.fixed_delta();
 
-        // Advance chrome fade-out animation each frame (500ms collapse animation).
-        // Chrome is UI, not simulation — animate at wall-clock speed regardless of time scale.
+        // Chrome fade-out (500ms collapse) is UI, not simulation — divide the
+        // time_scale back out so it animates at wall-clock speed.
         let dt_wall = dt / runtime_state.time_scale.max(f32::EPSILON);
         runtime_state.advance_fade(dt_wall);
 
-        // Check if we're in warmup phase
         let in_warmup = !args.skip_warmup && runtime_state.is_in_warmup(args.warmup_frames);
 
-        // Calculate transition fade factor for smooth warmup→normal transition
-        // Uses WARMUP_SPEED_MULTIPLIER and TRANSITION_DURATION_FRAMES from config_defaults
         let frames_since_warmup = runtime_state
             .warmup_counter
             .saturating_sub(args.warmup_frames);
         let in_transition = frames_since_warmup < TRANSITION_DURATION_FRAMES;
 
-        // Fade factor: 0.0 during warmup, interpolates 0.0→1.0 over 30 frames, then 1.0
+        // Warmup→normal handoff: 0.0 during warmup, ramps 0→1 over
+        // TRANSITION_DURATION_FRAMES, then holds at 1.0.
         let fade_factor = if in_warmup {
             0.0
         } else if in_transition {
@@ -486,19 +478,17 @@ pub fn run_simulation(
         if !runtime_state.is_paused {
             timer.start_sim();
 
-            // Apply smooth speed transition from 0.3x to 1.0x
+            // Ramp sim speed from WARMUP_SPEED_MULTIPLIER up to 1.0 as warmup ends.
             let speed_multiplier =
                 WARMUP_SPEED_MULTIPLIER + (1.0 - WARMUP_SPEED_MULTIPLIER) * fade_factor;
 
-            // Sanity check speed multiplier to ensure it stays within valid bounds [0.3, 1.0]
-            // This prevents any floating point drift that could cause simulation instability
+            // Clamp against floating-point drift.
             let speed_multiplier = speed_multiplier.clamp(WARMUP_SPEED_MULTIPLIER, 1.0);
 
             let adjusted_dt = sim_dt * speed_multiplier;
             sim.update(adjusted_dt / REFERENCE_TIME_STEP);
 
-            // Harden warmup logic: Explicitly cap the counter to avoid runaway increment
-            // Previously relied on in_transition boolean which could be fragile
+            // Cap the counter so it stops once warmup + transition are complete.
             if !args.skip_warmup
                 && runtime_state.warmup_counter < args.warmup_frames + TRANSITION_DURATION_FRAMES
             {
@@ -527,7 +517,6 @@ pub fn run_simulation(
             }
         }
 
-        // Extract basic sim data
         let sim_width = sim.width();
         let sim_height = sim.height();
         let sim_dims = sim_width * sim_height;
@@ -548,7 +537,6 @@ pub fn run_simulation(
         );
 
         // Compute auxiliary frame for trail age / temporal delta / gradient
-        // These calls happen AFTER blended_trail is dropped from the scope above
         let current_aux_frame = if runtime_state.trail_age_enabled
             || runtime_state.trail_delta_enabled
             || runtime_state.gradient_magnitude_enabled
@@ -607,14 +595,13 @@ pub fn run_simulation(
             runtime_state.max_brightness
         };
 
-        // Apply warmup brightness multiplier with smooth transition
-        // Uses the same fade_factor as speed transition for consistency
+        // Warmup brightness boost, eased out with the same fade_factor as the
+        // speed ramp.
         if in_warmup || in_transition {
-            // Brightness fade_factor: 1.0 during warmup, then 1.0→0.0 over 30 frames
-            // Inverted from speed fade_factor since we want brightness to decrease
+            // Inverse of fade_factor: 1.0 during warmup, easing to 0.0 as the
+            // boost fades out.
             let brightness_fade = 1.0 - fade_factor;
 
-            // Interpolate between normal and warmup brightness
             let multiplier = 1.0 + (args.warmup_brightness_multiplier - 1.0) * brightness_fade;
             max_brightness *= multiplier;
         }
@@ -637,9 +624,6 @@ pub fn run_simulation(
         }
 
         renderer.set_hue_shift(hue_offset);
-
-        // Help lines are no longer used (deprecated), passing None to renderer
-        // The renderer handles None gracefully by skipping the overlay
 
         // Build preset comparison overlay (Shift+1-7 keys)
         let preset_comparison_lines: Option<RenderedOverlay> = if runtime_state
@@ -984,12 +968,7 @@ pub fn run_simulation(
             (0, 0)
         };
 
-        // Food persistence fade-out
         update_food_persistence(sim, &mut runtime_state, args);
-
-        // Update focused overlay state before rendering
-
-        // Entropy-based auto-reset
         check_auto_reset(sim, &mut runtime_state, args, entropy, init_mode);
 
         // Update pause frame counter for animated pause effects
@@ -999,7 +978,8 @@ pub fn run_simulation(
             runtime_state.pause_frame_counter = 0;
         }
 
-        // VCR pause overlays: dim logo + blinking badge
+        // VCR-style pause overlay: dimmed logo centered in the drawable area
+        // (the status bar shows PAUSED; no separate badge).
         let (pause_logo_overlay, pause_logo_x, pause_logo_y) = if runtime_state.is_paused
             && !runtime_state.any_overlay_open()
             && runtime_state.pause_logo_enabled
@@ -1059,7 +1039,6 @@ pub fn run_simulation(
 
             (Some(logo), lx, ly)
         } else {
-            // Frame counter handled above
             (None, 0, 0)
         };
 
@@ -1206,8 +1185,8 @@ pub fn run_simulation(
                         runtime_state.warmup_counter = args.warmup_frames; // Skip to end
                     }
 
-                    // Centralized overlay input handling - SINGLE SOURCE OF TRUTH
-                    // This handles: toggle keys, Escape, and blocking other keys
+                    // Centralized overlay input handling: toggle keys, Escape, and
+                    // blocking other keys while an overlay is open.
                     match OverlayInputManager::handle_input(
                         &runtime_state.overlay_state,
                         &key_event,
@@ -1243,7 +1222,6 @@ pub fn run_simulation(
                             }
                             KeyCode::Enter => {
                                 if !runtime_state.config_save_name_input.is_empty() {
-                                    // Save config
                                     let saved_config = config_manager::SavedConfig::from_runtime(
                                         runtime_state.config_save_name_input.clone(),
                                         sim.config(),
@@ -1298,7 +1276,6 @@ pub fn run_simulation(
                     {
                         use crossterm::event::KeyCode;
                         if key_event.code == KeyCode::Enter {
-                            // Apply the comparison preset
                             let preset = runtime_state.comparison_preset;
                             runtime_state.set_preset(preset);
                             let mut new_config = SimConfig::from(preset);
@@ -1347,7 +1324,6 @@ pub fn run_simulation(
                                 continue;
                             }
                             KeyCode::Enter => {
-                                // Load selected config
                                 if let Ok(configs) = config_manager::list_configs() {
                                     if let Some(config) =
                                         configs.get(runtime_state.config_browser_selected_index)
@@ -1381,7 +1357,6 @@ pub fn run_simulation(
                                 continue;
                             }
                             KeyCode::Delete => {
-                                // Delete selected config
                                 if let Ok(configs) = config_manager::list_configs() {
                                     if let Some(config) =
                                         configs.get(runtime_state.config_browser_selected_index)
@@ -1424,11 +1399,9 @@ pub fn run_simulation(
                         let mut should_close = false;
                         let mut notification: Option<String> = None;
 
-                        // Use the OverlayInputHandler trait for key handling
                         if let Some(ref mut state) = runtime_state.overlay_state.palette_editor {
                             let was_modified = state.is_modified;
 
-                            // Handle key using trait implementation
                             let handled = state.handle_key(&key_event);
 
                             // Check if we need to close (Esc or Enter in Editing mode returned false)
@@ -1449,10 +1422,9 @@ pub fn run_simulation(
                                 // Apply palette changes after each adjustment
                                 renderer.set_palette(state.to_palette());
 
-                                // Handle save dialog completion
                                 if matches!(state.mode, EditorMode::SaveDialog) {
-                                    // Check if save dialog just completed (we detect this by checking
-                                    // if save_name_input was just cleared after having content)
+                                    // No-op: save completion is detected via the
+                                    // is_modified transition below.
                                 }
                             }
 
@@ -2234,7 +2206,6 @@ pub fn run_simulation(
 
                     (Some(logo), lx, ly)
                 } else {
-                    // Frame counter handled above
                     (None, 0, 0)
                 };
 

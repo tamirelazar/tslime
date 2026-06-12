@@ -74,14 +74,8 @@ impl Default for Window {
 }
 
 impl Window {
-    /// Compute the frame and simulation rectangles for the given terminal size.
-    ///
-    /// # Parameters
-    /// - `term_w`: Terminal width in columns
-    /// - `term_h`: Terminal height in rows
-    ///
-    /// # Returns
-    /// A [`WindowLayout`] describing all computed geometry including fallback mode.
+    /// Computes the frame and simulation rectangles for a terminal of
+    /// `term_w` columns by `term_h` rows, including which fallback mode applied.
     pub fn compute_rects(&self, term_w: usize, term_h: usize) -> WindowLayout {
         let pad = match self.padding {
             WindowPadding::Auto => {

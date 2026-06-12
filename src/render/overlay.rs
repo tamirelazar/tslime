@@ -489,16 +489,11 @@ impl ConfigBrowserOverlay {
 
     /// Computes the index of the first visible config so the selection stays in view.
     ///
-    /// Returns the window start that keeps `selected` visible, anchored at the
-    /// bottom of the `[start, start + max_visible)` window. Because the selection
-    /// is always pinned to the bottom of the window, navigating upward jumps the
-    /// window so `selected` sits on the last visible row rather than the nearest
-    /// edge. The result is clamped so the window never runs past the end of the list.
-    ///
-    /// # Parameters
-    /// - `selected`: currently highlighted index (clamped to `total - 1`)
-    /// - `total`: number of configs available
-    /// - `max_visible`: number of rows the panel can display at once
+    /// Returns the window start that keeps `selected` (clamped to `total - 1`)
+    /// visible, anchored at the bottom of the `[start, start + max_visible)`
+    /// window. Because the selection is pinned to the bottom of the window,
+    /// navigating upward jumps the window so `selected` sits on the last visible
+    /// row. The result is clamped so the window never runs past the end of the list.
     fn config_browser_window(selected: usize, total: usize, max_visible: usize) -> usize {
         if total <= max_visible || max_visible == 0 {
             return 0;
@@ -697,13 +692,12 @@ impl OverlayRenderer {
     #[allow(clippy::too_many_arguments)]
     /// Builds the status bar string displayed at the bottom of the screen.
     ///
-    /// Uses `◦` as a segment separator for a clean powerline-inspired look.
-    /// Segments are added in priority order; lower-priority segments are omitted
-    /// when the terminal is too narrow to fit them.
+    /// Uses `◦` as a segment separator. Segments are added in priority order;
+    /// lower-priority segments are omitted when the terminal is too narrow.
     ///
-    /// Layout (left to right):
+    /// Layout (left to right, right side right-aligned):
     /// ```text
-    ///   PRESET  ◦  1.0×  ▸  PALETTE  ▸  50k  [Z Y]  ⏸ PAUSED  ·  ? help
+    ///   PRESET  ◦  1.0×  ◦  ■ PALETTE  ◦  50k  ◦  KERNEL      ↺ ↻  ⏸ PAUSED  ? help
     /// ```
     pub fn build_status_line(
         _is_paused: bool,
@@ -2226,14 +2220,8 @@ impl ExpandedChromeOverlay {
     /// Builds the 2-row title block shown at the top of the window chrome.
     ///
     /// Returns `[row1, row2]` as plain strings (no ANSI). Row 1 contains the
-    /// app name and preset. Row 2 contains palette, charset, and agent count.
-    ///
-    /// # Parameters
-    /// - `preset`: Active simulation preset
-    /// - `palette`: Active color palette
-    /// - `charset_str`: Human-readable charset name (e.g. "HalfBlock")
-    /// - `population`: Number of agents (used to compute k-value)
-    /// - `_width`: Terminal width (reserved for future truncation logic)
+    /// app name and preset; row 2 the palette, charset, and agent count.
+    /// `_width` is reserved for future truncation logic.
     pub fn build_title_block(
         preset: Preset,
         palette: Palette,
@@ -2288,13 +2276,9 @@ impl ExpandedChromeOverlay {
 
     /// Builds footer row 2: context-sensitive keybind hints.
     ///
-    /// When `is_modal_open` is true (e.g. config browser overlay is showing),
-    /// the hints switch to modal navigation keys. Otherwise, the standard
-    /// running-mode shortcuts are displayed.
-    ///
-    /// # Parameters
-    /// - `is_modal_open`: Whether a modal overlay is currently focused
-    /// - `_width`: Terminal width (reserved for future truncation logic)
+    /// When `is_modal_open` is true (e.g. config browser showing), the hints
+    /// switch to modal navigation keys; otherwise the standard running-mode
+    /// shortcuts are shown. `_width` is reserved for future truncation logic.
     pub fn build_footer_keybinds(is_modal_open: bool, _width: usize) -> String {
         if is_modal_open {
             "  \u{2191}\u{2193} navigate \u{00B7} enter select \u{00B7} esc close".to_string()

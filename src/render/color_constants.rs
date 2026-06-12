@@ -69,7 +69,7 @@ pub mod ui {
     pub const GRID_DEFAULT: &str = "ffffff";
 }
 
-/// Export convenience functions to get hex strings.
+/// Returns the default species color as a hex string.
 pub fn default_species_color() -> String {
     default::FOREST_GREEN.to_string()
 }

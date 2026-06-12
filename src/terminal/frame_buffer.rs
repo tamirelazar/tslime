@@ -1,7 +1,8 @@
 //! Frame buffer for terminal rendering.
 //!
-//! This module provides a double-buffered screen buffer for terminal rendering,
-//! storing character and color information for each cell in the terminal grid.
+//! This module provides an off-screen cell grid that is rebuilt each frame,
+//! storing character and color information for each cell in the terminal grid,
+//! then emitted as a single ANSI string.
 
 use crate::cli::ColorMode;
 use crate::cli::Palette;
@@ -59,10 +60,10 @@ impl Cell {
     }
 }
 
-/// A double-buffered screen buffer for terminal rendering.
+/// An off-screen cell grid for terminal rendering.
 ///
-/// Stores character and color information for each cell in the terminal grid.
-/// Handles efficient updates and string building for output.
+/// Stores character and color information for each cell in the terminal grid;
+/// overlays draw into it before the whole frame is emitted as one ANSI string.
 pub struct FrameBuffer {
     /// Width of the frame buffer in cells.
     pub(crate) width: usize,
@@ -262,9 +263,8 @@ impl FrameBuffer {
         let idx = y * self.width + x;
         let cell = &self.cells[idx];
 
-        // Only render grid where there's no (or very dim) simulation content
-        // Check if this cell is essentially empty (dark background)
-        // A cell is empty if it displays a space character OR has no/dark foreground color
+        // Only render grid where there's no (or very dim) simulation content:
+        // a space character, or a foreground color close to black.
         let is_empty = cell.char == ' '
             || match self.color_mode {
                 ColorMode::TrueColor => cell.fg_color_rgb.map_or(true, |c| {
@@ -281,7 +281,6 @@ impl FrameBuffer {
             };
 
         if is_empty {
-            // Apply grid with opacity to empty cells
             let dimmed_color = RgbColor {
                 r: (grid_color.r as f32 * opacity) as u8,
                 g: (grid_color.g as f32 * opacity) as u8,
@@ -312,7 +311,7 @@ impl FrameBuffer {
                 }
             }
         }
-        // If cell is not empty, don't render grid (simulation takes precedence)
+        // Non-empty cells are left alone — simulation content takes precedence.
     }
 
     /// Draw a solid panel background with left focus indicator.
@@ -501,11 +500,7 @@ impl FrameBuffer {
         }
     }
 
-    /// Calculates the maximum brightness in a frame.
-    ///
-    /// This helper function is currently only used in tests but is retained
-    /// as it may be useful for future features like automatic brightness normalization
-    /// or exposure adjustment.
+    /// Calculates the maximum brightness in a frame. Currently only used in tests.
     #[cfg_attr(not(test), allow(dead_code))]
     fn max_brightness(frame: &[DownsampleCell]) -> f32 {
         frame
@@ -1411,7 +1406,6 @@ impl FrameBuffer {
                 let idx = y * self.width + x;
                 let cell = &mut self.cells[idx];
 
-                // Check if cell is empty
                 let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
 
                 if is_empty && is_scanline_row {
@@ -1700,7 +1694,6 @@ impl FrameBuffer {
             for x in 1..self.width.saturating_sub(1) {
                 let idx = y * self.width + x;
 
-                // Get current brightness
                 let _current_brightness = if let Some(c) = original_cells[idx].fg_color_rgb {
                     (c.r as f32 + c.g as f32 + c.b as f32) / 3.0
                 } else {
@@ -1836,7 +1829,6 @@ impl FrameBuffer {
                 let idx = y * self.width + x;
                 let cell = &self.cells[idx];
 
-                // Check if cell is empty
                 let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
 
                 let dx = x as f32 - center_x;
@@ -1912,7 +1904,6 @@ impl FrameBuffer {
                 let idx = y * self.width + x;
                 let cell = &self.cells[idx];
 
-                // Check if cell is empty
                 let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
 
                 if is_empty {
@@ -1988,7 +1979,6 @@ impl FrameBuffer {
                 let idx = y * self.width + x;
                 let cell = &self.cells[idx];
 
-                // Check if cell is empty
                 let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
 
                 if is_empty {
@@ -2048,7 +2038,6 @@ impl FrameBuffer {
                 let idx = y * self.width + x;
                 let cell = &self.cells[idx];
 
-                // Check if cell is empty
                 let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
 
                 if is_empty {
@@ -2123,7 +2112,6 @@ impl FrameBuffer {
                     let idx = y * self.width + x;
                     let cell = &self.cells[idx];
 
-                    // Check if cell is empty
                     let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
 
                     if is_empty {

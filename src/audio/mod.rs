@@ -1,11 +1,13 @@
 //! Choir-mode audio engine.
 //!
-//! Sonification adapted from Miranda, Adamatzky, Jones (2011),
-//! "Sounds Synthesis with Slime Mould of Physarum Polycephalum",
-//! *Journal of Bionic Engineering* 8: 107–113. Section 5 (simulation
-//! variant): K virtual electrodes sample the multi-agent state every few
-//! scheduler ticks; each value drives the frequency of one partial in an
-//! additive synth.
+//! Sonification adapted from Miranda, E. R., Adamatzky, A., & Jones, J.
+//! (2011). "Sounds Synthesis with Slime Mould of Physarum Polycephalum."
+//! Journal of Bionic Engineering, 8(2), 107-113.
+//! doi:10.1016/S1672-6529(11)60016-4
+//!
+//! We follow the paper's Section 5 (simulation variant): K virtual
+//! electrodes sample the multi-agent state every few scheduler ticks; each
+//! value drives the frequency of one partial in an additive synth.
 //!
 //! Per the paper §4, partials are pure sinewaves and the synth is
 //! granular — short ~30–80 ms bursts windowed and stitched. We follow
@@ -49,7 +51,7 @@ const MELODY_JITTER_CENTS: f32 = 5.0;
 
 /// How many consecutive grains a melody voice holds the same pitch before
 /// re-sampling its target. With 300 ms grains and 50% overlap, 4 holds
-/// ≈ ~750 ms of held pitch.
+/// ≈ 750 ms of held pitch.
 const MELODY_HOLD_GRAINS: u8 = 4;
 
 /// Bass voices use long grains; re-sample every grain.
@@ -525,7 +527,7 @@ fn render(
         let lpf_l_out = lpf_l.step(left * master_gain, lpf_coeffs);
         let lpf_r_out = lpf_r.step(right * master_gain, lpf_coeffs);
         let (wet_l, wet_r) = delay.step(lpf_l_out, lpf_r_out);
-        // tanh approximation tames peaks softly.
+        // Softsign (x / (1 + |x|)) soft-clips peaks.
         let l = wet_l / (1.0 + wet_l.abs());
         let r = wet_r / (1.0 + wet_r.abs());
 
@@ -584,8 +586,9 @@ pub fn quantize_to_scale(value: f32, voice_index: usize) -> f32 {
 
 /// Quantize aggregate signal to a low pentatonic register for bass.
 ///
-/// `voice_index == 0` is the root; `1` is a perfect fifth above. Range
-/// stays around A1–A2 (55–110 Hz) to ground the texture without rumble.
+/// `voice_index == 0` is the root; `1` is a perfect fifth above. Roots
+/// sweep 55–98 Hz (A1–G2) and the fifth voice reaches ~147 Hz — low
+/// enough to ground the texture without rumble.
 pub fn quantize_to_bass(value: f32, voice_index: usize) -> f32 {
     const SCALE: [i32; 5] = [0, 3, 5, 7, 10];
     let v = value.clamp(0.0, 1.0);

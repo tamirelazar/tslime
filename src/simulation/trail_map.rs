@@ -3,6 +3,10 @@
 //! The trail map is a 2D grid where agents deposit pheromones. The map
 //! undergoes diffusion (spreading) and decay each frame to create organic
 //! patterns.
+//!
+//! The 3x3 mean filter is the trail diffusion step from Jones (2010) — see
+//! the [`crate::simulation`] module docs for the full citation. The 5x5
+//! Gaussian is a standard image-processing alternative for smoother spread.
 
 /// A 2D grid storing pheromone trail values.
 ///
@@ -197,7 +201,7 @@ impl TrailMap {
         self.trail_sum
     }
 
-    /// Apply 3x3 mean diffusion.
+    /// Apply 3x3 mean-filter diffusion (the trail diffusion from Jones 2010).
     pub fn diffuse(&mut self) {
         let width = self.width;
         let height = self.height;
@@ -208,7 +212,7 @@ impl TrailMap {
         scratch.copy_from_slice(current);
 
         if is_wrap {
-            // Wrap-around diffusion - process all pixels with wrapping
+            // Toroidal: neighbors wrap across edges, all pixels processed
             let w = width as i32;
             let h = height as i32;
             for y in 0..height {
@@ -238,7 +242,7 @@ impl TrailMap {
                 }
             }
         } else {
-            // Clamp-based diffusion - skip edges
+            // Bounce: leave the 1-pixel border undiffused
             for y in 1..height - 1 {
                 let row_offset = y * width;
                 for x in 1..width - 1 {
@@ -293,31 +297,20 @@ impl TrailMap {
         }
     }
 
-    /// AVX-optimized 3x3 mean filter diffusion.
+    /// AVX-optimized 3x3 mean filter.
     ///
-    /// This function applies a box blur (mean filter) using AVX2 SIMD instructions.
-    /// For each pixel, it computes the average of the 3x3 neighborhood (9 pixels total).
-    ///
-    /// # Algorithm
-    ///
-    /// 1. Process pixels in chunks of 8 using AVX 256-bit registers
-    /// 2. Load 3 rows of 8 pixels each (with 1-pixel overlap for neighbors)
-    /// 3. Sum all 9 values using `_mm256_add_ps` (8 additions chained)
-    /// 4. Divide by 9 using `_mm256_div_ps`
-    /// 5. Store result back to scratch buffer
-    /// 6. Process remaining pixels with scalar fallback
-    ///
-    /// # Why Unaligned Loads (`_mm256_loadu_ps`)
-    ///
-    /// We use unaligned loads because the starting x position (1) is not guaranteed
-    /// to be 32-byte aligned. Unaligned loads have minimal performance penalty on
-    /// modern x86_64 CPUs (Sandy Bridge and later).
+    /// Processes 8 pixels per iteration in 256-bit registers: load the three
+    /// neighboring rows, sum the nine taps, divide by 9. Columns past the
+    /// last full chunk fall through to a scalar tail. Unaligned loads
+    /// (`_mm256_loadu_ps`) are deliberate — the starting column (1) is not
+    /// 32-byte aligned, and the penalty is negligible on modern x86_64.
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `current` and `scratch` slices have a length
-    /// of at least `width * height`. `width` must be at least 9 to accommodate
-    /// the SIMD vector width and boundary conditions.
+    /// The caller must ensure that `current` and `scratch` slices have a
+    /// length of at least `width * height` and that AVX is available on the
+    /// target CPU. Widths too small for a full SIMD chunk are handled
+    /// entirely by the scalar tail.
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx")]
     unsafe fn diffuse_avx_impl(current: &[f32], scratch: &mut [f32], width: usize, height: usize) {
@@ -389,11 +382,13 @@ impl TrailMap {
         }
     }
 
+    /// NEON port of [`Self::diffuse_avx_impl`] (4-wide instead of 8-wide).
+    ///
     /// # Safety
     ///
-    /// The caller must ensure that `current` and `scratch` slices have a length
-    /// of at least `width * height`. `width` must be at least 5 to accommodate
-    /// the NEON vector width and boundary conditions.
+    /// The caller must ensure that `current` and `scratch` slices have a
+    /// length of at least `width * height` and that NEON is available.
+    /// Widths too small for a full SIMD chunk are handled by the scalar tail.
     #[cfg(target_arch = "aarch64")]
     #[target_feature(enable = "neon")]
     #[allow(unused_variables, dead_code)]
@@ -520,7 +515,7 @@ impl TrailMap {
         scratch.copy_from_slice(&self.current);
 
         if is_wrap {
-            // Wrap-around Gaussian diffusion - process all pixels with wrapping
+            // Toroidal: neighbors wrap across edges, all pixels processed
             let w = width as i32;
             let h = height as i32;
             let current = &self.current;
@@ -544,7 +539,7 @@ impl TrailMap {
                 }
             }
         } else {
-            // Clamp-based Gaussian diffusion - skip edges
+            // Bounce: leave the 2-pixel border undiffused
             let current = &self.current;
             for y in 2..height - 2 {
                 let row_offset = y * width;
@@ -605,26 +600,12 @@ impl TrailMap {
         }
     }
 
-    /// AVX-optimized 5x5 Gaussian blur diffusion.
+    /// AVX-optimized 5x5 Gaussian blur.
     ///
-    /// This function applies a Gaussian blur using a 5x5 kernel with AVX2 SIMD.
-    /// Unlike the mean filter, each pixel in the neighborhood has a different weight
-    /// based on the Gaussian distribution.
-    ///
-    /// # Algorithm
-    ///
-    /// 1. Pre-load all 25 kernel weights into AVX registers (broadcast to all 8 lanes)
-    /// 2. For each pixel, load a 5x5 neighborhood (25 values total)
-    /// 3. Multiply each value by its corresponding kernel weight using `_mm256_mul_ps`
-    /// 4. Accumulate results using `_mm256_add_ps` (24 additions total)
-    /// 5. Store the weighted sum back to scratch buffer
-    /// 6. Process remaining pixels with scalar fallback
-    ///
-    /// # Memory Access Pattern
-    ///
-    /// We load 5 rows of data, 3 registers per row (covering x-2 to x+2),
-    /// with the middle register containing the main pixel data.
-    /// This minimizes memory loads while covering the full 5x5 neighborhood.
+    /// Same structure as [`Self::diffuse_avx_impl`], but with 25 weighted
+    /// taps: the kernel weights are broadcast into registers up front, then
+    /// each chunk of 8 pixels accumulates multiply-adds over the 5x5
+    /// neighborhood. Remaining columns fall through to a scalar tail.
     ///
     /// # Safety
     ///
@@ -643,7 +624,7 @@ impl TrailMap {
     ) {
         use std::arch::x86_64::*;
 
-        // Load all 25 kernel weights into AVX registers (broadcast to all 8 lanes)
+        // Broadcast all 25 kernel weights into registers up front
         let k0 = _mm256_set1_ps(kernel[0]);
         let k1 = _mm256_set1_ps(kernel[1]);
         let k2 = _mm256_set1_ps(kernel[2]);
@@ -715,7 +696,7 @@ impl TrailMap {
                 let p2_m = _mm256_loadu_ps(current.as_ptr().add(row_plus_2 + x - 1));
                 let p2_r = _mm256_loadu_ps(current.as_ptr().add(row_plus_2 + x));
 
-                // Compute weighted sum using multiply-add operations
+                // Weighted sum, row by row
                 // Row y-2: kernels 0-4
                 let mut sum = _mm256_mul_ps(m2_l, k0);
                 sum = _mm256_add_ps(sum, _mm256_mul_ps(m2_m, k1));
@@ -811,7 +792,6 @@ impl TrailMap {
                     ),
                 );
 
-                // Store result
                 _mm256_storeu_ps(scratch.as_mut_ptr().add(idx), sum);
 
                 x += simd_width;
@@ -843,11 +823,13 @@ impl TrailMap {
         }
     }
 
+    /// NEON port of [`Self::diffuse_gaussian_avx_impl`] (4-wide instead of 8-wide).
+    ///
     /// # Safety
     ///
-    /// The caller must ensure that `current` and `scratch` slices have a length
-    /// of at least `width * height`. `width` must be at least 6 to accommodate
-    /// the NEON vector width and 5x5 kernel boundary conditions.
+    /// The caller must ensure that `current` and `scratch` slices have a
+    /// length of at least `width * height` and that NEON is available.
+    /// Widths too small for a full SIMD chunk are handled by the scalar tail.
     #[cfg(target_arch = "aarch64")]
     #[target_feature(enable = "neon")]
     #[allow(unused_variables, dead_code)]
@@ -1064,8 +1046,8 @@ impl TrailMap {
 
     /// Dispatch to the appropriate diffusion implementation.
     pub fn diffuse_with_kernel(&mut self, use_simd: bool, use_gaussian: bool) {
-        // When using wrap boundary mode, fall back to scalar implementations
-        // since SIMD versions don't handle wrap-around efficiently
+        // SIMD paths don't implement wrap-around, so wrap mode always takes
+        // the scalar path
         let use_scalar =
             !use_simd || matches!(self.boundary_mode, super::config::BoundaryMode::Wrap);
 
