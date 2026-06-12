@@ -654,7 +654,7 @@ pub struct Args {
         short = 'n',
         long = "population",
         value_name = "INT",
-        help = concat!("Number of agents [default: ", stringify!(population::DEFAULT_POPULATION), "]")
+        help = "Number of agents [default: 50000]"
     )]
     /// Number of agents in the simulation.
     pub population: Option<usize>,
@@ -662,7 +662,7 @@ pub struct Args {
     #[arg(
         long = "sensor-angle",
         value_name = "DEG",
-        help = concat!("Sensor spread angle in degrees [range: ", stringify!(agent::MIN_SENSOR_ANGLE), "-", stringify!(agent::MAX_SENSOR_ANGLE), "]")
+        help = "Sensor spread angle in degrees [range: 5-90]"
     )]
     /// Angle between sensors (in degrees).
     pub sensor_angle: Option<f32>,
@@ -670,7 +670,7 @@ pub struct Args {
     #[arg(
         long = "sensor-distance",
         value_name = "FLOAT",
-        help = concat!("Sensor range in pixels [range: ", stringify!(agent::MIN_SENSOR_DISTANCE), "-", stringify!(agent::MAX_SENSOR_DISTANCE), "]")
+        help = "Sensor range in pixels [range: 1-50]"
     )]
     /// Distance to sensors.
     pub sensor_distance: Option<f32>,
@@ -678,7 +678,7 @@ pub struct Args {
     #[arg(
         long = "rotation-angle",
         value_name = "DEG",
-        help = concat!("Turn amount per step in degrees [range: ", stringify!(agent::MIN_ROTATION_ANGLE), "-", stringify!(agent::MAX_ROTATION_ANGLE), "]")
+        help = "Turn amount per step in degrees [range: 5-90]"
     )]
     /// Maximum rotation angle per step (in degrees).
     pub rotation_angle: Option<f32>,
@@ -686,7 +686,7 @@ pub struct Args {
     #[arg(
         long = "step-size",
         value_name = "FLOAT",
-        help = concat!("Movement speed in pixels per step [range: ", stringify!(agent::MIN_STEP_SIZE), "-", stringify!(agent::MAX_STEP_SIZE), "]")
+        help = "Movement speed in pixels per step [range: 0.01-10]"
     )]
     /// Distance moved per step.
     pub step_size: Option<f32>,
@@ -694,7 +694,7 @@ pub struct Args {
     #[arg(
         long = "decay",
         value_name = "FLOAT",
-        help = concat!("Trail decay factor (0.0-1.0) [range: ", stringify!(trail::MIN_DECAY_FACTOR), "-", stringify!(trail::MAX_DECAY_FACTOR), "]")
+        help = "Trail decay factor [range: 0.5-0.9999]"
     )]
     /// Trail decay factor (validated range 0.5-0.9999).
     pub decay_factor: Option<f32>,
@@ -702,7 +702,7 @@ pub struct Args {
     #[arg(
         long = "deposit",
         value_name = "FLOAT",
-        help = concat!("Amount of pheromone deposited by agents per step [range: ", stringify!(agent::MIN_DEPOSIT_AMOUNT), "-", stringify!(agent::MAX_DEPOSIT_AMOUNT), "]")
+        help = "Amount of pheromone deposited by agents per step [range: 0.1-20]"
     )]
     /// Amount of pheromone deposited per step.
     pub deposit_amount: Option<f32>,
@@ -850,7 +850,7 @@ pub struct Args {
         long = "food-scale",
         value_name = "FLOAT",
         default_value_t = food::DEFAULT_FOOD_SCALE,
-        help = concat!("Scale factor for food image relative to canvas [default: ", stringify!(food::DEFAULT_FOOD_SCALE), "]")
+        help = "Scale factor for food image relative to canvas"
     )]
     /// Scale factor for food image.
     pub food_scale: f32,
@@ -860,7 +860,7 @@ pub struct Args {
         long = "time",
         value_name = "FLOAT",
         default_value_t = time::DEFAULT_FRAME_DELAY,
-        help = concat!("Frame delay in seconds [default: ", stringify!(time::DEFAULT_FRAME_DELAY), "]")
+        help = "Frame delay in seconds"
     )]
     /// Frame delay in seconds.
     pub frame_delay: f32,
@@ -869,7 +869,7 @@ pub struct Args {
         long = "fps",
         value_name = "INT",
         default_value_t = time::DEFAULT_FPS as usize,
-        help = concat!("Target frames per second [default: ", stringify!(time::DEFAULT_FPS as usize), "]")
+        help = "Target frames per second"
     )]
     /// Target FPS.
     pub fps: usize,
@@ -878,7 +878,7 @@ pub struct Args {
         long = "time-scale",
         value_name = "FLOAT",
         default_value_t = time::DEFAULT_TIME_SCALE,
-        help = concat!("Time scaling factor [range: ", stringify!(time::MIN_TIME_SCALE), "-", stringify!(time::MAX_TIME_SCALE), "]")
+        help = "Time scaling factor [range: 0.1-10]"
     )]
     /// Simulation time scale.
     pub time_scale: f32,
@@ -1011,7 +1011,7 @@ pub struct Args {
         long = "intensity-mapping-base",
         value_name = "FLOAT",
         default_value_t = intensity_mapping::DEFAULT_LOG_BASE,
-        help = concat!("Base parameter for log/exp mapping [default: ", stringify!(intensity_mapping::DEFAULT_LOG_BASE), "]")
+        help = "Base parameter for log/exp mapping"
     )]
     /// Base for logarithmic/exponential intensity mapping.
     pub intensity_mapping_base: f32,
@@ -1020,7 +1020,7 @@ pub struct Args {
         long = "intensity-mapping-gamma",
         value_name = "FLOAT",
         default_value_t = intensity_mapping::DEFAULT_GAMMA,
-        help = concat!("Gamma for power mapping [default: ", stringify!(intensity_mapping::DEFAULT_GAMMA), "]")
+        help = "Gamma for power mapping"
     )]
     /// Gamma for power intensity mapping.
     pub intensity_mapping_gamma: f32,
@@ -1029,7 +1029,7 @@ pub struct Args {
         long = "intensity-mapping-levels",
         value_name = "INT",
         default_value_t = intensity_mapping::DEFAULT_LEVELS,
-        help = concat!("Levels for quantize mapping [default: ", stringify!(intensity_mapping::DEFAULT_LEVELS), "]")
+        help = "Levels for quantize mapping"
     )]
     /// Quantization levels for intensity mapping.
     pub intensity_mapping_levels: u8,
@@ -1038,7 +1038,7 @@ pub struct Args {
         long = "perlin-strength",
         value_name = "FLOAT",
         default_value_t = intensity_mapping::DEFAULT_PERLIN_STRENGTH,
-        help = concat!("Perlin noise amplitude/strength (0.0-1.0) [default: ", stringify!(intensity_mapping::DEFAULT_PERLIN_STRENGTH), "]")
+        help = "Perlin noise amplitude/strength (0.0-1.0)"
     )]
     /// Amplitude for perlin intensity mapping (affects both sim and logo).
     pub perlin_strength: f32,
@@ -1056,7 +1056,7 @@ pub struct Args {
         long = "logo-mapping-base",
         value_name = "FLOAT",
         default_value_t = intensity_mapping::DEFAULT_LOGO_BASE,
-        help = concat!("Base for logo log/exp mapping [default: ", stringify!(intensity_mapping::DEFAULT_LOGO_BASE), "]")
+        help = "Base for logo log/exp mapping"
     )]
     /// Base for the logo's logarithmic/exponential mapping.
     pub logo_mapping_base: f32,
@@ -1190,7 +1190,7 @@ pub struct Args {
         long = "attractor-strength",
         value_name = "FLOAT",
         default_value_t = environment::DEFAULT_ATTRACTOR_STRENGTH,
-        help = concat!("Global multiplier for attractor/repeller strength [range: ", stringify!(environment::MIN_ATTRACTOR_STRENGTH), "-", stringify!(environment::MAX_ATTRACTOR_STRENGTH), "]")
+        help = "Global multiplier for attractor/repeller strength [range: 0.1-10]"
     )]
     /// Global strength multiplier for attractors.
     pub attractor_strength: f32,
@@ -1210,7 +1210,7 @@ pub struct Args {
         value_name = "FLOAT",
         default_value_t = dithering::DEFAULT_INTENSITY,
         hide = true,
-        help = concat!("Dithering intensity for ordered/hybrid modes (0.0-1.0) [default: ", stringify!(dithering::DEFAULT_INTENSITY), "]")
+        help = "Dithering intensity for ordered/hybrid modes (0.0-1.0)"
     )]
     /// Intensity of dithering effect.
     pub dither_intensity: f32,
@@ -1294,7 +1294,7 @@ pub struct Args {
         long = "terrain-strength",
         value_name = "FLOAT",
         default_value_t = environment::DEFAULT_TERRAIN_STRENGTH,
-        help = concat!("Strength of terrain influence [range: ", stringify!(environment::MIN_TERRAIN_STRENGTH), "-", stringify!(environment::MAX_TERRAIN_STRENGTH), "]")
+        help = "Strength of terrain influence [range: 0.1-5]"
     )]
     /// Strength of terrain effect.
     pub terrain_strength: f32,
@@ -1319,7 +1319,7 @@ pub struct Args {
         long = "export-frames",
         value_name = "INT",
         default_value_t = export::DEFAULT_FRAMES,
-        help = concat!("Number of frames to capture for GIF export [default: ", stringify!(export::DEFAULT_FRAMES), "]")
+        help = "Number of frames to capture for GIF export"
     )]
     /// Number of frames to export.
     pub export_frames: usize,
@@ -1328,7 +1328,7 @@ pub struct Args {
         long = "export-fps",
         value_name = "INT",
         default_value_t = export::DEFAULT_FPS,
-        help = concat!("GIF playback speed (frames per second) [default: ", stringify!(export::DEFAULT_FPS), "]")
+        help = "GIF playback speed (frames per second)"
     )]
     /// FPS for exported animation.
     pub export_fps: usize,
@@ -1351,7 +1351,7 @@ pub struct Args {
         long = "mouse-timeout",
         value_name = "FLOAT",
         default_value_t = environment::DEFAULT_MOUSE_TIMEOUT,
-        help = concat!("Time in seconds before mouse-created attractors/repellers expire [default: ", stringify!(environment::DEFAULT_MOUSE_TIMEOUT), "]")
+        help = "Time in seconds before mouse-created attractors/repellers expire"
     )]
     /// Duration of mouse effects.
     pub mouse_timeout: f32,
@@ -1374,7 +1374,7 @@ pub struct Args {
         long = "warmup-frames",
         value_name = "INT",
         default_value_t = warmup::DEFAULT_WARMUP_FRAMES,
-        help = concat!("Number of frames to display logo before simulation (0 to disable) [default: ", stringify!(warmup::DEFAULT_WARMUP_FRAMES), "]")
+        help = "Number of frames to display logo before simulation (0 to disable)"
     )]
     /// Number of warmup frames.
     pub warmup_frames: usize,
@@ -1383,7 +1383,7 @@ pub struct Args {
         long = "warmup-brightness",
         value_name = "FLOAT",
         default_value_t = warmup::DEFAULT_BRIGHTNESS_MULTIPLIER,
-        help = concat!("Brightness multiplier during warmup phase [default: ", stringify!(warmup::DEFAULT_BRIGHTNESS_MULTIPLIER), "]")
+        help = "Brightness multiplier during warmup phase"
     )]
     /// Brightness multiplier during warmup.
     pub warmup_brightness_multiplier: f32,
@@ -1392,7 +1392,7 @@ pub struct Args {
         long = "warmup-decay",
         value_name = "FLOAT",
         default_value_t = warmup::DEFAULT_DECAY_FACTOR,
-        help = concat!("Decay factor during warmup (higher = logo persists longer) [default: ", stringify!(warmup::DEFAULT_DECAY_FACTOR), "]")
+        help = "Decay factor during warmup (higher = logo persists longer)"
     )]
     /// Trail decay during warmup.
     pub warmup_decay: f32,
@@ -1413,7 +1413,7 @@ pub struct Args {
         long = "food-persist-strength",
         value_name = "FLOAT",
         default_value_t = food_persist::DEFAULT_STRENGTH,
-        help = concat!("Strength of food persistence attractors (0.0-5.0) [default: ", stringify!(food_persist::DEFAULT_STRENGTH), "]")
+        help = "Strength of food persistence attractors (0.0-5.0)"
     )]
     /// Strength of food persistence.
     pub food_persist_strength: f32,
@@ -1422,7 +1422,7 @@ pub struct Args {
         long = "food-persist-radius",
         value_name = "FLOAT",
         default_value_t = food_persist::DEFAULT_RADIUS,
-        help = concat!("Radius of influence for food persistence attractors [default: ", stringify!(food_persist::DEFAULT_RADIUS), "]")
+        help = "Radius of influence for food persistence attractors"
     )]
     /// Radius of food persistence.
     pub food_persist_radius: f32,
@@ -1431,7 +1431,7 @@ pub struct Args {
         long = "food-persist-duration",
         value_name = "INT",
         default_value_t = food_persist::DEFAULT_DURATION,
-        help = concat!("Number of frames before food attractors fade out (0 = permanent) [default: ", stringify!(food_persist::DEFAULT_DURATION), "]")
+        help = "Number of frames before food attractors fade out (0 = permanent)"
     )]
     /// Duration of food persistence.
     pub food_persist_duration: usize,
@@ -1449,7 +1449,7 @@ pub struct Args {
         long = "collapse-threshold",
         value_name = "FLOAT",
         default_value_t = auto_reset::DEFAULT_ENTROPY_THRESHOLD,
-        help = concat!("Entropy threshold to detect collapse (0.0-1.0, higher = more sensitive) [default: ", stringify!(auto_reset::DEFAULT_ENTROPY_THRESHOLD), "]")
+        help = "Entropy threshold to detect collapse (0.0-1.0, higher = more sensitive)"
     )]
     /// Entropy threshold for collapse detection.
     pub collapse_entropy_threshold: f32,
@@ -1458,7 +1458,7 @@ pub struct Args {
         long = "collapse-duration",
         value_name = "INT",
         default_value_t = auto_reset::DEFAULT_DURATION_FRAMES,
-        help = concat!("Number of frames simulation must stay collapsed before auto-reset [default: ", stringify!(auto_reset::DEFAULT_DURATION_FRAMES), "]")
+        help = "Number of frames simulation must stay collapsed before auto-reset"
     )]
     /// Duration to wait before reset.
     pub collapse_duration_frames: usize,
@@ -1472,7 +1472,7 @@ pub struct Args {
         long = "grid-size",
         value_name = "INT",
         default_value_t = grid::DEFAULT_GRID_SIZE,
-        help = concat!("Grid cell size (number of cells per dimension) [default: ", stringify!(grid::DEFAULT_GRID_SIZE), "]")
+        help = "Grid cell size (number of cells per dimension)"
     )]
     /// Grid cell size.
     pub grid_size: usize,
@@ -1499,7 +1499,7 @@ pub struct Args {
         long = "grid-opacity",
         value_name = "FLOAT",
         default_value_t = grid::DEFAULT_GRID_OPACITY,
-        help = concat!("Grid opacity (0.0-1.0) [default: ", stringify!(grid::DEFAULT_GRID_OPACITY), "]")
+        help = "Grid opacity (0.0-1.0)"
     )]
     /// Grid opacity.
     pub grid_opacity: f32,
@@ -1524,7 +1524,7 @@ pub struct Args {
         long = "ascii-contrast",
         value_name = "FLOAT",
         default_value_t = ascii::DEFAULT_CONTRAST,
-        help = concat!("Shape-vector ASCII contrast exponent (1.0 = none, 3.0 = strong edge enhancement) [default: ", stringify!(ascii::DEFAULT_CONTRAST), "]")
+        help = "Shape-vector ASCII contrast exponent (1.0 = none, 2.0 = strong edge enhancement)"
     )]
     /// Contrast exponent for shape-vector ASCII rendering.
     pub ascii_contrast: f32,
@@ -1542,7 +1542,7 @@ pub struct Args {
         long = "pause-style",
         value_name = "STYLE",
         default_value = "minimal",
-        help = "Pause screen visual style: vcr, frosted, vignette, pulse, minimal, pixelate, edges, zoom"
+        help = "Pause screen visual style: vcr, frosted, vignette, pulse, minimal, pixelate, edges, zoom, snow, starfield, noise, matrix"
     )]
     /// Pause screen visual effect style.
     pub pause_style: PauseStyle,
@@ -2053,7 +2053,7 @@ impl Default for Args {
             #[cfg(feature = "audio")]
             choir_volume: 0.5,
             bg_color: None,
-            pause_style: PauseStyle::Vignette,
+            pause_style: PauseStyle::Minimal,
             pause_logo: false,
             pause_pulse_draw_mode: false,
             trail_age: false,
