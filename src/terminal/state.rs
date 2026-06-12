@@ -277,7 +277,8 @@ pub enum ControlAction {
     ToggleAutoNormalize,
     /// Cycle motion blur amount.
     CycleMotionBlur,
-    /// Adjust max brightness target.
+    /// Adjust the brightness white-point divisor (positive delta = dimmer;
+    /// the user-facing control is inverted to read as gain).
     AdjustMaxBrightness(f32),
     /// Save current frame to PNG.
     SaveFrameToPng,
@@ -365,7 +366,7 @@ pub struct ParameterState {
     pub terrain_type: TerrainType,
     /// Terrain strength.
     pub terrain_strength: f32,
-    /// Max brightness.
+    /// Brightness white-point divisor (higher = dimmer).
     pub max_brightness: f32,
     /// Palette index.
     pub palette_index: usize,
@@ -414,7 +415,7 @@ pub struct DefaultValues {
     pub auto_normalize: bool,
     /// Motion blur frames.
     pub motion_blur_frames: usize,
-    /// Max brightness.
+    /// Brightness white-point divisor (higher = dimmer).
     pub max_brightness: f32,
 }
 
@@ -464,9 +465,8 @@ pub struct RuntimeState {
     pub is_paused: bool,
     /// Flag set when pause is toggled, cleared after immediate re-render
     pub pause_just_toggled: bool,
-    /// Centralized overlay state management.
-    /// Replaces: show_controls, show_keyboard_hints, show_preset_comparison,
-    /// show_dashboard, show_config_browser, show_config_save_dialog
+    /// Centralized open/close state for all overlays (controls, hints,
+    /// dashboard, config browser/save, preset comparison, palette editor).
     pub overlay_state: OverlayState,
     /// Preset being compared against.
     pub comparison_preset: Preset,
@@ -538,7 +538,7 @@ pub struct RuntimeState {
     pub min_sim_size: TerminalSizeThreshold,
     /// Minimum sim size before dropping the frame.
     pub min_frame_size: TerminalSizeThreshold,
-    /// Max brightness.
+    /// Brightness white-point divisor (higher = dimmer).
     pub max_brightness: f32,
     /// Fast mode enabled.
     pub fast_mode_enabled: bool,
@@ -1341,7 +1341,7 @@ impl RuntimeState {
         };
     }
 
-    /// Adjusts max brightness target.
+    /// Adjusts the brightness white-point divisor (positive delta = dimmer).
     pub fn adjust_max_brightness(&mut self, delta: f32) -> bool {
         self.checkpoint();
         let new_value = (self.max_brightness + delta)

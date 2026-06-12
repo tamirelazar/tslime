@@ -98,7 +98,7 @@ impl InputPoller {
 
     /// Check if the given key event corresponds to an exit command (e.g., 'q' or 'Q').
     pub fn is_exit_key(key_event: &KeyEvent) -> bool {
-        // Note: Esc is handled separately to close overlays first
+        // Esc is handled separately so it can close overlays before quitting
         matches!(key_event.code, KeyCode::Char('q') | KeyCode::Char('Q'))
     }
 }
@@ -402,7 +402,6 @@ mod tests {
     fn test_handle_key_event_basic() {
         use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
-        // Test space key
         let space = KeyEvent {
             code: KeyCode::Char(' '),
             modifiers: KeyModifiers::NONE,
@@ -414,7 +413,6 @@ mod tests {
             ControlAction::TogglePause
         ));
 
-        // Test 'c' key
         let c = KeyEvent {
             code: KeyCode::Char('c'),
             modifiers: KeyModifiers::NONE,
@@ -423,7 +421,6 @@ mod tests {
         };
         assert!(matches!(handle_key_event(&c), ControlAction::CyclePalette));
 
-        // Test 'q' key
         let q = KeyEvent {
             code: KeyCode::Char('q'),
             modifiers: KeyModifiers::NONE,
@@ -437,7 +434,6 @@ mod tests {
     fn test_handle_key_event_control() {
         use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
-        // Test Ctrl+S
         let ctrl_s = KeyEvent {
             code: KeyCode::Char('s'),
             modifiers: KeyModifiers::CONTROL,
@@ -449,7 +445,6 @@ mod tests {
             ControlAction::ShowConfigSaveDialog
         ));
 
-        // Test Ctrl+Z
         let ctrl_z = KeyEvent {
             code: KeyCode::Char('z'),
             modifiers: KeyModifiers::CONTROL,

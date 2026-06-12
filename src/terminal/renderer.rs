@@ -203,28 +203,21 @@ impl TerminalRenderer {
     }
 
     /// Get the current dithering mode.
-    ///
-    /// Part of the public API but currently unused internally.
-    /// Retained for potential external use or testing.
     pub fn dither_mode(&self) -> DitherMode {
         self.dither_mode
     }
 
-    /// Reset error diffusion error accumulators.
+    /// Reset error diffusion accumulators.
     ///
-    /// Should be called at the start of each frame.
-    /// Currently reset automatically in `render_with_overlay`, but exposed
-    /// as public API for advanced use cases.
+    /// The render methods already do this at the start of each frame; exposed
+    /// for callers that drive `FrameBuffer` construction themselves.
     pub fn reset_error_diffusion(&mut self) {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.reset();
         }
     }
 
-    /// Resize error diffusion buffers.
-    ///
-    /// Part of the public API but currently unused internally.
-    /// Retained for potential external use when terminal size changes.
+    /// Resize error diffusion buffers (e.g. after a terminal resize).
     pub fn resize_error_diffusion(&mut self, width: usize, height: usize) {
         if let Some(ref mut ed) = self.error_diffusion {
             ed.resize(width, height);
@@ -238,25 +231,16 @@ impl TerminalRenderer {
     }
 
     /// Update the color palette.
-    ///
-    /// Part of the public API but currently unused internally.
-    /// Retained for potential runtime palette switching features.
     pub fn set_palette(&mut self, palette: Palette) {
         self.palette = palette;
     }
 
-    /// Set the hue shift amount (0.0 to 1.0).
-    ///
-    /// Part of the public API but currently unused internally.
-    /// Retained for potential runtime color adjustment features.
+    /// Set the hue shift in degrees, applied to palette colors at render time.
     pub fn set_hue_shift(&mut self, hue_shift: f32) {
         self.hue_shift = hue_shift;
     }
 
     /// Update the character set used for rendering.
-    ///
-    /// Part of the public API but currently unused internally.
-    /// Retained for potential runtime charset switching features.
     pub fn set_charset(&mut self, charset: Charset) {
         self.charset = charset;
     }
@@ -411,7 +395,6 @@ impl TerminalRenderer {
             )
         };
 
-        // Draw window frame at its computed position if in windowed mode
         if let Some(ref layout) = self.window_layout {
             use crate::render::window::FallbackMode;
             if !matches!(layout.fallback, FallbackMode::Fullscreen)
@@ -441,7 +424,9 @@ impl TerminalRenderer {
 
     /// Render a frame with text overlays.
     ///
-    /// Supports various overlay types: help, controls, status, stats, info, config, etc.
+    /// Draws the sim frame, then composites overlays on top in z-order:
+    /// pause effects, window frame/chrome, controls, status line, notification,
+    /// dashboard, and modals (config browser/save, hints, comparison, palette editor).
     #[allow(clippy::too_many_arguments)]
     pub fn render_with_overlay(
         &mut self,
@@ -539,12 +524,10 @@ impl TerminalRenderer {
             )
         };
 
-        // Apply pause effect based on selected style
         if let Some(fc) = pause_frame {
             buffer.apply_pause_effect(pause_style, fc, pause_pulse_draw_mode);
         }
 
-        // Apply grid rendering if enabled
         if let Some(mut grid) = grid_renderer.cloned() {
             grid.initialize(self.width, self.height);
 
@@ -559,7 +542,6 @@ impl TerminalRenderer {
                 0.0
             };
 
-            // Apply grid to each position
             for y in 0..self.height {
                 for x in 0..self.width {
                     if grid.is_grid_position(x, y, self.width, self.height) {
@@ -588,7 +570,6 @@ impl TerminalRenderer {
             self.intensity_mapping.as_ref(),
         );
 
-        // Render window frame if enabled (uses palette accent color)
         if self.window_frame.is_visible() {
             if let Some(ref layout) = self.window_layout {
                 use crate::render::window::FallbackMode;
@@ -664,7 +645,6 @@ impl TerminalRenderer {
             }
         }
 
-        // Helper to get colors from OverlayConfig and PanelStyle
         let get_overlay_colors =
             |config: &OverlayConfig,
              style: Option<&PanelStyle>|
@@ -787,12 +767,10 @@ impl TerminalRenderer {
             }
         }
 
-        // Pause badge overlay
         if let Some((overlay, x, y)) = pause_badge_overlay {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::NOTIFICATION);
         }
 
-        // Controls overlay at top-left
         if let Some((overlay, x, y)) = controls_lines {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONTROLS);
         }
@@ -847,12 +825,10 @@ impl TerminalRenderer {
             }
         }
 
-        // Notification at bottom-center
         if let Some((overlay, x, y)) = notification_line {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::NOTIFICATION);
         }
 
-        // Dashboard overlay
         if let Some((overlay, x, y)) = dashboard_lines {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::DASHBOARD);
         }
@@ -969,7 +945,6 @@ impl TerminalRenderer {
                     downsampled,
                 );
 
-                // Store for brightness calculation
                 if all_downsampled_cells.is_empty() {
                     all_downsampled_cells = downsampled.cells().to_vec();
                 } else {
@@ -1031,12 +1006,10 @@ impl TerminalRenderer {
             }
         }
 
-        // Apply pause effect based on selected style
         if let Some(fc) = pause_frame {
             buffer.apply_pause_effect(pause_style, fc, pause_pulse_draw_mode);
         }
 
-        // Apply grid rendering if enabled
         if let Some(mut grid) = grid_renderer.cloned() {
             grid.initialize(self.width, self.height);
 
@@ -1051,7 +1024,6 @@ impl TerminalRenderer {
                 0.0
             };
 
-            // Apply grid to each position
             for y in 0..self.height {
                 for x in 0..self.width {
                     if grid.is_grid_position(x, y, self.width, self.height) {
@@ -1080,7 +1052,6 @@ impl TerminalRenderer {
             self.intensity_mapping.as_ref(),
         );
 
-        // Render window frame if enabled
         if self.window_frame.is_visible() {
             if let Some(ref layout) = self.window_layout {
                 use crate::render::window::FallbackMode;
@@ -1199,12 +1170,10 @@ impl TerminalRenderer {
             }
         }
 
-        // Pause badge overlay
         if let Some((overlay, x, y)) = pause_badge_overlay {
             draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::NOTIFICATION);
         }
 
-        // Controls overlay at top-left
         if let Some((overlay, x, y)) = controls_lines {
             draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONTROLS);
         }
@@ -1258,12 +1227,10 @@ impl TerminalRenderer {
             }
         }
 
-        // Notification at bottom-center
         if let Some((overlay, x, y)) = notification_line {
             draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::NOTIFICATION);
         }
 
-        // Dashboard overlay
         if let Some((overlay, x, y)) = dashboard_lines {
             draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::DASHBOARD);
         }
