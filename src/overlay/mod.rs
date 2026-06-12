@@ -107,7 +107,6 @@ impl OverlayType {
 
     /// Returns true if this overlay blocks all other keys when open.
     pub fn blocks_other_keys(self) -> bool {
-        // All capturing overlays block other keys
         self.captures_input()
     }
 

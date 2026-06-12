@@ -1,13 +1,11 @@
 //! Layout-aware position tracking for overlays.
 //!
-//! Replaces fragile hardcoded row indices with semantic content identifiers,
-//! making overlay layouts maintainable and self-documenting.
+//! Replaces fragile hardcoded row indices with semantic content identifiers.
 
 /// Identifies specific content elements within an overlay layout.
 ///
-/// These identifiers are used to track where specific content appears
-/// in the overlay, enabling rich text coloring and other positional
-/// operations without relying on fragile hardcoded indices.
+/// Used to look up where content lands in an overlay (e.g. for rich-text
+/// coloring) without hardcoding row indices.
 ///
 /// # Example
 /// ```
@@ -104,9 +102,8 @@ pub enum RowType {
 
 /// Tracks the layout of an overlay with semantic content identifiers.
 ///
-/// This struct builds a mapping between content identifiers and their
-/// actual row indices, allowing overlays to reference content by semantic
-/// meaning rather than fragile numeric indices.
+/// Maps content identifiers to their actual row indices, so overlays can
+/// reference content by meaning rather than position.
 ///
 /// # Example
 /// ```
@@ -239,10 +236,10 @@ impl OverlayLayout {
         self.rows.iter().enumerate().map(|(idx, row)| (idx, *row))
     }
 
-    /// Returns the index of the first occurrence of the given content type.
+    /// Returns the index of the first content row matching the predicate.
     ///
-    /// Unlike `row_of` which matches specific ContentId, this matches
-    /// the general category (e.g., any Slider content).
+    /// Unlike `row_of`, which matches a specific `ContentId`, this matches
+    /// a category (e.g., any slider).
     pub fn first_of_category<F>(&self, predicate: F) -> Option<usize>
     where
         F: Fn(ContentId) -> bool,
