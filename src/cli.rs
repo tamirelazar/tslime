@@ -696,7 +696,7 @@ pub struct Args {
         value_name = "FLOAT",
         help = concat!("Trail decay factor (0.0-1.0) [range: ", stringify!(trail::MIN_DECAY_FACTOR), "-", stringify!(trail::MAX_DECAY_FACTOR), "]")
     )]
-    /// Trail decay factor (0.0-1.0).
+    /// Trail decay factor (validated range 0.5-0.9999).
     pub decay_factor: Option<f32>,
 
     #[arg(
@@ -1962,7 +1962,7 @@ impl Default for Args {
             init: Some(InitMode::Food),
             food: food_img_consts::DEFAULT_FOOD_PATH.to_string(),
             food_invert: food_img_consts::DEFAULT_FOOD_INVERT,
-            food_scale: food::DEFAULT_FOOD_SCALE, // Food image scale
+            food_scale: food::DEFAULT_FOOD_SCALE,
             frame_delay: time::DEFAULT_FRAME_DELAY,
             fps: time::DEFAULT_FPS as usize,
             time_scale: time_consts::DEFAULT_TIME_SCALE,

@@ -260,8 +260,8 @@ impl SavedConfig {
                     Some(crate::render::palette::MappingFunction::Smoothstep) => {
                         (Some("smoothstep".to_string()), None, None, None)
                     }
-                    // For complex mappings (Perlin, Split), we default to Linear or specialized handling
-                    // Currently simplification for basic types
+                    // Complex mappings (Perlin, Split) have no saved-format
+                    // representation; record no mapping.
                     _ => (None, None, None, None),
                 }
             } else {
@@ -394,7 +394,7 @@ impl SavedConfig {
             };
 
             if let Some(m) = mapping {
-                // Update intensity_mapping_index to match first
+                // Keep the cycle index in sync with the applied mapping.
                 runtime_state.intensity_mapping_index = find_intensity_mapping_index(&m);
                 runtime_state.intensity_mapping = m;
             }
@@ -421,20 +421,17 @@ impl SavedConfig {
         Ok(())
     }
 
-    /// Returns true if this config may require a simulation restart to fully apply.
-    ///
-    /// This checks if any parameters differ from runtime-adjustable ones.
+    /// Returns true if this config sets parameters that only take effect after
+    /// a simulation restart (warmup, auto-reset, grid).
     pub fn requires_restart(&self) -> bool {
-        // These parameters can be changed at runtime, so no restart needed
-        // Check if any "restart-required" parameters are different from defaults
         self.warmup_frames > 0 || self.auto_reset || self.grid || self.grid_style.is_some()
     }
 
-    /// Convert this saved config to a SimConfig for restarting simulation.
+    /// Converts this saved config to a `SimConfig` for restarting the simulation.
     ///
-    /// This function is part of the public API but currently unused in the main application.
-    /// It is retained for future use in configuration management features like
-    /// "Restart with saved config" or "Export config to file".
+    /// Not yet called by the app — live loading goes through
+    /// [`apply_to_runtime_state`](Self::apply_to_runtime_state), which cannot
+    /// restore restart-only parameters; a full-restore flow would use this.
     pub fn to_sim_config(&self) -> Result<SimConfig, String> {
         let diffusion_kernel = parse_diffusion_kernel(&self.diffusion_kernel)?;
         let _init_mode = parse_init_mode(&self.init_mode)?;
@@ -529,10 +526,8 @@ fn parse_diffusion_kernel(s: &str) -> Result<DiffusionKernel, String> {
     }
 }
 
-/// Parses an initialization mode from a string.
-///
-/// This function is part of the configuration parsing API but currently unused.
-/// It is retained for future use in saved configuration loading.
+/// Parses an initialization mode name from a saved config (used by
+/// [`SavedConfig::to_sim_config`] to reject configs with unknown modes).
 fn parse_init_mode(s: &str) -> Result<InitMode, String> {
     match s.to_lowercase().as_str() {
         "random" => Ok(InitMode::Random),
@@ -606,7 +601,6 @@ pub fn get_config_path() -> Result<PathBuf, String> {
 
     let config_dir = PathBuf::from(home).join(CONFIG_DIR);
 
-    // Create directory if it doesn't exist
     if !config_dir.exists() {
         fs::create_dir_all(&config_dir)
             .map_err(|e| format!("Failed to create config directory: {}", e))?;
@@ -647,20 +641,16 @@ fn save_config_file(config_file: &ConfigFile) -> Result<(), String> {
 pub fn save_config(config: SavedConfig) -> Result<(), String> {
     let mut config_file = load_config_file()?;
 
-    // Remove existing config with same name
     config_file.presets.retain(|c| c.name != config.name);
-
-    // Add new config
     config_file.presets.push(config);
 
     save_config_file(&config_file)
 }
 
-/// Loads a specific configuration by name.
+/// Loads a saved configuration by name.
 ///
-/// This function is part of the public API but currently unused in the main application.
-/// It is retained for future use in configuration management features like
-/// "Load saved preset by name" or CLI config restoration.
+/// Not yet called by the app, which loads via [`list_configs`] and an index;
+/// kept as the public load-by-name entry point.
 pub fn load_config(name: &str) -> Result<SavedConfig, String> {
     let config_file = load_config_file()?;
 

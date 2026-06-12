@@ -5,9 +5,9 @@
 //!
 //! ## Overview
 //!
-//! tslime implements the agent-based model from Jeff Jones' 2010 paper
-//! *"Characteristics of Pattern Formation and Evolution in Approximations of
-//! Physarum Transport Networks."*
+//! tslime implements the agent-based model from Jones (2010), *"Characteristics
+//! of Pattern Formation and Evolution in Approximations of Physarum Transport
+//! Networks"* (full citation in [`simulation`]).
 //!
 //! The simulation involves:
 //! 1. **Sense**: Agents sample pheromone trails at three points
@@ -41,7 +41,8 @@
 /// Application entry point and high-level logic.
 #[cfg(feature = "terminal")]
 pub mod app;
-/// Choir-mode audio (Miranda/Adamatzky/Jones 2011 sonification).
+/// Choir-mode audio, after Miranda, Adamatzky & Jones (2011), "Sounds
+/// Synthesis with Slime Mould of Physarum Polycephalum".
 #[cfg(feature = "audio")]
 pub mod audio;
 /// Command-line argument parsing and configuration.

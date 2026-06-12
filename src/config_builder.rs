@@ -11,8 +11,8 @@ use crate::simulation::config::{
     SpeciesConfig, TerminalSizeThreshold, TerrainType, Wind, WindowFrame, WindowPadding,
 };
 
-/// Internal helper that normalizes parsed CLI [`Args`] into a [`SimConfig`]
-/// via [`ConfigBuilder::from_args`] + [`ConfigBuilder::assemble`].
+/// Staged CLI overrides, applied to a preset/default base by
+/// [`ConfigBuilder::assemble`].
 pub(crate) struct ConfigBuilder {
     preset: Option<Preset>,
     sensor_angle: Option<f32>,
@@ -103,11 +103,8 @@ impl ConfigBuilder {
         }
     }
 
-    /// Builds the SimConfig from the current configuration state.
-    ///
-    /// This method applies all configured parameters to a base configuration
-    /// (either from a preset or default), handling species configuration
-    /// and special cases like high-FPS mode.
+    /// Applies the staged overrides to a base config (preset or default),
+    /// handling species configuration and special cases like high-FPS mode.
     pub(crate) fn assemble(self) -> Result<SimConfig, crate::error::ValidationError> {
         // No validation here — caller validates the assembled config once.
 
