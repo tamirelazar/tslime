@@ -170,7 +170,7 @@ pub fn print_parameter_explanations() {
     println!("    • Default (400×200): Good balance");
     println!("    • Larger (800×400): Slower, more detail");
 
-    println!("\n  --dither-mode <MODE> (default: none)");
+    println!("\n  --dither-mode <MODE> (default: none) [dev-only]");
     println!("    Dithering algorithm for color quantization.");
     println!("    • none: No dithering");
     println!("    • ordered: Bayer matrix ordered dithering");
