@@ -564,7 +564,6 @@ fn parse_window_frame(s: &str) -> Result<crate::simulation::config::WindowFrame,
         "accented" => Ok(crate::simulation::config::WindowFrame::Accented),
         "glow" => Ok(crate::simulation::config::WindowFrame::Glow),
         "reactive" => Ok(crate::simulation::config::WindowFrame::Reactive),
-        "food" => Ok(crate::simulation::config::WindowFrame::Food),
         "frame" => Ok(crate::simulation::config::WindowFrame::Frame),
         _ => Err(format!("Unknown window frame: {}", s)),
     }

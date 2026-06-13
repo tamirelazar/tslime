@@ -1059,8 +1059,7 @@ impl RuntimeState {
             WindowFrame::Negative => WindowFrame::Accented,
             WindowFrame::Accented => WindowFrame::Glow,
             WindowFrame::Glow => WindowFrame::Reactive,
-            WindowFrame::Reactive => WindowFrame::Food,
-            WindowFrame::Food => WindowFrame::Frame,
+            WindowFrame::Reactive => WindowFrame::Frame,
             WindowFrame::Frame => WindowFrame::None,
         };
     }
@@ -1074,8 +1073,7 @@ impl RuntimeState {
             WindowFrame::Accented => WindowFrame::Negative,
             WindowFrame::Glow => WindowFrame::Accented,
             WindowFrame::Reactive => WindowFrame::Glow,
-            WindowFrame::Food => WindowFrame::Reactive,
-            WindowFrame::Frame => WindowFrame::Food,
+            WindowFrame::Frame => WindowFrame::Reactive,
         };
     }
 

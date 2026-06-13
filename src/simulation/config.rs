@@ -1184,8 +1184,6 @@ pub enum WindowFrame {
     Glow,
     /// Border responds to nearby agent activity.
     Reactive,
-    /// Food-themed decorative border (visual only; does not affect the sim).
-    Food,
     /// Thin-line frame (default).
     #[default]
     Frame,
@@ -1202,7 +1200,7 @@ impl WindowFrame {
         match self {
             WindowFrame::None => 0,
             WindowFrame::Negative | WindowFrame::Frame => 2,
-            WindowFrame::Accented | WindowFrame::Food => 1,
+            WindowFrame::Accented => 1,
             WindowFrame::Glow => 3,
             WindowFrame::Reactive => 2,
         }
@@ -1224,10 +1222,9 @@ impl std::str::FromStr for WindowFrame {
             "accented" => Ok(WindowFrame::Accented),
             "glow" => Ok(WindowFrame::Glow),
             "reactive" => Ok(WindowFrame::Reactive),
-            "food" => Ok(WindowFrame::Food),
             "frame" => Ok(WindowFrame::Frame),
             _ => Err(format!(
-                "Invalid window frame: {}. Must be one of: none, negative, accented, glow, reactive, food, frame",
+                "Invalid window frame: {}. Must be one of: none, negative, accented, glow, reactive, frame",
                 s
             )),
         }
