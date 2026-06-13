@@ -99,6 +99,7 @@ lowercase increases and uppercase (Shift) decreases.
 | `.` | Growth/decay highlighting |
 | `>` | Edge glow |
 | `(` / `)` | Cycle window frame |
+| `F10` | Cycle chrome (minimal / expanded / fullscreen) |
 | `F11` | Fullscreen |
 
 ### System
