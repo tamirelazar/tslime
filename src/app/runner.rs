@@ -2031,6 +2031,10 @@ pub fn run_simulation(
                                 }
                             ));
                         }
+                        ControlAction::CycleChrome => {
+                            // Stub: Task 2 wires the F10 binding + window-layout sync.
+                            runtime_state.cycle_chrome_style();
+                        }
                         ControlAction::ToggleFullscreen => {
                             use crate::render::window::FallbackMode;
                             use crate::simulation::config::ChromeStyle;

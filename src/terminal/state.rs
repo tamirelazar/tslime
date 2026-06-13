@@ -332,6 +332,8 @@ pub enum ControlAction {
     CycleWindowFrameReverse,
     /// Toggle between windowed and fullscreen mode.
     ToggleFullscreen,
+    /// Cycle chrome style: Minimal → Expanded → Fullscreen → Minimal.
+    CycleChrome,
     /// Toggle choir-mode audio sonification on/off.
     #[cfg(feature = "audio")]
     ToggleChoir,
@@ -1075,6 +1077,26 @@ impl RuntimeState {
             WindowFrame::Food => WindowFrame::Reactive,
             WindowFrame::Frame => WindowFrame::Food,
         };
+    }
+
+    /// Cycles the chrome style Minimal → Expanded → Fullscreen → Minimal and
+    /// syncs the chrome state. Setting `base_chrome_state = Expanded` is what
+    /// makes the sticky title+footer reachable at runtime (see the pause/overlay
+    /// logic that reads `base_chrome_state`).
+    pub fn cycle_chrome_style(&mut self) {
+        use crate::simulation::config::ChromeStyle;
+        self.chrome_style = match self.chrome_style {
+            ChromeStyle::Minimal => ChromeStyle::Expanded,
+            ChromeStyle::Expanded => ChromeStyle::Fullscreen,
+            ChromeStyle::Fullscreen => ChromeStyle::Minimal,
+        };
+        let cs = match self.chrome_style {
+            ChromeStyle::Expanded => ChromeState::Expanded,
+            ChromeStyle::Minimal => ChromeState::Minimal,
+            ChromeStyle::Fullscreen => ChromeState::Minimal,
+        };
+        self.base_chrome_state = cs;
+        self.chrome_state = cs;
     }
 
     /// Gets the currently active charset.
@@ -2210,6 +2232,29 @@ mod tests {
         state.base_chrome_state = ChromeState::Minimal;
         state.chrome_state = ChromeState::FadingOut(0.1);
         state.advance_fade(0.2); // dt > remaining, should transition to Minimal
+        assert_eq!(state.chrome_state, ChromeState::Minimal);
+    }
+
+    #[test]
+    fn test_cycle_chrome_style_reaches_expanded_then_fullscreen() {
+        use crate::simulation::config::ChromeStyle;
+        let mut state = create_test_runtime_state();
+        state.chrome_style = ChromeStyle::Minimal;
+        state.base_chrome_state = ChromeState::Minimal;
+        state.chrome_state = ChromeState::Minimal;
+
+        state.cycle_chrome_style();
+        assert_eq!(state.chrome_style, ChromeStyle::Expanded);
+        assert_eq!(state.base_chrome_state, ChromeState::Expanded);
+        assert_eq!(state.chrome_state, ChromeState::Expanded);
+
+        state.cycle_chrome_style();
+        assert_eq!(state.chrome_style, ChromeStyle::Fullscreen);
+        assert_eq!(state.base_chrome_state, ChromeState::Minimal);
+
+        state.cycle_chrome_style();
+        assert_eq!(state.chrome_style, ChromeStyle::Minimal);
+        assert_eq!(state.base_chrome_state, ChromeState::Minimal);
         assert_eq!(state.chrome_state, ChromeState::Minimal);
     }
 
