@@ -235,6 +235,12 @@ impl KeyboardHintsOverlay {
                 Left,
             )
             .add_two_col(
+                "( / )      Window frame",
+                "F10        Cycle chrome",
+                Left,
+                Left,
+            )
+            .add_two_col(
                 "Tab        Cycle category",
                 {
                     #[cfg(feature = "audio")]
@@ -1770,6 +1776,16 @@ mod status_line_tests {
         // Should still work without population or diffusion kernel
         assert!(status.contains("Organic"));
         assert!(status.contains("1.0×"));
+    }
+
+    #[test]
+    fn test_keyboard_hints_lists_frame_and_chrome() {
+        let overlay = KeyboardHintsOverlay::build_overlay(RgbColor::new(255, 255, 255));
+        let joined = overlay.lines.join("\n");
+        assert!(joined.contains("Window frame"), "missing window-frame hint");
+        assert!(joined.contains("( / )"), "missing window-frame keybind");
+        assert!(joined.contains("Cycle chrome"), "missing chrome hint");
+        assert!(joined.contains("F10"), "missing chrome keybind");
     }
 
     #[test]

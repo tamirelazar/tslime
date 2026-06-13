@@ -2031,6 +2031,30 @@ pub fn run_simulation(
                                 }
                             ));
                         }
+                        ControlAction::CycleChrome => {
+                            use crate::render::window::FallbackMode;
+                            use crate::simulation::config::ChromeStyle;
+                            runtime_state.cycle_chrome_style();
+                            let layout =
+                                if matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen) {
+                                    None
+                                } else {
+                                    let (tw, th) = crossterm::terminal::size()
+                                        .map(|(w, h)| (w as usize, h as usize))
+                                        .unwrap_or((80, 24));
+                                    let l = window.compute_rects(tw, th);
+                                    if matches!(l.fallback, FallbackMode::Fullscreen) {
+                                        None
+                                    } else {
+                                        Some(l)
+                                    }
+                                };
+                            renderer.set_window_layout(layout);
+                            runtime_state.show_notification(format!(
+                                "Chrome: {:?}",
+                                runtime_state.chrome_style
+                            ));
+                        }
                         ControlAction::ToggleFullscreen => {
                             use crate::render::window::FallbackMode;
                             use crate::simulation::config::ChromeStyle;

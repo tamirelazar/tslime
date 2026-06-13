@@ -266,6 +266,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('>') => ControlAction::ToggleGradientMagnitude,
         KeyCode::Char('(') => ControlAction::CycleWindowFrameReverse,
         KeyCode::Char(')') => ControlAction::CycleWindowFrame,
+        KeyCode::F(10) => ControlAction::CycleChrome,
         KeyCode::F(11) => ControlAction::ToggleFullscreen,
         #[cfg(feature = "audio")]
         KeyCode::F(2) => ControlAction::ToggleChoir,
@@ -524,5 +525,17 @@ mod tests {
             handle_key_event(&event),
             ControlAction::ToggleFullscreen
         ));
+    }
+
+    #[test]
+    fn test_f10_cycles_chrome() {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        let f10 = KeyEvent {
+            code: KeyCode::F(10),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert!(matches!(handle_key_event(&f10), ControlAction::CycleChrome));
     }
 }
