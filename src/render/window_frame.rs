@@ -36,7 +36,6 @@ impl WindowFrameRenderer {
                     self.render_accented(buffer);
                 }
             }
-            WindowFrame::Food => self.render_food(buffer),
             WindowFrame::Frame => self.render_frame(buffer),
         }
     }
@@ -123,28 +122,6 @@ impl WindowFrameRenderer {
                     buffer.set_cell(x, y, Cell::new('░').with_fg(dim_color));
                 }
             }
-        }
-    }
-
-    /// Renders a food-colored border. Purely visual — it does not place food
-    /// sources or affect agent behavior.
-    fn render_food(&self, buffer: &mut FrameBuffer) {
-        let width = buffer.width();
-        let height = buffer.height();
-
-        // Bioluminescent green matching the slime theme
-        let food_color = RgbColor::new(0x39, 0xD3, 0x53);
-
-        // Top and bottom borders
-        for x in 0..width {
-            buffer.set_cell(x, 0, Cell::new('█').with_fg(food_color));
-            buffer.set_cell(x, height - 1, Cell::new('█').with_fg(food_color));
-        }
-
-        // Left and right borders
-        for y in 1..height - 1 {
-            buffer.set_cell(0, y, Cell::new('█').with_fg(food_color));
-            buffer.set_cell(width - 1, y, Cell::new('█').with_fg(food_color));
         }
     }
 

@@ -751,7 +751,7 @@ pub struct Args {
     #[arg(
         long = "window-frame",
         value_name = "MODE",
-        help = "Window frame display mode (none, negative, accented, glow, reactive, food, frame)"
+        help = "Window frame display mode (none, negative, accented, glow, reactive, frame)"
     )]
     /// Window frame display mode for terminal visualization.
     pub window_frame: Option<WindowFrame>,
