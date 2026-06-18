@@ -1299,4 +1299,185 @@ init_mode = "Random"
         assert!((new_state.temporal_lag_frames - 12.0).abs() < 1e-6);
         assert_eq!(new_state.temporal_mode, TemporalMode::Accent);
     }
+
+    #[test]
+    fn diffusion_decay_art_knobs_round_trip() {
+        // Verify all five diffusion/decay art knobs survive from_runtime →
+        // TOML serialize → TOML deserialize → apply_to_runtime_state.
+        let mut state = create_test_runtime_state();
+        state.afterglow = 0.4;
+        state.afterglow_rate = 0.03;
+        state.decay_gamma = 0.6;
+        state.diffuse_weight = 0.5;
+        state.diffusion_sigma = 3.0;
+
+        let sim_config = SimConfig {
+            sensor_angle: state.sensor_angle,
+            sensor_distance: 9.0,
+            rotation_angle: state.rotation_angle,
+            step_size: state.step_size,
+            decay_factor: state.decay_factor,
+            deposit_amount: state.deposit_amount,
+            diffusion_kernel: state.diffusion_kernel,
+            diffusion_sigma: state.diffusion_sigma,
+            afterglow: state.afterglow,
+            afterglow_rate: state.afterglow_rate,
+            diffuse_weight: state.diffuse_weight,
+            decay_gamma: state.decay_gamma,
+            max_brightness: state.max_brightness,
+            time_scale: 1.0,
+            attractors: Vec::new(),
+            attractor_strength: 1.0,
+            mouse_attractors: Vec::new(),
+            mouse_timeout: 3.0,
+            species_configs: vec![SpeciesConfig {
+                name: "default".to_string(),
+                count: 1000,
+                sensor_angle: state.sensor_angle,
+                rotation_angle: state.rotation_angle,
+                step_size: state.step_size,
+                deposit_amount: state.deposit_amount,
+                color: RgbColor::from_hex(0x228b22),
+                trail_modulation: None,
+            }],
+            separate_species_trails: false,
+            use_simd: true,
+            food_image_path: None,
+            food_image_invert: false,
+            food_image_scale: 1.0,
+            obstacles: Vec::new(),
+            obstacle_masks: Vec::new(),
+            wind: None,
+            terrain: crate::simulation::config::TerrainType::None,
+            terrain_strength: 1.0,
+            background_color: None,
+            preferred_init_mode: None,
+            boundary_mode: crate::simulation::config::BoundaryMode::Bounce,
+            respawn_config: crate::simulation::config::RespawnConfig::default(),
+            sampling_mode: crate::simulation::config::SamplingMode::Nearest,
+            window_frame: crate::simulation::config::WindowFrame::None,
+            chrome_style: crate::simulation::config::ChromeStyle::default(),
+            aspect: crate::simulation::config::Aspect::default(),
+            window_padding: crate::simulation::config::WindowPadding::default(),
+            show_status_bar: false,
+            min_sim_size: crate::simulation::config::TerminalSizeThreshold::default(),
+            min_frame_size: crate::simulation::config::TerminalSizeThreshold {
+                width: 12,
+                height: 6,
+            },
+        };
+
+        let saved = SavedConfig::from_runtime(
+            "art_knobs_rt".to_string(),
+            &sim_config,
+            crate::cli::Palette::Organic,
+            crate::render::charset::Charset::HalfBlock,
+            false,
+            false,
+            0,
+            false,
+            false,
+            false,
+            None,
+            crate::simulation::config::InitMode::Random,
+            None,
+            None,
+            0.0,
+            8.0,
+            crate::render::palette::TemporalMode::Hue,
+            state.afterglow,
+            state.afterglow_rate,
+            state.decay_gamma,
+            state.diffuse_weight,
+        );
+
+        // Serialize and deserialize through TOML
+        let toml_str = toml::to_string(&saved).expect("serialize must succeed");
+        let reloaded: SavedConfig = toml::from_str(&toml_str).expect("deserialize must succeed");
+
+        // Restore into a fresh RuntimeState
+        let mut new_state = create_test_runtime_state();
+        reloaded
+            .apply_to_runtime_state(&mut new_state)
+            .expect("apply must succeed");
+
+        assert!(
+            (new_state.afterglow - 0.4).abs() < 1e-6,
+            "afterglow must survive round-trip (got {})",
+            new_state.afterglow
+        );
+        assert!(
+            (new_state.afterglow_rate - 0.03).abs() < 1e-6,
+            "afterglow_rate must survive round-trip (got {})",
+            new_state.afterglow_rate
+        );
+        assert!(
+            (new_state.decay_gamma - 0.6).abs() < 1e-6,
+            "decay_gamma must survive round-trip (got {})",
+            new_state.decay_gamma
+        );
+        assert!(
+            (new_state.diffuse_weight - 0.5).abs() < 1e-6,
+            "diffuse_weight must survive round-trip (got {})",
+            new_state.diffuse_weight
+        );
+        assert!(
+            (new_state.diffusion_sigma - 3.0).abs() < 1e-6,
+            "diffusion_sigma must survive round-trip (got {})",
+            new_state.diffusion_sigma
+        );
+    }
+
+    #[test]
+    fn old_toml_without_art_knobs_loads_with_defaults() {
+        // An OLD TOML without afterglow/decay_gamma/diffuse_weight must still
+        // deserialize, and apply_to_runtime_state must produce the canonical
+        // defaults (afterglow=0.0, afterglow_rate=0.05, decay_gamma=1.0,
+        // diffuse_weight=1.0).
+        let toml = r#"name = "old_no_knobs"
+population = 1000
+sensor_angle = 22.5
+sensor_distance = 9.0
+rotation_angle = 45.0
+step_size = 1.0
+decay_factor = 0.9
+deposit_amount = 5.0
+max_brightness = 100.0
+diffusion_kernel = "Mean3x3"
+diffusion_sigma = 1.0
+palette = "Organic"
+charset = "HalfBlock"
+reverse_palette = false
+invert_palette = false
+warmup_frames = 0
+food_persist = false
+auto_reset = false
+grid = false
+init_mode = "Random"
+"#;
+        let cfg: SavedConfig =
+            toml::from_str(toml).expect("old config without art knobs must load");
+        assert!(
+            cfg.afterglow.is_none(),
+            "missing key must deserialize as None"
+        );
+        assert!(cfg.afterglow_rate.is_none());
+        assert!(cfg.decay_gamma.is_none());
+        assert!(cfg.diffuse_weight.is_none());
+
+        // apply_to_runtime_state must fill defaults from the unwrap_or paths.
+        let mut state = create_test_runtime_state();
+        cfg.apply_to_runtime_state(&mut state)
+            .expect("legacy config must still apply");
+        assert_eq!(state.afterglow, 0.0, "default afterglow must be 0.0");
+        assert!(
+            (state.afterglow_rate - 0.05).abs() < 1e-6,
+            "default afterglow_rate must be 0.05"
+        );
+        assert_eq!(state.decay_gamma, 1.0, "default decay_gamma must be 1.0");
+        assert_eq!(
+            state.diffuse_weight, 1.0,
+            "default diffuse_weight must be 1.0"
+        );
+    }
 }
