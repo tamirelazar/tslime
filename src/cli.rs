@@ -1131,8 +1131,9 @@ pub struct Args {
     /// `None` means "use the per-preset render default" (mirror).
     pub palette_cycle_mode: Option<String>,
 
-    /// Character-selection strategy: brightness ramp, shape matching, or Sobel
-    /// edge-orientation hybrid. TUI-only; affects Ascii/Braille/Sculpted.
+    /// Character-selection strategy (TUI/print only). `brightness` forces the
+    /// tonal ramp and `shape` the shape path on Ascii/Braille/Sculpted; `hybrid`
+    /// adds Sobel edge-orientation directional glyphs on Ascii only.
     #[arg(long = "glyph-selection", value_name = "MODE")]
     pub glyph_selection: Option<String>,
 
@@ -1997,7 +1998,7 @@ impl Args {
             g.selection = Some(s.parse()?);
         }
         if let Some(t) = self.glyph_edge_threshold {
-            g.edge_threshold = t;
+            g.edge_threshold = t.clamp(0.0, 2.0);
         }
         Ok(g)
     }
@@ -2979,6 +2980,20 @@ mod tests {
             Some(crate::render::charset::GlyphSelection::Hybrid)
         );
         assert_eq!(art.glyph.edge_threshold, 0.3);
+    }
+
+    #[test]
+    fn glyph_edge_threshold_clamps_to_range() {
+        let mut args = Args::parse_from(["tslime"]);
+        args.glyph_selection = Some("hybrid".into());
+        args.glyph_edge_threshold = Some(5.0);
+        let art = args.to_render_art_defaults().unwrap();
+        assert_eq!(art.glyph.edge_threshold, 2.0);
+
+        let mut args = Args::parse_from(["tslime"]);
+        args.glyph_edge_threshold = Some(-1.0);
+        let art = args.to_render_art_defaults().unwrap();
+        assert_eq!(art.glyph.edge_threshold, 0.0);
     }
 
     #[test]
