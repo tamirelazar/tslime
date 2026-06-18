@@ -1674,6 +1674,14 @@ pub struct SimConfig {
     pub diffusion_kernel: DiffusionKernel,
     /// Sigma for Gaussian diffusion.
     pub diffusion_sigma: f32,
+    /// Afterglow strength (glow_mix): `render = trail + afterglow·afterglow_lag`. 0.0 = OFF.
+    pub afterglow: f32,
+    /// Afterglow EMA rate (α per frame; smaller = longer-lived glow).
+    pub afterglow_rate: f32,
+    /// Diffusion blend weight (Lague): `new = old·(1−w) + blur·w`. 1.0 = full blur (today).
+    pub diffuse_weight: f32,
+    /// Nonlinear decay exponent γ. 1.0 = current multiplicative decay; γ<1 lengthens faint tails.
+    pub decay_gamma: f32,
     /// White-point divisor for brightness normalization (higher = darker).
     pub max_brightness: f32,
     /// Time scale multiplier (0.1-10.0).
@@ -1805,6 +1813,10 @@ impl Default for SimConfig {
             deposit_amount: agent_consts::DEFAULT_DEPOSIT_AMOUNT,
             diffusion_kernel: DiffusionKernel::Gaussian,
             diffusion_sigma: trail_consts::DEFAULT_DIFFUSION_SIGMA,
+            afterglow: trail_consts::DEFAULT_AFTERGLOW,
+            afterglow_rate: trail_consts::DEFAULT_AFTERGLOW_RATE,
+            diffuse_weight: trail_consts::DEFAULT_DIFFUSE_WEIGHT,
+            decay_gamma: trail_consts::DEFAULT_DECAY_GAMMA,
             max_brightness: trail_consts::DEFAULT_MAX_BRIGHTNESS,
             time_scale: time_consts::DEFAULT_TIME_SCALE,
             attractors: Vec::new(),
@@ -2595,6 +2607,18 @@ mod tests {
             ..Default::default()
         };
         assert!(invalid_species.validate().is_err());
+    }
+
+    #[test]
+    fn art_knob_defaults_are_backcompat_neutral() {
+        let c = SimConfig::default();
+        assert_eq!(c.afterglow, 0.0, "afterglow must default OFF");
+        assert_eq!(c.afterglow_rate, 0.05);
+        assert_eq!(
+            c.diffuse_weight, 1.0,
+            "diffuse_weight=1 == full blur == today"
+        );
+        assert_eq!(c.decay_gamma, 1.0, "decay_gamma=1 == current decay");
     }
 }
 

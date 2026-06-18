@@ -149,11 +149,36 @@ pub mod rules {
         "max_brightness",
     );
 
-    /// Validation rule for diffusion sigma (0.5 to 2.0).
+    /// Validation rule for diffusion sigma (0.5 to 4.0).
     pub const DIFFUSION_SIGMA: RangeRule<f32> = RangeRule::new(
         trail::MIN_DIFFUSION_SIGMA,
         trail::MAX_DIFFUSION_SIGMA,
         "diffusion_sigma",
+    );
+
+    /// Validation rule for decay gamma (0.25 to 2.0).
+    pub const DECAY_GAMMA: RangeRule<f32> = RangeRule::new(
+        trail::MIN_DECAY_GAMMA,
+        trail::MAX_DECAY_GAMMA,
+        "decay_gamma",
+    );
+
+    /// Validation rule for afterglow strength (0.0 to 1.0).
+    pub const AFTERGLOW: RangeRule<f32> =
+        RangeRule::new(trail::MIN_AFTERGLOW, trail::MAX_AFTERGLOW, "afterglow");
+
+    /// Validation rule for afterglow EMA rate.
+    pub const AFTERGLOW_RATE: RangeRule<f32> = RangeRule::new(
+        trail::MIN_AFTERGLOW_RATE,
+        trail::MAX_AFTERGLOW_RATE,
+        "afterglow_rate",
+    );
+
+    /// Validation rule for diffuse-weight blend (0.0 to 1.0).
+    pub const DIFFUSE_WEIGHT: RangeRule<f32> = RangeRule::new(
+        trail::MIN_DIFFUSE_WEIGHT,
+        trail::MAX_DIFFUSE_WEIGHT,
+        "diffuse_weight",
     );
 
     /// Validation rule for time scale (0.1 to 10.0).
@@ -314,5 +339,19 @@ mod tests {
     fn test_validate_vec_not_empty() {
         assert!(validate_vec_not_empty(&[1, 2, 3], "test").is_ok());
         assert!(validate_vec_not_empty(&Vec::<i32>::new(), "test").is_err());
+    }
+
+    #[test]
+    fn diffusion_sigma_accepts_widened_range() {
+        assert!(rules::DIFFUSION_SIGMA.validate(&3.5).is_ok());
+        assert!(rules::DIFFUSION_SIGMA.validate(&4.0).is_ok());
+        assert!(rules::DIFFUSION_SIGMA.validate(&4.5).is_err());
+    }
+
+    #[test]
+    fn decay_gamma_rule_bounds() {
+        assert!(rules::DECAY_GAMMA.validate(&1.0).is_ok());
+        assert!(rules::DECAY_GAMMA.validate(&0.25).is_ok());
+        assert!(rules::DECAY_GAMMA.validate(&0.1).is_err());
     }
 }
