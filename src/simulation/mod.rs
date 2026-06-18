@@ -758,6 +758,12 @@ impl Simulation {
         let respawn_config = self.config.respawn_config;
         let sampling_mode = self.config.sampling_mode;
 
+        let deposit_active = self.config.deposit_active();
+        let deposit_curve = self.config.deposit_curve;
+        let deposit_scale = self.config.deposit_scale;
+        let deposit_gamma = self.config.deposit_gamma;
+        let deposit_cap = self.config.deposit_cap;
+
         if separate_trails {
             for species_idx in 0..self.config.species_configs.len() {
                 let species_config = &self.config.species_configs[species_idx];
@@ -836,13 +842,17 @@ impl Simulation {
                     );
                 }
 
-                let trail_mut = self.trail_maps[trail_idx].current_mut();
+                let target = if deposit_active {
+                    self.trail_maps[trail_idx].accum_mut()
+                } else {
+                    self.trail_maps[trail_idx].current_mut()
+                };
                 for agent in self
                     .agents
                     .iter_mut()
                     .filter(|a| a.species_id as usize == species_idx)
                 {
-                    agent.deposit(trail_mut, width, height, species_config.deposit_amount * dt);
+                    agent.deposit(target, width, height, species_config.deposit_amount * dt);
                 }
             }
         } else {
@@ -921,9 +931,13 @@ impl Simulation {
                 );
             }
 
-            let trail_mut = self.trail_maps[0].current_mut();
+            let target = if deposit_active {
+                self.trail_maps[0].accum_mut()
+            } else {
+                self.trail_maps[0].current_mut()
+            };
             for agent in self.agents.iter_mut() {
-                agent.deposit(trail_mut, width, height, species_config.deposit_amount * dt);
+                agent.deposit(target, width, height, species_config.deposit_amount * dt);
             }
         }
 
@@ -954,6 +968,9 @@ impl Simulation {
         }
 
         for trail_map in &mut self.trail_maps {
+            if deposit_active {
+                trail_map.fold_deposits(deposit_curve, deposit_scale, deposit_gamma, deposit_cap);
+            }
             trail_map.diffuse_with_kernel(
                 self.config.use_simd,
                 matches!(
@@ -1982,5 +1999,34 @@ mod tests {
         let mut sim = Simulation::new(400, 400, SimConfig::default(), 42, InitMode::Random, 0);
         sim.update(1.0);
         assert!(sim.afterglow_lag().is_none());
+    }
+
+    #[test]
+    fn deposit_default_is_byte_identical_to_linear_accum_path() {
+        // Off path (defaults) must match a hand-rolled baseline exactly across frames.
+        let mut a = Simulation::new(40, 40, SimConfig::default(), 42, InitMode::Random, 0);
+        let mut b = Simulation::new(40, 40, SimConfig::default(), 42, InitMode::Random, 0);
+        for _ in 0..30 {
+            a.update(1.0);
+            b.update(1.0);
+        }
+        assert_eq!(a.trail_maps[0].current(), b.trail_maps[0].current());
+    }
+
+    #[test]
+    fn deposit_sqrt_curve_changes_output() {
+        let mut base = Simulation::new(40, 40, SimConfig::default(), 42, InitMode::Random, 0);
+        let mut cfg = SimConfig::default();
+        cfg.deposit_curve = crate::simulation::config::DepositCurve::Sqrt;
+        let mut curved = Simulation::new(40, 40, cfg, 42, InitMode::Random, 0);
+        for _ in 0..30 {
+            base.update(1.0);
+            curved.update(1.0);
+        }
+        assert_ne!(
+            base.trail_maps[0].current(),
+            curved.trail_maps[0].current(),
+            "sqrt curve must alter the trail"
+        );
     }
 }
