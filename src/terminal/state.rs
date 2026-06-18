@@ -643,6 +643,14 @@ pub struct RuntimeState {
     pub decay_gamma: f32,
     /// Lague diffuse-weight blend factor (1.0 = full blur; 0.0 = no diffusion).
     pub diffuse_weight: f32,
+    /// Nonlinear deposit curve.
+    pub deposit_curve: crate::simulation::config::DepositCurve,
+    /// Deposit scale (post-curve multiplier).
+    pub deposit_scale: f32,
+    /// Deposit gamma (Pow exponent).
+    pub deposit_gamma: f32,
+    /// Deposit cap (0 = off).
+    pub deposit_cap: f32,
 }
 
 impl RuntimeState {
@@ -777,6 +785,10 @@ impl RuntimeState {
             afterglow_rate: 0.05,
             decay_gamma: 1.0,
             diffuse_weight: 1.0,
+            deposit_curve: cli_config.deposit_curve,
+            deposit_scale: cli_config.deposit_scale,
+            deposit_gamma: cli_config.deposit_gamma,
+            deposit_cap: cli_config.deposit_cap,
         }
     }
 

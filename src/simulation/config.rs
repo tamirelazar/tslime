@@ -23,6 +23,36 @@ pub enum DiffusionKernel {
     Gaussian,
 }
 
+/// Nonlinear curve applied to per-frame accumulated deposit before folding
+/// into the trail. `Linear` (with scale 1, cap 0) is byte-identical to the
+/// historical per-agent deposit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DepositCurve {
+    /// Identity: `x`. Default; preserves historical behavior.
+    #[default]
+    Linear,
+    /// `sqrt(x)` — compresses density spikes into filaments.
+    Sqrt,
+    /// `ln(1 + x)` — log compression (0 at 0, guards log(0)).
+    Log,
+    /// `x^gamma` — `deposit_gamma` is the exponent (γ<1 compresses, γ>1 expands).
+    Pow,
+}
+
+impl DepositCurve {
+    /// Apply the curve to a (non-negative) accumulated deposit value.
+    /// `gamma` is used only by `Pow`.
+    #[inline]
+    pub fn apply(self, x: f32, gamma: f32) -> f32 {
+        match self {
+            DepositCurve::Linear => x,
+            DepositCurve::Sqrt => x.sqrt(),
+            DepositCurve::Log => (1.0 + x).ln(),
+            DepositCurve::Pow => x.powf(gamma),
+        }
+    }
+}
+
 /// Named parameter presets for different visual styles.
 ///
 /// Each preset combines multiple parameters optimized for a specific aesthetic.
@@ -1682,6 +1712,15 @@ pub struct SimConfig {
     pub diffuse_weight: f32,
     /// Nonlinear decay exponent γ. 1.0 = current multiplicative decay; γ<1 lengthens faint tails.
     pub decay_gamma: f32,
+    /// Nonlinear deposit curve applied to the per-frame accumulation buffer.
+    /// `Linear` + scale 1 + cap 0 = historical behavior (off path).
+    pub deposit_curve: DepositCurve,
+    /// Multiplier applied to `curve(accum)` before folding into the trail.
+    pub deposit_scale: f32,
+    /// Exponent for `DepositCurve::Pow` (ignored by other curves).
+    pub deposit_gamma: f32,
+    /// Clamp cap for the folded contribution; `0.0` = off.
+    pub deposit_cap: f32,
     /// White-point divisor for brightness normalization (higher = darker).
     pub max_brightness: f32,
     /// Time scale multiplier (0.1-10.0).
@@ -1746,6 +1785,15 @@ impl SimConfig {
     /// Returns the total population across all species.
     pub fn total_population(&self) -> usize {
         self.species_configs.iter().map(|s| s.count).sum()
+    }
+
+    /// True when the nonlinear-deposit accumulation path is engaged. When
+    /// false, deposits go straight to the trail (byte-identical to history).
+    #[inline]
+    pub fn deposit_active(&self) -> bool {
+        self.deposit_curve != DepositCurve::Linear
+            || self.deposit_scale != 1.0
+            || self.deposit_cap > 0.0
     }
 
     /// Loads mask data for all image-based obstacles.
@@ -1817,6 +1865,10 @@ impl Default for SimConfig {
             afterglow_rate: trail_consts::DEFAULT_AFTERGLOW_RATE,
             diffuse_weight: trail_consts::DEFAULT_DIFFUSE_WEIGHT,
             decay_gamma: trail_consts::DEFAULT_DECAY_GAMMA,
+            deposit_curve: DepositCurve::default(),
+            deposit_scale: trail_consts::DEFAULT_DEPOSIT_SCALE,
+            deposit_gamma: trail_consts::DEFAULT_DEPOSIT_GAMMA,
+            deposit_cap: trail_consts::DEFAULT_DEPOSIT_CAP,
             max_brightness: trail_consts::DEFAULT_MAX_BRIGHTNESS,
             time_scale: time_consts::DEFAULT_TIME_SCALE,
             attractors: Vec::new(),
@@ -1895,6 +1947,9 @@ impl Validatable for SimConfig {
         rules::AFTERGLOW.validate_f32(self.afterglow)?;
         rules::AFTERGLOW_RATE.validate_f32(self.afterglow_rate)?;
         rules::DIFFUSE_WEIGHT.validate_f32(self.diffuse_weight)?;
+        rules::DEPOSIT_SCALE.validate_f32(self.deposit_scale)?;
+        rules::DEPOSIT_GAMMA.validate_f32(self.deposit_gamma)?;
+        rules::DEPOSIT_CAP.validate_f32(self.deposit_cap)?;
 
         // Validate time and environment parameters
         rules::TIME_SCALE.validate_f32(self.time_scale)?;
@@ -2647,6 +2702,59 @@ mod tests {
             config.validate().is_ok(),
             "decay_gamma=1.0 must be accepted"
         );
+    }
+
+    #[test]
+    fn deposit_curve_apply_matches_definitions() {
+        use crate::simulation::config::DepositCurve;
+        // Linear is identity; gamma ignored.
+        assert_eq!(DepositCurve::Linear.apply(3.0, 0.5), 3.0);
+        // Sqrt.
+        assert!((DepositCurve::Sqrt.apply(9.0, 1.0) - 3.0).abs() < 1e-6);
+        assert_eq!(DepositCurve::Sqrt.apply(0.0, 1.0), 0.0);
+        // Log is log1p: 0 at 0, monotonic.
+        assert_eq!(DepositCurve::Log.apply(0.0, 1.0), 0.0);
+        assert!((DepositCurve::Log.apply(std::f32::consts::E - 1.0, 1.0) - 1.0).abs() < 1e-6);
+        // Pow uses gamma as exponent.
+        assert!((DepositCurve::Pow.apply(4.0, 0.5) - 2.0).abs() < 1e-6);
+        assert!((DepositCurve::Pow.apply(2.0, 2.0) - 4.0).abs() < 1e-6);
+        // Default is Linear.
+        assert_eq!(DepositCurve::default(), DepositCurve::Linear);
+    }
+
+    #[test]
+    fn deposit_active_off_at_defaults() {
+        let cfg = SimConfig::default();
+        assert_eq!(cfg.deposit_curve, DepositCurve::Linear);
+        assert_eq!(cfg.deposit_scale, 1.0);
+        assert_eq!(cfg.deposit_gamma, 1.0);
+        assert_eq!(cfg.deposit_cap, 0.0);
+        assert!(!cfg.deposit_active(), "defaults must be the off path");
+
+        let on = SimConfig {
+            deposit_curve: DepositCurve::Sqrt,
+            ..Default::default()
+        };
+        assert!(on.deposit_active());
+        let scaled = SimConfig {
+            deposit_scale: 2.0,
+            ..Default::default()
+        };
+        assert!(scaled.deposit_active());
+        let capped = SimConfig {
+            deposit_cap: 5.0,
+            ..Default::default()
+        };
+        assert!(capped.deposit_active());
+    }
+
+    #[test]
+    fn deposit_validation_rejects_out_of_range() {
+        let cfg = SimConfig {
+            deposit_gamma: 0.0, // below MIN_DEPOSIT_GAMMA
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_err());
     }
 }
 

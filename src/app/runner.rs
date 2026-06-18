@@ -1297,6 +1297,10 @@ pub fn run_simulation(
                                         runtime_state.afterglow_rate,
                                         runtime_state.decay_gamma,
                                         runtime_state.diffuse_weight,
+                                        runtime_state.deposit_curve,
+                                        runtime_state.deposit_scale,
+                                        runtime_state.deposit_gamma,
+                                        runtime_state.deposit_cap,
                                     );
 
                                     match config_manager::save_config(saved_config) {

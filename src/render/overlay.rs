@@ -1901,6 +1901,10 @@ mod status_line_tests {
             afterglow_rate: None,
             decay_gamma: None,
             diffuse_weight: None,
+            deposit_curve: None,
+            deposit_scale: None,
+            deposit_gamma: None,
+            deposit_cap: None,
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
@@ -1952,6 +1956,10 @@ mod status_line_tests {
             afterglow_rate: None,
             decay_gamma: None,
             diffuse_weight: None,
+            deposit_curve: None,
+            deposit_scale: None,
+            deposit_gamma: None,
+            deposit_cap: None,
         }
     }
 

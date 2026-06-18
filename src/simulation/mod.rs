@@ -758,6 +758,12 @@ impl Simulation {
         let respawn_config = self.config.respawn_config;
         let sampling_mode = self.config.sampling_mode;
 
+        let deposit_active = self.config.deposit_active();
+        let deposit_curve = self.config.deposit_curve;
+        let deposit_scale = self.config.deposit_scale;
+        let deposit_gamma = self.config.deposit_gamma;
+        let deposit_cap = self.config.deposit_cap;
+
         if separate_trails {
             for species_idx in 0..self.config.species_configs.len() {
                 let species_config = &self.config.species_configs[species_idx];
@@ -836,13 +842,17 @@ impl Simulation {
                     );
                 }
 
-                let trail_mut = self.trail_maps[trail_idx].current_mut();
+                let target = if deposit_active {
+                    self.trail_maps[trail_idx].accum_mut()
+                } else {
+                    self.trail_maps[trail_idx].current_mut()
+                };
                 for agent in self
                     .agents
                     .iter_mut()
                     .filter(|a| a.species_id as usize == species_idx)
                 {
-                    agent.deposit(trail_mut, width, height, species_config.deposit_amount * dt);
+                    agent.deposit(target, width, height, species_config.deposit_amount * dt);
                 }
             }
         } else {
@@ -921,9 +931,13 @@ impl Simulation {
                 );
             }
 
-            let trail_mut = self.trail_maps[0].current_mut();
+            let target = if deposit_active {
+                self.trail_maps[0].accum_mut()
+            } else {
+                self.trail_maps[0].current_mut()
+            };
             for agent in self.agents.iter_mut() {
-                agent.deposit(trail_mut, width, height, species_config.deposit_amount * dt);
+                agent.deposit(target, width, height, species_config.deposit_amount * dt);
             }
         }
 
@@ -954,6 +968,9 @@ impl Simulation {
         }
 
         for trail_map in &mut self.trail_maps {
+            if deposit_active {
+                trail_map.fold_deposits(deposit_curve, deposit_scale, deposit_gamma, deposit_cap);
+            }
             trail_map.diffuse_with_kernel(
                 self.config.use_simd,
                 matches!(
@@ -1982,5 +1999,89 @@ mod tests {
         let mut sim = Simulation::new(400, 400, SimConfig::default(), 42, InitMode::Random, 0);
         sim.update(1.0);
         assert!(sim.afterglow_lag().is_none());
+    }
+
+    #[test]
+    fn deposit_off_path_is_deterministic() {
+        // Proves the off path (Linear + scale 1.0 + cap 0.0) is deterministic:
+        // two sims with identical config and seed must produce bit-identical trail maps.
+        let mut a = Simulation::new(40, 40, SimConfig::default(), 42, InitMode::Random, 0);
+        let mut b = Simulation::new(40, 40, SimConfig::default(), 42, InitMode::Random, 0);
+        for _ in 0..30 {
+            a.update(1.0);
+            b.update(1.0);
+        }
+        assert_eq!(a.trail_maps[0].current(), b.trail_maps[0].current());
+    }
+
+    #[test]
+    fn deposit_linear_accum_matches_direct_within_fp_tolerance() {
+        // Verifies that routing deposits through the accumulation buffer and then
+        // fold_deposits (active path) reproduces the direct deposit (off path) up to
+        // floating-point tolerance.  Exact equality is impossible because fold_deposits
+        // reassociates the additions (trail + (a+b) vs the off path's (trail+a)+b), which
+        // produces different rounding at the ulp level.
+        //
+        // Active path is triggered by deposit_cap > 0.0 (see deposit_active()).
+        // We use a huge cap (1e9) so it never clips, and scale=1.0 + Linear curve so
+        // fold_deposits is mathematically an identity — any cell difference is pure fp noise.
+        use crate::simulation::config::DepositCurve;
+
+        let off_cfg = SimConfig::default();
+        assert!(!off_cfg.deposit_active(), "off path sanity check");
+
+        let on_cfg = SimConfig {
+            deposit_curve: DepositCurve::Linear,
+            deposit_scale: 1.0,
+            deposit_cap: 1.0e9, // huge cap → never clips
+            ..Default::default()
+        };
+        assert!(
+            on_cfg.deposit_active(),
+            "cap > 0.0 must activate the accum path"
+        );
+
+        let mut off_sim = Simulation::new(40, 40, off_cfg, 42, InitMode::Random, 0);
+        let mut on_sim = Simulation::new(40, 40, on_cfg, 42, InitMode::Random, 0);
+        for _ in 0..30 {
+            off_sim.update(1.0);
+            on_sim.update(1.0);
+        }
+
+        let off_cells = off_sim.trail_maps[0].current();
+        let on_cells = on_sim.trail_maps[0].current();
+        assert_eq!(off_cells.len(), on_cells.len());
+        for (i, (a, b)) in off_cells.iter().zip(on_cells.iter()).enumerate() {
+            let diff = (a - b).abs();
+            // Off path does (((trail+a1)+a2)+...) per agent; active path folds
+            // accum=(a1+a2+...) then trail+accum. Same math, different float
+            // association order, so differences are bounded reassociation noise
+            // (magnitude-relative), not algorithmic. A wrong curve/scale would
+            // diverge by orders of magnitude and fail this bound.
+            let tol = 1e-4_f32 + 1e-4 * a.abs();
+            assert!(
+                diff <= tol,
+                "cell {i}: off={a} on={b} diff={diff} tol={tol} — accum path diverged from direct deposit"
+            );
+        }
+    }
+
+    #[test]
+    fn deposit_sqrt_curve_changes_output() {
+        let mut base = Simulation::new(40, 40, SimConfig::default(), 42, InitMode::Random, 0);
+        let cfg = SimConfig {
+            deposit_curve: crate::simulation::config::DepositCurve::Sqrt,
+            ..Default::default()
+        };
+        let mut curved = Simulation::new(40, 40, cfg, 42, InitMode::Random, 0);
+        for _ in 0..30 {
+            base.update(1.0);
+            curved.update(1.0);
+        }
+        assert_ne!(
+            base.trail_maps[0].current(),
+            curved.trail_maps[0].current(),
+            "sqrt curve must alter the trail"
+        );
     }
 }
