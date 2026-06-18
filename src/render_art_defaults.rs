@@ -14,7 +14,6 @@ use crate::simulation::config::Preset;
 /// sim layer (spec §5). Currently carries only `intensity_mapping`; later
 /// render-layer levers extend this struct.
 #[derive(Clone, Debug, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct RenderArtDefaults {
     /// Brightness→color tone curve. Default = global log10 (historical default).
     pub intensity_mapping: IntensityMapping,

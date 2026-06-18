@@ -243,8 +243,9 @@ pub fn run_simulation(
     };
 
     let initial_intensity_mapping = args
-        .intensity_mapping()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        .to_render_art_defaults()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .intensity_mapping;
 
     renderer.set_intensity_mapping(Some(initial_intensity_mapping.clone()));
 

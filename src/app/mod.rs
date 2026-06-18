@@ -537,7 +537,10 @@ pub fn print_mode(
     let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
 
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
-    let intensity_mapping = args.intensity_mapping().ok();
+    let intensity_mapping = args
+        .to_render_art_defaults()
+        .ok()
+        .map(|a| a.intensity_mapping);
 
     let mut buffer = FrameBuffer::from_downsampled(
         downsampled.cells(),
@@ -719,7 +722,10 @@ pub fn capture_frames_mode(
         };
 
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
-        let intensity_mapping = args.intensity_mapping().ok();
+        let intensity_mapping = args
+            .to_render_art_defaults()
+            .ok()
+            .map(|a| a.intensity_mapping);
 
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(
@@ -952,7 +958,10 @@ pub fn export_gif_mode(
         };
 
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
-        let intensity_mapping = args.intensity_mapping().ok();
+        let intensity_mapping = args
+            .to_render_art_defaults()
+            .ok()
+            .map(|a| a.intensity_mapping);
 
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(
@@ -1123,7 +1132,10 @@ pub fn export_webm_mode(
         };
 
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
-        let intensity_mapping = args.intensity_mapping().ok();
+        let intensity_mapping = args
+            .to_render_art_defaults()
+            .ok()
+            .map(|a| a.intensity_mapping);
 
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(

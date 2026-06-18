@@ -1962,7 +1962,6 @@ impl Args {
     /// Resolves the render-layer art defaults: per-preset defaults overridden
     /// by explicit intensity-mapping CLI flags. Render counterpart to
     /// [`Args::to_sim_config`] (spec §5 — render params stay out of `SimConfig`).
-    #[allow(dead_code)]
     pub(crate) fn to_render_art_defaults(
         &self,
     ) -> Result<crate::render_art_defaults::RenderArtDefaults, String> {
