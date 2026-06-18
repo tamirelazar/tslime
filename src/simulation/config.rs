@@ -23,6 +23,36 @@ pub enum DiffusionKernel {
     Gaussian,
 }
 
+/// Nonlinear curve applied to per-frame accumulated deposit before folding
+/// into the trail. `Linear` (with scale 1, cap 0) is byte-identical to the
+/// historical per-agent deposit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DepositCurve {
+    /// Identity: `x`. Default; preserves historical behavior.
+    #[default]
+    Linear,
+    /// `sqrt(x)` — compresses density spikes into filaments.
+    Sqrt,
+    /// `ln(1 + x)` — log compression (0 at 0, guards log(0)).
+    Log,
+    /// `x^gamma` — `deposit_gamma` is the exponent (γ<1 compresses, γ>1 expands).
+    Pow,
+}
+
+impl DepositCurve {
+    /// Apply the curve to a (non-negative) accumulated deposit value.
+    /// `gamma` is used only by `Pow`.
+    #[inline]
+    pub fn apply(self, x: f32, gamma: f32) -> f32 {
+        match self {
+            DepositCurve::Linear => x,
+            DepositCurve::Sqrt => x.sqrt(),
+            DepositCurve::Log => (1.0 + x).ln(),
+            DepositCurve::Pow => x.powf(gamma),
+        }
+    }
+}
+
 /// Named parameter presets for different visual styles.
 ///
 /// Each preset combines multiple parameters optimized for a specific aesthetic.
@@ -2647,6 +2677,24 @@ mod tests {
             config.validate().is_ok(),
             "decay_gamma=1.0 must be accepted"
         );
+    }
+
+    #[test]
+    fn deposit_curve_apply_matches_definitions() {
+        use crate::simulation::config::DepositCurve;
+        // Linear is identity; gamma ignored.
+        assert_eq!(DepositCurve::Linear.apply(3.0, 0.5), 3.0);
+        // Sqrt.
+        assert!((DepositCurve::Sqrt.apply(9.0, 1.0) - 3.0).abs() < 1e-6);
+        assert_eq!(DepositCurve::Sqrt.apply(0.0, 1.0), 0.0);
+        // Log is log1p: 0 at 0, monotonic.
+        assert_eq!(DepositCurve::Log.apply(0.0, 1.0), 0.0);
+        assert!((DepositCurve::Log.apply(std::f32::consts::E - 1.0, 1.0) - 1.0).abs() < 1e-6);
+        // Pow uses gamma as exponent.
+        assert!((DepositCurve::Pow.apply(4.0, 0.5) - 2.0).abs() < 1e-6);
+        assert!((DepositCurve::Pow.apply(2.0, 2.0) - 4.0).abs() < 1e-6);
+        // Default is Linear.
+        assert_eq!(DepositCurve::default(), DepositCurve::Linear);
     }
 }
 
