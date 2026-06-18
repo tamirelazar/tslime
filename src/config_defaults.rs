@@ -146,6 +146,27 @@ pub mod trail {
     /// Maximum decay gamma.
     pub const MAX_DECAY_GAMMA: f32 = 2.0;
 
+    /// Default deposit scale (multiplier applied after the curve). 1.0 = neutral.
+    pub const DEFAULT_DEPOSIT_SCALE: f32 = 1.0;
+    /// Minimum deposit scale.
+    pub const MIN_DEPOSIT_SCALE: f32 = 0.0;
+    /// Maximum deposit scale.
+    pub const MAX_DEPOSIT_SCALE: f32 = 10.0;
+
+    /// Default deposit gamma (Pow-curve exponent). 1.0 = neutral.
+    pub const DEFAULT_DEPOSIT_GAMMA: f32 = 1.0;
+    /// Minimum deposit gamma.
+    pub const MIN_DEPOSIT_GAMMA: f32 = 0.1;
+    /// Maximum deposit gamma.
+    pub const MAX_DEPOSIT_GAMMA: f32 = 4.0;
+
+    /// Default deposit cap (0.0 = off). Clamps the folded contribution when > 0.
+    pub const DEFAULT_DEPOSIT_CAP: f32 = 0.0;
+    /// Minimum deposit cap.
+    pub const MIN_DEPOSIT_CAP: f32 = 0.0;
+    /// Maximum deposit cap.
+    pub const MAX_DEPOSIT_CAP: f32 = 10000.0;
+
     /// Converts a stored normalization white-point into a user-facing brightness
     /// gain (a multiplier relative to the default white-point).
     ///

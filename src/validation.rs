@@ -181,6 +181,27 @@ pub mod rules {
         "diffuse_weight",
     );
 
+    /// Validation rule for deposit scale.
+    pub const DEPOSIT_SCALE: RangeRule<f32> = RangeRule::new(
+        trail::MIN_DEPOSIT_SCALE,
+        trail::MAX_DEPOSIT_SCALE,
+        "deposit_scale",
+    );
+
+    /// Validation rule for deposit gamma (Pow exponent).
+    pub const DEPOSIT_GAMMA: RangeRule<f32> = RangeRule::new(
+        trail::MIN_DEPOSIT_GAMMA,
+        trail::MAX_DEPOSIT_GAMMA,
+        "deposit_gamma",
+    );
+
+    /// Validation rule for deposit cap (0.0 = off).
+    pub const DEPOSIT_CAP: RangeRule<f32> = RangeRule::new(
+        trail::MIN_DEPOSIT_CAP,
+        trail::MAX_DEPOSIT_CAP,
+        "deposit_cap",
+    );
+
     /// Validation rule for time scale (0.1 to 10.0).
     pub const TIME_SCALE: RangeRule<f32> =
         RangeRule::new(time::MIN_TIME_SCALE, time::MAX_TIME_SCALE, "time_scale");
@@ -353,5 +374,17 @@ mod tests {
         assert!(rules::DECAY_GAMMA.validate(&1.0).is_ok());
         assert!(rules::DECAY_GAMMA.validate(&0.25).is_ok());
         assert!(rules::DECAY_GAMMA.validate(&0.1).is_err());
+    }
+
+    #[test]
+    fn deposit_rules_accept_defaults_reject_out_of_range() {
+        use super::rules;
+        assert!(rules::DEPOSIT_SCALE.validate_f32(1.0).is_ok());
+        assert!(rules::DEPOSIT_SCALE.validate_f32(-0.1).is_err());
+        assert!(rules::DEPOSIT_SCALE.validate_f32(11.0).is_err());
+        assert!(rules::DEPOSIT_GAMMA.validate_f32(1.0).is_ok());
+        assert!(rules::DEPOSIT_GAMMA.validate_f32(0.05).is_err());
+        assert!(rules::DEPOSIT_CAP.validate_f32(0.0).is_ok());
+        assert!(rules::DEPOSIT_CAP.validate_f32(-1.0).is_err());
     }
 }
