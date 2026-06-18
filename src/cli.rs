@@ -12,8 +12,8 @@ use crate::config_defaults::{
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
-    Aspect, BoundaryMode, ChromeStyle, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig,
-    TerminalSizeThreshold, TerrainType, Wind, WindowFrame, WindowPadding,
+    Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode, Obstacle, Preset,
+    SimConfig, TerminalSizeThreshold, TerrainType, Wind, WindowFrame, WindowPadding,
 };
 use crate::validation::Validatable;
 
@@ -561,6 +561,23 @@ impl FromStr for DiffusionKernel {
     }
 }
 
+impl FromStr for DepositCurve {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "linear" | "none" => Ok(DepositCurve::Linear),
+            "sqrt" => Ok(DepositCurve::Sqrt),
+            "log" => Ok(DepositCurve::Log),
+            "pow" => Ok(DepositCurve::Pow),
+            _ => Err(format!(
+                "Invalid deposit curve: {}. Must be one of: linear, sqrt, log, pow",
+                s
+            )),
+        }
+    }
+}
+
 #[derive(Parser, Debug, Clone)]
 #[command(name = "tslime")]
 #[command(about = "Terminal physarum simulation screensaver", long_about = None)]
@@ -731,6 +748,38 @@ pub struct Args {
     )]
     /// Sigma value for Gaussian diffusion.
     pub diffusion_sigma: Option<f32>,
+
+    #[arg(
+        long = "deposit-curve",
+        value_name = "CURVE",
+        help = "Nonlinear deposit curve (linear, sqrt, log, pow) [default: linear]"
+    )]
+    /// Nonlinear deposit curve.
+    pub deposit_curve: Option<DepositCurve>,
+
+    #[arg(
+        long = "deposit-scale",
+        value_name = "FLOAT",
+        help = "Multiplier applied after the deposit curve [range: 0.0-10.0, default: 1.0]"
+    )]
+    /// Deposit scale (post-curve multiplier).
+    pub deposit_scale: Option<f32>,
+
+    #[arg(
+        long = "deposit-gamma",
+        value_name = "FLOAT",
+        help = "Exponent for --deposit-curve pow [range: 0.1-4.0, default: 1.0]"
+    )]
+    /// Deposit gamma (Pow exponent).
+    pub deposit_gamma: Option<f32>,
+
+    #[arg(
+        long = "deposit-cap",
+        value_name = "FLOAT",
+        help = "Clamp cap for the folded deposit contribution (0 = off) [default: 0.0]"
+    )]
+    /// Deposit cap (0 = off).
+    pub deposit_cap: Option<f32>,
 
     #[arg(
         long = "preset",
@@ -2137,6 +2186,10 @@ impl Default for Args {
             afterglow_rate: 0.05,
             decay_gamma: 1.0,
             diffuse_weight: 1.0,
+            deposit_curve: None,
+            deposit_scale: None,
+            deposit_gamma: None,
+            deposit_cap: None,
             boundary_mode: None,
             window_frame: None,
             fullscreen: false,
@@ -2717,5 +2770,19 @@ mod tests {
         assert_eq!(a.temporal_color, 0.0);
         assert_eq!(a.temporal_lag, 8.0);
         assert_eq!(a.temporal_mode, "hue");
+    }
+
+    #[test]
+    fn deposit_curve_parses_case_insensitive() {
+        use crate::simulation::config::DepositCurve;
+        use std::str::FromStr;
+        assert_eq!(DepositCurve::from_str("SQRT").unwrap(), DepositCurve::Sqrt);
+        assert_eq!(DepositCurve::from_str("log").unwrap(), DepositCurve::Log);
+        assert_eq!(DepositCurve::from_str("Pow").unwrap(), DepositCurve::Pow);
+        assert_eq!(
+            DepositCurve::from_str("linear").unwrap(),
+            DepositCurve::Linear
+        );
+        assert!(DepositCurve::from_str("bogus").is_err());
     }
 }

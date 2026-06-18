@@ -7,7 +7,7 @@
 use crate::cli::{Args, AttractorArg, ObstacleArg, SpeciesArg, WindArg};
 use crate::config_defaults::population;
 use crate::simulation::config::{
-    Aspect, Attractor, BoundaryMode, ChromeStyle, DiffusionKernel, Preset, SimConfig,
+    Aspect, Attractor, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, Preset, SimConfig,
     SpeciesConfig, TerminalSizeThreshold, TerrainType, Wind, WindowFrame, WindowPadding,
 };
 
@@ -54,6 +54,10 @@ pub(crate) struct ConfigBuilder {
     afterglow_rate: f32,
     decay_gamma: f32,
     diffuse_weight: f32,
+    deposit_curve: Option<DepositCurve>,
+    deposit_scale: Option<f32>,
+    deposit_gamma: Option<f32>,
+    deposit_cap: Option<f32>,
 }
 
 impl ConfigBuilder {
@@ -108,6 +112,10 @@ impl ConfigBuilder {
             afterglow_rate: args.afterglow_rate,
             decay_gamma: args.decay_gamma,
             diffuse_weight: args.diffuse_weight,
+            deposit_curve: args.deposit_curve,
+            deposit_scale: args.deposit_scale,
+            deposit_gamma: args.deposit_gamma,
+            deposit_cap: args.deposit_cap,
         }
     }
 
@@ -177,6 +185,20 @@ impl ConfigBuilder {
 
         // Diffuse weight (Lague blend)
         config.diffuse_weight = self.diffuse_weight;
+
+        // Deposit curve knobs (override only when explicitly set)
+        if let Some(c) = self.deposit_curve {
+            config.deposit_curve = c;
+        }
+        if let Some(s) = self.deposit_scale {
+            config.deposit_scale = s;
+        }
+        if let Some(g) = self.deposit_gamma {
+            config.deposit_gamma = g;
+        }
+        if let Some(cap) = self.deposit_cap {
+            config.deposit_cap = cap;
+        }
 
         // Time scale
         if let Some(scale) = self.time_scale {
