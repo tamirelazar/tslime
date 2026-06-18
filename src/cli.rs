@@ -1962,6 +1962,7 @@ impl Args {
     /// Resolves the render-layer art defaults: per-preset defaults overridden
     /// by explicit intensity-mapping CLI flags. Render counterpart to
     /// [`Args::to_sim_config`] (spec §5 — render params stay out of `SimConfig`).
+    /// When no preset is set, falls back to `RenderArtDefaults::default()` (log10).
     pub(crate) fn to_render_art_defaults(
         &self,
     ) -> Result<crate::render_art_defaults::RenderArtDefaults, String> {
@@ -2834,5 +2835,18 @@ mod tests {
         };
         let art = args.to_render_art_defaults().unwrap();
         assert_eq!(art.intensity_mapping, IntensityMapping::linear());
+    }
+
+    #[test]
+    fn render_art_defaults_none_preset_falls_back_to_default() {
+        use crate::render::palette::IntensityMapping;
+        let args = Args {
+            preset: None,
+            intensity_mapping: None,
+            ..Default::default()
+        };
+        let art = args.to_render_art_defaults().unwrap();
+        // No preset + no flag → RenderArtDefaults::default() == log10.
+        assert_eq!(art.intensity_mapping, IntensityMapping::logarithmic(10.0));
     }
 }
