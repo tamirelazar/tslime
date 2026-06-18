@@ -51,6 +51,20 @@ pub mod runner;
 pub use explanations::print_parameter_explanations;
 pub use runner::{get_terminal_size, run_simulation};
 
+/// Fold afterglow into a blended trail buffer in place, before downsampling.
+/// `glow_mix == 0.0` (or `lag == None`) is a no-op (byte-identical). Adds
+/// `glow_mix · lag[i]` to each cell so the glow participates in the white-point.
+pub(crate) fn fold_afterglow(blended: &mut [f32], lag: Option<&[f32]>, glow_mix: f32) {
+    if glow_mix <= 0.0 {
+        return;
+    }
+    if let Some(lag) = lag {
+        for (b, &l) in blended.iter_mut().zip(lag.iter()) {
+            *b += glow_mix * l;
+        }
+    }
+}
+
 /// Extracts each species' RGB color from the config, in species order.
 pub fn extract_species_rgb_colors(config: &SimConfig) -> Vec<RgbColor> {
     config.species_configs.iter().map(|s| s.color).collect()
@@ -452,6 +466,9 @@ pub fn print_mode(
             sim.update(1.0);
         }
     }
+    if args.afterglow > 0.0 {
+        sim.set_compute_afterglow(true, args.afterglow_rate);
+    }
 
     sim.update(1.0);
 
@@ -461,6 +478,7 @@ pub fn print_mode(
     let sim_height = sim.height();
     let mut blended_trail = Vec::new();
     sim.trail_map_blended(&mut blended_trail);
+    fold_afterglow(&mut blended_trail, sim.afterglow_lag(), args.afterglow);
     let mut downsampled = DownsampledFrame::new(term_width, term_height);
     downsample(
         &blended_trail,
@@ -653,6 +671,9 @@ pub fn capture_frames_mode(
         };
         sim.set_compute_temporal(true, temporal_alpha);
     }
+    if args.afterglow > 0.0 {
+        sim.set_compute_afterglow(true, args.afterglow_rate);
+    }
 
     // Reused across frames so trail_map_blended doesn't reallocate per frame.
     let mut blended_trail = Vec::new();
@@ -671,6 +692,7 @@ pub fn capture_frames_mode(
         let sim_width = sim.width();
         let sim_height = sim.height();
         sim.trail_map_blended(&mut blended_trail);
+        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), args.afterglow);
         let mut downsampled = DownsampledFrame::new(term_width, term_height);
         downsample(
             &blended_trail,
@@ -880,6 +902,9 @@ pub fn export_gif_mode(
         };
         sim.set_compute_temporal(true, temporal_alpha);
     }
+    if args.afterglow > 0.0 {
+        sim.set_compute_afterglow(true, args.afterglow_rate);
+    }
 
     let frame_skip = args.frame_skip.max(1);
     let mut downsampled_frame = DownsampledFrame::new(width, height);
@@ -901,6 +926,7 @@ pub fn export_gif_mode(
         let term_width = width;
         let term_height = height;
         sim.trail_map_blended(&mut blended_trail);
+        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), args.afterglow);
         downsample(
             &blended_trail,
             sim_width,
@@ -1047,6 +1073,9 @@ pub fn export_webm_mode(
         };
         sim.set_compute_temporal(true, temporal_alpha);
     }
+    if args.afterglow > 0.0 {
+        sim.set_compute_afterglow(true, args.afterglow_rate);
+    }
 
     let frame_skip = args.frame_skip.max(1);
     let mut downsampled_frame = DownsampledFrame::new(width, height);
@@ -1068,6 +1097,7 @@ pub fn export_webm_mode(
         let term_width = width;
         let term_height = height;
         sim.trail_map_blended(&mut blended_trail);
+        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), args.afterglow);
         downsample(
             &blended_trail,
             sim_width,
@@ -1440,5 +1470,25 @@ mod tests {
             max_abs_diff > 0.0,
             "temporal_diff must contain at least one non-zero value after 5 sim steps"
         );
+    }
+
+    #[test]
+    fn fold_afterglow_is_noop_at_zero_and_adds_at_positive() {
+        let mut blended = vec![1.0_f32, 2.0, 3.0];
+        let lag = [10.0_f32, 10.0, 10.0];
+        let mut copy = blended.clone();
+        crate::app::fold_afterglow(&mut copy, Some(&lag), 0.0);
+        assert_eq!(copy, blended, "glow_mix=0 must be byte-identical");
+        crate::app::fold_afterglow(&mut blended, Some(&lag), 0.5);
+        assert_eq!(blended, vec![6.0, 7.0, 8.0], "adds glow_mix·lag");
+    }
+
+    #[test]
+    fn set_compute_afterglow_allocates_buffer() {
+        let mut sim = Simulation::new(80, 40, SimConfig::default(), 42, InitMode::Random, 0);
+        assert!(sim.afterglow_lag().is_none());
+        sim.set_compute_afterglow(true, 0.05);
+        sim.update(1.0);
+        assert!(sim.afterglow_lag().is_some());
     }
 }

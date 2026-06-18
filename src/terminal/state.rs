@@ -635,6 +635,10 @@ pub struct RuntimeState {
     pub temporal_lag_frames: f32,
     /// Temporal color modulation mode.
     pub temporal_mode: crate::render::palette::TemporalMode,
+    /// Afterglow strength (0.0 = off).
+    pub afterglow: f32,
+    /// Afterglow EMA rate.
+    pub afterglow_rate: f32,
 }
 
 impl RuntimeState {
@@ -765,6 +769,8 @@ impl RuntimeState {
             temporal_color: 0.0,
             temporal_lag_frames: 8.0,
             temporal_mode: crate::render::palette::TemporalMode::Hue,
+            afterglow: 0.0,
+            afterglow_rate: 0.05,
         }
     }
 

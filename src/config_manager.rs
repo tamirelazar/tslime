@@ -149,6 +149,13 @@ pub struct SavedConfig {
     /// Temporal mode: "hue" or "accent".
     #[serde(default)]
     pub temporal_mode: Option<String>,
+    // Afterglow
+    /// Afterglow strength (0.0 = off).
+    #[serde(default)]
+    pub afterglow: Option<f32>,
+    /// Afterglow EMA rate.
+    #[serde(default)]
+    pub afterglow_rate: Option<f32>,
 }
 
 fn default_chrome_style() -> String {
@@ -188,6 +195,8 @@ impl SavedConfig {
         temporal_color: f32,
         temporal_lag_frames: f32,
         temporal_mode: crate::render::palette::TemporalMode,
+        afterglow: f32,
+        afterglow_rate: f32,
     ) -> Self {
         let diffusion_kernel_str = match sim_config.diffusion_kernel {
             DiffusionKernel::Mean3x3 => "mean3x3",
@@ -334,6 +343,8 @@ impl SavedConfig {
                 crate::render::palette::TemporalMode::Hue => "hue".to_string(),
                 crate::render::palette::TemporalMode::Accent => "accent".to_string(),
             }),
+            afterglow: Some(afterglow),
+            afterglow_rate: Some(afterglow_rate),
         }
     }
 
@@ -436,6 +447,10 @@ impl SavedConfig {
             }
             _ => crate::render::palette::TemporalMode::Hue,
         };
+
+        // Apply afterglow fields
+        runtime_state.afterglow = self.afterglow.unwrap_or(0.0);
+        runtime_state.afterglow_rate = self.afterglow_rate.unwrap_or(0.05);
 
         // Parameters that require simulation restart to take effect:
         // - population (agent count)
@@ -780,6 +795,8 @@ mod tests {
             temporal_color: None,
             temporal_lag: None,
             temporal_mode: None,
+            afterglow: None,
+            afterglow_rate: None,
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -874,6 +891,8 @@ food_path = "assets/tslime_logo.png"
             temporal_color: None,
             temporal_lag: None,
             temporal_mode: None,
+            afterglow: None,
+            afterglow_rate: None,
         };
         let sim_config = config.to_sim_config().unwrap();
         assert_eq!(sim_config.species_configs[0].count, 50000);
@@ -923,6 +942,8 @@ food_path = "assets/tslime_logo.png"
             temporal_color: None,
             temporal_lag: None,
             temporal_mode: None,
+            afterglow: None,
+            afterglow_rate: None,
         };
 
         config
@@ -978,6 +999,8 @@ food_path = "assets/tslime_logo.png"
             temporal_color: None,
             temporal_lag: None,
             temporal_mode: None,
+            afterglow: None,
+            afterglow_rate: None,
         };
 
         config
@@ -1095,6 +1118,8 @@ food_path = "assets/tslime_logo.png"
             0.0,
             8.0,
             crate::render::palette::TemporalMode::Hue,
+            0.0,
+            0.05,
         );
 
         // Create new state and apply config
@@ -1228,6 +1253,8 @@ init_mode = "Random"
             state.temporal_color,
             state.temporal_lag_frames,
             state.temporal_mode,
+            state.afterglow,
+            state.afterglow_rate,
         );
 
         // Serialize and deserialize through TOML
