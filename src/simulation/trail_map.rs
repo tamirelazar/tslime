@@ -25,6 +25,9 @@ pub struct TrailMap {
     /// Pre-allocated snapshot buffer for the Lague diffuse-weight blend.
     /// Only populated (and only used) when `diffuse_weight < 1.0`.
     blend_src: Vec<f32>,
+    /// Per-frame deposit-accumulation scratch buffer (lever 4). Empty until the
+    /// nonlinear-deposit path is active; reused across frames (hot-path rule).
+    accum: Vec<f32>,
 }
 
 const GAUSSIAN_KERNEL_SIZE: usize = 5;
@@ -67,6 +70,7 @@ impl TrailMap {
             trail_sum: 0.0,
             boundary_mode: super::config::BoundaryMode::Bounce,
             blend_src: Vec::new(),
+            accum: Vec::new(),
         }
     }
 
@@ -84,6 +88,7 @@ impl TrailMap {
             trail_sum: 0.0,
             boundary_mode: super::config::BoundaryMode::Bounce,
             blend_src: Vec::new(),
+            accum: Vec::new(),
         }
     }
 
@@ -106,6 +111,7 @@ impl TrailMap {
             trail_sum: 0.0,
             boundary_mode,
             blend_src: Vec::new(),
+            accum: Vec::new(),
         }
     }
 
@@ -1193,6 +1199,43 @@ impl TrailMap {
         }
         self.trail_sum = new_sum;
     }
+
+    /// Mutable access to the deposit-accumulation buffer, sized to the grid
+    /// (zero-filled on first use / resize). Agents accumulate into this when
+    /// the nonlinear-deposit path is active.
+    pub fn accum_mut(&mut self) -> &mut [f32] {
+        let size = self.width * self.height;
+        if self.accum.len() != size {
+            self.accum.resize(size, 0.0);
+        }
+        &mut self.accum
+    }
+
+    /// Fold the accumulated deposits into the current trail using the curve:
+    /// `current[i] += min(curve(accum[i])·scale, cap)`; then zero the buffer.
+    /// `cap <= 0.0` disables clamping. No-op if the buffer is unsized.
+    pub fn fold_deposits(
+        &mut self,
+        curve: super::config::DepositCurve,
+        scale: f32,
+        gamma: f32,
+        cap: f32,
+    ) {
+        let size = self.width * self.height;
+        if self.accum.len() != size {
+            return;
+        }
+        for (cur, acc) in self.current.iter_mut().zip(self.accum.iter_mut()) {
+            if *acc != 0.0 {
+                let mut v = curve.apply(*acc, gamma) * scale;
+                if cap > 0.0 {
+                    v = v.min(cap);
+                }
+                *cur += v;
+                *acc = 0.0;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1485,6 +1528,30 @@ mod tests {
         // With width 4 and 5x5 kernel (radius 2), no pixels are processed as "inner" pixels.
         // So the value should remain unchanged.
         assert_eq!(trail.get(1, 1), 9.0);
+    }
+
+    #[test]
+    fn fold_deposits_applies_curve_scale_cap_and_clears() {
+        use crate::simulation::config::DepositCurve;
+        let mut tm = TrailMap::new(2, 1);
+        {
+            let accum = tm.accum_mut();
+            accum[0] = 9.0;
+            accum[1] = 100.0;
+        }
+        // sqrt(9)=3 *2 = 6 ; sqrt(100)=10 *2 = 20 -> capped at 8
+        tm.fold_deposits(DepositCurve::Sqrt, 2.0, 1.0, 8.0);
+        let cur = tm.current();
+        assert!((cur[0] - 6.0).abs() < 1e-5);
+        assert!((cur[1] - 8.0).abs() < 1e-5);
+        // buffer cleared after fold
+        assert_eq!(tm.accum_mut(), &[0.0, 0.0]);
+    }
+
+    #[test]
+    fn accum_mut_initializes_zeroed() {
+        let mut tm = TrailMap::new(3, 2);
+        assert_eq!(tm.accum_mut(), &[0.0; 6]);
     }
 
     #[test]
