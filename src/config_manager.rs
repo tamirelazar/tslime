@@ -162,6 +162,18 @@ pub struct SavedConfig {
     /// Lague diffuse-weight blend factor (1.0 = full blur; 0.0 = no diffusion).
     #[serde(default)]
     pub diffuse_weight: Option<f32>,
+    /// Nonlinear deposit curve ("linear", "sqrt", "log", "pow").
+    #[serde(default)]
+    pub deposit_curve: Option<String>,
+    /// Deposit scale (post-curve multiplier).
+    #[serde(default)]
+    pub deposit_scale: Option<f32>,
+    /// Deposit gamma (Pow exponent).
+    #[serde(default)]
+    pub deposit_gamma: Option<f32>,
+    /// Deposit cap (0 = off).
+    #[serde(default)]
+    pub deposit_cap: Option<f32>,
 }
 
 fn default_chrome_style() -> String {
@@ -205,6 +217,10 @@ impl SavedConfig {
         afterglow_rate: f32,
         decay_gamma: f32,
         diffuse_weight: f32,
+        deposit_curve: crate::simulation::config::DepositCurve,
+        deposit_scale: f32,
+        deposit_gamma: f32,
+        deposit_cap: f32,
     ) -> Self {
         let diffusion_kernel_str = match sim_config.diffusion_kernel {
             DiffusionKernel::Mean3x3 => "mean3x3",
@@ -355,6 +371,10 @@ impl SavedConfig {
             afterglow_rate: Some(afterglow_rate),
             decay_gamma: Some(decay_gamma),
             diffuse_weight: Some(diffuse_weight),
+            deposit_curve: Some(deposit_curve_to_str(deposit_curve).to_string()),
+            deposit_scale: Some(deposit_scale),
+            deposit_gamma: Some(deposit_gamma),
+            deposit_cap: Some(deposit_cap),
         }
     }
 
@@ -467,6 +487,16 @@ impl SavedConfig {
 
         // Apply diffuse weight
         runtime_state.diffuse_weight = self.diffuse_weight.unwrap_or(1.0);
+
+        // Apply deposit knobs
+        runtime_state.deposit_curve = self
+            .deposit_curve
+            .as_deref()
+            .map(parse_deposit_curve)
+            .unwrap_or_default();
+        runtime_state.deposit_scale = self.deposit_scale.unwrap_or(1.0);
+        runtime_state.deposit_gamma = self.deposit_gamma.unwrap_or(1.0);
+        runtime_state.deposit_cap = self.deposit_cap.unwrap_or(0.0);
 
         // Parameters that require simulation restart to take effect:
         // - population (agent count)
@@ -593,6 +623,26 @@ fn parse_diffusion_kernel(s: &str) -> Result<DiffusionKernel, String> {
         "mean3x3" => Ok(DiffusionKernel::Mean3x3),
         "gaussian" => Ok(DiffusionKernel::Gaussian),
         _ => Err(format!("Unknown diffusion kernel: {}", s)),
+    }
+}
+
+fn deposit_curve_to_str(c: crate::simulation::config::DepositCurve) -> &'static str {
+    use crate::simulation::config::DepositCurve;
+    match c {
+        DepositCurve::Linear => "linear",
+        DepositCurve::Sqrt => "sqrt",
+        DepositCurve::Log => "log",
+        DepositCurve::Pow => "pow",
+    }
+}
+
+fn parse_deposit_curve(s: &str) -> crate::simulation::config::DepositCurve {
+    use crate::simulation::config::DepositCurve;
+    match s.to_lowercase().as_str() {
+        "sqrt" => DepositCurve::Sqrt,
+        "log" => DepositCurve::Log,
+        "pow" => DepositCurve::Pow,
+        _ => DepositCurve::Linear,
     }
 }
 
@@ -819,6 +869,10 @@ mod tests {
             afterglow_rate: None,
             decay_gamma: None,
             diffuse_weight: None,
+            deposit_curve: None,
+            deposit_scale: None,
+            deposit_gamma: None,
+            deposit_cap: None,
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -917,6 +971,10 @@ food_path = "assets/tslime_logo.png"
             afterglow_rate: None,
             decay_gamma: None,
             diffuse_weight: None,
+            deposit_curve: None,
+            deposit_scale: None,
+            deposit_gamma: None,
+            deposit_cap: None,
         };
         let sim_config = config.to_sim_config().unwrap();
         assert_eq!(sim_config.species_configs[0].count, 50000);
@@ -970,6 +1028,10 @@ food_path = "assets/tslime_logo.png"
             afterglow_rate: None,
             decay_gamma: None,
             diffuse_weight: None,
+            deposit_curve: None,
+            deposit_scale: None,
+            deposit_gamma: None,
+            deposit_cap: None,
         };
 
         config
@@ -1029,6 +1091,10 @@ food_path = "assets/tslime_logo.png"
             afterglow_rate: None,
             decay_gamma: None,
             diffuse_weight: None,
+            deposit_curve: None,
+            deposit_scale: None,
+            deposit_gamma: None,
+            deposit_cap: None,
         };
 
         config
@@ -1154,6 +1220,10 @@ food_path = "assets/tslime_logo.png"
             0.05,
             1.0,
             1.0, // diffuse_weight
+            crate::simulation::config::DepositCurve::default(),
+            1.0,
+            1.0,
+            0.0,
         );
 
         // Create new state and apply config
@@ -1295,6 +1365,10 @@ init_mode = "Random"
             state.afterglow_rate,
             state.decay_gamma,
             state.diffuse_weight,
+            crate::simulation::config::DepositCurve::default(),
+            1.0,
+            1.0,
+            0.0,
         );
 
         // Serialize and deserialize through TOML
@@ -1405,6 +1479,10 @@ init_mode = "Random"
             state.afterglow_rate,
             state.decay_gamma,
             state.diffuse_weight,
+            crate::simulation::config::DepositCurve::default(),
+            1.0,
+            1.0,
+            0.0,
         );
 
         // Serialize and deserialize through TOML
@@ -1494,6 +1572,97 @@ init_mode = "Random"
         assert_eq!(
             state.diffuse_weight, 1.0,
             "default diffuse_weight must be 1.0"
+        );
+        // Deposit fields absent from old TOML → defaults.
+        assert!(cfg.deposit_curve.is_none());
+        assert!(cfg.deposit_scale.is_none());
+        assert!(cfg.deposit_gamma.is_none());
+        assert!(cfg.deposit_cap.is_none());
+        assert_eq!(
+            state.deposit_curve,
+            crate::simulation::config::DepositCurve::default(),
+            "default deposit_curve must be Linear"
+        );
+        assert_eq!(
+            state.deposit_scale, 1.0,
+            "default deposit_scale must be 1.0"
+        );
+        assert_eq!(
+            state.deposit_gamma, 1.0,
+            "default deposit_gamma must be 1.0"
+        );
+        assert_eq!(state.deposit_cap, 0.0, "default deposit_cap must be 0.0");
+    }
+
+    #[test]
+    fn deposit_fields_round_trip_through_saved_config() {
+        use crate::simulation::config::DepositCurve;
+
+        let mut state = create_test_runtime_state();
+        state.deposit_curve = DepositCurve::Pow;
+        state.deposit_scale = 2.5;
+        state.deposit_gamma = 0.5;
+        state.deposit_cap = 7.0;
+
+        let sim_config = SimConfig::default();
+
+        let saved = SavedConfig::from_runtime(
+            "deposit_rt".to_string(),
+            &sim_config,
+            crate::cli::Palette::Organic,
+            crate::render::charset::Charset::HalfBlock,
+            false,
+            false,
+            0,
+            false,
+            false,
+            false,
+            None,
+            crate::simulation::config::InitMode::Random,
+            None,
+            None,
+            0.0,
+            8.0,
+            crate::render::palette::TemporalMode::Hue,
+            0.0,
+            0.05,
+            1.0,
+            1.0,
+            state.deposit_curve,
+            state.deposit_scale,
+            state.deposit_gamma,
+            state.deposit_cap,
+        );
+
+        // Serialize and deserialize through TOML
+        let toml_str = toml::to_string(&saved).expect("serialize must succeed");
+        let reloaded: SavedConfig = toml::from_str(&toml_str).expect("deserialize must succeed");
+
+        // Restore into a fresh RuntimeState
+        let mut restored = create_test_runtime_state();
+        reloaded
+            .apply_to_runtime_state(&mut restored)
+            .expect("apply must succeed");
+
+        assert_eq!(
+            restored.deposit_curve,
+            DepositCurve::Pow,
+            "deposit_curve must survive round-trip"
+        );
+        assert!(
+            (restored.deposit_scale - 2.5).abs() < 1e-6,
+            "deposit_scale must survive round-trip (got {})",
+            restored.deposit_scale
+        );
+        assert!(
+            (restored.deposit_gamma - 0.5).abs() < 1e-6,
+            "deposit_gamma must survive round-trip (got {})",
+            restored.deposit_gamma
+        );
+        assert!(
+            (restored.deposit_cap - 7.0).abs() < 1e-6,
+            "deposit_cap must survive round-trip (got {})",
+            restored.deposit_cap
         );
     }
 }
