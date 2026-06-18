@@ -266,6 +266,11 @@ impl TerminalRenderer {
         self.intensity_mapping.as_ref()
     }
 
+    /// Returns the active palette cycle.
+    pub fn palette_cycle(&self) -> palette::PaletteCycle {
+        self.palette_cycle
+    }
+
     /// Returns the active window frame style.
     pub fn window_frame(&self) -> crate::simulation::config::WindowFrame {
         self.window_frame

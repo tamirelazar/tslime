@@ -81,6 +81,7 @@ pub fn sync_renderer_caches(runtime_state: &RuntimeState, renderer: &mut Termina
     renderer.set_reverse_palette(runtime_state.reverse_palette);
     renderer.set_charset(runtime_state.current_charset());
     renderer.set_intensity_mapping(Some(runtime_state.intensity_mapping.clone()));
+    renderer.set_palette_cycle(runtime_state.palette_cycle);
     renderer.set_window_frame(runtime_state.window_frame);
     renderer.set_dither_mode(runtime_state.dither_mode);
 }
@@ -1242,7 +1243,7 @@ pub fn export_webm_mode(
 mod tests {
     use super::*;
     use crate::cli::{ColorMode, PauseStyle};
-    use crate::render::palette::{IntensityMapping, Palette};
+    use crate::render::palette::{IntensityMapping, Palette, PaletteCycle, PaletteCycleMode};
     use crate::simulation::config::WindowFrame;
     use crate::terminal::control::MouseInteractionMode;
 
@@ -1281,6 +1282,42 @@ mod tests {
         sync_renderer_caches(&rs, &mut r);
         assert_eq!(r.charset(), &rs.current_charset());
         assert_eq!(r.window_frame(), rs.window_frame);
+    }
+
+    #[test]
+    fn sync_renderer_caches_pushes_palette_cycle() {
+        let mut rs = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            0,
+            0,
+            MouseInteractionMode::Disabled,
+            3.0,
+            IntensityMapping::linear(),
+            &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
+        );
+        let mut r = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            None,
+        );
+        let non_identity = PaletteCycle {
+            cycles: 3,
+            mode: PaletteCycleMode::Wrap,
+        };
+        rs.palette_cycle = non_identity;
+        sync_renderer_caches(&rs, &mut r);
+        assert_eq!(r.palette_cycle().cycles, 3);
+        assert_eq!(r.palette_cycle().mode, PaletteCycleMode::Wrap);
     }
 
     #[test]
