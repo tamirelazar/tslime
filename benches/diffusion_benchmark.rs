@@ -257,6 +257,36 @@ fn bench_afterglow_ema_pass(c: &mut Criterion) {
     });
 }
 
+fn bench_fold_deposits_sqrt(c: &mut Criterion) {
+    use tslime::simulation::config::DepositCurve;
+    use tslime::simulation::trail_map::TrailMap;
+
+    let width = 400;
+    let height = 400;
+    let mut tm = TrailMap::new(width, height);
+    // Populate the accumulation buffer with non-zero values.
+    let accum = tm.accum_mut();
+    for (i, v) in accum.iter_mut().enumerate() {
+        *v = (i * 7 % 100) as f32 / 10.0;
+    }
+
+    c.bench_function("fold_deposits_sqrt", |b| {
+        b.iter(|| {
+            // Re-fill accum each iteration so fold_deposits has work to do.
+            let accum = tm.accum_mut();
+            for (i, v) in accum.iter_mut().enumerate() {
+                *v = (i * 7 % 100) as f32 / 10.0;
+            }
+            tm.fold_deposits(
+                black_box(DepositCurve::Sqrt),
+                black_box(1.0),
+                black_box(1.0),
+                black_box(0.0),
+            );
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_diffuse_mean3x3,
@@ -264,6 +294,7 @@ criterion_group!(
     bench_diffuse_comparison,
     bench_diffuse_gaussian_separable_sigma3,
     bench_decay_gamma,
-    bench_afterglow_ema_pass
+    bench_afterglow_ema_pass,
+    bench_fold_deposits_sqrt
 );
 criterion_main!(benches);

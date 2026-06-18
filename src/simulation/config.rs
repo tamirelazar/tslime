@@ -2731,21 +2731,29 @@ mod tests {
         assert_eq!(cfg.deposit_cap, 0.0);
         assert!(!cfg.deposit_active(), "defaults must be the off path");
 
-        let mut on = SimConfig::default();
-        on.deposit_curve = DepositCurve::Sqrt;
+        let on = SimConfig {
+            deposit_curve: DepositCurve::Sqrt,
+            ..Default::default()
+        };
         assert!(on.deposit_active());
-        let mut scaled = SimConfig::default();
-        scaled.deposit_scale = 2.0;
+        let scaled = SimConfig {
+            deposit_scale: 2.0,
+            ..Default::default()
+        };
         assert!(scaled.deposit_active());
-        let mut capped = SimConfig::default();
-        capped.deposit_cap = 5.0;
+        let capped = SimConfig {
+            deposit_cap: 5.0,
+            ..Default::default()
+        };
         assert!(capped.deposit_active());
     }
 
     #[test]
     fn deposit_validation_rejects_out_of_range() {
-        let mut cfg = SimConfig::default();
-        cfg.deposit_gamma = 0.0; // below MIN_DEPOSIT_GAMMA
+        let cfg = SimConfig {
+            deposit_gamma: 0.0, // below MIN_DEPOSIT_GAMMA
+            ..Default::default()
+        };
         assert!(cfg.validate().is_err());
     }
 }

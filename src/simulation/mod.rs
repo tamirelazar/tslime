@@ -2030,10 +2030,12 @@ mod tests {
         let off_cfg = SimConfig::default();
         assert!(!off_cfg.deposit_active(), "off path sanity check");
 
-        let mut on_cfg = SimConfig::default();
-        on_cfg.deposit_curve = DepositCurve::Linear;
-        on_cfg.deposit_scale = 1.0;
-        on_cfg.deposit_cap = 1.0e9; // huge cap → never clips
+        let on_cfg = SimConfig {
+            deposit_curve: DepositCurve::Linear,
+            deposit_scale: 1.0,
+            deposit_cap: 1.0e9, // huge cap → never clips
+            ..Default::default()
+        };
         assert!(
             on_cfg.deposit_active(),
             "cap > 0.0 must activate the accum path"
@@ -2067,8 +2069,10 @@ mod tests {
     #[test]
     fn deposit_sqrt_curve_changes_output() {
         let mut base = Simulation::new(40, 40, SimConfig::default(), 42, InitMode::Random, 0);
-        let mut cfg = SimConfig::default();
-        cfg.deposit_curve = crate::simulation::config::DepositCurve::Sqrt;
+        let cfg = SimConfig {
+            deposit_curve: crate::simulation::config::DepositCurve::Sqrt,
+            ..Default::default()
+        };
         let mut curved = Simulation::new(40, 40, cfg, 42, InitMode::Random, 0);
         for _ in 0..30 {
             base.update(1.0);
