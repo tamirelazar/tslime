@@ -1247,3 +1247,51 @@ fn test_visual_regression_window_frame_glow() {
         }
     }
 }
+
+// ============== TEMPORAL COLOR TESTS ==============
+
+#[test]
+fn test_visual_regression_temporal_color_accent() {
+    // Temporal color in Accent mode at strength 0.8: active pixels are shifted to
+    // the palette accent hue while decaying pixels shift to a complementary hue.
+    // Uses seed 42 + network preset (produces dense, rapidly-changing trails that
+    // maximise temporal delta signal) and the Organic palette (real chroma, so
+    // hue modulation is visible in ANSI output).
+    let output = capture_print_output(
+        &[
+            "-s",
+            "42",
+            "--preset",
+            "network",
+            "--palette",
+            "organic",
+            "--temporal-color",
+            "0.8",
+            "--temporal-mode",
+            "accent",
+        ],
+        80,
+        24,
+    );
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("temporal_color_accent", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("temporal_color_accent") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: temporal color accent output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("temporal_color_accent", &normalized).unwrap();
+        }
+    }
+}

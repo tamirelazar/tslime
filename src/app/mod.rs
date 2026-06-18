@@ -431,6 +431,28 @@ pub fn print_mode(
     #[cfg(windows)]
     let _enable = enable_ansi_support::enable_ansi_support();
 
+    // Enable temporal computation if requested, then warm up enough frames
+    // to populate the EMA lag buffer before capturing the final frame.
+    let temporal_strength = args.temporal_color;
+    let temporal_mode = match args.temporal_mode.to_ascii_lowercase().as_str() {
+        "accent" => crate::render::palette::TemporalMode::Accent,
+        _ => crate::render::palette::TemporalMode::Hue,
+    };
+    if temporal_strength > 0.0 {
+        let temporal_alpha = if args.temporal_lag > 0.0 {
+            1.0 / args.temporal_lag
+        } else {
+            1.0
+        };
+        sim.set_compute_temporal(true, temporal_alpha);
+        // Warm up enough frames so the EMA lag buffer is populated before we
+        // capture the golden frame (lag_frames warmup gives a representative diff).
+        let warmup = (args.temporal_lag.ceil() as usize).max(1);
+        for _ in 0..warmup {
+            sim.update(1.0);
+        }
+    }
+
     sim.update(1.0);
 
     let (term_width, term_height) = get_terminal_size();
@@ -448,6 +470,29 @@ pub fn print_mode(
         term_height,
         &mut downsampled,
     );
+
+    // Populate auxiliary frame with temporal diff data when temporal color is active.
+    let mut aux_storage = crate::render::downsample::AuxFrame {
+        width: 0,
+        height: 0,
+        cells: Vec::new(),
+    };
+    let opt_aux_frame = if temporal_strength > 0.0 {
+        crate::render::downsample::downsample_aux(
+            None,
+            None,
+            None,
+            sim.temporal_diff(),
+            sim_width,
+            sim_height,
+            term_width,
+            term_height,
+            &mut aux_storage,
+        );
+        Some(&aux_storage)
+    } else {
+        None
+    };
 
     let config = args
         .to_sim_config()
@@ -492,7 +537,7 @@ pub fn print_mode(
         species_rgb_colors,
         background_color,
         args.ascii_contrast,
-        None,
+        opt_aux_frame,
         false,
         false,
         60.0,
@@ -502,8 +547,8 @@ pub fn print_mode(
         0.3,
         crate::config_defaults::TrailAgeMode::Bidirectional,
         false,
-        0.0, // temporal_strength (off)
-        crate::render::palette::TemporalMode::Hue,
+        temporal_strength,
+        temporal_mode,
     );
 
     if args.grid {
