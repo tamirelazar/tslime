@@ -542,6 +542,12 @@ pub fn print_mode(
         .ok()
         .map(|a| a.intensity_mapping);
 
+    let palette_cycle = args
+        .to_render_art_defaults()
+        .ok()
+        .map(|a| a.palette_cycle)
+        .unwrap_or_default();
+
     let mut buffer = FrameBuffer::from_downsampled(
         downsampled.cells(),
         term_width,
@@ -572,6 +578,7 @@ pub fn print_mode(
         false,
         temporal_strength,
         temporal_mode,
+        palette_cycle,
     );
 
     if args.grid {
@@ -726,6 +733,11 @@ pub fn capture_frames_mode(
             .to_render_art_defaults()
             .ok()
             .map(|a| a.intensity_mapping);
+        let palette_cycle_inner = args
+            .to_render_art_defaults()
+            .ok()
+            .map(|a| a.palette_cycle)
+            .unwrap_or_default();
 
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(
@@ -774,6 +786,7 @@ pub fn capture_frames_mode(
             false,
             temporal_strength,
             temporal_mode,
+            palette_cycle_inner,
         );
 
         if args.grid {
@@ -962,6 +975,11 @@ pub fn export_gif_mode(
             .to_render_art_defaults()
             .ok()
             .map(|a| a.intensity_mapping);
+        let palette_cycle_gif = args
+            .to_render_art_defaults()
+            .ok()
+            .map(|a| a.palette_cycle)
+            .unwrap_or_default();
 
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(
@@ -1010,6 +1028,7 @@ pub fn export_gif_mode(
             false,
             temporal_strength,
             temporal_mode,
+            palette_cycle_gif,
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1136,6 +1155,11 @@ pub fn export_webm_mode(
             .to_render_art_defaults()
             .ok()
             .map(|a| a.intensity_mapping);
+        let palette_cycle_webm = args
+            .to_render_art_defaults()
+            .ok()
+            .map(|a| a.palette_cycle)
+            .unwrap_or_default();
 
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(
@@ -1184,6 +1208,7 @@ pub fn export_webm_mode(
             false,
             temporal_strength,
             temporal_mode,
+            palette_cycle_webm,
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1442,6 +1467,7 @@ mod tests {
                     false,
                     temporal_strength,
                     temporal_mode,
+                    crate::render::palette::PaletteCycle::default(),
                 )
                 .get_rgb_pixels()
             };

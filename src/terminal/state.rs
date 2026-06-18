@@ -651,6 +651,8 @@ pub struct RuntimeState {
     pub deposit_gamma: f32,
     /// Deposit cap (0 = off).
     pub deposit_cap: f32,
+    /// Spatial palette-repeat config (lever 6). Default identity.
+    pub palette_cycle: crate::render::palette::PaletteCycle,
 }
 
 impl RuntimeState {
@@ -789,6 +791,7 @@ impl RuntimeState {
             deposit_scale: cli_config.deposit_scale,
             deposit_gamma: cli_config.deposit_gamma,
             deposit_cap: cli_config.deposit_cap,
+            palette_cycle: crate::render::palette::PaletteCycle::default(),
         }
     }
 

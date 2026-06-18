@@ -249,6 +249,12 @@ pub fn run_simulation(
 
     renderer.set_intensity_mapping(Some(initial_intensity_mapping.clone()));
 
+    let initial_palette_cycle = args
+        .to_render_art_defaults()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .palette_cycle;
+    renderer.set_palette_cycle(initial_palette_cycle);
+
     let initial_charset_index = ALL_CHARSETS.iter().position(|c| c == &charset).unwrap_or(0);
 
     let mut runtime_state = RuntimeState::new(
@@ -266,6 +272,7 @@ pub fn run_simulation(
         args.pause_pulse_draw_mode,
     );
     runtime_state.preload_pause_logo(term_width as usize, term_height as usize);
+    runtime_state.palette_cycle = initial_palette_cycle;
     runtime_state.dither_mode = dither_mode;
     runtime_state.trail_age_enabled = args.trail_age;
     runtime_state.trail_delta_enabled = args.trail_delta;
@@ -1871,6 +1878,7 @@ pub fn run_simulation(
                                 runtime_state.temporal_color,
                                 runtime_state.temporal_mode,
                                 png_aux_cells,
+                                runtime_state.palette_cycle,
                             ) {
                                 Ok(filename) => {
                                     runtime_state
