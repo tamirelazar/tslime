@@ -1208,13 +1208,16 @@ impl FrameBuffer {
                         });
                     palette::map_species_brightness_rgb(brightness, base_color, reverse_palette)
                 } else {
-                    palette::map_brightness_rgb(
+                    palette::colorize_subpixel(
                         brightness,
                         palette.clone(),
                         reverse_palette,
                         invert_palette,
                         hue_shift,
                         intensity_mapping,
+                        0.0,
+                        0.0,
+                        palette::TemporalMode::Hue,
                     )
                 };
                 Cell {
