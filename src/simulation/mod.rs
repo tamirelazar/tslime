@@ -156,6 +156,8 @@ pub struct Simulation {
     temporal_lag: Option<Vec<f32>>,
     temporal_diff: Option<Vec<f32>>,
     temporal_alpha: f32,
+    afterglow_lag: Option<Vec<f32>>,
+    afterglow_alpha: f32,
     gradient_magnitude: Option<Vec<f32>>,
     /// Pre-allocated buffer for combining separate species trails.
     /// Only allocated when both `separate_species_trails` and trail history are enabled.
@@ -246,6 +248,8 @@ impl Simulation {
             temporal_lag: None,
             temporal_diff: None,
             temporal_alpha: 0.2,
+            afterglow_lag: None,
+            afterglow_alpha: 0.05,
             gradient_magnitude: None,
             combined_trail_buffer,
             frame_count: 0,
@@ -1002,6 +1006,15 @@ impl Simulation {
             }
         }
 
+        // Afterglow EMA lag (lever 7): lag = α·trail + (1−α)·lag.
+        if let Some(ref mut lag) = self.afterglow_lag {
+            let current = self.trail_maps[0].current();
+            let a = self.afterglow_alpha;
+            for (l, &c) in lag.iter_mut().zip(current.iter()) {
+                *l = a * c + (1.0 - a) * *l;
+            }
+        }
+
         if let Some(ref mut gradient) = self.gradient_magnitude {
             // Use primary trail map directly to avoid allocation from trail_map_blended()
             Self::compute_gradient_magnitude(self.trail_maps[0].current(), width, height, gradient);
@@ -1187,6 +1200,22 @@ impl Simulation {
     /// Raw signed temporal difference (`trail - lag`), per cell. Not normalized.
     pub fn temporal_diff(&self) -> Option<&[f32]> {
         self.temporal_diff.as_deref()
+    }
+
+    /// Enable afterglow EMA computation (lever 7). `alpha` is the EMA rate per frame
+    /// (smaller ⇒ longer-lived glow). Allocates the buffer on first enable; gated on
+    /// its OWN consumer (afterglow > 0), independent of the temporal buffer.
+    pub fn set_compute_afterglow(&mut self, enabled: bool, alpha: f32) {
+        self.afterglow_alpha = alpha.clamp(0.0, 1.0);
+        if enabled && self.afterglow_lag.is_none() {
+            let size = self.width() * self.height();
+            self.afterglow_lag = Some(vec![0.0; size]);
+        }
+    }
+
+    /// EMA afterglow lag buffer (per cell). `None` until afterglow is enabled.
+    pub fn afterglow_lag(&self) -> Option<&[f32]> {
+        self.afterglow_lag.as_deref()
     }
 
     /// Enable gradient magnitude computation, allocating the buffer on first
@@ -1923,5 +1952,33 @@ mod tests {
             "expected a positive growing front"
         );
         assert!(diff.iter().all(|&d| d.is_finite()));
+    }
+
+    #[test]
+    fn afterglow_lag_allocates_and_emas_toward_trail() {
+        let mut sim = Simulation::new(400, 400, SimConfig::default(), 42, InitMode::Random, 0);
+        assert!(sim.afterglow_lag().is_none(), "no buffer before enable");
+        sim.set_compute_afterglow(true, 0.5);
+        sim.update(1.0);
+        let lag = sim.afterglow_lag().expect("buffer after enable");
+        // EMA buffer exists, sized to the trail map.
+        assert_eq!(lag.len(), sim.width() * sim.height());
+        // lag rises toward the (non-negative) trail over repeated updates.
+        let sum0: f32 = lag.iter().copied().sum();
+        for _ in 0..5 {
+            sim.update(1.0);
+        }
+        let sum1: f32 = sim.afterglow_lag().unwrap().iter().copied().sum();
+        assert!(
+            sum1 >= sum0,
+            "afterglow lag should accumulate toward the trail"
+        );
+    }
+
+    #[test]
+    fn afterglow_lag_disabled_allocates_nothing() {
+        let mut sim = Simulation::new(400, 400, SimConfig::default(), 42, InitMode::Random, 0);
+        sim.update(1.0);
+        assert!(sim.afterglow_lag().is_none());
     }
 }
