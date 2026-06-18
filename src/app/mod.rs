@@ -502,6 +502,8 @@ pub fn print_mode(
         0.3,
         crate::config_defaults::TrailAgeMode::Bidirectional,
         false,
+        0.0, // temporal_strength (off)
+        crate::render::palette::TemporalMode::Hue,
     );
 
     if args.grid {
@@ -657,6 +659,8 @@ pub fn capture_frames_mode(
             0.3,
             crate::config_defaults::TrailAgeMode::Bidirectional,
             false,
+            0.0, // temporal_strength (off)
+            crate::render::palette::TemporalMode::Hue,
         );
 
         if args.grid {
@@ -846,6 +850,8 @@ pub fn export_gif_mode(
             0.3,
             crate::config_defaults::TrailAgeMode::Bidirectional,
             false,
+            0.0, // temporal_strength (off)
+            crate::render::palette::TemporalMode::Hue,
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -973,6 +979,8 @@ pub fn export_webm_mode(
             0.3,
             crate::config_defaults::TrailAgeMode::Bidirectional,
             false,
+            0.0, // temporal_strength (off)
+            crate::render::palette::TemporalMode::Hue,
         );
 
         let pixels = buffer.get_rgb_pixels();
