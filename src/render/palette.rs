@@ -2579,6 +2579,59 @@ pub fn truecolor_ansi_bg(r: u8, g: u8, b: u8) -> String {
     truecolor_ansi(r, g, b, false)
 }
 
+/// Color-modulation mode for temporal-difference coloring (lever 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemporalMode {
+    /// Rotate the base color's hue in OKLch by the (signed) temporal difference.
+    Hue,
+    /// Blend the base color toward a front-accent color (Bleuje-style).
+    Accent,
+}
+
+/// Shared per-subpixel colorizer used by BOTH the TUI render path
+/// (`FrameBuffer::from_downsampled`) and PNG export (`save_frame_as_png`).
+///
+/// `brightness` is the normalized 0..1 subpixel value. `mapping` applies the
+/// intensity tone curve. `diff_norm` is the white-point-normalized signed
+/// temporal difference (lever 3); `temporal_strength` 0.0 disables temporal
+/// modulation, making this byte-identical to `map_brightness_rgb`.
+#[allow(clippy::too_many_arguments)]
+pub fn colorize_subpixel(
+    brightness: f32,
+    palette: Palette,
+    reverse: bool,
+    invert: bool,
+    hue_shift: f32,
+    mapping: Option<&IntensityMapping>,
+    diff_norm: f32,
+    temporal_strength: f32,
+    temporal_mode: TemporalMode,
+) -> RgbColor {
+    let base = map_brightness_rgb(
+        brightness,
+        palette.clone(),
+        reverse,
+        invert,
+        hue_shift,
+        mapping,
+    );
+    if temporal_strength <= 0.0 {
+        return base;
+    }
+    temporal_modulate(base, diff_norm, temporal_mode, temporal_strength, palette)
+}
+
+#[allow(unused_variables)]
+fn temporal_modulate(
+    base: RgbColor,
+    diff_norm: f32,
+    mode: TemporalMode,
+    strength: f32,
+    palette: Palette,
+) -> RgbColor {
+    base // replaced in Task B4
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3572,5 +3625,14 @@ mod tests {
         if oklch.c < OKLCH_EPSILON {
             assert!(oklch.h.is_nan(), "When chroma < epsilon, hue should be NaN");
         }
+    }
+
+    #[test]
+    fn colorize_subpixel_matches_map_brightness_rgb_when_no_temporal() {
+        let p = Palette::Organic;
+        let expected = map_brightness_rgb(0.6, p.clone(), false, false, 0.0, None);
+        // strength 0.0 ⇒ identical to the legacy mapping
+        let got = colorize_subpixel(0.6, p, false, false, 0.0, None, 0.0, 0.0, TemporalMode::Hue);
+        assert_eq!(got, expected);
     }
 }
