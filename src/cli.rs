@@ -578,6 +578,21 @@ impl FromStr for DepositCurve {
     }
 }
 
+impl FromStr for crate::render::palette::PaletteCycleMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "wrap" => Ok(crate::render::palette::PaletteCycleMode::Wrap),
+            "mirror" => Ok(crate::render::palette::PaletteCycleMode::Mirror),
+            _ => Err(format!(
+                "Invalid palette cycle mode: {}. Must be one of: wrap, mirror",
+                s
+            )),
+        }
+    }
+}
+
 #[derive(Parser, Debug, Clone)]
 #[command(name = "tslime")]
 #[command(about = "Terminal physarum simulation screensaver", long_about = None)]

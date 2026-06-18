@@ -2588,6 +2588,68 @@ pub enum TemporalMode {
     Accent,
 }
 
+/// Spatial palette-repeat mode (lever 6). Remaps the gradient index `t`
+/// pre-lookup so the palette tiles across the brightness range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PaletteCycleMode {
+    /// Sawtooth `fract(t·n)` — seam unless the palette endpoints match.
+    Wrap,
+    /// Triangle `1 − |1 − fract(t·n)·2|` — ping-pong, seamless on any palette.
+    #[default]
+    Mirror,
+}
+
+impl std::fmt::Display for PaletteCycleMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PaletteCycleMode::Wrap => write!(f, "wrap"),
+            PaletteCycleMode::Mirror => write!(f, "mirror"),
+        }
+    }
+}
+
+/// Palette-cycle configuration: how many times the palette repeats across the
+/// brightness range and the repeat mode. `cycles = 1` (the default) is identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaletteCycle {
+    /// Number of palette repeats across `[0,1]`. `1` = no repeat (identity).
+    pub cycles: u32,
+    /// Repeat mode (wrap/sawtooth or mirror/triangle).
+    pub mode: PaletteCycleMode,
+}
+
+impl Default for PaletteCycle {
+    fn default() -> Self {
+        Self {
+            cycles: 1,
+            mode: PaletteCycleMode::Mirror,
+        }
+    }
+}
+
+impl PaletteCycle {
+    /// True when the remap is a no-op (`cycles ≤ 1`).
+    #[inline]
+    pub fn is_identity(&self) -> bool {
+        self.cycles <= 1
+    }
+
+    /// Remap a tone-mapped brightness `t` (0..1) to the cycled gradient index
+    /// (spec §6 step 5). Identity when `cycles ≤ 1`.
+    #[inline]
+    pub fn map(&self, t: f32) -> f32 {
+        if self.is_identity() {
+            return t;
+        }
+        let n = self.cycles.max(1) as f32;
+        let saw = (t * n).fract();
+        match self.mode {
+            PaletteCycleMode::Wrap => saw,
+            PaletteCycleMode::Mirror => 1.0 - (1.0 - saw * 2.0).abs(),
+        }
+    }
+}
+
 /// Shared per-subpixel colorizer: the single colorize pass for ALL outputs —
 /// the TUI render path (`FrameBuffer::from_downsampled`, which also feeds GIF,
 /// WebM, headless print, and frame capture) and PNG export (`save_frame_as_png`).
@@ -3689,5 +3751,68 @@ mod tests {
         // strength 0.0 ⇒ identical to the legacy mapping
         let got = colorize_subpixel(0.6, p, false, false, 0.0, None, 0.0, 0.0, TemporalMode::Hue);
         assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn palette_cycle_identity_is_noop() {
+        let id = PaletteCycle::default();
+        assert!(id.is_identity());
+        for &t in &[0.0_f32, 0.25, 0.5, 0.75, 1.0] {
+            assert_eq!(id.map(t), t, "n=1 must be identity at t={t}");
+        }
+        // cycles=0 clamps to identity (defensive)
+        let zero = PaletteCycle {
+            cycles: 0,
+            mode: PaletteCycleMode::Wrap,
+        };
+        assert!(zero.is_identity());
+        assert_eq!(zero.map(0.4), 0.4);
+    }
+
+    #[test]
+    fn palette_cycle_wrap_is_sawtooth() {
+        let c = PaletteCycle {
+            cycles: 2,
+            mode: PaletteCycleMode::Wrap,
+        };
+        assert!((c.map(0.0) - 0.0).abs() < 1e-6);
+        assert!((c.map(0.25) - 0.5).abs() < 1e-6);
+        assert!((c.map(0.5) - 0.0).abs() < 1e-6); // seam: fract(1.0) = 0
+        assert!((c.map(0.75) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn palette_cycle_mirror_is_triangle() {
+        let c = PaletteCycle {
+            cycles: 2,
+            mode: PaletteCycleMode::Mirror,
+        };
+        assert!((c.map(0.0) - 0.0).abs() < 1e-6);
+        assert!((c.map(0.25) - 1.0).abs() < 1e-6); // peak at quarter
+        assert!((c.map(0.5) - 0.0).abs() < 1e-6); // trough at half
+        assert!((c.map(0.75) - 1.0).abs() < 1e-6);
+        // output stays in 0..1 across a sweep
+        for i in 0..=100 {
+            let t = i as f32 / 100.0;
+            let o = c.map(t);
+            assert!(
+                (0.0..=1.0).contains(&o),
+                "mirror out of range at t={t}: {o}"
+            );
+        }
+    }
+
+    #[test]
+    fn palette_cycle_mode_from_str() {
+        use std::str::FromStr;
+        assert_eq!(
+            PaletteCycleMode::from_str("wrap").unwrap(),
+            PaletteCycleMode::Wrap
+        );
+        assert_eq!(
+            PaletteCycleMode::from_str("MIRROR").unwrap(),
+            PaletteCycleMode::Mirror
+        );
+        assert!(PaletteCycleMode::from_str("bogus").is_err());
     }
 }
