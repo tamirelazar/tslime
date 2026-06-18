@@ -544,6 +544,7 @@ impl FrameBuffer {
         trail_age_reverse: bool,
         temporal_strength: f32,
         temporal_mode: palette::TemporalMode,
+        palette_cycle: palette::PaletteCycle,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode, background_color);
         buffer.species_colors_enabled = species_colors_enabled;
@@ -650,6 +651,7 @@ impl FrameBuffer {
                 diff_norm,
                 temporal_strength,
                 temporal_mode,
+                palette_cycle,
             );
             buffer.set_cell(x, y, cell);
         }
@@ -703,6 +705,7 @@ impl FrameBuffer {
         trail_age_reverse: bool,
         temporal_strength: f32,
         temporal_mode: palette::TemporalMode,
+        palette_cycle: palette::PaletteCycle,
     ) -> Self {
         // Build sim buffer at sim dimensions
         let sim_buffer = Self::from_downsampled(
@@ -735,6 +738,7 @@ impl FrameBuffer {
             trail_age_reverse,
             temporal_strength,
             temporal_mode,
+            palette_cycle,
         );
 
         // Fast path: fullscreen — no blitting needed
@@ -781,6 +785,7 @@ impl FrameBuffer {
         diff_norm: f32,
         temporal_strength: f32,
         temporal_mode: palette::TemporalMode,
+        palette_cycle: palette::PaletteCycle,
     ) -> Cell {
         const THRESHOLD: f32 = 0.01;
         let log_gaps = std::env::var("TSLIME_LOG_GAPS").is_ok();
@@ -1200,6 +1205,7 @@ impl FrameBuffer {
                 diff_norm,
                 temporal_strength,
                 temporal_mode,
+                palette_cycle,
             )
         }
     }
@@ -1220,6 +1226,7 @@ impl FrameBuffer {
         diff_norm: f32,
         temporal_strength: f32,
         temporal_mode: palette::TemporalMode,
+        palette_cycle: palette::PaletteCycle,
     ) -> Cell {
         match color_mode {
             ColorMode::TrueColor => {
@@ -1244,6 +1251,7 @@ impl FrameBuffer {
                         diff_norm,
                         temporal_strength,
                         temporal_mode,
+                        palette_cycle,
                     )
                 };
                 Cell {
@@ -1266,12 +1274,13 @@ impl FrameBuffer {
                         });
                     palette::map_species_brightness(brightness, base_color, reverse_palette)
                 } else {
-                    palette::map_brightness(
+                    palette::map_brightness_cycled(
                         brightness,
                         palette.clone(),
                         reverse_palette,
                         invert_palette,
                         intensity_mapping,
+                        palette_cycle,
                     )
                 };
                 Cell {
@@ -2388,6 +2397,7 @@ pub fn render_frame(
         false,
         0.0,
         palette::TemporalMode::Hue,
+        palette::PaletteCycle::default(),
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -2505,6 +2515,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, ' ');
         assert!(cell.fg_color_256.is_none());
@@ -2538,6 +2549,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_some());
@@ -2571,6 +2583,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_none());
@@ -2604,6 +2617,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -2635,6 +2649,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color_256.is_some());
@@ -2666,6 +2681,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -2697,6 +2713,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color_256.is_some());
@@ -2728,6 +2745,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, '\u{2807}');
         assert!(cell.fg_color_256.is_some());
@@ -2759,6 +2777,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, '\u{2838}');
         assert!(cell.fg_color_256.is_some());
@@ -2790,6 +2809,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
@@ -2821,6 +2841,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
@@ -2852,6 +2873,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, '^');
         assert!(cell.fg_color_256.is_some());
@@ -2883,6 +2905,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, 'v');
         assert!(cell.fg_color_256.is_some());
@@ -2914,6 +2937,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
@@ -2945,6 +2969,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
@@ -3043,6 +3068,7 @@ mod tests {
             false,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(fb.width(), 10);
         assert_eq!(fb.height(), 10);
@@ -3077,6 +3103,7 @@ mod tests {
             false,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_ne!(fb.cells[0].fg_color_rgb, fb_rev.cells[0].fg_color_rgb);
     }
@@ -3207,6 +3234,7 @@ mod tests {
             false,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -3270,6 +3298,7 @@ mod tests {
             false,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
 
         assert_eq!(buffer.cells[0].char, '▀');
@@ -3348,6 +3377,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
 
         // Should be reddish (based on first species color)
@@ -3378,6 +3408,7 @@ mod tests {
             0.0,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
 
         // Should be an index close to red (196 or similar)
@@ -3499,6 +3530,7 @@ mod tests {
             false,
             0.0,
             palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         // The buffer should be 10×10
         assert_eq!(buffer.width, 10);
@@ -3534,6 +3566,7 @@ mod tests {
             0.5,
             0.0,
             TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         let on = palette::colorize_subpixel(
             0.6,
@@ -3545,6 +3578,7 @@ mod tests {
             0.5,
             1.0,
             TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
         assert_ne!(
             off, on,
@@ -3615,6 +3649,7 @@ mod tests {
             false,
             0.0, // temporal OFF
             TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
 
         let fb_on = FrameBuffer::from_downsampled(
@@ -3647,11 +3682,113 @@ mod tests {
             false,
             1.0, // temporal ON (strength = 1.0)
             TemporalMode::Hue,
+            palette::PaletteCycle::default(),
         );
 
         assert_ne!(
             fb_off.cells[0].fg_color_rgb, fb_on.cells[0].fg_color_rgb,
             "temporal_strength=1.0 with signed_diff=5.0/max_trail=10.0 must shift cell color"
+        );
+    }
+
+    #[test]
+    fn from_downsampled_cycle_changes_pixels_vs_identity() {
+        // Same downsampled field, cycles=1 (identity) vs cycles=3 mirror must differ somewhere.
+        use crate::render::palette::{Palette, PaletteCycle, PaletteCycleMode};
+        let w = 8usize;
+        let h = 4usize;
+        let cells: Vec<DownsampleCell> = (0..w * h)
+            .map(|i| {
+                let v = (i as f32 + 1.0) / (w * h) as f32;
+                DownsampleCell {
+                    top: v,
+                    bottom: v,
+                    top_left: v,
+                    top_right: v,
+                    bottom_left: v,
+                    bottom_right: v,
+                }
+            })
+            .collect();
+        let id = PaletteCycle::default();
+        let active = PaletteCycle {
+            cycles: 3,
+            mode: PaletteCycleMode::Mirror,
+        };
+        let mut ed = None;
+        let fb_id = FrameBuffer::from_downsampled(
+            &cells,
+            w,
+            h,
+            1.0,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut ed,
+            None,
+            false,
+            None,
+            None,
+            1.5,
+            None,
+            false,
+            false,
+            15.0,
+            0.5,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0,
+            palette::TemporalMode::Hue,
+            id,
+        );
+        let fb_on = FrameBuffer::from_downsampled(
+            &cells,
+            w,
+            h,
+            1.0,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut ed,
+            None,
+            false,
+            None,
+            None,
+            1.5,
+            None,
+            false,
+            false,
+            15.0,
+            0.5,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0,
+            palette::TemporalMode::Hue,
+            active,
+        );
+        // At least one cell must differ in fg_color_rgb between identity and active cycle
+        let differs = fb_id
+            .cells
+            .iter()
+            .zip(fb_on.cells.iter())
+            .any(|(a, b)| a.fg_color_rgb != b.fg_color_rgb);
+        assert!(
+            differs,
+            "cycles=3 mirror must change rendered colors vs identity"
         );
     }
 }

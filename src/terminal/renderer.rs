@@ -92,6 +92,7 @@ pub struct TerminalRenderer {
     chrome_snapshot: Option<ChromeSnapshot>,
     temporal_strength: f32,
     temporal_mode: palette::TemporalMode,
+    palette_cycle: palette::PaletteCycle,
 }
 
 impl TerminalRenderer {
@@ -141,6 +142,7 @@ impl TerminalRenderer {
             chrome_snapshot: None,
             temporal_strength: 0.0,
             temporal_mode: palette::TemporalMode::Hue,
+            palette_cycle: palette::PaletteCycle::default(),
         }
     }
 
@@ -206,6 +208,11 @@ impl TerminalRenderer {
         self.intensity_mapping = mapping;
     }
 
+    /// Set the spatial palette-repeat cycle configuration.
+    pub fn set_palette_cycle(&mut self, cycle: palette::PaletteCycle) {
+        self.palette_cycle = cycle;
+    }
+
     /// Get the current dithering mode.
     pub fn dither_mode(&self) -> DitherMode {
         self.dither_mode
@@ -257,6 +264,11 @@ impl TerminalRenderer {
     /// Returns the active intensity mapping, if any.
     pub fn intensity_mapping(&self) -> Option<&IntensityMapping> {
         self.intensity_mapping.as_ref()
+    }
+
+    /// Returns the active palette cycle.
+    pub fn palette_cycle(&self) -> palette::PaletteCycle {
+        self.palette_cycle
     }
 
     /// Returns the active window frame style.
@@ -374,6 +386,7 @@ impl TerminalRenderer {
                 self.trail_age_reverse,
                 self.temporal_strength,
                 self.temporal_mode,
+                self.palette_cycle,
             )
         } else {
             FrameBuffer::from_downsampled(
@@ -406,6 +419,7 @@ impl TerminalRenderer {
                 self.trail_age_reverse,
                 self.temporal_strength,
                 self.temporal_mode,
+                self.palette_cycle,
             )
         };
 
@@ -507,6 +521,7 @@ impl TerminalRenderer {
                 self.trail_age_reverse,
                 self.temporal_strength,
                 self.temporal_mode,
+                self.palette_cycle,
             )
         } else {
             FrameBuffer::from_downsampled(
@@ -539,6 +554,7 @@ impl TerminalRenderer {
                 self.trail_age_reverse,
                 self.temporal_strength,
                 self.temporal_mode,
+                self.palette_cycle,
             )
         };
 
@@ -1006,6 +1022,7 @@ impl TerminalRenderer {
                     false,
                     0.0, // temporal OFF for multi-species
                     palette::TemporalMode::Hue,
+                    self.palette_cycle,
                 );
 
                 // Blit non-blank cells from species_buffer into main buffer at (render_x, render_y)

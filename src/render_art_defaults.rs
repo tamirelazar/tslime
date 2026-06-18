@@ -6,7 +6,7 @@
 //! For now every preset uses the historical global default (log10); tasteful
 //! per-preset values land in the showcase-presets issue (#36).
 
-use crate::render::palette::IntensityMapping;
+use crate::render::palette::{IntensityMapping, PaletteCycle};
 use crate::simulation::config::Preset;
 
 /// Render-layer art defaults resolved per [`Preset`], emitted alongside
@@ -17,12 +17,15 @@ use crate::simulation::config::Preset;
 pub(crate) struct RenderArtDefaults {
     /// Brightness→color tone curve. Default = global log10 (historical default).
     pub intensity_mapping: IntensityMapping,
+    /// Spatial palette-repeat config (lever 6). Default = identity (cycles 1).
+    pub palette_cycle: PaletteCycle,
 }
 
 impl Default for RenderArtDefaults {
     fn default() -> Self {
         Self {
             intensity_mapping: IntensityMapping::logarithmic(10.0),
+            palette_cycle: PaletteCycle::default(),
         }
     }
 }
@@ -48,6 +51,29 @@ mod tests {
             RenderArtDefaults::default().intensity_mapping,
             IntensityMapping::logarithmic(10.0)
         );
+    }
+
+    #[test]
+    fn default_palette_cycle_is_identity() {
+        let d = RenderArtDefaults::default();
+        assert_eq!(
+            d.palette_cycle,
+            crate::render::palette::PaletteCycle::default()
+        );
+        assert_eq!(d.palette_cycle.cycles, 1);
+    }
+
+    #[test]
+    fn every_preset_palette_cycle_is_identity() {
+        // Back-compat: mechanism-only ship — every preset is identity (#33).
+        for preset in [
+            Preset::Network,
+            Preset::Organic,
+            Preset::Coral,
+            Preset::Maze,
+        ] {
+            assert!(RenderArtDefaults::from(preset).palette_cycle.is_identity());
+        }
     }
 
     #[test]

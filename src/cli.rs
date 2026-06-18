@@ -578,6 +578,21 @@ impl FromStr for DepositCurve {
     }
 }
 
+impl FromStr for crate::render::palette::PaletteCycleMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "wrap" => Ok(crate::render::palette::PaletteCycleMode::Wrap),
+            "mirror" => Ok(crate::render::palette::PaletteCycleMode::Mirror),
+            _ => Err(format!(
+                "Invalid palette cycle mode: {}. Must be one of: wrap, mirror",
+                s
+            )),
+        }
+    }
+}
+
 #[derive(Parser, Debug, Clone)]
 #[command(name = "tslime")]
 #[command(about = "Terminal physarum simulation screensaver", long_about = None)]
@@ -1082,6 +1097,23 @@ pub struct Args {
     )]
     /// Quantization levels for intensity mapping.
     pub intensity_mapping_levels: u8,
+
+    #[arg(
+        long = "palette-cycles",
+        value_name = "N",
+        value_parser = clap::value_parser!(u32).range(1..=64),
+        help = "Repeat the palette N times across the brightness range (1 = off)"
+    )]
+    /// `None` means "use the per-preset render default" (see `RenderArtDefaults`).
+    pub palette_cycles: Option<u32>,
+
+    #[arg(
+        long = "palette-cycle-mode",
+        value_name = "MODE",
+        help = "Palette repeat mode: wrap (sawtooth) or mirror (triangle, default)"
+    )]
+    /// `None` means "use the per-preset render default" (mirror).
+    pub palette_cycle_mode: Option<String>,
 
     #[arg(
         long = "perlin-strength",
@@ -1919,6 +1951,16 @@ impl Args {
         false
     }
 
+    /// Parses `--palette-cycle-mode`, returning `None` when unset.
+    pub fn palette_cycle_mode_parsed(
+        &self,
+    ) -> Result<Option<crate::render::palette::PaletteCycleMode>, String> {
+        match &self.palette_cycle_mode {
+            Some(s) => Ok(Some(s.parse()?)),
+            None => Ok(None),
+        }
+    }
+
     /// Parses the dither mode string.
     pub fn dither_mode(&self) -> Result<DitherMode, String> {
         match self.dither_mode.as_str() {
@@ -1972,6 +2014,14 @@ impl Args {
         };
         if self.intensity_mapping.is_some() {
             art.intensity_mapping = self.intensity_mapping()?;
+        }
+        if self.palette_cycles.is_some() || self.palette_cycle_mode.is_some() {
+            if let Some(n) = self.palette_cycles {
+                art.palette_cycle.cycles = n;
+            }
+            if let Some(mode) = self.palette_cycle_mode_parsed()? {
+                art.palette_cycle.mode = mode;
+            }
         }
         Ok(art)
     }
@@ -2127,6 +2177,8 @@ impl Default for Args {
             intensity_mapping_base: intensity::DEFAULT_LOG_BASE,
             intensity_mapping_gamma: 2.2,
             intensity_mapping_levels: 8,
+            palette_cycles: None,
+            palette_cycle_mode: None,
             perlin_strength: 0.2,
             logo_mapping: "log".to_string(),
             logo_mapping_base: 4.0,
@@ -2848,5 +2900,25 @@ mod tests {
         let art = args.to_render_art_defaults().unwrap();
         // No preset + no flag → RenderArtDefaults::default() == log10.
         assert_eq!(art.intensity_mapping, IntensityMapping::logarithmic(10.0));
+    }
+
+    #[test]
+    fn palette_cycles_flag_overrides_render_default() {
+        let mut args = Args::parse_from(["tslime"]);
+        args.palette_cycles = Some(3);
+        args.palette_cycle_mode = Some("wrap".into());
+        let art = args.to_render_art_defaults().unwrap();
+        assert_eq!(art.palette_cycle.cycles, 3);
+        assert_eq!(
+            art.palette_cycle.mode,
+            crate::render::palette::PaletteCycleMode::Wrap
+        );
+    }
+
+    #[test]
+    fn no_palette_cycle_flags_stay_identity() {
+        let args = Args::parse_from(["tslime"]);
+        let art = args.to_render_art_defaults().unwrap();
+        assert!(art.palette_cycle.is_identity());
     }
 }

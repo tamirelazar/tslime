@@ -174,6 +174,14 @@ pub struct SavedConfig {
     /// Deposit cap (0 = off).
     #[serde(default)]
     pub deposit_cap: Option<f32>,
+
+    // Palette cycles
+    /// Number of palette repeats across the brightness range (None = identity = 1).
+    #[serde(default)]
+    pub palette_cycles: Option<u32>,
+    /// Palette cycle mode ("wrap" or "mirror"). None = identity.
+    #[serde(default)]
+    pub palette_cycle_mode: Option<String>,
 }
 
 fn default_chrome_style() -> String {
@@ -221,6 +229,7 @@ impl SavedConfig {
         deposit_scale: f32,
         deposit_gamma: f32,
         deposit_cap: f32,
+        palette_cycle: crate::render::palette::PaletteCycle,
     ) -> Self {
         let diffusion_kernel_str = match sim_config.diffusion_kernel {
             DiffusionKernel::Mean3x3 => "mean3x3",
@@ -375,6 +384,16 @@ impl SavedConfig {
             deposit_scale: Some(deposit_scale),
             deposit_gamma: Some(deposit_gamma),
             deposit_cap: Some(deposit_cap),
+            palette_cycles: if palette_cycle.is_identity() {
+                None
+            } else {
+                Some(palette_cycle.cycles)
+            },
+            palette_cycle_mode: if palette_cycle.is_identity() {
+                None
+            } else {
+                Some(palette_cycle.mode.to_string())
+            },
         }
     }
 
@@ -497,6 +516,18 @@ impl SavedConfig {
         runtime_state.deposit_scale = self.deposit_scale.unwrap_or(1.0);
         runtime_state.deposit_gamma = self.deposit_gamma.unwrap_or(1.0);
         runtime_state.deposit_cap = self.deposit_cap.unwrap_or(0.0);
+
+        // Apply palette cycles
+        {
+            use crate::render::palette::{PaletteCycle, PaletteCycleMode};
+            let cycles = self.palette_cycles.unwrap_or(1);
+            let mode = self
+                .palette_cycle_mode
+                .as_deref()
+                .and_then(|s| s.parse::<PaletteCycleMode>().ok())
+                .unwrap_or_default();
+            runtime_state.palette_cycle = PaletteCycle { cycles, mode };
+        }
 
         // Parameters that require simulation restart to take effect:
         // - population (agent count)
@@ -873,6 +904,8 @@ mod tests {
             deposit_scale: None,
             deposit_gamma: None,
             deposit_cap: None,
+            palette_cycles: None,
+            palette_cycle_mode: None,
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -975,6 +1008,8 @@ food_path = "assets/tslime_logo.png"
             deposit_scale: None,
             deposit_gamma: None,
             deposit_cap: None,
+            palette_cycles: None,
+            palette_cycle_mode: None,
         };
         let sim_config = config.to_sim_config().unwrap();
         assert_eq!(sim_config.species_configs[0].count, 50000);
@@ -1032,6 +1067,8 @@ food_path = "assets/tslime_logo.png"
             deposit_scale: None,
             deposit_gamma: None,
             deposit_cap: None,
+            palette_cycles: None,
+            palette_cycle_mode: None,
         };
 
         config
@@ -1095,6 +1132,8 @@ food_path = "assets/tslime_logo.png"
             deposit_scale: None,
             deposit_gamma: None,
             deposit_cap: None,
+            palette_cycles: None,
+            palette_cycle_mode: None,
         };
 
         config
@@ -1224,6 +1263,7 @@ food_path = "assets/tslime_logo.png"
             1.0,
             1.0,
             0.0,
+            crate::render::palette::PaletteCycle::default(),
         );
 
         // Create new state and apply config
@@ -1369,6 +1409,7 @@ init_mode = "Random"
             1.0,
             1.0,
             0.0,
+            crate::render::palette::PaletteCycle::default(),
         );
 
         // Serialize and deserialize through TOML
@@ -1483,6 +1524,7 @@ init_mode = "Random"
             1.0,
             1.0,
             0.0,
+            crate::render::palette::PaletteCycle::default(),
         );
 
         // Serialize and deserialize through TOML
@@ -1632,6 +1674,7 @@ init_mode = "Random"
             state.deposit_scale,
             state.deposit_gamma,
             state.deposit_cap,
+            crate::render::palette::PaletteCycle::default(),
         );
 
         // Serialize and deserialize through TOML
@@ -1663,6 +1706,116 @@ init_mode = "Random"
             (restored.deposit_cap - 7.0).abs() < 1e-6,
             "deposit_cap must survive round-trip (got {})",
             restored.deposit_cap
+        );
+    }
+
+    #[test]
+    fn palette_cycle_round_trips_through_saved_config() {
+        use crate::render::palette::{PaletteCycle, PaletteCycleMode};
+
+        let mut state = create_test_runtime_state();
+        state.palette_cycle = PaletteCycle {
+            cycles: 4,
+            mode: PaletteCycleMode::Wrap,
+        };
+
+        let saved = SavedConfig::from_runtime(
+            "cycle_rt".to_string(),
+            &SimConfig::default(),
+            crate::cli::Palette::Organic,
+            crate::render::charset::Charset::HalfBlock,
+            false,
+            false,
+            0,
+            false,
+            false,
+            false,
+            None,
+            crate::simulation::config::InitMode::Random,
+            None,
+            None,
+            0.0,
+            8.0,
+            crate::render::palette::TemporalMode::Hue,
+            0.0,
+            0.05,
+            1.0,
+            1.0,
+            crate::simulation::config::DepositCurve::default(),
+            1.0,
+            1.0,
+            0.0,
+            state.palette_cycle,
+        );
+
+        assert_eq!(saved.palette_cycles, Some(4));
+        assert_eq!(saved.palette_cycle_mode.as_deref(), Some("wrap"));
+
+        // Serialize and deserialize through TOML
+        let toml_str = toml::to_string(&saved).expect("serialize must succeed");
+        let reloaded: SavedConfig = toml::from_str(&toml_str).expect("deserialize must succeed");
+
+        // Restore into a fresh RuntimeState
+        let mut rs2 = create_test_runtime_state();
+        reloaded
+            .apply_to_runtime_state(&mut rs2)
+            .expect("apply must succeed");
+
+        assert_eq!(
+            rs2.palette_cycle,
+            PaletteCycle {
+                cycles: 4,
+                mode: PaletteCycleMode::Wrap
+            }
+        );
+    }
+
+    #[test]
+    fn missing_palette_cycle_loads_identity() {
+        use crate::render::palette::PaletteCycle;
+
+        // Old TOML without palette_cycle fields must deserialize and produce identity.
+        let toml = r#"name = "old_no_cycle"
+population = 1000
+sensor_angle = 22.5
+sensor_distance = 9.0
+rotation_angle = 45.0
+step_size = 1.0
+decay_factor = 0.9
+deposit_amount = 5.0
+max_brightness = 100.0
+diffusion_kernel = "Mean3x3"
+diffusion_sigma = 1.0
+palette = "Organic"
+charset = "HalfBlock"
+reverse_palette = false
+invert_palette = false
+warmup_frames = 0
+food_persist = false
+auto_reset = false
+grid = false
+init_mode = "Random"
+"#;
+        let cfg: SavedConfig =
+            toml::from_str(toml).expect("old config without palette_cycle fields must load");
+        assert!(
+            cfg.palette_cycles.is_none(),
+            "missing key must deserialize as None"
+        );
+        assert!(cfg.palette_cycle_mode.is_none());
+
+        // apply_to_runtime_state must produce identity (cycles=1).
+        let mut state = create_test_runtime_state();
+        cfg.apply_to_runtime_state(&mut state)
+            .expect("legacy config must still apply");
+        assert!(
+            state.palette_cycle.is_identity(),
+            "missing palette_cycles must default to identity"
+        );
+        assert_eq!(
+            state.palette_cycle,
+            PaletteCycle::default(),
+            "palette_cycle must equal default"
         );
     }
 }
