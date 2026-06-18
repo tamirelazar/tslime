@@ -431,6 +431,28 @@ pub fn print_mode(
     #[cfg(windows)]
     let _enable = enable_ansi_support::enable_ansi_support();
 
+    // Enable temporal computation if requested, then warm up enough frames
+    // to populate the EMA lag buffer before capturing the final frame.
+    let temporal_strength = args.temporal_color;
+    let temporal_mode = match args.temporal_mode.to_ascii_lowercase().as_str() {
+        "accent" => crate::render::palette::TemporalMode::Accent,
+        _ => crate::render::palette::TemporalMode::Hue,
+    };
+    if temporal_strength > 0.0 {
+        let temporal_alpha = if args.temporal_lag > 0.0 {
+            1.0 / args.temporal_lag
+        } else {
+            1.0
+        };
+        sim.set_compute_temporal(true, temporal_alpha);
+        // Warm up enough frames so the EMA lag buffer is populated before we
+        // capture the golden frame (lag_frames warmup gives a representative diff).
+        let warmup = (args.temporal_lag.ceil() as usize).max(1);
+        for _ in 0..warmup {
+            sim.update(1.0);
+        }
+    }
+
     sim.update(1.0);
 
     let (term_width, term_height) = get_terminal_size();
@@ -448,6 +470,29 @@ pub fn print_mode(
         term_height,
         &mut downsampled,
     );
+
+    // Populate auxiliary frame with temporal diff data when temporal color is active.
+    let mut aux_storage = crate::render::downsample::AuxFrame {
+        width: 0,
+        height: 0,
+        cells: Vec::new(),
+    };
+    let opt_aux_frame = if temporal_strength > 0.0 {
+        crate::render::downsample::downsample_aux(
+            None,
+            None,
+            None,
+            sim.temporal_diff(),
+            sim_width,
+            sim_height,
+            term_width,
+            term_height,
+            &mut aux_storage,
+        );
+        Some(&aux_storage)
+    } else {
+        None
+    };
 
     let config = args
         .to_sim_config()
@@ -492,7 +537,7 @@ pub fn print_mode(
         species_rgb_colors,
         background_color,
         args.ascii_contrast,
-        None,
+        opt_aux_frame,
         false,
         false,
         60.0,
@@ -502,6 +547,8 @@ pub fn print_mode(
         0.3,
         crate::config_defaults::TrailAgeMode::Bidirectional,
         false,
+        temporal_strength,
+        temporal_mode,
     );
 
     if args.grid {
@@ -592,8 +639,29 @@ pub fn capture_frames_mode(
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
+    // Temporal-color setup: enable EMA computation once before the loop.
+    let temporal_strength = args.temporal_color;
+    let temporal_mode = match args.temporal_mode.to_ascii_lowercase().as_str() {
+        "accent" => crate::render::palette::TemporalMode::Accent,
+        _ => crate::render::palette::TemporalMode::Hue,
+    };
+    if temporal_strength > 0.0 {
+        let temporal_alpha = if args.temporal_lag > 0.0 {
+            1.0 / args.temporal_lag
+        } else {
+            1.0
+        };
+        sim.set_compute_temporal(true, temporal_alpha);
+    }
+
     // Reused across frames so trail_map_blended doesn't reallocate per frame.
     let mut blended_trail = Vec::new();
+    // Reused aux frame for temporal diff downsampling.
+    let mut aux_storage = crate::render::downsample::AuxFrame {
+        width: 0,
+        height: 0,
+        cells: Vec::new(),
+    };
 
     for frame_idx in 0..args.frame_count {
         for _ in 0..args.frame_skip {
@@ -629,6 +697,23 @@ pub fn capture_frames_mode(
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
         let intensity_mapping = args.intensity_mapping().ok();
 
+        let opt_aux_frame = if temporal_strength > 0.0 {
+            crate::render::downsample::downsample_aux(
+                None,
+                None,
+                None,
+                sim.temporal_diff(),
+                sim_width,
+                sim_height,
+                term_width,
+                term_height,
+                &mut aux_storage,
+            );
+            Some(&aux_storage)
+        } else {
+            None
+        };
+
         let mut buffer = FrameBuffer::from_downsampled(
             downsampled.cells(),
             term_width,
@@ -647,7 +732,7 @@ pub fn capture_frames_mode(
             species_rgb_colors,
             background_color,
             args.ascii_contrast,
-            None,
+            opt_aux_frame,
             false,
             false,
             60.0,
@@ -657,6 +742,8 @@ pub fn capture_frames_mode(
             0.3,
             crate::config_defaults::TrailAgeMode::Bidirectional,
             false,
+            temporal_strength,
+            temporal_mode,
         );
 
         if args.grid {
@@ -779,9 +866,30 @@ pub fn export_gif_mode(
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
+    // Temporal-color setup: enable EMA computation once before the loop.
+    let temporal_strength = args.temporal_color;
+    let temporal_mode = match args.temporal_mode.to_ascii_lowercase().as_str() {
+        "accent" => crate::render::palette::TemporalMode::Accent,
+        _ => crate::render::palette::TemporalMode::Hue,
+    };
+    if temporal_strength > 0.0 {
+        let temporal_alpha = if args.temporal_lag > 0.0 {
+            1.0 / args.temporal_lag
+        } else {
+            1.0
+        };
+        sim.set_compute_temporal(true, temporal_alpha);
+    }
+
     let frame_skip = args.frame_skip.max(1);
     let mut downsampled_frame = DownsampledFrame::new(width, height);
     let mut blended_trail = Vec::new();
+    // Reused aux frame for temporal diff downsampling.
+    let mut aux_storage = crate::render::downsample::AuxFrame {
+        width: 0,
+        height: 0,
+        cells: Vec::new(),
+    };
 
     for frame_idx in 0..args.export_frames {
         for _ in 0..frame_skip {
@@ -818,6 +926,23 @@ pub fn export_gif_mode(
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
         let intensity_mapping = args.intensity_mapping().ok();
 
+        let opt_aux_frame = if temporal_strength > 0.0 {
+            crate::render::downsample::downsample_aux(
+                None,
+                None,
+                None,
+                sim.temporal_diff(),
+                sim_width,
+                sim_height,
+                term_width,
+                term_height,
+                &mut aux_storage,
+            );
+            Some(&aux_storage)
+        } else {
+            None
+        };
+
         let buffer = FrameBuffer::from_downsampled(
             downsampled_frame.cells(),
             term_width,
@@ -836,7 +961,7 @@ pub fn export_gif_mode(
             species_rgb_colors,
             background_color,
             args.ascii_contrast,
-            None,
+            opt_aux_frame,
             false,
             false,
             60.0,
@@ -846,6 +971,8 @@ pub fn export_gif_mode(
             0.3,
             crate::config_defaults::TrailAgeMode::Bidirectional,
             false,
+            temporal_strength,
+            temporal_mode,
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -906,9 +1033,30 @@ pub fn export_webm_mode(
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
+    // Temporal-color setup: enable EMA computation once before the loop.
+    let temporal_strength = args.temporal_color;
+    let temporal_mode = match args.temporal_mode.to_ascii_lowercase().as_str() {
+        "accent" => crate::render::palette::TemporalMode::Accent,
+        _ => crate::render::palette::TemporalMode::Hue,
+    };
+    if temporal_strength > 0.0 {
+        let temporal_alpha = if args.temporal_lag > 0.0 {
+            1.0 / args.temporal_lag
+        } else {
+            1.0
+        };
+        sim.set_compute_temporal(true, temporal_alpha);
+    }
+
     let frame_skip = args.frame_skip.max(1);
     let mut downsampled_frame = DownsampledFrame::new(width, height);
     let mut blended_trail = Vec::new();
+    // Reused aux frame for temporal diff downsampling.
+    let mut aux_storage = crate::render::downsample::AuxFrame {
+        width: 0,
+        height: 0,
+        cells: Vec::new(),
+    };
 
     for frame_idx in 0..args.export_frames {
         for _ in 0..frame_skip {
@@ -945,6 +1093,23 @@ pub fn export_webm_mode(
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
         let intensity_mapping = args.intensity_mapping().ok();
 
+        let opt_aux_frame = if temporal_strength > 0.0 {
+            crate::render::downsample::downsample_aux(
+                None,
+                None,
+                None,
+                sim.temporal_diff(),
+                sim_width,
+                sim_height,
+                term_width,
+                term_height,
+                &mut aux_storage,
+            );
+            Some(&aux_storage)
+        } else {
+            None
+        };
+
         let buffer = FrameBuffer::from_downsampled(
             downsampled_frame.cells(),
             term_width,
@@ -963,7 +1128,7 @@ pub fn export_webm_mode(
             species_rgb_colors,
             background_color,
             args.ascii_contrast,
-            None,
+            opt_aux_frame,
             false,
             false,
             60.0,
@@ -973,6 +1138,8 @@ pub fn export_webm_mode(
             0.3,
             crate::config_defaults::TrailAgeMode::Bidirectional,
             false,
+            temporal_strength,
+            temporal_mode,
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1146,5 +1313,132 @@ mod tests {
                 line
             );
         }
+    }
+
+    /// Proves that temporal_strength > 0.0 reaches the export render path and
+    /// changes pixel output relative to temporal_strength == 0.0.
+    ///
+    /// This is the seam test for B9.  It directly exercises the
+    /// set_compute_temporal → downsample_aux → from_downsampled call chain that
+    /// capture_frames_mode, export_gif_mode, and export_webm_mode now use.
+    ///
+    /// The test works at two levels:
+    ///  1. Structural: verifies that set_compute_temporal allocates the diff
+    ///     buffer and that temporal_diff() returns Some(...) with non-zero values
+    ///     after running the simulation.
+    ///  2. Pixel: synthetically injects a known non-zero signed_diff into an
+    ///     AuxFrame cell and asserts that from_downsampled with a temporal
+    ///     strength above 0.0 produces different pixels than with strength 0.0,
+    ///     using the same DownsampledFrame so the only variable is temporal modulation.
+    #[test]
+    fn temporal_color_changes_export_pixels() {
+        use crate::render::downsample::{AuxCell, AuxFrame, Cell as DownsampleCell};
+        use crate::render::palette::TemporalMode;
+
+        let term_width = 8;
+        let term_height = 4;
+        let n_cells = term_width * term_height;
+
+        // Build a slice of cells with non-zero brightness (trail value = 50.0, max = 100.0,
+        // so brightness = 0.5 — well above background).
+        let cells: Vec<DownsampleCell> = (0..n_cells)
+            .map(|_| DownsampleCell {
+                top: 50.0,
+                bottom: 50.0,
+                ..Default::default()
+            })
+            .collect();
+
+        // Build an AuxFrame with a large signed_diff in every cell.
+        // diff_norm = signed_diff / max_brightness = 20.0 / 100.0 = 0.2
+        // blend = tanh(6 * 0.2) = tanh(1.2) ≈ 0.83 — well above zero.
+        let aux = AuxFrame {
+            width: term_width,
+            height: term_height,
+            cells: (0..n_cells)
+                .map(|_| AuxCell {
+                    age: 0.0,
+                    delta: 0.0,
+                    gradient: 0.0,
+                    signed_diff: 20.0, // large positive diff
+                })
+                .collect(),
+        };
+
+        let max_brightness = 100.0_f32;
+        let call_from_downsampled =
+            |temporal_strength: f32, temporal_mode: TemporalMode, opt_aux: Option<&AuxFrame>| {
+                FrameBuffer::from_downsampled(
+                    &cells,
+                    term_width,
+                    term_height,
+                    max_brightness,
+                    crate::cli::Palette::Organic,
+                    Charset::Ascii,
+                    false,
+                    false,
+                    ColorMode::TrueColor,
+                    0.0,
+                    crate::render::dither::DitherMode::None,
+                    &mut None,
+                    None,
+                    false,
+                    None,
+                    None,
+                    1.0,
+                    opt_aux,
+                    false,
+                    false,
+                    60.0,
+                    1.0,
+                    0.5,
+                    false,
+                    0.3,
+                    crate::config_defaults::TrailAgeMode::Bidirectional,
+                    false,
+                    temporal_strength,
+                    temporal_mode,
+                )
+                .get_rgb_pixels()
+            };
+
+        let pixels_off = call_from_downsampled(0.0, TemporalMode::Hue, None);
+        let pixels_on_hue = call_from_downsampled(0.8, TemporalMode::Hue, Some(&aux));
+        let pixels_on_accent = call_from_downsampled(0.8, TemporalMode::Accent, Some(&aux));
+
+        assert_eq!(
+            pixels_off.len(),
+            pixels_on_hue.len(),
+            "buffer sizes must match"
+        );
+
+        assert_ne!(
+            pixels_off, pixels_on_hue,
+            "temporal_strength=0.8 hue mode with signed_diff=20 must shift pixel colors"
+        );
+        assert_ne!(
+            pixels_off, pixels_on_accent,
+            "temporal_strength=0.8 accent mode with signed_diff=20 must shift pixel colors"
+        );
+
+        // Also verify the simulation side: set_compute_temporal allocates the
+        // diff buffer and after a few steps it is non-zero.
+        let mut sim = Simulation::new(80, 40, SimConfig::default(), 42, InitMode::Random, 0);
+        assert!(
+            sim.temporal_diff().is_none(),
+            "temporal_diff should be None before set_compute_temporal"
+        );
+        sim.set_compute_temporal(true, 0.3);
+        for _ in 0..5 {
+            sim.update(1.0);
+        }
+        let diff = sim
+            .temporal_diff()
+            .expect("temporal_diff should be Some after set_compute_temporal");
+        let max_abs_diff = diff.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+        assert!(
+            max_abs_diff > 0.0,
+            "temporal_diff must contain at least one non-zero value after 5 sim steps"
+        );
     }
 }

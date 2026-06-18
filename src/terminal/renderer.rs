@@ -90,6 +90,8 @@ pub struct TerminalRenderer {
     window_frame_accent_color: RgbColor,
     window_layout: Option<crate::render::window::WindowLayout>,
     chrome_snapshot: Option<ChromeSnapshot>,
+    temporal_strength: f32,
+    temporal_mode: palette::TemporalMode,
 }
 
 impl TerminalRenderer {
@@ -137,6 +139,8 @@ impl TerminalRenderer {
             window_frame_accent_color: RgbColor::new(0xFA, 0xBD, 0x2F),
             window_layout: None,
             chrome_snapshot: None,
+            temporal_strength: 0.0,
+            temporal_mode: palette::TemporalMode::Hue,
         }
     }
 
@@ -310,6 +314,12 @@ impl TerminalRenderer {
         self.trail_age_reverse = age_reverse;
     }
 
+    /// Set temporal-color modulation (lever 3). strength 0.0 disables it.
+    pub fn set_temporal(&mut self, strength: f32, mode: palette::TemporalMode) {
+        self.temporal_strength = strength;
+        self.temporal_mode = mode;
+    }
+
     /// Get a mutable reference to the standard output.
     pub fn stdout_mut(&mut self) -> &mut Stdout {
         &mut self.stdout
@@ -362,6 +372,8 @@ impl TerminalRenderer {
                 self.gradient_strength,
                 self.trail_age_mode,
                 self.trail_age_reverse,
+                self.temporal_strength,
+                self.temporal_mode,
             )
         } else {
             FrameBuffer::from_downsampled(
@@ -392,6 +404,8 @@ impl TerminalRenderer {
                 self.gradient_strength,
                 self.trail_age_mode,
                 self.trail_age_reverse,
+                self.temporal_strength,
+                self.temporal_mode,
             )
         };
 
@@ -491,6 +505,8 @@ impl TerminalRenderer {
                 self.gradient_strength,
                 self.trail_age_mode,
                 self.trail_age_reverse,
+                self.temporal_strength,
+                self.temporal_mode,
             )
         } else {
             FrameBuffer::from_downsampled(
@@ -521,6 +537,8 @@ impl TerminalRenderer {
                 self.gradient_strength,
                 self.trail_age_mode,
                 self.trail_age_reverse,
+                self.temporal_strength,
+                self.temporal_mode,
             )
         };
 
@@ -986,6 +1004,8 @@ impl TerminalRenderer {
                     0.3,   // default gradient strength
                     TrailAgeMode::Bidirectional,
                     false,
+                    0.0, // temporal OFF for multi-species
+                    palette::TemporalMode::Hue,
                 );
 
                 // Blit non-blank cells from species_buffer into main buffer at (render_x, render_y)

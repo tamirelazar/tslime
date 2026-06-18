@@ -542,6 +542,8 @@ impl FrameBuffer {
         gradient_strength: f32,
         trail_age_mode: TrailAgeMode,
         trail_age_reverse: bool,
+        temporal_strength: f32,
+        temporal_mode: palette::TemporalMode,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode, background_color);
         buffer.species_colors_enabled = species_colors_enabled;
@@ -575,7 +577,7 @@ impl FrameBuffer {
             };
 
             // Per-cell hue shift and brightness boost from aux data
-            let cell_hue_shift = if let Some(aux) = aux_frame {
+            let (cell_hue_shift, cell_signed_diff) = if let Some(aux) = aux_frame {
                 let aux_cell = &aux.cells[idx.min(aux.cells.len().saturating_sub(1))];
 
                 // Delta → brightness boost
@@ -593,7 +595,7 @@ impl FrameBuffer {
                 }
 
                 // Age → hue shift (blended with original hue shift)
-                if trail_age_enabled {
+                let computed_hue_shift = if trail_age_enabled {
                     let age_hue_shift = match trail_age_mode {
                         TrailAgeMode::Bidirectional => {
                             // Center around 0: age=0 → -range/2, age=0.5 → 0, age=1 → +range/2
@@ -614,9 +616,17 @@ impl FrameBuffer {
                     hue_shift + age_hue_shift * trail_age_blend
                 } else {
                     hue_shift
-                }
+                };
+
+                (computed_hue_shift, aux_cell.signed_diff)
             } else {
-                hue_shift
+                (hue_shift, 0.0)
+            };
+
+            let diff_norm = if max_trail_value > 0.0 {
+                cell_signed_diff / max_trail_value
+            } else {
+                0.0
             };
 
             let cell = buffer.create_cell(
@@ -637,6 +647,9 @@ impl FrameBuffer {
                 intensity_mapping,
                 species_colors_enabled,
                 species_colors_slice,
+                diff_norm,
+                temporal_strength,
+                temporal_mode,
             );
             buffer.set_cell(x, y, cell);
         }
@@ -688,6 +701,8 @@ impl FrameBuffer {
         gradient_strength: f32,
         trail_age_mode: TrailAgeMode,
         trail_age_reverse: bool,
+        temporal_strength: f32,
+        temporal_mode: palette::TemporalMode,
     ) -> Self {
         // Build sim buffer at sim dimensions
         let sim_buffer = Self::from_downsampled(
@@ -718,6 +733,8 @@ impl FrameBuffer {
             gradient_strength,
             trail_age_mode,
             trail_age_reverse,
+            temporal_strength,
+            temporal_mode,
         );
 
         // Fast path: fullscreen — no blitting needed
@@ -761,6 +778,9 @@ impl FrameBuffer {
         intensity_mapping: Option<&IntensityMapping>,
         species_colors_enabled: bool,
         species_rgb_colors: Option<&[RgbColor]>,
+        diff_norm: f32,
+        temporal_strength: f32,
+        temporal_mode: palette::TemporalMode,
     ) -> Cell {
         const THRESHOLD: f32 = 0.01;
         let log_gaps = std::env::var("TSLIME_LOG_GAPS").is_ok();
@@ -1177,6 +1197,9 @@ impl FrameBuffer {
                 intensity_mapping,
                 species_colors_enabled,
                 species_rgb_colors,
+                diff_norm,
+                temporal_strength,
+                temporal_mode,
             )
         }
     }
@@ -1194,6 +1217,9 @@ impl FrameBuffer {
         intensity_mapping: Option<&IntensityMapping>,
         species_colors_enabled: bool,
         species_rgb_colors: Option<&[RgbColor]>,
+        diff_norm: f32,
+        temporal_strength: f32,
+        temporal_mode: palette::TemporalMode,
     ) -> Cell {
         match color_mode {
             ColorMode::TrueColor => {
@@ -1208,13 +1234,16 @@ impl FrameBuffer {
                         });
                     palette::map_species_brightness_rgb(brightness, base_color, reverse_palette)
                 } else {
-                    palette::map_brightness_rgb(
+                    palette::colorize_subpixel(
                         brightness,
                         palette.clone(),
                         reverse_palette,
                         invert_palette,
                         hue_shift,
                         intensity_mapping,
+                        diff_norm,
+                        temporal_strength,
+                        temporal_mode,
                     )
                 };
                 Cell {
@@ -2357,6 +2386,8 @@ pub fn render_frame(
         0.3,
         TrailAgeMode::Bidirectional,
         false,
+        0.0,
+        palette::TemporalMode::Hue,
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -2471,6 +2502,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, ' ');
         assert!(cell.fg_color_256.is_none());
@@ -2501,6 +2535,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_some());
@@ -2531,6 +2568,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_none());
@@ -2561,6 +2601,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -2589,6 +2632,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color_256.is_some());
@@ -2617,6 +2663,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -2645,6 +2694,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color_256.is_some());
@@ -2673,6 +2725,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, '\u{2807}');
         assert!(cell.fg_color_256.is_some());
@@ -2701,6 +2756,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, '\u{2838}');
         assert!(cell.fg_color_256.is_some());
@@ -2729,6 +2787,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
@@ -2757,6 +2818,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
@@ -2785,6 +2849,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, '^');
         assert!(cell.fg_color_256.is_some());
@@ -2813,6 +2880,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, 'v');
         assert!(cell.fg_color_256.is_some());
@@ -2841,6 +2911,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
@@ -2869,6 +2942,9 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
@@ -2965,6 +3041,8 @@ mod tests {
             0.3,
             TrailAgeMode::Bidirectional,
             false,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(fb.width(), 10);
         assert_eq!(fb.height(), 10);
@@ -2997,6 +3075,8 @@ mod tests {
             0.3,
             TrailAgeMode::Bidirectional,
             false,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_ne!(fb.cells[0].fg_color_rgb, fb_rev.cells[0].fg_color_rgb);
     }
@@ -3125,6 +3205,8 @@ mod tests {
             0.3,
             TrailAgeMode::Bidirectional,
             false,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -3186,6 +3268,8 @@ mod tests {
             0.3,
             TrailAgeMode::Bidirectional,
             false,
+            0.0,
+            palette::TemporalMode::Hue,
         );
 
         assert_eq!(buffer.cells[0].char, '▀');
@@ -3261,6 +3345,9 @@ mod tests {
             None,
             true,
             Some(&fb.species_rgb_colors),
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
 
         // Should be reddish (based on first species color)
@@ -3288,6 +3375,9 @@ mod tests {
             None,
             true,
             Some(&fb.species_rgb_colors),
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
         );
 
         // Should be an index close to red (196 or similar)
@@ -3407,6 +3497,8 @@ mod tests {
             0.3,
             TrailAgeMode::Bidirectional,
             false,
+            0.0,
+            palette::TemporalMode::Hue,
         );
         // The buffer should be 10×10
         assert_eq!(buffer.width, 10);
@@ -3423,6 +3515,143 @@ mod tests {
             "Expected non-blank cell at sim offset but got character='{}' fg={:?}",
             cell_at_offset.char,
             cell_at_offset.fg_color_rgb
+        );
+    }
+
+    /// Contract test: colorize_subpixel produces a different color when
+    /// temporal_strength > 0 vs. 0.  This guards the gate that strength=0 is
+    /// byte-identical to the non-temporal path while strength>0 changes color.
+    #[test]
+    fn from_downsampled_applies_temporal_color() {
+        use crate::render::palette::{self, Palette, TemporalMode};
+        let off = palette::colorize_subpixel(
+            0.6,
+            Palette::Organic,
+            false,
+            false,
+            0.0,
+            None,
+            0.5,
+            0.0,
+            TemporalMode::Hue,
+        );
+        let on = palette::colorize_subpixel(
+            0.6,
+            Palette::Organic,
+            false,
+            false,
+            0.0,
+            None,
+            0.5,
+            1.0,
+            TemporalMode::Hue,
+        );
+        assert_ne!(
+            off, on,
+            "temporal_strength=1.0 with diff_norm=0.5 must shift color"
+        );
+    }
+
+    /// End-to-end test: from_downsampled with a non-zero signed_diff in the aux
+    /// frame AND temporal_strength > 0 must produce a different cell color than
+    /// the temporal-off (strength=0.0) render of the same frame.
+    #[test]
+    fn from_downsampled_temporal_strength_changes_cell_color() {
+        use crate::render::downsample::{AuxCell, AuxFrame};
+        use palette::TemporalMode;
+
+        let cells = vec![
+            DownsampleCell {
+                top: 6.0,
+                bottom: 6.0,
+                top_left: 6.0,
+                top_right: 6.0,
+                bottom_left: 6.0,
+                bottom_right: 6.0,
+            };
+            1
+        ];
+        let max_trail = 10.0_f32;
+        // Non-zero signed_diff to drive temporal modulation
+        let aux = AuxFrame {
+            width: 1,
+            height: 1,
+            cells: vec![AuxCell {
+                age: 0.5,
+                delta: 0.0,
+                gradient: 0.0,
+                signed_diff: 5.0, // diff_norm = 5.0 / 10.0 = 0.5
+            }],
+        };
+
+        let mut ed = None;
+        let fb_off = FrameBuffer::from_downsampled(
+            &cells,
+            1,
+            1,
+            max_trail,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut ed,
+            None,
+            false,
+            None,
+            None,
+            1.5,
+            Some(&aux),
+            false,
+            false,
+            60.0,
+            1.0,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0, // temporal OFF
+            TemporalMode::Hue,
+        );
+
+        let fb_on = FrameBuffer::from_downsampled(
+            &cells,
+            1,
+            1,
+            max_trail,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut ed,
+            None,
+            false,
+            None,
+            None,
+            1.5,
+            Some(&aux),
+            false,
+            false,
+            60.0,
+            1.0,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
+            1.0, // temporal ON (strength = 1.0)
+            TemporalMode::Hue,
+        );
+
+        assert_ne!(
+            fb_off.cells[0].fg_color_rgb, fb_on.cells[0].fg_color_rgb,
+            "temporal_strength=1.0 with signed_diff=5.0/max_trail=10.0 must shift cell color"
         );
     }
 }

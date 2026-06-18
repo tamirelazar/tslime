@@ -1,8 +1,47 @@
+//! PNG frame export.
+//!
+//! **Colorize-last invariant**: PNG export colors pixels through the shared
+//! [`crate::render::palette::colorize_subpixel`], the SAME entry point used by
+//! the live TUI frame buffer and GIF/WebM export. One scalar brightness maps
+//! through exactly one colorize pass for every output (TUI, GIF, WebM, PNG), so
+//! saved stills match the on-screen look. Do not add a separate
+//! palette-mapping path here.
+
 use crate::cli::Palette;
 use crate::render::downsample::Cell;
 use crate::render::palette;
+use crate::render::palette::IntensityMapping;
 use image::{Rgb, RgbImage};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Maps a single normalized brightness value to an RGB color for PNG export,
+/// routing through the shared `colorize_subpixel` colorizer so intensity
+/// mapping and temporal-color modulation are applied consistently with the live
+/// TUI render.
+#[allow(clippy::too_many_arguments)]
+fn png_pixel_color(
+    norm: f32,
+    palette: Palette,
+    reverse: bool,
+    invert: bool,
+    hue_shift: f32,
+    mapping: Option<&IntensityMapping>,
+    diff_norm: f32,
+    temporal_strength: f32,
+    temporal_mode: palette::TemporalMode,
+) -> palette::RgbColor {
+    palette::colorize_subpixel(
+        norm,
+        palette,
+        reverse,
+        invert,
+        hue_shift,
+        mapping,
+        diff_norm,
+        temporal_strength,
+        temporal_mode,
+    )
+}
 
 /// Saves a single simulation frame as a PNG image.
 ///
@@ -10,6 +49,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// settings. Each cell renders as two stacked pixels (top/bottom halves), so
 /// the image is `width` x `height * 2`. The file is written to the working
 /// directory with a timestamp-based name, which is returned.
+///
+/// `aux_cells` optionally supplies per-cell signed temporal diffs (from
+/// [`crate::render::downsample::AuxFrame::cells`]). When provided, temporal
+/// color modulation is applied identically to the live TUI render. Pass `None`
+/// to disable temporal color in the export.
 #[allow(clippy::too_many_arguments)]
 pub fn save_frame_as_png(
     downsampled: &[Cell],
@@ -19,7 +63,11 @@ pub fn save_frame_as_png(
     reverse_palette: bool,
     invert_palette: bool,
     hue_shift: f32,
+    intensity_mapping: Option<&IntensityMapping>,
     max_brightness: f32,
+    temporal_strength: f32,
+    temporal_mode: palette::TemporalMode,
+    aux_cells: Option<&[crate::render::downsample::AuxCell]>,
 ) -> Result<String, String> {
     let img_width = width;
     let img_height = height * 2;
@@ -45,21 +93,42 @@ pub fn save_frame_as_png(
             0.0
         };
 
-        let top_rgb = palette::map_brightness_rgb(
+        // Compute normalized signed diff for temporal modulation.
+        let diff_norm = if temporal_strength > 0.0 && max_brightness > 0.0 {
+            if let Some(aux) = aux_cells {
+                if let Some(aux_cell) = aux.get(idx) {
+                    aux_cell.signed_diff / max_brightness
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+
+        let top_rgb = png_pixel_color(
             top_norm,
             palette.clone(),
             reverse_palette,
             invert_palette,
             hue_shift,
-            None,
+            intensity_mapping,
+            diff_norm,
+            temporal_strength,
+            temporal_mode,
         );
-        let bottom_rgb = palette::map_brightness_rgb(
+        let bottom_rgb = png_pixel_color(
             bottom_norm,
             palette.clone(),
             reverse_palette,
             invert_palette,
             hue_shift,
-            None,
+            intensity_mapping,
+            diff_norm,
+            temporal_strength,
+            temporal_mode,
         );
 
         let top_pixel: Rgb<u8> = Rgb([top_rgb.r, top_rgb.g, top_rgb.b]);
@@ -117,7 +186,11 @@ mod tests {
             false,
             false,
             0.0,
+            None,
             100.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            None,
         );
 
         assert!(result.is_ok());
@@ -144,7 +217,20 @@ mod tests {
             },
         ];
 
-        let result = save_frame_as_png(&downsampled, 2, 1, Palette::Heat, false, false, 0.0, 100.0);
+        let result = save_frame_as_png(
+            &downsampled,
+            2,
+            1,
+            Palette::Heat,
+            false,
+            false,
+            0.0,
+            None,
+            100.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            None,
+        );
 
         assert!(result.is_ok());
 
@@ -167,12 +253,55 @@ mod tests {
             },
         ];
 
-        let result = save_frame_as_png(&downsampled, 2, 1, Palette::Neon, true, false, 45.0, 100.0);
+        let result = save_frame_as_png(
+            &downsampled,
+            2,
+            1,
+            Palette::Neon,
+            true,
+            false,
+            45.0,
+            None,
+            100.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            None,
+        );
 
         assert!(result.is_ok());
 
         let filename = result.unwrap();
         let _ = std::fs::remove_file(&filename);
+    }
+
+    #[test]
+    fn test_png_color_applies_intensity_mapping() {
+        use crate::render::palette::{self, IntensityMapping, Palette, TemporalMode};
+        let mapping = IntensityMapping::logarithmic(10.0);
+        let norm = 0.4_f32;
+        let expected = palette::colorize_subpixel(
+            norm,
+            Palette::Organic,
+            false,
+            false,
+            0.0,
+            Some(&mapping),
+            0.0,
+            0.0,
+            TemporalMode::Hue,
+        );
+        let got = png_pixel_color(
+            norm,
+            Palette::Organic,
+            false,
+            false,
+            0.0,
+            Some(&mapping),
+            0.0,
+            0.0,
+            TemporalMode::Hue,
+        );
+        assert_eq!(got, expected);
     }
 
     #[test]
@@ -193,5 +322,132 @@ mod tests {
         let nanos_with_ext = &parts[3];
         let nanos = nanos_with_ext.trim_end_matches(".png");
         assert!(nanos.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    /// Guards the colorize-last invariant: the PNG helper must agree with the
+    /// shared `colorize_subpixel` entry point across a brightness sweep, a
+    /// non-default intensity mapping, and several flag combinations.  Any future
+    /// edit to `png_pixel_color` that drops the mapping argument, hardwires a
+    /// different palette call, or diverges from `colorize_subpixel` will cause
+    /// this test to fail.
+    #[test]
+    fn test_png_pixel_color_matches_render_colorizer() {
+        use crate::render::palette::{self, IntensityMapping, Palette, TemporalMode};
+
+        let mapping = IntensityMapping::logarithmic(10.0);
+        let brightnesses = [0.0_f32, 0.15, 0.37, 0.6, 0.83, 1.0];
+
+        // Sweep brightness × {no mapping, with mapping} for default flags.
+        for &b in &brightnesses {
+            for m in [None, Some(&mapping)] {
+                let render = palette::colorize_subpixel(
+                    b,
+                    Palette::Organic,
+                    false,
+                    false,
+                    0.0,
+                    m,
+                    0.0,
+                    0.0,
+                    TemporalMode::Hue,
+                );
+                let png = png_pixel_color(
+                    b,
+                    Palette::Organic,
+                    false,
+                    false,
+                    0.0,
+                    m,
+                    0.0,
+                    0.0,
+                    TemporalMode::Hue,
+                );
+                assert_eq!(
+                    render,
+                    png,
+                    "PNG/render colorize parity broke at brightness {b} (mapping={})",
+                    m.is_some()
+                );
+            }
+        }
+
+        // Also exercise reverse=true and invert=true flag combinations at a
+        // representative brightness to catch flag-routing divergence.
+        let mid = 0.5_f32;
+        for (reverse, invert) in [(true, false), (false, true), (true, true)] {
+            let render = palette::colorize_subpixel(
+                mid,
+                Palette::Organic,
+                reverse,
+                invert,
+                0.0,
+                Some(&mapping),
+                0.0,
+                0.0,
+                TemporalMode::Hue,
+            );
+            let png = png_pixel_color(
+                mid,
+                Palette::Organic,
+                reverse,
+                invert,
+                0.0,
+                Some(&mapping),
+                0.0,
+                0.0,
+                TemporalMode::Hue,
+            );
+            assert_eq!(
+                render, png,
+                "PNG/render colorize parity broke at reverse={reverse} invert={invert}"
+            );
+        }
+    }
+
+    /// Guards temporal-color parity: PNG with temporal_strength > 0 and a non-zero
+    /// diff_norm must produce the same color as `colorize_subpixel` called with
+    /// the same parameters.
+    #[test]
+    fn test_png_temporal_color_parity() {
+        use crate::render::palette::{self, Palette, TemporalMode};
+
+        let brightnesses = [0.2_f32, 0.5, 0.8];
+        let diff_norms = [-0.4_f32, 0.0, 0.4];
+        let strengths = [0.0_f32, 0.5, 1.0];
+
+        for &b in &brightnesses {
+            for &d in &diff_norms {
+                for &s in &strengths {
+                    for mode in [TemporalMode::Hue, TemporalMode::Accent] {
+                        let render = palette::colorize_subpixel(
+                            b,
+                            Palette::Organic,
+                            false,
+                            false,
+                            0.0,
+                            None,
+                            d,
+                            s,
+                            mode,
+                        );
+                        let png = png_pixel_color(
+                            b,
+                            Palette::Organic,
+                            false,
+                            false,
+                            0.0,
+                            None,
+                            d,
+                            s,
+                            mode,
+                        );
+                        assert_eq!(
+                            render, png,
+                            "temporal parity broke at b={b} diff={d} strength={s} mode={mode:?}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }
