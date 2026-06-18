@@ -2002,8 +2002,9 @@ mod tests {
     }
 
     #[test]
-    fn deposit_default_is_byte_identical_to_linear_accum_path() {
-        // Off path (defaults) must match a hand-rolled baseline exactly across frames.
+    fn deposit_off_path_is_deterministic() {
+        // Proves the off path (Linear + scale 1.0 + cap 0.0) is deterministic:
+        // two sims with identical config and seed must produce bit-identical trail maps.
         let mut a = Simulation::new(40, 40, SimConfig::default(), 42, InitMode::Random, 0);
         let mut b = Simulation::new(40, 40, SimConfig::default(), 42, InitMode::Random, 0);
         for _ in 0..30 {
@@ -2011,6 +2012,51 @@ mod tests {
             b.update(1.0);
         }
         assert_eq!(a.trail_maps[0].current(), b.trail_maps[0].current());
+    }
+
+    #[test]
+    fn deposit_linear_accum_matches_direct_within_fp_tolerance() {
+        // Verifies that routing deposits through the accumulation buffer and then
+        // fold_deposits (active path) reproduces the direct deposit (off path) up to
+        // floating-point tolerance.  Exact equality is impossible because fold_deposits
+        // reassociates the additions (trail + (a+b) vs the off path's (trail+a)+b), which
+        // produces different rounding at the ulp level.
+        //
+        // Active path is triggered by deposit_cap > 0.0 (see deposit_active()).
+        // We use a huge cap (1e9) so it never clips, and scale=1.0 + Linear curve so
+        // fold_deposits is mathematically an identity — any cell difference is pure fp noise.
+        use crate::simulation::config::DepositCurve;
+
+        let off_cfg = SimConfig::default();
+        assert!(!off_cfg.deposit_active(), "off path sanity check");
+
+        let mut on_cfg = SimConfig::default();
+        on_cfg.deposit_curve = DepositCurve::Linear;
+        on_cfg.deposit_scale = 1.0;
+        on_cfg.deposit_cap = 1.0e9; // huge cap → never clips
+        assert!(
+            on_cfg.deposit_active(),
+            "cap > 0.0 must activate the accum path"
+        );
+
+        let mut off_sim = Simulation::new(40, 40, off_cfg, 42, InitMode::Random, 0);
+        let mut on_sim = Simulation::new(40, 40, on_cfg, 42, InitMode::Random, 0);
+        for _ in 0..30 {
+            off_sim.update(1.0);
+            on_sim.update(1.0);
+        }
+
+        let off_cells = off_sim.trail_maps[0].current();
+        let on_cells = on_sim.trail_maps[0].current();
+        assert_eq!(off_cells.len(), on_cells.len());
+        for (i, (a, b)) in off_cells.iter().zip(on_cells.iter()).enumerate() {
+            let diff = (a - b).abs();
+            let tol = 1e-2_f32.max(1e-3 * (1.0 + a.abs()));
+            assert!(
+                diff <= tol,
+                "cell {i}: off={a} on={b} diff={diff} tol={tol} — accum path diverged from direct deposit"
+            );
+        }
     }
 
     #[test]
