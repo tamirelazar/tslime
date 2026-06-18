@@ -1317,6 +1317,7 @@ pub fn run_simulation(
                                         runtime_state.deposit_gamma,
                                         runtime_state.deposit_cap,
                                         runtime_state.palette_cycle,
+                                        runtime_state.glyph,
                                     );
 
                                     match config_manager::save_config(saved_config) {
