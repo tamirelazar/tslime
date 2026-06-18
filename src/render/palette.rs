@@ -2621,7 +2621,11 @@ pub fn colorize_subpixel(
     temporal_modulate(base, diff_norm, temporal_mode, temporal_strength, palette)
 }
 
-#[allow(unused_variables)]
+/// Maximum hue rotation (degrees) at |blend| = 1, before strength scaling.
+const TEMPORAL_MAX_HUE_DEG: f32 = 60.0;
+/// tanh steepness for the white-point-normalized diff.
+const TEMPORAL_TANH_K: f32 = 6.0;
+
 fn temporal_modulate(
     base: RgbColor,
     diff_norm: f32,
@@ -2629,12 +2633,62 @@ fn temporal_modulate(
     strength: f32,
     palette: Palette,
 ) -> RgbColor {
-    base // replaced in Task B4
+    let blend = (TEMPORAL_TANH_K * diff_norm).tanh(); // -1..1; growing front ⇒ +, decaying ⇒ -
+    if blend == 0.0 || strength <= 0.0 {
+        return base;
+    }
+    match mode {
+        TemporalMode::Hue => {
+            let oklch = srgb_to_oklch(base);
+            let h = oklch.h + blend * TEMPORAL_MAX_HUE_DEG * strength;
+            oklch_to_srgb(oklch.l, oklch.c, h)
+        }
+        TemporalMode::Accent => {
+            // Front accent = the palette's hot end (brightness 1.0). Blend toward it
+            // for the growing front (blend > 0). Mix in OKLch for perceptual evenness.
+            let accent = map_brightness_rgb(1.0, palette, false, false, 0.0, None);
+            let t = blend.max(0.0) * strength;
+            mix_oklch(base, accent, t)
+        }
+    }
+}
+
+/// Linear interpolation of two sRGB colors through OKLch (t in 0..1).
+fn mix_oklch(a: RgbColor, b: RgbColor, t: f32) -> RgbColor {
+    let t = t.clamp(0.0, 1.0);
+    let oa = srgb_to_oklch(a);
+    let ob = srgb_to_oklch(b);
+    let l = oa.l + (ob.l - oa.l) * t;
+    let c = oa.c + (ob.c - oa.c) * t;
+    let h = oa.h + (ob.h - oa.h) * t;
+    oklch_to_srgb(l, c, h)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn temporal_modulate_zero_diff_is_identity() {
+        let base = RgbColor {
+            r: 120,
+            g: 200,
+            b: 80,
+        };
+        let out = temporal_modulate(base, 0.0, TemporalMode::Hue, 1.0, Palette::Organic);
+        assert_eq!(out, base);
+    }
+
+    #[test]
+    fn temporal_modulate_hue_shifts_with_positive_diff() {
+        let base = RgbColor {
+            r: 120,
+            g: 200,
+            b: 80,
+        };
+        let out = temporal_modulate(base, 0.5, TemporalMode::Hue, 1.0, Palette::Organic);
+        assert_ne!(out, base, "a growing front should change hue");
+    }
 
     #[test]
     fn test_map_brightness_min() {
