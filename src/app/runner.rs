@@ -1279,6 +1279,9 @@ pub fn run_simulation(
                                             None
                                         },
                                         Some(&runtime_state.intensity_mapping),
+                                        runtime_state.temporal_color,
+                                        runtime_state.temporal_lag_frames,
+                                        runtime_state.temporal_mode,
                                     );
 
                                     match config_manager::save_config(saved_config) {

@@ -137,6 +137,17 @@ pub struct SavedConfig {
     /// Minimum sim size before dropping the frame (e.g. "12x6").
     #[serde(default = "default_min_frame_size")]
     pub min_frame_size: String,
+
+    // Temporal color
+    /// Temporal-color strength (0.0 = off).
+    #[serde(default)]
+    pub temporal_color: Option<f32>,
+    /// Temporal lag in frames for the EMA comparison.
+    #[serde(default)]
+    pub temporal_lag: Option<f32>,
+    /// Temporal mode: "hue" or "accent".
+    #[serde(default)]
+    pub temporal_mode: Option<String>,
 }
 
 fn default_chrome_style() -> String {
@@ -173,6 +184,9 @@ impl SavedConfig {
         init_mode: InitMode,
         food_path: Option<String>,
         intensity_mapping: Option<&crate::render::palette::IntensityMapping>,
+        temporal_color: f32,
+        temporal_lag_frames: f32,
+        temporal_mode: crate::render::palette::TemporalMode,
     ) -> Self {
         let diffusion_kernel_str = match sim_config.diffusion_kernel {
             DiffusionKernel::Mean3x3 => "mean3x3",
@@ -313,6 +327,12 @@ impl SavedConfig {
                 "{}x{}",
                 sim_config.min_frame_size.width, sim_config.min_frame_size.height
             ),
+            temporal_color: Some(temporal_color),
+            temporal_lag: Some(temporal_lag_frames),
+            temporal_mode: Some(match temporal_mode {
+                crate::render::palette::TemporalMode::Hue => "hue".to_string(),
+                crate::render::palette::TemporalMode::Accent => "accent".to_string(),
+            }),
         }
     }
 
@@ -405,6 +425,16 @@ impl SavedConfig {
             runtime_state.intensity_mapping_index =
                 find_intensity_mapping_index(&runtime_state.intensity_mapping);
         }
+
+        // Apply temporal color fields
+        runtime_state.temporal_color = self.temporal_color.unwrap_or(0.0);
+        runtime_state.temporal_lag_frames = self.temporal_lag.unwrap_or(8.0);
+        runtime_state.temporal_mode = match self.temporal_mode.as_deref() {
+            Some(s) if s.eq_ignore_ascii_case("accent") => {
+                crate::render::palette::TemporalMode::Accent
+            }
+            _ => crate::render::palette::TemporalMode::Hue,
+        };
 
         // Parameters that require simulation restart to take effect:
         // - population (agent count)
@@ -742,6 +772,9 @@ mod tests {
             show_status_bar: false,
             min_sim_size: "20x10".to_string(),
             min_frame_size: "12x6".to_string(),
+            temporal_color: None,
+            temporal_lag: None,
+            temporal_mode: None,
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -833,6 +866,9 @@ food_path = "assets/tslime_logo.png"
             show_status_bar: false,
             min_sim_size: "20x10".to_string(),
             min_frame_size: "12x6".to_string(),
+            temporal_color: None,
+            temporal_lag: None,
+            temporal_mode: None,
         };
         let sim_config = config.to_sim_config().unwrap();
         assert_eq!(sim_config.species_configs[0].count, 50000);
@@ -879,6 +915,9 @@ food_path = "assets/tslime_logo.png"
             show_status_bar: false,
             min_sim_size: "20x10".to_string(),
             min_frame_size: "12x6".to_string(),
+            temporal_color: None,
+            temporal_lag: None,
+            temporal_mode: None,
         };
 
         config
@@ -931,6 +970,9 @@ food_path = "assets/tslime_logo.png"
             show_status_bar: false,
             min_sim_size: "20x10".to_string(),
             min_frame_size: "12x6".to_string(),
+            temporal_color: None,
+            temporal_lag: None,
+            temporal_mode: None,
         };
 
         config
@@ -1041,6 +1083,9 @@ food_path = "assets/tslime_logo.png"
             InitMode::Random,
             None,
             Some(&crate::render::palette::IntensityMapping::linear()),
+            0.0,
+            8.0,
+            crate::render::palette::TemporalMode::Hue,
         );
 
         // Create new state and apply config
@@ -1058,5 +1103,132 @@ food_path = "assets/tslime_logo.png"
         assert_eq!(new_state.deposit_amount, state.deposit_amount);
         assert_eq!(new_state.max_brightness, state.max_brightness);
         assert_eq!(new_state.diffusion_kernel, state.diffusion_kernel);
+    }
+
+    #[test]
+    fn temporal_fields_round_trip_and_default_off() {
+        // An OLD TOML with no temporal fields must still deserialize, with
+        // temporal_color defaulting to 0.0 (off).
+        let toml = r#"name = "old"
+population = 1000
+sensor_angle = 22.5
+sensor_distance = 9.0
+rotation_angle = 45.0
+step_size = 1.0
+decay_factor = 0.9
+deposit_amount = 5.0
+max_brightness = 100.0
+diffusion_kernel = "Mean3x3"
+diffusion_sigma = 1.0
+palette = "Organic"
+charset = "HalfBlock"
+reverse_palette = false
+invert_palette = false
+warmup_frames = 0
+food_persist = false
+auto_reset = false
+grid = false
+init_mode = "Random"
+"#;
+        let cfg: SavedConfig = toml::from_str(toml).expect("old config must still load");
+        assert_eq!(cfg.temporal_color.unwrap_or(0.0), 0.0);
+    }
+
+    #[test]
+    fn temporal_fields_full_round_trip() {
+        use crate::render::palette::TemporalMode;
+
+        // Build a RuntimeState with non-default temporal values and verify they
+        // survive from_runtime → serialize → deserialize → apply_to_runtime_state.
+        let mut state = create_test_runtime_state();
+        state.temporal_color = 0.7;
+        state.temporal_lag_frames = 12.0;
+        state.temporal_mode = TemporalMode::Accent;
+
+        let sim_config = SimConfig {
+            sensor_angle: state.sensor_angle,
+            sensor_distance: 9.0,
+            rotation_angle: state.rotation_angle,
+            step_size: state.step_size,
+            decay_factor: state.decay_factor,
+            deposit_amount: state.deposit_amount,
+            diffusion_kernel: state.diffusion_kernel,
+            diffusion_sigma: 1.0,
+            max_brightness: state.max_brightness,
+            time_scale: 1.0,
+            attractors: Vec::new(),
+            attractor_strength: 1.0,
+            mouse_attractors: Vec::new(),
+            mouse_timeout: 3.0,
+            species_configs: vec![SpeciesConfig {
+                name: "default".to_string(),
+                count: 1000,
+                sensor_angle: state.sensor_angle,
+                rotation_angle: state.rotation_angle,
+                step_size: state.step_size,
+                deposit_amount: state.deposit_amount,
+                color: RgbColor::from_hex(0x228b22),
+                trail_modulation: None,
+            }],
+            separate_species_trails: false,
+            use_simd: true,
+            food_image_path: None,
+            food_image_invert: false,
+            food_image_scale: 1.0,
+            obstacles: Vec::new(),
+            obstacle_masks: Vec::new(),
+            wind: None,
+            terrain: crate::simulation::config::TerrainType::None,
+            terrain_strength: 1.0,
+            background_color: None,
+            preferred_init_mode: None,
+            boundary_mode: crate::simulation::config::BoundaryMode::Bounce,
+            respawn_config: crate::simulation::config::RespawnConfig::default(),
+            sampling_mode: crate::simulation::config::SamplingMode::Nearest,
+            window_frame: crate::simulation::config::WindowFrame::None,
+            chrome_style: crate::simulation::config::ChromeStyle::default(),
+            aspect: crate::simulation::config::Aspect::default(),
+            window_padding: crate::simulation::config::WindowPadding::default(),
+            show_status_bar: false,
+            min_sim_size: crate::simulation::config::TerminalSizeThreshold::default(),
+            min_frame_size: crate::simulation::config::TerminalSizeThreshold {
+                width: 12,
+                height: 6,
+            },
+        };
+
+        let saved = SavedConfig::from_runtime(
+            "temporal_rt".to_string(),
+            &sim_config,
+            crate::cli::Palette::Organic,
+            crate::render::charset::Charset::HalfBlock,
+            false,
+            false,
+            0,
+            false,
+            false,
+            false,
+            None,
+            crate::simulation::config::InitMode::Random,
+            None,
+            None,
+            state.temporal_color,
+            state.temporal_lag_frames,
+            state.temporal_mode,
+        );
+
+        // Serialize and deserialize through TOML
+        let toml_str = toml::to_string(&saved).expect("serialize must succeed");
+        let reloaded: SavedConfig = toml::from_str(&toml_str).expect("deserialize must succeed");
+
+        // Restore into a fresh RuntimeState
+        let mut new_state = create_test_runtime_state();
+        reloaded
+            .apply_to_runtime_state(&mut new_state)
+            .expect("apply must succeed");
+
+        assert!((new_state.temporal_color - 0.7).abs() < 1e-6);
+        assert!((new_state.temporal_lag_frames - 12.0).abs() < 1e-6);
+        assert_eq!(new_state.temporal_mode, TemporalMode::Accent);
     }
 }
