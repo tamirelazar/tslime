@@ -1,8 +1,37 @@
 use crate::cli::Palette;
 use crate::render::downsample::Cell;
 use crate::render::palette;
+use crate::render::palette::IntensityMapping;
 use image::{Rgb, RgbImage};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Maps a single normalized brightness value to an RGB color for PNG export,
+/// routing through the shared `colorize_subpixel` colorizer so intensity
+/// mapping is applied consistently with the live TUI render.
+///
+/// Temporal parameters are zeroed, so this is byte-identical to
+/// `map_brightness_rgb` when no intensity mapping is active; temporal
+/// modulation is wired in a later task.
+fn png_pixel_color(
+    norm: f32,
+    palette: Palette,
+    reverse: bool,
+    invert: bool,
+    hue_shift: f32,
+    mapping: Option<&IntensityMapping>,
+) -> palette::RgbColor {
+    palette::colorize_subpixel(
+        norm,
+        palette,
+        reverse,
+        invert,
+        hue_shift,
+        mapping,
+        0.0,
+        0.0,
+        palette::TemporalMode::Hue,
+    )
+}
 
 /// Saves a single simulation frame as a PNG image.
 ///
@@ -19,6 +48,7 @@ pub fn save_frame_as_png(
     reverse_palette: bool,
     invert_palette: bool,
     hue_shift: f32,
+    intensity_mapping: Option<&IntensityMapping>,
     max_brightness: f32,
 ) -> Result<String, String> {
     let img_width = width;
@@ -45,21 +75,21 @@ pub fn save_frame_as_png(
             0.0
         };
 
-        let top_rgb = palette::map_brightness_rgb(
+        let top_rgb = png_pixel_color(
             top_norm,
             palette.clone(),
             reverse_palette,
             invert_palette,
             hue_shift,
-            None,
+            intensity_mapping,
         );
-        let bottom_rgb = palette::map_brightness_rgb(
+        let bottom_rgb = png_pixel_color(
             bottom_norm,
             palette.clone(),
             reverse_palette,
             invert_palette,
             hue_shift,
-            None,
+            intensity_mapping,
         );
 
         let top_pixel: Rgb<u8> = Rgb([top_rgb.r, top_rgb.g, top_rgb.b]);
@@ -117,6 +147,7 @@ mod tests {
             false,
             false,
             0.0,
+            None,
             100.0,
         );
 
@@ -144,7 +175,17 @@ mod tests {
             },
         ];
 
-        let result = save_frame_as_png(&downsampled, 2, 1, Palette::Heat, false, false, 0.0, 100.0);
+        let result = save_frame_as_png(
+            &downsampled,
+            2,
+            1,
+            Palette::Heat,
+            false,
+            false,
+            0.0,
+            None,
+            100.0,
+        );
 
         assert!(result.is_ok());
 
@@ -167,12 +208,42 @@ mod tests {
             },
         ];
 
-        let result = save_frame_as_png(&downsampled, 2, 1, Palette::Neon, true, false, 45.0, 100.0);
+        let result = save_frame_as_png(
+            &downsampled,
+            2,
+            1,
+            Palette::Neon,
+            true,
+            false,
+            45.0,
+            None,
+            100.0,
+        );
 
         assert!(result.is_ok());
 
         let filename = result.unwrap();
         let _ = std::fs::remove_file(&filename);
+    }
+
+    #[test]
+    fn test_png_color_applies_intensity_mapping() {
+        use crate::render::palette::{self, IntensityMapping, Palette, TemporalMode};
+        let mapping = IntensityMapping::logarithmic(10.0);
+        let norm = 0.4_f32;
+        let expected = palette::colorize_subpixel(
+            norm,
+            Palette::Organic,
+            false,
+            false,
+            0.0,
+            Some(&mapping),
+            0.0,
+            0.0,
+            TemporalMode::Hue,
+        );
+        let got = png_pixel_color(norm, Palette::Organic, false, false, 0.0, Some(&mapping));
+        assert_eq!(got, expected);
     }
 
     #[test]

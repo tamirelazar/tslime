@@ -1821,6 +1821,7 @@ pub fn run_simulation(
                                 runtime_state.reverse_palette,
                                 runtime_state.invert_palette,
                                 hue_offset,
+                                Some(&runtime_state.intensity_mapping),
                                 max_brightness,
                             ) {
                                 Ok(filename) => {
