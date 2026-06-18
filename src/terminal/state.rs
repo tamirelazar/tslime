@@ -653,6 +653,8 @@ pub struct RuntimeState {
     pub deposit_cap: f32,
     /// Spatial palette-repeat config (lever 6). Default identity.
     pub palette_cycle: crate::render::palette::PaletteCycle,
+    /// Glyph-selection config (lever 10). Default identity (no override).
+    pub glyph: crate::render::charset::GlyphConfig,
 }
 
 impl RuntimeState {
@@ -792,6 +794,7 @@ impl RuntimeState {
             deposit_gamma: cli_config.deposit_gamma,
             deposit_cap: cli_config.deposit_cap,
             palette_cycle: crate::render::palette::PaletteCycle::default(),
+            glyph: crate::render::charset::GlyphConfig::default(),
         }
     }
 
