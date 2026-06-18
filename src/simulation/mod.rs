@@ -961,7 +961,7 @@ impl Simulation {
                     crate::simulation::config::DiffusionKernel::Gaussian
                 ),
             );
-            trail_map.decay(effective_decay);
+            trail_map.decay_gamma(effective_decay, self.config.decay_gamma);
         }
 
         // Compute trail age: increment where pheromone present, reset where absent

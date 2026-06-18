@@ -52,6 +52,7 @@ pub(crate) struct ConfigBuilder {
     respawn_interval: Option<u32>,
     afterglow: f32,
     afterglow_rate: f32,
+    decay_gamma: f32,
 }
 
 impl ConfigBuilder {
@@ -104,6 +105,7 @@ impl ConfigBuilder {
             respawn_interval: args.respawn_interval,
             afterglow: args.afterglow,
             afterglow_rate: args.afterglow_rate,
+            decay_gamma: args.decay_gamma,
         }
     }
 
@@ -167,6 +169,9 @@ impl ConfigBuilder {
         // Afterglow settings
         config.afterglow = self.afterglow;
         config.afterglow_rate = self.afterglow_rate;
+
+        // Decay gamma
+        config.decay_gamma = self.decay_gamma;
 
         // Time scale
         if let Some(scale) = self.time_scale {

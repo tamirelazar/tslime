@@ -156,6 +156,9 @@ pub struct SavedConfig {
     /// Afterglow EMA rate.
     #[serde(default)]
     pub afterglow_rate: Option<f32>,
+    /// Value-dependent decay exponent (1.0 = uniform, <1.0 = faint tails persist longer).
+    #[serde(default)]
+    pub decay_gamma: Option<f32>,
 }
 
 fn default_chrome_style() -> String {
@@ -197,6 +200,7 @@ impl SavedConfig {
         temporal_mode: crate::render::palette::TemporalMode,
         afterglow: f32,
         afterglow_rate: f32,
+        decay_gamma: f32,
     ) -> Self {
         let diffusion_kernel_str = match sim_config.diffusion_kernel {
             DiffusionKernel::Mean3x3 => "mean3x3",
@@ -345,6 +349,7 @@ impl SavedConfig {
             }),
             afterglow: Some(afterglow),
             afterglow_rate: Some(afterglow_rate),
+            decay_gamma: Some(decay_gamma),
         }
     }
 
@@ -451,6 +456,9 @@ impl SavedConfig {
         // Apply afterglow fields
         runtime_state.afterglow = self.afterglow.unwrap_or(0.0);
         runtime_state.afterglow_rate = self.afterglow_rate.unwrap_or(0.05);
+
+        // Apply decay gamma
+        runtime_state.decay_gamma = self.decay_gamma.unwrap_or(1.0);
 
         // Parameters that require simulation restart to take effect:
         // - population (agent count)
@@ -797,6 +805,7 @@ mod tests {
             temporal_mode: None,
             afterglow: None,
             afterglow_rate: None,
+            decay_gamma: None,
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -893,6 +902,7 @@ food_path = "assets/tslime_logo.png"
             temporal_mode: None,
             afterglow: None,
             afterglow_rate: None,
+            decay_gamma: None,
         };
         let sim_config = config.to_sim_config().unwrap();
         assert_eq!(sim_config.species_configs[0].count, 50000);
@@ -944,6 +954,7 @@ food_path = "assets/tslime_logo.png"
             temporal_mode: None,
             afterglow: None,
             afterglow_rate: None,
+            decay_gamma: None,
         };
 
         config
@@ -1001,6 +1012,7 @@ food_path = "assets/tslime_logo.png"
             temporal_mode: None,
             afterglow: None,
             afterglow_rate: None,
+            decay_gamma: None,
         };
 
         config
@@ -1120,6 +1132,7 @@ food_path = "assets/tslime_logo.png"
             crate::render::palette::TemporalMode::Hue,
             0.0,
             0.05,
+            1.0,
         );
 
         // Create new state and apply config
@@ -1255,6 +1268,7 @@ init_mode = "Random"
             state.temporal_mode,
             state.afterglow,
             state.afterglow_rate,
+            state.decay_gamma,
         );
 
         // Serialize and deserialize through TOML

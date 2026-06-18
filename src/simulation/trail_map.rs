@@ -1071,6 +1071,34 @@ impl TrailMap {
         }
         self.trail_sum *= factor;
     }
+
+    /// Value-dependent decay (lever 7). With `gamma == 1.0` this is identical to
+    /// `decay(factor)`. With `gamma < 1.0`, faint cells decay less than bright cells
+    /// (longer faint tails) by scaling the removed fraction by `(value/peak)^(1−γ)`.
+    pub fn decay_gamma(&mut self, factor: f32, gamma: f32) {
+        if (gamma - 1.0).abs() < f32::EPSILON {
+            self.decay(factor);
+            return;
+        }
+        let peak = self
+            .current
+            .iter()
+            .copied()
+            .fold(0.0f32, f32::max)
+            .max(1e-6);
+        let s = 1.0 - factor; // removed fraction at gamma=1
+        let exp = 1.0 - gamma;
+        let mut new_sum = 0.0f32;
+        for value in &mut self.current {
+            if *value > 0.0 {
+                let norm = (*value / peak).clamp(0.0, 1.0);
+                let removed_frac = (s * norm.powf(exp)).clamp(0.0, 1.0);
+                *value *= 1.0 - removed_frac;
+            }
+            new_sum += *value;
+        }
+        self.trail_sum = new_sum;
+    }
 }
 
 #[cfg(test)]
@@ -1083,6 +1111,40 @@ mod tests {
         assert_eq!(trail.width(), 400);
         assert_eq!(trail.height(), 400);
         assert_eq!(trail.size(), 160000);
+    }
+
+    #[test]
+    fn decay_gamma_one_matches_plain_decay() {
+        let mut a = TrailMap::new(8, 8);
+        let mut b = TrailMap::new(8, 8);
+        for i in 0..64 {
+            a.current_mut()[i] = (i as f32) * 0.1;
+            b.current_mut()[i] = (i as f32) * 0.1;
+        }
+        a.decay(0.9);
+        b.decay_gamma(0.9, 1.0);
+        for (x, y) in a.current().iter().zip(b.current().iter()) {
+            assert!((x - y).abs() < 1e-6, "gamma=1 must equal plain decay");
+        }
+    }
+
+    #[test]
+    fn decay_gamma_below_one_preserves_faint_more_than_baseline() {
+        let mut base = TrailMap::new(8, 8);
+        let mut g = TrailMap::new(8, 8);
+        // a faint cell and a bright (peak) cell
+        base.current_mut()[0] = 0.1;
+        base.current_mut()[1] = 1.0;
+        g.current_mut()[0] = 0.1;
+        g.current_mut()[1] = 1.0;
+        base.decay(0.9);
+        g.decay_gamma(0.9, 0.5);
+        // faint cell retains MORE with gamma<1; peak cell ~unchanged.
+        assert!(g.current()[0] > base.current()[0], "faint persists longer");
+        assert!(
+            (g.current()[1] - base.current()[1]).abs() < 1e-3,
+            "peak ~unchanged"
+        );
     }
 
     #[test]

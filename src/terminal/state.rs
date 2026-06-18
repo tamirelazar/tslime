@@ -639,6 +639,8 @@ pub struct RuntimeState {
     pub afterglow: f32,
     /// Afterglow EMA rate.
     pub afterglow_rate: f32,
+    /// Value-dependent decay exponent (1.0 = uniform, <1.0 = faint tails persist longer).
+    pub decay_gamma: f32,
 }
 
 impl RuntimeState {
@@ -771,6 +773,7 @@ impl RuntimeState {
             temporal_mode: crate::render::palette::TemporalMode::Hue,
             afterglow: 0.0,
             afterglow_rate: 0.05,
+            decay_gamma: 1.0,
         }
     }
 

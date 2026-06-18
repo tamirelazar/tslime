@@ -1200,6 +1200,15 @@ pub struct Args {
     pub afterglow_rate: f32,
 
     #[arg(
+        long = "decay-gamma",
+        value_name = "GAMMA",
+        default_value_t = 1.0,
+        help = "Decay gamma (1.0 = uniform decay; <1.0 = faint cells decay less, longer tails)."
+    )]
+    /// Value-dependent decay exponent.
+    pub decay_gamma: f32,
+
+    #[arg(
         long = "auto-normalize",
         help = "Enable adaptive brightness normalization to prevent flickering"
     )]
@@ -2116,6 +2125,7 @@ impl Default for Args {
             temporal_mode: "hue".to_string(),
             afterglow: 0.0,
             afterglow_rate: 0.05,
+            decay_gamma: 1.0,
             boundary_mode: None,
             window_frame: None,
             fullscreen: false,

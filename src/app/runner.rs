@@ -1294,6 +1294,7 @@ pub fn run_simulation(
                                         runtime_state.temporal_mode,
                                         runtime_state.afterglow,
                                         runtime_state.afterglow_rate,
+                                        runtime_state.decay_gamma,
                                     );
 
                                     match config_manager::save_config(saved_config) {
