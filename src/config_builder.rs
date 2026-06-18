@@ -50,6 +50,10 @@ pub(crate) struct ConfigBuilder {
     min_sim_size: Option<TerminalSizeThreshold>,
     min_frame_size: Option<TerminalSizeThreshold>,
     respawn_interval: Option<u32>,
+    afterglow: f32,
+    afterglow_rate: f32,
+    decay_gamma: f32,
+    diffuse_weight: f32,
 }
 
 impl ConfigBuilder {
@@ -100,6 +104,10 @@ impl ConfigBuilder {
             min_sim_size: args.min_sim_size,
             min_frame_size: args.min_frame_size,
             respawn_interval: args.respawn_interval,
+            afterglow: args.afterglow,
+            afterglow_rate: args.afterglow_rate,
+            decay_gamma: args.decay_gamma,
+            diffuse_weight: args.diffuse_weight,
         }
     }
 
@@ -159,6 +167,16 @@ impl ConfigBuilder {
         if let Some(sigma) = self.diffusion_sigma {
             config.diffusion_sigma = sigma;
         }
+
+        // Afterglow settings
+        config.afterglow = self.afterglow;
+        config.afterglow_rate = self.afterglow_rate;
+
+        // Decay gamma
+        config.decay_gamma = self.decay_gamma;
+
+        // Diffuse weight (Lague blend)
+        config.diffuse_weight = self.diffuse_weight;
 
         // Time scale
         if let Some(scale) = self.time_scale {

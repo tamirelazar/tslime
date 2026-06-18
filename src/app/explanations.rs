@@ -69,7 +69,8 @@ pub fn print_parameter_explanations() {
     println!("    Smoothness of Gaussian blur (only for gaussian kernel).");
     println!("    • Lower sigma (0.5-0.8): Less spreading, sharper details");
     println!("    • Higher sigma (1.0-2.0): More spreading, softer, blurred trails");
-    println!("    Range: 0.5-2.0");
+    println!("    • Higher sigma (2.0-4.0): broad, glowing diffusion (separable path)");
+    println!("    Range: 0.5-4.0");
 
     println!("\n  --max-brightness <FLOAT> (default: 100.0)");
     println!("    Fixed maximum brightness for normalization.");

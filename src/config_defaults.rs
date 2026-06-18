@@ -114,12 +114,37 @@ pub mod trail {
     pub const MAX_DECAY_FACTOR: f32 = 0.9999;
     /// Minimum diffusion sigma.
     pub const MIN_DIFFUSION_SIGMA: f32 = 0.5;
-    /// Maximum diffusion sigma.
-    pub const MAX_DIFFUSION_SIGMA: f32 = 2.0;
+    /// Maximum diffusion sigma (widened from 2.0 to support the separable path).
+    pub const MAX_DIFFUSION_SIGMA: f32 = 4.0;
     /// Minimum max brightness.
     pub const MIN_MAX_BRIGHTNESS: f32 = 1.0;
     /// Maximum max brightness.
     pub const MAX_MAX_BRIGHTNESS: f32 = 1000.0;
+
+    /// Default afterglow strength (0.0 = OFF, back-compat).
+    pub const DEFAULT_AFTERGLOW: f32 = 0.0;
+    /// Default afterglow EMA rate (α; smaller = longer-lived glow).
+    pub const DEFAULT_AFTERGLOW_RATE: f32 = 0.05;
+    /// Minimum afterglow EMA rate.
+    pub const MIN_AFTERGLOW_RATE: f32 = 0.001;
+    /// Maximum afterglow EMA rate.
+    pub const MAX_AFTERGLOW_RATE: f32 = 1.0;
+    /// Minimum afterglow strength.
+    pub const MIN_AFTERGLOW: f32 = 0.0;
+    /// Maximum afterglow strength.
+    pub const MAX_AFTERGLOW: f32 = 1.0;
+    /// Default diffuse-weight blend (1.0 = full blur, byte-identical to today).
+    pub const DEFAULT_DIFFUSE_WEIGHT: f32 = 1.0;
+    /// Minimum diffuse-weight blend.
+    pub const MIN_DIFFUSE_WEIGHT: f32 = 0.0;
+    /// Maximum diffuse-weight blend.
+    pub const MAX_DIFFUSE_WEIGHT: f32 = 1.0;
+    /// Default decay gamma (1.0 = current multiplicative decay).
+    pub const DEFAULT_DECAY_GAMMA: f32 = 1.0;
+    /// Minimum decay gamma.
+    pub const MIN_DECAY_GAMMA: f32 = 0.25;
+    /// Maximum decay gamma.
+    pub const MAX_DECAY_GAMMA: f32 = 2.0;
 
     /// Converts a stored normalization white-point into a user-facing brightness
     /// gain (a multiplier relative to the default white-point).

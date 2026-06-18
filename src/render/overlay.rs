@@ -1897,6 +1897,10 @@ mod status_line_tests {
             temporal_color: None,
             temporal_lag: None,
             temporal_mode: None,
+            afterglow: None,
+            afterglow_rate: None,
+            decay_gamma: None,
+            diffuse_weight: None,
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
@@ -1944,6 +1948,10 @@ mod status_line_tests {
             temporal_color: None,
             temporal_lag: None,
             temporal_mode: None,
+            afterglow: None,
+            afterglow_rate: None,
+            decay_gamma: None,
+            diffuse_weight: None,
         }
     }
 

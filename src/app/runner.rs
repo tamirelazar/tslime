@@ -280,6 +280,9 @@ pub fn run_simulation(
     runtime_state.trail_delta_strength = args.trail_delta_strength;
     runtime_state.temporal_color = args.temporal_color;
     runtime_state.temporal_lag_frames = args.temporal_lag;
+    runtime_state.afterglow = args.afterglow;
+    runtime_state.afterglow_rate = args.afterglow_rate;
+    runtime_state.diffuse_weight = args.diffuse_weight;
     runtime_state.temporal_mode = match args.temporal_mode.to_ascii_lowercase().as_str() {
         "accent" => crate::render::palette::TemporalMode::Accent,
         _ => crate::render::palette::TemporalMode::Hue,
@@ -303,6 +306,9 @@ pub fn run_simulation(
             1.0
         };
         sim.set_compute_temporal(true, temporal_alpha);
+    }
+    if args.afterglow > 0.0 {
+        sim.set_compute_afterglow(true, args.afterglow_rate);
     }
     renderer.set_dither_mode(dither_mode);
 
@@ -547,6 +553,11 @@ pub fn run_simulation(
 
         // Get blended trail first (takes &mut self)
         sim.trail_map_blended(&mut blended_trail_buffer);
+        crate::app::fold_afterglow(
+            &mut blended_trail_buffer,
+            sim.afterglow_lag(),
+            runtime_state.afterglow,
+        );
         // Use sim render dimensions from downsampled_frame (may differ from terminal in windowed mode)
         let render_w = downsampled_frame.width();
         let render_h = downsampled_frame.height();
@@ -1282,6 +1293,10 @@ pub fn run_simulation(
                                         runtime_state.temporal_color,
                                         runtime_state.temporal_lag_frames,
                                         runtime_state.temporal_mode,
+                                        runtime_state.afterglow,
+                                        runtime_state.afterglow_rate,
+                                        runtime_state.decay_gamma,
+                                        runtime_state.diffuse_weight,
                                     );
 
                                     match config_manager::save_config(saved_config) {

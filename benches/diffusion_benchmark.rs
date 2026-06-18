@@ -193,10 +193,77 @@ fn bench_diffuse_comparison(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_diffuse_gaussian_separable_sigma3(c: &mut Criterion) {
+    use tslime::simulation::trail_map::TrailMap;
+
+    let width = 400;
+    let height = 400;
+    let mut tm = TrailMap::new(width, height);
+    let data = tm.current_mut();
+    for (i, v) in data.iter_mut().enumerate() {
+        *v = (i * 7 % 100) as f32 / 10.0;
+    }
+
+    c.bench_function("diffuse_gaussian_separable_sigma3", |b| {
+        b.iter(|| {
+            tm.diffuse_gaussian_separable(black_box(3.0));
+        });
+    });
+}
+
+fn bench_decay_gamma(c: &mut Criterion) {
+    use tslime::simulation::trail_map::TrailMap;
+
+    let width = 400;
+    let height = 400;
+    let mut tm = TrailMap::new(width, height);
+    let data = tm.current_mut();
+    for (i, v) in data.iter_mut().enumerate() {
+        *v = (i * 7 % 100) as f32 / 10.0;
+    }
+
+    c.bench_function("decay_gamma_0.9_0.5", |b| {
+        b.iter(|| {
+            tm.decay_gamma(black_box(0.9), black_box(0.5));
+        });
+    });
+}
+
+fn bench_afterglow_ema_pass(c: &mut Criterion) {
+    use tslime::simulation::config::{InitMode, SimConfig, SpeciesConfig};
+    use tslime::Simulation;
+
+    let config = SimConfig {
+        afterglow: 0.4,
+        afterglow_rate: 0.05,
+        species_configs: vec![SpeciesConfig {
+            count: 100,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut sim = Simulation::new(400, 400, config, 42, InitMode::Random, 0);
+    // Enable afterglow EMA buffer (normally done by app/runner when afterglow > 0).
+    sim.set_compute_afterglow(true, 0.05);
+    // Warm up the trail map so the EMA has non-zero values to process.
+    for _ in 0..10 {
+        sim.update(1.0);
+    }
+
+    c.bench_function("afterglow_ema_pass", |b| {
+        b.iter(|| {
+            sim.update(black_box(1.0));
+        });
+    });
+}
+
 criterion_group!(
     benches,
     bench_diffuse_mean3x3,
     bench_diffuse_gaussian,
-    bench_diffuse_comparison
+    bench_diffuse_comparison,
+    bench_diffuse_gaussian_separable_sigma3,
+    bench_decay_gamma,
+    bench_afterglow_ema_pass
 );
 criterion_main!(benches);

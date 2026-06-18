@@ -1182,6 +1182,43 @@ pub struct Args {
     pub temporal_mode: String,
 
     #[arg(
+        long = "afterglow",
+        value_name = "VALUE",
+        default_value_t = 0.0,
+        help = "Afterglow strength (0.0 = off). Luminous lingering tails."
+    )]
+    /// Afterglow strength (glow_mix), lever 7.
+    pub afterglow: f32,
+
+    #[arg(
+        long = "afterglow-rate",
+        value_name = "ALPHA",
+        default_value_t = 0.05,
+        help = "Afterglow EMA rate (smaller = longer-lived glow)."
+    )]
+    /// Afterglow EMA rate (alpha per frame).
+    pub afterglow_rate: f32,
+
+    #[arg(
+        long = "decay-gamma",
+        value_name = "GAMMA",
+        default_value_t = 1.0,
+        help = "Decay gamma (1.0 = uniform decay; <1.0 = faint cells decay less, longer tails)."
+    )]
+    /// Value-dependent decay exponent.
+    pub decay_gamma: f32,
+
+    #[arg(
+        long = "diffuse-weight",
+        value_name = "WEIGHT",
+        default_value_t = 1.0,
+        help = "Diffusion blend weight (1.0 = full blur; 0.0 = no diffusion; \
+                intermediate values blend old and blurred trail)."
+    )]
+    /// Lague diffuse-weight blend factor (0.0–1.0).
+    pub diffuse_weight: f32,
+
+    #[arg(
         long = "auto-normalize",
         help = "Enable adaptive brightness normalization to prevent flickering"
     )]
@@ -2096,6 +2133,10 @@ impl Default for Args {
             temporal_color: 0.0,
             temporal_lag: 8.0,
             temporal_mode: "hue".to_string(),
+            afterglow: 0.0,
+            afterglow_rate: 0.05,
+            decay_gamma: 1.0,
+            diffuse_weight: 1.0,
             boundary_mode: None,
             window_frame: None,
             fullscreen: false,
