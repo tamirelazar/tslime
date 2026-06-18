@@ -988,6 +988,20 @@ impl Simulation {
             }
         }
 
+        // Compute EMA lag and signed temporal difference (lever 3).
+        // diff = trail - lag (raw, signed, un-normalized).
+        if let (Some(ref mut lag), Some(ref mut diff)) =
+            (&mut self.temporal_lag, &mut self.temporal_diff)
+        {
+            let current = self.trail_maps[0].current();
+            let a = self.temporal_alpha;
+            for ((l, d), &c) in lag.iter_mut().zip(diff.iter_mut()).zip(current.iter()) {
+                // EMA toward current; diff is the SIGNED, un-normalized lead.
+                *l = a * c + (1.0 - a) * *l;
+                *d = c - *l;
+            }
+        }
+
         if let Some(ref mut gradient) = self.gradient_magnitude {
             // Use primary trail map directly to avoid allocation from trail_map_blended()
             Self::compute_gradient_magnitude(self.trail_maps[0].current(), width, height, gradient);
@@ -1895,5 +1909,19 @@ mod tests {
             sim.temporal_diff().unwrap().len(),
             sim.width() * sim.height()
         );
+    }
+
+    #[test]
+    fn temporal_diff_is_signed_and_lags() {
+        let cfg = SimConfig::default();
+        let mut sim = Simulation::new(400, 400, cfg, 42, InitMode::Random, 0);
+        sim.set_compute_temporal(true, 0.5); // fast lag for a deterministic check
+        sim.update(1.0);
+        let diff = sim.temporal_diff().unwrap();
+        assert!(
+            diff.iter().any(|&d| d > 0.0),
+            "expected a positive growing front"
+        );
+        assert!(diff.iter().all(|&d| d.is_finite()));
     }
 }
