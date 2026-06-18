@@ -1050,11 +1050,11 @@ pub struct Args {
     #[arg(
         long = "intensity-mapping",
         value_name = "MODE",
-        default_value = intensity_mapping::DEFAULT_TYPE,
-        help = "Intensity-to-color mapping (linear, log, exp, sqrt, square, sigmoid, smoothstep, quantize, perlin, split)"
+        help = "Intensity-to-color mapping (linear, log, exp, sqrt, square, sigmoid, smoothstep, quantize, perlin, split) [default: per-preset, currently log]"
     )]
     /// Intensity mapping mode for non-linear color distribution.
-    pub intensity_mapping: String,
+    /// `None` means "use the per-preset render default" (see `RenderArtDefaults`).
+    pub intensity_mapping: Option<String>,
 
     #[arg(
         long = "intensity-mapping-base",
@@ -1771,11 +1771,20 @@ impl Args {
         }
     }
 
+    /// The intensity-mapping type string, falling back to the historical
+    /// default when the flag is absent. Used by paths that always need a
+    /// concrete mapping (e.g. the pause-logo "sim" passthrough).
+    fn intensity_mapping_str(&self) -> &str {
+        self.intensity_mapping
+            .as_deref()
+            .unwrap_or(intensity_mapping::DEFAULT_TYPE)
+    }
+
     /// Parses the intensity mapping configuration.
     pub fn intensity_mapping(&self) -> Result<crate::render::palette::IntensityMapping, String> {
         use crate::render::palette::{IntensityMapping, MappingFunction};
 
-        match self.intensity_mapping.to_lowercase().as_str() {
+        match self.intensity_mapping_str().to_lowercase().as_str() {
             "linear" => Ok(IntensityMapping::linear()),
             "log" | "logarithmic" => Ok(IntensityMapping::logarithmic(self.intensity_mapping_base)),
             "exp" | "exponential" => Ok(IntensityMapping::exponential(self.intensity_mapping_base)),
@@ -1818,7 +1827,7 @@ impl Args {
             )),
             _ => Err(format!(
                 "Invalid intensity mapping: {}",
-                self.intensity_mapping
+                self.intensity_mapping_str()
             )),
         }
     }
@@ -1948,6 +1957,23 @@ impl Args {
     /// Returns an error if validation fails.
     pub fn to_sim_config(&self) -> Result<SimConfig, crate::error::ValidationError> {
         SimConfig::try_from(self)
+    }
+
+    /// Resolves the render-layer art defaults: per-preset defaults overridden
+    /// by explicit intensity-mapping CLI flags. Render counterpart to
+    /// [`Args::to_sim_config`] (spec §5 — render params stay out of `SimConfig`).
+    /// When no preset is set, falls back to `RenderArtDefaults::default()` (log10).
+    pub(crate) fn to_render_art_defaults(
+        &self,
+    ) -> Result<crate::render_art_defaults::RenderArtDefaults, String> {
+        let mut art = match self.preset {
+            Some(preset) => crate::render_art_defaults::RenderArtDefaults::from(preset),
+            None => crate::render_art_defaults::RenderArtDefaults::default(),
+        };
+        if self.intensity_mapping.is_some() {
+            art.intensity_mapping = self.intensity_mapping()?;
+        }
+        Ok(art)
     }
 
     /// Validates arguments at the CLI boundary.
@@ -2097,7 +2123,7 @@ impl Default for Args {
             reverse_palette: false,
             invert_palette: false,
             palette_shift: 0.0,
-            intensity_mapping: intensity_mapping::DEFAULT_TYPE.to_string(),
+            intensity_mapping: None,
             intensity_mapping_base: intensity::DEFAULT_LOG_BASE,
             intensity_mapping_gamma: 2.2,
             intensity_mapping_levels: 8,
@@ -2784,5 +2810,43 @@ mod tests {
             DepositCurve::Linear
         );
         assert!(DepositCurve::from_str("bogus").is_err());
+    }
+
+    #[test]
+    fn render_art_defaults_uses_preset_default_when_flag_absent() {
+        use crate::render::palette::IntensityMapping;
+        let args = Args {
+            preset: Some(crate::simulation::config::Preset::Vortex),
+            intensity_mapping: None,
+            ..Default::default()
+        };
+        let art = args.to_render_art_defaults().unwrap();
+        // #32: every preset defaults to log10.
+        assert_eq!(art.intensity_mapping, IntensityMapping::logarithmic(10.0));
+    }
+
+    #[test]
+    fn render_art_defaults_cli_flag_overrides_preset() {
+        use crate::render::palette::IntensityMapping;
+        let args = Args {
+            preset: Some(crate::simulation::config::Preset::Vortex),
+            intensity_mapping: Some("linear".to_string()),
+            ..Default::default()
+        };
+        let art = args.to_render_art_defaults().unwrap();
+        assert_eq!(art.intensity_mapping, IntensityMapping::linear());
+    }
+
+    #[test]
+    fn render_art_defaults_none_preset_falls_back_to_default() {
+        use crate::render::palette::IntensityMapping;
+        let args = Args {
+            preset: None,
+            intensity_mapping: None,
+            ..Default::default()
+        };
+        let art = args.to_render_art_defaults().unwrap();
+        // No preset + no flag → RenderArtDefaults::default() == log10.
+        assert_eq!(art.intensity_mapping, IntensityMapping::logarithmic(10.0));
     }
 }

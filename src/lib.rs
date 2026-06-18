@@ -70,6 +70,8 @@ pub mod overlay;
 pub mod palette_manager;
 /// Rendering logic (ASCII/Unicode, color palettes, dithering).
 pub mod render;
+/// Per-preset render/art-layer defaults.
+pub(crate) mod render_art_defaults;
 /// Core simulation logic (agents, trail map).
 pub mod simulation;
 /// Terminal handling (input, output, raw mode).

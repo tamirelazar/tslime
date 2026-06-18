@@ -65,3 +65,16 @@ fn test_cli_print_mode() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.is_empty());
 }
+
+#[test]
+fn intensity_mapping_absent_is_none_present_is_some() {
+    use clap::Parser;
+    let bare = tslime::cli::Args::parse_from(["tslime"]);
+    assert!(
+        bare.intensity_mapping.is_none(),
+        "bare run must leave flag unset"
+    );
+
+    let explicit = tslime::cli::Args::parse_from(["tslime", "--intensity-mapping", "linear"]);
+    assert_eq!(explicit.intensity_mapping.as_deref(), Some("linear"));
+}
