@@ -1891,6 +1891,10 @@ impl Validatable for SimConfig {
         rules::DECAY_FACTOR.validate_f32(self.decay_factor)?;
         rules::MAX_BRIGHTNESS.validate_f32(self.max_brightness)?;
         rules::DIFFUSION_SIGMA.validate_f32(self.diffusion_sigma)?;
+        rules::DECAY_GAMMA.validate_f32(self.decay_gamma)?;
+        rules::AFTERGLOW.validate_f32(self.afterglow)?;
+        rules::AFTERGLOW_RATE.validate_f32(self.afterglow_rate)?;
+        rules::DIFFUSE_WEIGHT.validate_f32(self.diffuse_weight)?;
 
         // Validate time and environment parameters
         rules::TIME_SCALE.validate_f32(self.time_scale)?;
@@ -2619,6 +2623,30 @@ mod tests {
             "diffuse_weight=1 == full blur == today"
         );
         assert_eq!(c.decay_gamma, 1.0, "decay_gamma=1 == current decay");
+    }
+
+    #[test]
+    fn validate_decay_gamma_rejects_out_of_range() {
+        let config = SimConfig {
+            decay_gamma: 9999.0,
+            ..SimConfig::default()
+        };
+        assert!(
+            config.validate().is_err(),
+            "decay_gamma=9999.0 must be rejected"
+        );
+    }
+
+    #[test]
+    fn validate_decay_gamma_accepts_valid() {
+        let config = SimConfig {
+            decay_gamma: 1.0,
+            ..SimConfig::default()
+        };
+        assert!(
+            config.validate().is_ok(),
+            "decay_gamma=1.0 must be accepted"
+        );
     }
 }
 
