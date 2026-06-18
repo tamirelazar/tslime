@@ -2051,7 +2051,12 @@ mod tests {
         assert_eq!(off_cells.len(), on_cells.len());
         for (i, (a, b)) in off_cells.iter().zip(on_cells.iter()).enumerate() {
             let diff = (a - b).abs();
-            let tol = 1e-2_f32.max(1e-3 * (1.0 + a.abs()));
+            // Off path does (((trail+a1)+a2)+...) per agent; active path folds
+            // accum=(a1+a2+...) then trail+accum. Same math, different float
+            // association order, so differences are bounded reassociation noise
+            // (magnitude-relative), not algorithmic. A wrong curve/scale would
+            // diverge by orders of magnitude and fail this bound.
+            let tol = 1e-4_f32 + 1e-4 * a.abs();
             assert!(
                 diff <= tol,
                 "cell {i}: off={a} on={b} diff={diff} tol={tol} — accum path diverged from direct deposit"
