@@ -2588,8 +2588,9 @@ pub enum TemporalMode {
     Accent,
 }
 
-/// Shared per-subpixel colorizer used by BOTH the TUI render path
-/// (`FrameBuffer::from_downsampled`) and PNG export (`save_frame_as_png`).
+/// Shared per-subpixel colorizer: the single colorize pass for ALL outputs —
+/// the TUI render path (`FrameBuffer::from_downsampled`, which also feeds GIF,
+/// WebM, headless print, and frame capture) and PNG export (`save_frame_as_png`).
 ///
 /// `brightness` is the normalized 0..1 subpixel value. `mapping` applies the
 /// intensity tone curve. `diff_norm` is the white-point-normalized signed

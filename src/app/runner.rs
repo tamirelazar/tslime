@@ -1847,7 +1847,7 @@ pub fn run_simulation(
                                 runtime_state.invert_palette,
                                 hue_offset,
                                 Some(&runtime_state.intensity_mapping),
-                                max_brightness,
+                                max_brightness.max(1.0),
                                 runtime_state.temporal_color,
                                 runtime_state.temporal_mode,
                                 png_aux_cells,
