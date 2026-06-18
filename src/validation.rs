@@ -167,7 +167,7 @@ pub mod rules {
     pub const AFTERGLOW: RangeRule<f32> =
         RangeRule::new(trail::MIN_AFTERGLOW, trail::MAX_AFTERGLOW, "afterglow");
 
-    /// Validation rule for afterglow EMA rate.
+    /// Validation rule for afterglow EMA rate (0.001 to 1.0).
     pub const AFTERGLOW_RATE: RangeRule<f32> = RangeRule::new(
         trail::MIN_AFTERGLOW_RATE,
         trail::MAX_AFTERGLOW_RATE,
