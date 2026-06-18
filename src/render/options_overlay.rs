@@ -258,7 +258,7 @@ impl ControlsOverlay {
                             mod_marker(diffusion_sigma, defaults.diffusion_sigma, 0.01),
                             ";/:",
                             "Diff Sigma",
-                            mini_bar((diffusion_sigma - 0.5) / 1.5, 8),
+                            mini_bar((diffusion_sigma - 0.5) / 3.5, 8),
                             format!("{:.2}", diffusion_sigma),
                         ),
                         Left,

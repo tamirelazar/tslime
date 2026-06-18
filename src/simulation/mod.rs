@@ -960,6 +960,8 @@ impl Simulation {
                     self.config.diffusion_kernel,
                     crate::simulation::config::DiffusionKernel::Gaussian
                 ),
+                self.config.diffuse_weight,
+                self.config.diffusion_sigma,
             );
             trail_map.decay_gamma(effective_decay, self.config.decay_gamma);
         }

@@ -1209,6 +1209,16 @@ pub struct Args {
     pub decay_gamma: f32,
 
     #[arg(
+        long = "diffuse-weight",
+        value_name = "WEIGHT",
+        default_value_t = 1.0,
+        help = "Diffusion blend weight (1.0 = full blur; 0.0 = no diffusion; \
+                intermediate values blend old and blurred trail)."
+    )]
+    /// Lague diffuse-weight blend factor (0.0–1.0).
+    pub diffuse_weight: f32,
+
+    #[arg(
         long = "auto-normalize",
         help = "Enable adaptive brightness normalization to prevent flickering"
     )]
@@ -2126,6 +2136,7 @@ impl Default for Args {
             afterglow: 0.0,
             afterglow_rate: 0.05,
             decay_gamma: 1.0,
+            diffuse_weight: 1.0,
             boundary_mode: None,
             window_frame: None,
             fullscreen: false,

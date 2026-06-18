@@ -1900,6 +1900,7 @@ mod status_line_tests {
             afterglow: None,
             afterglow_rate: None,
             decay_gamma: None,
+            diffuse_weight: None,
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
@@ -1950,6 +1951,7 @@ mod status_line_tests {
             afterglow: None,
             afterglow_rate: None,
             decay_gamma: None,
+            diffuse_weight: None,
         }
     }
 

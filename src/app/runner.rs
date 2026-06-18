@@ -282,6 +282,7 @@ pub fn run_simulation(
     runtime_state.temporal_lag_frames = args.temporal_lag;
     runtime_state.afterglow = args.afterglow;
     runtime_state.afterglow_rate = args.afterglow_rate;
+    runtime_state.diffuse_weight = args.diffuse_weight;
     runtime_state.temporal_mode = match args.temporal_mode.to_ascii_lowercase().as_str() {
         "accent" => crate::render::palette::TemporalMode::Accent,
         _ => crate::render::palette::TemporalMode::Hue,
@@ -1295,6 +1296,7 @@ pub fn run_simulation(
                                         runtime_state.afterglow,
                                         runtime_state.afterglow_rate,
                                         runtime_state.decay_gamma,
+                                        runtime_state.diffuse_weight,
                                     );
 
                                     match config_manager::save_config(saved_config) {

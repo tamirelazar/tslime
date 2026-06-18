@@ -53,6 +53,7 @@ pub(crate) struct ConfigBuilder {
     afterglow: f32,
     afterglow_rate: f32,
     decay_gamma: f32,
+    diffuse_weight: f32,
 }
 
 impl ConfigBuilder {
@@ -106,6 +107,7 @@ impl ConfigBuilder {
             afterglow: args.afterglow,
             afterglow_rate: args.afterglow_rate,
             decay_gamma: args.decay_gamma,
+            diffuse_weight: args.diffuse_weight,
         }
     }
 
@@ -172,6 +174,9 @@ impl ConfigBuilder {
 
         // Decay gamma
         config.decay_gamma = self.decay_gamma;
+
+        // Diffuse weight (Lague blend)
+        config.diffuse_weight = self.diffuse_weight;
 
         // Time scale
         if let Some(scale) = self.time_scale {

@@ -22,6 +22,9 @@ pub struct TrailMap {
     sigma: f32,
     trail_sum: f32,
     boundary_mode: super::config::BoundaryMode,
+    /// Pre-allocated snapshot buffer for the Lague diffuse-weight blend.
+    /// Only populated (and only used) when `diffuse_weight < 1.0`.
+    blend_src: Vec<f32>,
 }
 
 const GAUSSIAN_KERNEL_SIZE: usize = 5;
@@ -63,6 +66,7 @@ impl TrailMap {
             sigma: 1.0,
             trail_sum: 0.0,
             boundary_mode: super::config::BoundaryMode::Bounce,
+            blend_src: Vec::new(),
         }
     }
 
@@ -79,6 +83,7 @@ impl TrailMap {
             sigma,
             trail_sum: 0.0,
             boundary_mode: super::config::BoundaryMode::Bounce,
+            blend_src: Vec::new(),
         }
     }
 
@@ -100,6 +105,7 @@ impl TrailMap {
             sigma,
             trail_sum: 0.0,
             boundary_mode,
+            blend_src: Vec::new(),
         }
     }
 
@@ -1045,13 +1051,94 @@ impl TrailMap {
     }
 
     /// Dispatch to the appropriate diffusion implementation.
-    pub fn diffuse_with_kernel(&mut self, use_simd: bool, use_gaussian: bool) {
-        // SIMD paths don't implement wrap-around, so wrap mode always takes
-        // the scalar path
+    /// Separable Gaussian blur (two 1D passes) for the wider sigma range (sigma > 2.0).
+    /// `O(2r)` per cell vs `O(r²)`. Uses bounce/wrap boundary consistent with the
+    /// other diffusion paths. radius = ceil(3·sigma).
+    pub fn diffuse_gaussian_separable(&mut self, sigma: f32) {
+        let width = self.width;
+        let height = self.height;
+        let sigma = sigma.max(0.1);
+        let radius = (3.0 * sigma).ceil() as i32;
+        // Build normalized 1D kernel.
+        let kernel_len = (2 * radius + 1) as usize;
+        let mut kernel = Vec::with_capacity(kernel_len);
+        let two_sigma2 = 2.0 * sigma * sigma;
+        let mut ksum = 0.0f32;
+        for k in -radius..=radius {
+            let w = (-(k as f32 * k as f32) / two_sigma2).exp();
+            kernel.push(w);
+            ksum += w;
+        }
+        for w in &mut kernel {
+            *w /= ksum;
+        }
+        let is_wrap = matches!(self.boundary_mode, super::config::BoundaryMode::Wrap);
+        let clampi = |v: i32, n: i32| -> usize {
+            if is_wrap {
+                (((v % n) + n) % n) as usize
+            } else {
+                v.clamp(0, n - 1) as usize
+            }
+        };
+        // Horizontal pass: current -> scratch.
+        for y in 0..height {
+            for x in 0..width {
+                let mut sum = 0.0f32;
+                for (ki, k) in (-radius..=radius).enumerate() {
+                    let nx = clampi(x as i32 + k, width as i32);
+                    sum += self.current[y * width + nx] * kernel[ki];
+                }
+                self.scratch[y * width + x] = sum;
+            }
+        }
+        // Vertical pass: scratch -> current.
+        for y in 0..height {
+            for x in 0..width {
+                let mut sum = 0.0f32;
+                for (ki, k) in (-radius..=radius).enumerate() {
+                    let ny = clampi(y as i32 + k, height as i32);
+                    sum += self.scratch[ny * width + x] * kernel[ki];
+                }
+                self.current[y * width + x] = sum;
+            }
+        }
+    }
+
+    /// Dispatch diffusion, then apply the Lague diffuse-weight blend.
+    ///
+    /// `diffuse_weight == 1.0` ⇒ full blur (byte-identical to the pre-blend behavior,
+    /// no snapshot taken).  `diffuse_weight == 0.0` ⇒ no-op.
+    /// The blend `new = old·(1−w) + blur·w` is applied only when `0 < w < 1`.
+    ///
+    /// Routes to the separable path when `use_gaussian && sigma > 2.0`.
+    pub fn diffuse_with_kernel(
+        &mut self,
+        use_simd: bool,
+        use_gaussian: bool,
+        diffuse_weight: f32,
+        sigma: f32,
+    ) {
+        let w = diffuse_weight.clamp(0.0, 1.0);
+        if w <= 0.0 {
+            return; // no diffusion at all
+        }
+
+        // Snapshot the pre-blur trail for the blend only when needed (no alloc at w==1).
+        if w < 1.0 {
+            let size = self.width * self.height;
+            if self.blend_src.len() != size {
+                self.blend_src.resize(size, 0.0);
+            }
+            self.blend_src.copy_from_slice(&self.current);
+        }
+
+        // SIMD paths don't implement wrap-around, so wrap mode always takes the scalar path.
         let use_scalar =
             !use_simd || matches!(self.boundary_mode, super::config::BoundaryMode::Wrap);
 
-        if use_scalar {
+        if use_gaussian && sigma > 2.0 {
+            self.diffuse_gaussian_separable(sigma);
+        } else if use_scalar {
             if use_gaussian {
                 self.diffuse_gaussian();
             } else {
@@ -1061,6 +1148,13 @@ impl TrailMap {
             self.diffuse_gaussian_simd();
         } else {
             self.diffuse_simd();
+        }
+
+        // Apply blend only for partial weight (w==1.0 fast path: no blend math).
+        if w < 1.0 {
+            for (cur, &src) in self.current.iter_mut().zip(self.blend_src.iter()) {
+                *cur = src * (1.0 - w) + *cur * w;
+            }
         }
     }
 
@@ -1299,7 +1393,8 @@ mod tests {
         trail1.set(5, 5, 9.0);
         trail2.set(5, 5, 9.0);
 
-        trail1.diffuse_with_kernel(false, false);
+        // weight=1.0, sigma<=2.0 → must be byte-identical to diffuse()
+        trail1.diffuse_with_kernel(false, false, 1.0, 1.0);
         trail2.diffuse();
 
         assert_eq!(trail1.current(), trail2.current());
@@ -1308,7 +1403,8 @@ mod tests {
         trail2.clear();
         trail1.set(5, 5, 9.0);
         trail2.set(5, 5, 9.0);
-        trail1.diffuse_with_kernel(false, true);
+        // weight=1.0, sigma<=2.0, gaussian → byte-identical to diffuse_gaussian()
+        trail1.diffuse_with_kernel(false, true, 1.0, 1.0);
         trail2.diffuse_gaussian();
         assert_eq!(trail1.current(), trail2.current());
     }
@@ -1493,5 +1589,33 @@ mod prop_tests {
                 prop_assert!(v >= 0.0);
             }
         }
+    }
+
+    #[test]
+    fn diffuse_weight_zero_is_noop() {
+        let mut tm = TrailMap::new(16, 16);
+        tm.current_mut()[8 * 16 + 8] = 1.0;
+        let before = tm.current().to_vec();
+        tm.diffuse_with_kernel(false, false, 0.0, 1.0); // weight=0 ⇒ no change
+        assert_eq!(
+            tm.current(),
+            &before[..],
+            "weight=0 must leave the trail unchanged"
+        );
+    }
+
+    #[test]
+    fn separable_gaussian_conserves_mass_and_spreads() {
+        let mut tm = TrailMap::new(32, 32);
+        tm.current_mut()[16 * 32 + 16] = 9.0;
+        let sum_before: f32 = tm.current().iter().sum();
+        tm.diffuse_gaussian_separable(3.0);
+        let sum_after: f32 = tm.current().iter().sum();
+        assert!((sum_before - sum_after).abs() < 0.5, "blur ~conserves mass");
+        assert!(
+            tm.current()[16 * 32 + 16] < 9.0,
+            "energy spread out of the center"
+        );
+        assert!(tm.current()[16 * 32 + 17] > 0.0, "neighbor received energy");
     }
 }

@@ -105,6 +105,7 @@ pub fn apply_live_params(
     new_config.deposit_amount = runtime_state.deposit_amount;
     new_config.diffusion_kernel = runtime_state.diffusion_kernel;
     new_config.diffusion_sigma = runtime_state.diffusion_sigma;
+    new_config.diffuse_weight = runtime_state.diffuse_weight;
     new_config.max_brightness = runtime_state.max_brightness;
     new_config.terrain = runtime_state.terrain_type;
     new_config.terrain_strength = runtime_state.terrain_strength;
