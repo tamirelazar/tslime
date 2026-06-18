@@ -153,6 +153,9 @@ pub struct Simulation {
     trail_age: Option<Vec<f32>>,
     prev_trail: Option<Vec<f32>>,
     trail_delta: Option<Vec<f32>>,
+    temporal_lag: Option<Vec<f32>>,
+    temporal_diff: Option<Vec<f32>>,
+    temporal_alpha: f32,
     gradient_magnitude: Option<Vec<f32>>,
     /// Pre-allocated buffer for combining separate species trails.
     /// Only allocated when both `separate_species_trails` and trail history are enabled.
@@ -240,6 +243,9 @@ impl Simulation {
             trail_age: None,
             prev_trail: None,
             trail_delta: None,
+            temporal_lag: None,
+            temporal_diff: None,
+            temporal_alpha: 0.2,
             gradient_magnitude: None,
             combined_trail_buffer,
             frame_count: 0,
@@ -1153,6 +1159,22 @@ impl Simulation {
         self.trail_delta.as_deref()
     }
 
+    /// Enable temporal-difference computation (lever 3). `alpha` is the EMA rate
+    /// per frame (smaller ⇒ longer lag). Allocates buffers on first enable.
+    pub fn set_compute_temporal(&mut self, enabled: bool, alpha: f32) {
+        self.temporal_alpha = alpha.clamp(0.0, 1.0);
+        if enabled && self.temporal_diff.is_none() {
+            let size = self.width() * self.height();
+            self.temporal_lag = Some(vec![0.0; size]);
+            self.temporal_diff = Some(vec![0.0; size]);
+        }
+    }
+
+    /// Raw signed temporal difference (`trail - lag`), per cell. Not normalized.
+    pub fn temporal_diff(&self) -> Option<&[f32]> {
+        self.temporal_diff.as_deref()
+    }
+
     /// Enable gradient magnitude computation, allocating the buffer on first
     /// enable. Passing `false` is currently a no-op.
     pub fn set_compute_gradient_magnitude(&mut self, enabled: bool) {
@@ -1860,5 +1882,18 @@ mod tests {
             let sum: f32 = gradient.iter().sum();
             assert_eq!(sum, 0.0, "Gradient should be cleared after reset");
         }
+    }
+
+    #[test]
+    fn temporal_buffers_allocate_on_demand() {
+        let cfg = SimConfig::default();
+        let mut sim = Simulation::new(100, 100, cfg, 42, InitMode::Random, 0);
+        assert!(sim.temporal_diff().is_none());
+        sim.set_compute_temporal(true, 0.2);
+        assert!(sim.temporal_diff().is_some());
+        assert_eq!(
+            sim.temporal_diff().unwrap().len(),
+            sim.width() * sim.height()
+        );
     }
 }
