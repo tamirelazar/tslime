@@ -457,6 +457,15 @@ pub mod dither {
     pub const DEFAULT_HYBRID_EDGE: f32 = DEFAULT_HYBRID_EDGE_THRESHOLD;
 }
 
+/// Glyph-selection constants.
+pub mod glyph_consts {
+    /// Sobel gradient-magnitude threshold for the glyph-by-shape hybrid mode
+    /// (lever 10, #34). Distinct from the dither `edge_threshold`/`DEFAULT_*EDGE*`
+    /// consts above, which are variance-based for the dither hybrid path.
+    /// Gradients are normalized to `[-1,1]`, so magnitude is ~`[0,1.41]`.
+    pub const DEFAULT_GLYPH_EDGE_THRESHOLD: f32 = 0.15;
+}
+
 /// ASCII contrast constants.
 pub mod ascii {
     /// Default ASCII contrast value.
