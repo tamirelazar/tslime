@@ -1959,4 +1959,53 @@ init_mode = "Random"
             "palette_cycle must equal default"
         );
     }
+
+    #[test]
+    fn missing_glyph_loads_identity() {
+        use crate::render::charset::GlyphConfig;
+
+        // Old TOML without glyph fields must deserialize and produce GlyphConfig::default().
+        let toml = r#"name = "old_no_glyph"
+population = 1000
+sensor_angle = 22.5
+sensor_distance = 9.0
+rotation_angle = 45.0
+step_size = 1.0
+decay_factor = 0.9
+deposit_amount = 5.0
+max_brightness = 100.0
+diffusion_kernel = "Mean3x3"
+diffusion_sigma = 1.0
+palette = "Organic"
+charset = "HalfBlock"
+reverse_palette = false
+invert_palette = false
+warmup_frames = 0
+food_persist = false
+auto_reset = false
+grid = false
+init_mode = "Random"
+"#;
+        let cfg: SavedConfig =
+            toml::from_str(toml).expect("old config without glyph fields must load");
+        assert!(
+            cfg.glyph_selection.is_none(),
+            "missing glyph_selection must deserialize as None"
+        );
+        assert!(cfg.glyph_edge_threshold.is_none());
+
+        // apply_to_runtime_state must produce GlyphConfig::default() (selection = None).
+        let mut state = create_test_runtime_state();
+        cfg.apply_to_runtime_state(&mut state)
+            .expect("legacy config must still apply");
+        assert_eq!(
+            state.glyph,
+            GlyphConfig::default(),
+            "missing glyph keys must default to GlyphConfig::default()"
+        );
+        assert!(
+            state.glyph.selection.is_none(),
+            "missing glyph_selection must default to None"
+        );
+    }
 }

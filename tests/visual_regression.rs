@@ -1248,6 +1248,128 @@ fn test_visual_regression_window_frame_glow() {
     }
 }
 
+// ============== GLYPH SELECTION TESTS ==============
+
+#[test]
+fn test_visual_regression_ascii_hybrid() {
+    let output = capture_print_output(
+        &[
+            "-s",
+            "1",
+            "--ascii",
+            "--glyph-selection",
+            "hybrid",
+            "--glyph-edge-threshold",
+            "0.08",
+        ],
+        80,
+        24,
+    );
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("ascii_hybrid", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("ascii_hybrid") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: ascii_hybrid differs"
+            );
+        }
+        Err(_) => {
+            eprintln!("Warning: golden missing; run UPDATE_GOLDEN=1");
+            update_golden("ascii_hybrid", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_ascii_brightness() {
+    let output = capture_print_output(
+        &["-s", "1", "--ascii", "--glyph-selection", "brightness"],
+        80,
+        24,
+    );
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("ascii_brightness", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("ascii_brightness") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: ascii_brightness differs"
+            );
+        }
+        Err(_) => {
+            eprintln!("Warning: golden missing; run UPDATE_GOLDEN=1");
+            update_golden("ascii_brightness", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_braille_brightness() {
+    let output = capture_print_output(
+        &["-s", "1", "--braille", "--glyph-selection", "brightness"],
+        80,
+        24,
+    );
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("braille_brightness", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("braille_brightness") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: braille_brightness differs"
+            );
+        }
+        Err(_) => {
+            eprintln!("Warning: golden missing; run UPDATE_GOLDEN=1");
+            update_golden("braille_brightness", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_sculpted_brightness() {
+    let output = capture_print_output(
+        &["-s", "1", "--sculpted", "--glyph-selection", "brightness"],
+        80,
+        24,
+    );
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("sculpted_brightness", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("sculpted_brightness") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: sculpted_brightness differs"
+            );
+        }
+        Err(_) => {
+            eprintln!("Warning: golden missing; run UPDATE_GOLDEN=1");
+            update_golden("sculpted_brightness", &normalized).unwrap();
+        }
+    }
+}
+
 // ============== TEMPORAL COLOR TESTS ==============
 
 #[test]
