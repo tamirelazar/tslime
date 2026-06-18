@@ -1959,6 +1959,23 @@ impl Args {
         SimConfig::try_from(self)
     }
 
+    /// Resolves the render-layer art defaults: per-preset defaults overridden
+    /// by explicit intensity-mapping CLI flags. Render counterpart to
+    /// [`Args::to_sim_config`] (spec §5 — render params stay out of `SimConfig`).
+    #[allow(dead_code)]
+    pub(crate) fn to_render_art_defaults(
+        &self,
+    ) -> Result<crate::render_art_defaults::RenderArtDefaults, String> {
+        let mut art = match self.preset {
+            Some(preset) => crate::render_art_defaults::RenderArtDefaults::from(preset),
+            None => crate::render_art_defaults::RenderArtDefaults::default(),
+        };
+        if self.intensity_mapping.is_some() {
+            art.intensity_mapping = self.intensity_mapping()?;
+        }
+        Ok(art)
+    }
+
     /// Validates arguments at the CLI boundary.
     ///
     /// Covers terminal/resolution/fps bounds and other CLI-specific options that
@@ -2793,5 +2810,30 @@ mod tests {
             DepositCurve::Linear
         );
         assert!(DepositCurve::from_str("bogus").is_err());
+    }
+
+    #[test]
+    fn render_art_defaults_uses_preset_default_when_flag_absent() {
+        use crate::render::palette::IntensityMapping;
+        let args = Args {
+            preset: Some(crate::simulation::config::Preset::Vortex),
+            intensity_mapping: None,
+            ..Default::default()
+        };
+        let art = args.to_render_art_defaults().unwrap();
+        // #32: every preset defaults to log10.
+        assert_eq!(art.intensity_mapping, IntensityMapping::logarithmic(10.0));
+    }
+
+    #[test]
+    fn render_art_defaults_cli_flag_overrides_preset() {
+        use crate::render::palette::IntensityMapping;
+        let args = Args {
+            preset: Some(crate::simulation::config::Preset::Vortex),
+            intensity_mapping: Some("linear".to_string()),
+            ..Default::default()
+        };
+        let art = args.to_render_art_defaults().unwrap();
+        assert_eq!(art.intensity_mapping, IntensityMapping::linear());
     }
 }
