@@ -570,6 +570,7 @@ pub fn run_simulation(
                 trail_age,
                 trail_delta,
                 gradient_mag,
+                None,
                 sim_width,
                 sim_height,
                 render_w,

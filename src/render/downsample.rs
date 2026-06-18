@@ -330,6 +330,8 @@ pub struct AuxCell {
     pub delta: f32,
     /// Normalized gradient magnitude [0, 1] for edge glow.
     pub gradient: f32,
+    /// Signed temporal diff (raw mean, sign preserved; positive = growing, negative = decaying).
+    pub signed_diff: f32,
 }
 
 /// Auxiliary frame holding per-cell age and delta at terminal resolution.
@@ -355,16 +357,19 @@ impl AuxFrame {
     }
 }
 
-/// Downsamples optional age, delta, and gradient buffers from sim resolution to terminal resolution.
+/// Downsamples optional age, delta, gradient, and signed diff buffers from sim resolution to
+/// terminal resolution.
 ///
 /// Uses the same average-pooling grid mapping as `downsample()`. Age values are
-/// divided by `AGE_MAX_SECONDS` and all outputs are clamped to [0, 1]; missing
-/// buffers produce zeros. The frame is resized to the terminal dimensions if needed.
+/// divided by `AGE_MAX_SECONDS` and age/delta/gradient outputs are clamped to [0, 1]; missing
+/// buffers produce zeros. `signed_diff_buf` is averaged with sign preserved (no clamp).
+/// The frame is resized to the terminal dimensions if needed.
 #[allow(clippy::too_many_arguments)]
 pub fn downsample_aux(
     age_buf: Option<&[f32]>,
     delta_buf: Option<&[f32]>,
     gradient_buf: Option<&[f32]>,
+    signed_diff_buf: Option<&[f32]>,
     sim_width: usize,
     sim_height: usize,
     term_width: usize,
@@ -429,10 +434,24 @@ pub fn downsample_aux(
                 0.0
             };
 
+            let signed_diff = if let Some(buf) = signed_diff_buf {
+                compute_average(
+                    buf,
+                    sim_width,
+                    sim_y_start,
+                    sim_y_end,
+                    sim_x_start,
+                    sim_x_end,
+                )
+            } else {
+                0.0
+            };
+
             frame.cells[cy * term_width + cx] = AuxCell {
                 age,
                 delta,
                 gradient,
+                signed_diff,
             };
         }
     }
@@ -912,5 +931,22 @@ mod tests {
                 low_brightness_cells, term_width, term_height
             );
         }
+    }
+
+    #[test]
+    fn downsample_aux_averages_signed_diff() {
+        // 2x2 sim → 1x1 term cell. signed diff values average (and keep sign).
+        let signed = vec![-1.0_f32, -1.0, 1.0, 1.0]; // mean 0.0
+        let mut frame = AuxFrame {
+            width: 1,
+            height: 1,
+            cells: vec![AuxCell::default()],
+        };
+        downsample_aux(None, None, None, Some(&signed), 2, 2, 1, 1, &mut frame);
+        assert!((frame.cells[0].signed_diff - 0.0).abs() < 1e-6);
+
+        let signed2 = vec![2.0_f32, 2.0, 2.0, 2.0];
+        downsample_aux(None, None, None, Some(&signed2), 2, 2, 1, 1, &mut frame);
+        assert!((frame.cells[0].signed_diff - 2.0).abs() < 1e-6);
     }
 }
