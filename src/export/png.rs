@@ -1,3 +1,12 @@
+//! PNG frame export.
+//!
+//! **Colorize-last invariant**: PNG export colors pixels through the shared
+//! [`crate::render::palette::colorize_subpixel`], the SAME entry point used by
+//! the live TUI frame buffer and GIF/WebM export. One scalar brightness maps
+//! through exactly one colorize pass for every output (TUI, GIF, WebM, PNG), so
+//! saved stills match the on-screen look. Do not add a separate
+//! palette-mapping path here.
+
 use crate::cli::Palette;
 use crate::render::downsample::Cell;
 use crate::render::palette;
@@ -264,5 +273,65 @@ mod tests {
         let nanos_with_ext = &parts[3];
         let nanos = nanos_with_ext.trim_end_matches(".png");
         assert!(nanos.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    /// Guards the colorize-last invariant: the PNG helper must agree with the
+    /// shared `colorize_subpixel` entry point across a brightness sweep, a
+    /// non-default intensity mapping, and several flag combinations.  Any future
+    /// edit to `png_pixel_color` that drops the mapping argument, hardwires a
+    /// different palette call, or diverges from `colorize_subpixel` will cause
+    /// this test to fail.
+    #[test]
+    fn test_png_pixel_color_matches_render_colorizer() {
+        use crate::render::palette::{self, IntensityMapping, Palette, TemporalMode};
+
+        let mapping = IntensityMapping::logarithmic(10.0);
+        let brightnesses = [0.0_f32, 0.15, 0.37, 0.6, 0.83, 1.0];
+
+        // Sweep brightness × {no mapping, with mapping} for default flags.
+        for &b in &brightnesses {
+            for m in [None, Some(&mapping)] {
+                let render = palette::colorize_subpixel(
+                    b,
+                    Palette::Organic,
+                    false,
+                    false,
+                    0.0,
+                    m,
+                    0.0,
+                    0.0,
+                    TemporalMode::Hue,
+                );
+                let png = png_pixel_color(b, Palette::Organic, false, false, 0.0, m);
+                assert_eq!(
+                    render,
+                    png,
+                    "PNG/render colorize parity broke at brightness {b} (mapping={})",
+                    m.is_some()
+                );
+            }
+        }
+
+        // Also exercise reverse=true and invert=true flag combinations at a
+        // representative brightness to catch flag-routing divergence.
+        let mid = 0.5_f32;
+        for (reverse, invert) in [(true, false), (false, true), (true, true)] {
+            let render = palette::colorize_subpixel(
+                mid,
+                Palette::Organic,
+                reverse,
+                invert,
+                0.0,
+                Some(&mapping),
+                0.0,
+                0.0,
+                TemporalMode::Hue,
+            );
+            let png = png_pixel_color(mid, Palette::Organic, reverse, invert, 0.0, Some(&mapping));
+            assert_eq!(
+                render, png,
+                "PNG/render colorize parity broke at reverse={reverse} invert={invert}"
+            );
+        }
     }
 }
