@@ -1905,6 +1905,8 @@ mod status_line_tests {
             deposit_scale: None,
             deposit_gamma: None,
             deposit_cap: None,
+            palette_cycles: None,
+            palette_cycle_mode: None,
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
@@ -1960,6 +1962,8 @@ mod status_line_tests {
             deposit_scale: None,
             deposit_gamma: None,
             deposit_cap: None,
+            palette_cycles: None,
+            palette_cycle_mode: None,
         }
     }
 
