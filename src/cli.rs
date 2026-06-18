@@ -1155,6 +1155,33 @@ pub struct Args {
     pub gradient_strength: f32,
 
     #[arg(
+        long = "temporal-color",
+        value_name = "VALUE",
+        default_value_t = 0.0,
+        help = "Temporal-color strength (0.0 = off). Colors the growing front."
+    )]
+    /// Temporal-color modulation strength (lever 3).
+    pub temporal_color: f32,
+
+    #[arg(
+        long = "temporal-lag",
+        value_name = "FRAMES",
+        default_value_t = 8.0,
+        help = "Temporal lag in frames (larger = longer-lived front color); values below 1 are treated as 1 frame"
+    )]
+    /// Temporal lag in frames; values below 1 are treated as 1 frame.
+    pub temporal_lag: f32,
+
+    #[arg(
+        long = "temporal-mode",
+        value_name = "MODE",
+        default_value = "hue",
+        help = "Temporal color mode: \"hue\" or \"accent\""
+    )]
+    /// Temporal color modulation mode.
+    pub temporal_mode: String,
+
+    #[arg(
         long = "auto-normalize",
         help = "Enable adaptive brightness normalization to prevent flickering"
     )]
@@ -2066,6 +2093,9 @@ impl Default for Args {
             trail_delta_strength: 0.5,
             gradient_magnitude: false,
             gradient_strength: 0.3,
+            temporal_color: 0.0,
+            temporal_lag: 8.0,
+            temporal_mode: "hue".to_string(),
             boundary_mode: None,
             window_frame: None,
             fullscreen: false,
@@ -2620,5 +2650,31 @@ mod tests {
             ..Default::default()
         };
         assert!(args.palette().is_err());
+    }
+
+    #[test]
+    fn temporal_flags_parse() {
+        use clap::Parser;
+        let a = Args::try_parse_from([
+            "tslime",
+            "--temporal-color",
+            "0.7",
+            "--temporal-lag",
+            "12",
+            "--temporal-mode",
+            "accent",
+        ])
+        .unwrap();
+        assert!((a.temporal_color - 0.7).abs() < 1e-6);
+        assert!((a.temporal_lag - 12.0).abs() < 1e-6);
+        assert_eq!(a.temporal_mode, "accent");
+    }
+
+    #[test]
+    fn temporal_flags_defaults() {
+        let a = Args::try_parse_from(["tslime"]).unwrap();
+        assert_eq!(a.temporal_color, 0.0);
+        assert_eq!(a.temporal_lag, 8.0);
+        assert_eq!(a.temporal_mode, "hue");
     }
 }

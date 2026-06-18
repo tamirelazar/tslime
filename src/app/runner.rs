@@ -278,6 +278,12 @@ pub fn run_simulation(
     };
     runtime_state.trail_age_reverse = args.trail_age_reverse;
     runtime_state.trail_delta_strength = args.trail_delta_strength;
+    runtime_state.temporal_color = args.temporal_color;
+    runtime_state.temporal_lag_frames = args.temporal_lag;
+    runtime_state.temporal_mode = match args.temporal_mode.to_ascii_lowercase().as_str() {
+        "accent" => crate::render::palette::TemporalMode::Accent,
+        _ => crate::render::palette::TemporalMode::Hue,
+    };
     if args.stats {
         runtime_state.overlay_state.open(OverlayType::Dashboard);
     }
@@ -289,6 +295,14 @@ pub fn run_simulation(
     }
     if args.gradient_magnitude {
         sim.set_compute_gradient_magnitude(true);
+    }
+    if args.temporal_color > 0.0 {
+        let temporal_alpha = if args.temporal_lag > 0.0 {
+            1.0 / args.temporal_lag
+        } else {
+            1.0
+        };
+        sim.set_compute_temporal(true, temporal_alpha);
     }
     renderer.set_dither_mode(dither_mode);
 
@@ -545,10 +559,11 @@ pub fn run_simulation(
             &mut downsampled_frame,
         );
 
-        // Compute auxiliary frame for trail age / temporal delta / gradient
+        // Compute auxiliary frame for trail age / temporal delta / gradient / temporal color
         let current_aux_frame = if runtime_state.trail_age_enabled
             || runtime_state.trail_delta_enabled
             || runtime_state.gradient_magnitude_enabled
+            || runtime_state.temporal_color > 0.0
         {
             let trail_age = if runtime_state.trail_age_enabled {
                 sim.trail_age()
@@ -570,7 +585,7 @@ pub fn run_simulation(
                 trail_age,
                 trail_delta,
                 gradient_mag,
-                None,
+                sim.temporal_diff(),
                 sim_width,
                 sim_height,
                 render_w,
@@ -593,6 +608,7 @@ pub fn run_simulation(
             runtime_state.trail_age_mode,
             runtime_state.trail_age_reverse,
         );
+        renderer.set_temporal(runtime_state.temporal_color, runtime_state.temporal_mode);
 
         let current_config = args
             .to_sim_config()
@@ -1814,6 +1830,11 @@ pub fn run_simulation(
                         ControlAction::SaveFrameToPng => {
                             use crate::export::png::save_frame_as_png;
 
+                            let png_aux_cells = if runtime_state.temporal_color > 0.0 {
+                                Some(aux_frame.cells.as_slice())
+                            } else {
+                                None
+                            };
                             match save_frame_as_png(
                                 downsampled_frame.cells(),
                                 term_width as usize,
@@ -1824,6 +1845,9 @@ pub fn run_simulation(
                                 hue_offset,
                                 Some(&runtime_state.intensity_mapping),
                                 max_brightness,
+                                runtime_state.temporal_color,
+                                runtime_state.temporal_mode,
+                                png_aux_cells,
                             ) {
                                 Ok(filename) => {
                                     runtime_state

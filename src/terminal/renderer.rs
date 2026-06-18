@@ -314,6 +314,12 @@ impl TerminalRenderer {
         self.trail_age_reverse = age_reverse;
     }
 
+    /// Set temporal-color modulation (lever 3). strength 0.0 disables it.
+    pub fn set_temporal(&mut self, strength: f32, mode: palette::TemporalMode) {
+        self.temporal_strength = strength;
+        self.temporal_mode = mode;
+    }
+
     /// Get a mutable reference to the standard output.
     pub fn stdout_mut(&mut self) -> &mut Stdout {
         &mut self.stdout

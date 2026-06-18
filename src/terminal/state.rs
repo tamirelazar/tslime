@@ -629,6 +629,12 @@ pub struct RuntimeState {
     pub trail_age_reverse: bool,
     /// Trail delta brightness boost strength.
     pub trail_delta_strength: f32,
+    /// Temporal-color modulation strength (0.0 = off).
+    pub temporal_color: f32,
+    /// Temporal lag in frames (larger = longer-lived front color).
+    pub temporal_lag_frames: f32,
+    /// Temporal color modulation mode.
+    pub temporal_mode: crate::render::palette::TemporalMode,
 }
 
 impl RuntimeState {
@@ -756,6 +762,9 @@ impl RuntimeState {
             trail_age_mode: crate::config_defaults::TrailAgeMode::Bidirectional,
             trail_age_reverse: true,
             trail_delta_strength: 0.5,
+            temporal_color: 0.0,
+            temporal_lag_frames: 8.0,
+            temporal_mode: crate::render::palette::TemporalMode::Hue,
         }
     }
 
