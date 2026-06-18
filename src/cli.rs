@@ -593,6 +593,22 @@ impl FromStr for crate::render::palette::PaletteCycleMode {
     }
 }
 
+impl FromStr for crate::render::charset::GlyphSelection {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "brightness" => Ok(crate::render::charset::GlyphSelection::Brightness),
+            "shape" => Ok(crate::render::charset::GlyphSelection::Shape),
+            "hybrid" => Ok(crate::render::charset::GlyphSelection::Hybrid),
+            _ => Err(format!(
+                "Invalid glyph selection: {}. Must be one of: brightness, shape, hybrid",
+                s
+            )),
+        }
+    }
+}
+
 #[derive(Parser, Debug, Clone)]
 #[command(name = "tslime")]
 #[command(about = "Terminal physarum simulation screensaver", long_about = None)]
@@ -1114,6 +1130,15 @@ pub struct Args {
     )]
     /// `None` means "use the per-preset render default" (mirror).
     pub palette_cycle_mode: Option<String>,
+
+    /// Character-selection strategy: brightness ramp, shape matching, or Sobel
+    /// edge-orientation hybrid. TUI-only; affects Ascii/Braille/Sculpted.
+    #[arg(long = "glyph-selection", value_name = "MODE")]
+    pub glyph_selection: Option<String>,
+
+    /// Sobel gradient-magnitude threshold for --glyph-selection hybrid (0.0..2.0).
+    #[arg(long = "glyph-edge-threshold", value_name = "T")]
+    pub glyph_edge_threshold: Option<f32>,
 
     #[arg(
         long = "perlin-strength",
@@ -1961,6 +1986,22 @@ impl Args {
         }
     }
 
+    /// Resolves --glyph-selection / --glyph-edge-threshold into a GlyphConfig,
+    /// starting from `base` (the per-preset/default identity).
+    pub fn glyph_config_parsed(
+        &self,
+        base: crate::render::charset::GlyphConfig,
+    ) -> Result<crate::render::charset::GlyphConfig, String> {
+        let mut g = base;
+        if let Some(s) = &self.glyph_selection {
+            g.selection = Some(s.parse()?);
+        }
+        if let Some(t) = self.glyph_edge_threshold {
+            g.edge_threshold = t;
+        }
+        Ok(g)
+    }
+
     /// Parses the dither mode string.
     pub fn dither_mode(&self) -> Result<DitherMode, String> {
         match self.dither_mode.as_str() {
@@ -2022,6 +2063,9 @@ impl Args {
             if let Some(mode) = self.palette_cycle_mode_parsed()? {
                 art.palette_cycle.mode = mode;
             }
+        }
+        if self.glyph_selection.is_some() || self.glyph_edge_threshold.is_some() {
+            art.glyph = self.glyph_config_parsed(art.glyph)?;
         }
         Ok(art)
     }
@@ -2179,6 +2223,8 @@ impl Default for Args {
             intensity_mapping_levels: 8,
             palette_cycles: None,
             palette_cycle_mode: None,
+            glyph_selection: None,
+            glyph_edge_threshold: None,
             perlin_strength: 0.2,
             logo_mapping: "log".to_string(),
             logo_mapping_base: 4.0,
@@ -2920,5 +2966,32 @@ mod tests {
         let args = Args::parse_from(["tslime"]);
         let art = args.to_render_art_defaults().unwrap();
         assert!(art.palette_cycle.is_identity());
+    }
+
+    #[test]
+    fn glyph_selection_flag_overrides_render_default() {
+        let mut args = Args::parse_from(["tslime"]);
+        args.glyph_selection = Some("hybrid".into());
+        args.glyph_edge_threshold = Some(0.3);
+        let art = args.to_render_art_defaults().unwrap();
+        assert_eq!(
+            art.glyph.selection,
+            Some(crate::render::charset::GlyphSelection::Hybrid)
+        );
+        assert_eq!(art.glyph.edge_threshold, 0.3);
+    }
+
+    #[test]
+    fn no_glyph_flags_stay_identity() {
+        let args = Args::parse_from(["tslime"]);
+        let art = args.to_render_art_defaults().unwrap();
+        assert_eq!(art.glyph.selection, None);
+    }
+
+    #[test]
+    fn glyph_selection_invalid_errors() {
+        let mut args = Args::parse_from(["tslime"]);
+        args.glyph_selection = Some("nope".into());
+        assert!(args.to_render_art_defaults().is_err());
     }
 }
