@@ -387,6 +387,7 @@ impl TerminalRenderer {
                 self.temporal_strength,
                 self.temporal_mode,
                 self.palette_cycle,
+                crate::render::charset::GlyphConfig::default(),
             )
         } else {
             FrameBuffer::from_downsampled(
@@ -420,6 +421,7 @@ impl TerminalRenderer {
                 self.temporal_strength,
                 self.temporal_mode,
                 self.palette_cycle,
+                crate::render::charset::GlyphConfig::default(),
             )
         };
 
@@ -522,6 +524,7 @@ impl TerminalRenderer {
                 self.temporal_strength,
                 self.temporal_mode,
                 self.palette_cycle,
+                crate::render::charset::GlyphConfig::default(),
             )
         } else {
             FrameBuffer::from_downsampled(
@@ -555,6 +558,7 @@ impl TerminalRenderer {
                 self.temporal_strength,
                 self.temporal_mode,
                 self.palette_cycle,
+                crate::render::charset::GlyphConfig::default(),
             )
         };
 
@@ -1023,6 +1027,7 @@ impl TerminalRenderer {
                     0.0, // temporal OFF for multi-species
                     palette::TemporalMode::Hue,
                     self.palette_cycle,
+                    crate::render::charset::GlyphConfig::default(),
                 );
 
                 // Blit non-blank cells from species_buffer into main buffer at (render_x, render_y)

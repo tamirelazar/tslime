@@ -580,6 +580,7 @@ pub fn print_mode(
         temporal_strength,
         temporal_mode,
         palette_cycle,
+        crate::render::charset::GlyphConfig::default(),
     );
 
     if args.grid {
@@ -788,6 +789,7 @@ pub fn capture_frames_mode(
             temporal_strength,
             temporal_mode,
             palette_cycle_inner,
+            crate::render::charset::GlyphConfig::default(),
         );
 
         if args.grid {
@@ -1030,6 +1032,7 @@ pub fn export_gif_mode(
             temporal_strength,
             temporal_mode,
             palette_cycle_gif,
+            crate::render::charset::GlyphConfig::default(),
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1210,6 +1213,7 @@ pub fn export_webm_mode(
             temporal_strength,
             temporal_mode,
             palette_cycle_webm,
+            crate::render::charset::GlyphConfig::default(),
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1505,6 +1509,7 @@ mod tests {
                     temporal_strength,
                     temporal_mode,
                     crate::render::palette::PaletteCycle::default(),
+                    crate::render::charset::GlyphConfig::default(),
                 )
                 .get_rgb_pixels()
             };
