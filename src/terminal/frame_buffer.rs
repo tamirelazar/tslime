@@ -1244,6 +1244,7 @@ impl FrameBuffer {
                         diff_norm,
                         temporal_strength,
                         temporal_mode,
+                        palette::PaletteCycle::default(), // TODO(task4): thread real palette_cycle
                     )
                 };
                 Cell {
@@ -3534,6 +3535,7 @@ mod tests {
             0.5,
             0.0,
             TemporalMode::Hue,
+            palette::PaletteCycle::default(), // TODO(task4): thread real palette_cycle
         );
         let on = palette::colorize_subpixel(
             0.6,
@@ -3545,6 +3547,7 @@ mod tests {
             0.5,
             1.0,
             TemporalMode::Hue,
+            palette::PaletteCycle::default(), // TODO(task4): thread real palette_cycle
         );
         assert_ne!(
             off, on,

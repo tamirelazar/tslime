@@ -40,6 +40,7 @@ fn png_pixel_color(
         diff_norm,
         temporal_strength,
         temporal_mode,
+        palette::PaletteCycle::default(), // TODO(task4): thread real palette_cycle
     )
 }
 
@@ -289,6 +290,7 @@ mod tests {
             0.0,
             0.0,
             TemporalMode::Hue,
+            palette::PaletteCycle::default(), // TODO(task4): thread real palette_cycle
         );
         let got = png_pixel_color(
             norm,
@@ -350,6 +352,7 @@ mod tests {
                     0.0,
                     0.0,
                     TemporalMode::Hue,
+                    palette::PaletteCycle::default(), // TODO(task4): thread real palette_cycle
                 );
                 let png = png_pixel_color(
                     b,
@@ -385,6 +388,7 @@ mod tests {
                 0.0,
                 0.0,
                 TemporalMode::Hue,
+                palette::PaletteCycle::default(), // TODO(task4): thread real palette_cycle
             );
             let png = png_pixel_color(
                 mid,
@@ -429,6 +433,7 @@ mod tests {
                             d,
                             s,
                             mode,
+                            palette::PaletteCycle::default(), // TODO(task4): thread real palette_cycle
                         );
                         let png = png_pixel_color(
                             b,

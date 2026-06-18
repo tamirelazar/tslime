@@ -2448,12 +2448,38 @@ fn interpolate_custom_color(colors: &[RgbColor], brightness: f32) -> RgbColor {
 ///
 /// `reverse` flips the intensity before lookup, `invert` hue-rotates the final
 /// color by 180°, and `mapping` applies an optional non-linear intensity curve.
+///
+/// This is a thin wrapper around [`map_brightness_cycled`] with an identity
+/// [`PaletteCycle`]. All existing callers remain byte-identical.
 pub fn map_brightness(
     brightness: f32,
     palette: Palette,
     reverse: bool,
     invert: bool,
     mapping: Option<&IntensityMapping>,
+) -> u8 {
+    map_brightness_cycled(
+        brightness,
+        palette,
+        reverse,
+        invert,
+        mapping,
+        PaletteCycle::default(),
+    )
+}
+
+/// 256-color counterpart to [`map_brightness_rgb_cycled`].
+///
+/// Applies a [`PaletteCycle`] remap at pass-order step 5 (between the tone
+/// curve and the gradient lookup). The non-cycled wrapper delegates here with
+/// an identity cycle, so existing callers stay byte-identical.
+pub fn map_brightness_cycled(
+    brightness: f32,
+    palette: Palette,
+    reverse: bool,
+    invert: bool,
+    mapping: Option<&IntensityMapping>,
+    cycle: PaletteCycle,
 ) -> u8 {
     let mut brightness = brightness.clamp(0.0, 1.0);
 
@@ -2466,17 +2492,20 @@ pub fn map_brightness(
         brightness = mapping.apply(brightness);
     }
 
+    // Pass-order step 5: spatial palette repeat, pre-lookup.
+    let t = cycle.map(brightness);
+
     // Get the color based on palette type
     let color = match &palette {
         Palette::Custom(colors) => {
             // Custom palettes: interpolate to RGB, then convert to 256-color
-            let rgb = interpolate_custom_color(colors, brightness);
+            let rgb = interpolate_custom_color(colors, t);
             rgb_to_256(rgb)
         }
         _ => {
             // For built-in palettes, use the pre-computed gradient
             let gradient = gradients::get_256_gradient(palette);
-            let position = brightness * (gradient.len() - 1) as f32;
+            let position = t * (gradient.len() - 1) as f32;
             let lower = position.floor() as usize;
             let upper = position.ceil() as usize;
             let fraction = position - lower as f32;
@@ -2509,6 +2538,9 @@ fn invert_rgb(rgb: RgbColor) -> RgbColor {
 /// `reverse` flips the intensity before lookup, `invert` complements the final
 /// RGB color, `hue_shift` rotates the hue by that many degrees, and `mapping`
 /// applies an optional non-linear intensity curve.
+///
+/// This is a thin wrapper around [`map_brightness_rgb_cycled`] with an identity
+/// [`PaletteCycle`]. All existing callers remain byte-identical.
 pub fn map_brightness_rgb(
     brightness: f32,
     palette: Palette,
@@ -2516,6 +2548,31 @@ pub fn map_brightness_rgb(
     invert: bool,
     hue_shift: f32,
     mapping: Option<&IntensityMapping>,
+) -> RgbColor {
+    map_brightness_rgb_cycled(
+        brightness,
+        palette,
+        reverse,
+        invert,
+        hue_shift,
+        mapping,
+        PaletteCycle::default(),
+    )
+}
+
+/// Same as [`map_brightness_rgb`] but applies a [`PaletteCycle`] remap at
+/// pass-order step 5 (between the tone curve and the gradient lookup). The
+/// non-cycled wrapper delegates here with an identity cycle, so existing
+/// callers stay byte-identical.
+#[allow(clippy::too_many_arguments)]
+pub fn map_brightness_rgb_cycled(
+    brightness: f32,
+    palette: Palette,
+    reverse: bool,
+    invert: bool,
+    hue_shift: f32,
+    mapping: Option<&IntensityMapping>,
+    cycle: PaletteCycle,
 ) -> RgbColor {
     let mut brightness = brightness.clamp(0.0, 1.0);
 
@@ -2528,9 +2585,12 @@ pub fn map_brightness_rgb(
         brightness = mapping.apply(brightness);
     }
 
+    // Pass-order step 5: spatial palette repeat, pre-lookup.
+    let t = cycle.map(brightness);
+
     // Use the new gradient interpolation system
     let stops = get_gradient_stops(&palette);
-    let mut final_color = interpolate_gradient(&stops, brightness);
+    let mut final_color = interpolate_gradient(&stops, t);
 
     if invert {
         final_color = invert_rgb(final_color);
@@ -2658,6 +2718,9 @@ impl PaletteCycle {
 /// intensity tone curve. `diff_norm` is the white-point-normalized signed
 /// temporal difference (lever 3); `temporal_strength` 0.0 disables temporal
 /// modulation, making this byte-identical to `map_brightness_rgb`.
+/// `cycle` applies a [`PaletteCycle`] remap at pass-order step 5 (between the
+/// tone curve and the gradient lookup). Pass [`PaletteCycle::default()`] for
+/// identity behavior (byte-identical to the pre-cycle path).
 #[allow(clippy::too_many_arguments)]
 pub fn colorize_subpixel(
     brightness: f32,
@@ -2669,14 +2732,16 @@ pub fn colorize_subpixel(
     diff_norm: f32,
     temporal_strength: f32,
     temporal_mode: TemporalMode,
+    cycle: PaletteCycle,
 ) -> RgbColor {
-    let base = map_brightness_rgb(
+    let base = map_brightness_rgb_cycled(
         brightness,
         palette.clone(),
         reverse,
         invert,
         hue_shift,
         mapping,
+        cycle,
     );
     if temporal_strength <= 0.0 {
         return base;
@@ -3748,8 +3813,19 @@ mod tests {
     fn colorize_subpixel_matches_map_brightness_rgb_when_no_temporal() {
         let p = Palette::Organic;
         let expected = map_brightness_rgb(0.6, p.clone(), false, false, 0.0, None);
-        // strength 0.0 ⇒ identical to the legacy mapping
-        let got = colorize_subpixel(0.6, p, false, false, 0.0, None, 0.0, 0.0, TemporalMode::Hue);
+        // strength 0.0 and identity cycle ⇒ identical to the legacy mapping
+        let got = colorize_subpixel(
+            0.6,
+            p,
+            false,
+            false,
+            0.0,
+            None,
+            0.0,
+            0.0,
+            TemporalMode::Hue,
+            PaletteCycle::default(),
+        );
         assert_eq!(got, expected);
     }
 
@@ -3814,5 +3890,54 @@ mod tests {
             PaletteCycleMode::Mirror
         );
         assert!(PaletteCycleMode::from_str("bogus").is_err());
+    }
+
+    #[test]
+    fn cycled_core_identity_matches_legacy() {
+        // cycles=1 must be byte-identical to the legacy public fns (back-compat).
+        let id = PaletteCycle::default();
+        for &b in &[0.0_f32, 0.3, 0.6, 1.0] {
+            assert_eq!(
+                map_brightness_rgb_cycled(b, Palette::Organic, false, false, 0.0, None, id),
+                map_brightness_rgb(b, Palette::Organic, false, false, 0.0, None),
+            );
+            assert_eq!(
+                map_brightness_cycled(b, Palette::Organic, false, false, None, id),
+                map_brightness(b, Palette::Organic, false, false, None),
+            );
+        }
+    }
+
+    #[test]
+    fn cycled_core_changes_color_when_active() {
+        // A mid brightness under cycles=2 mirror maps to a different gradient index,
+        // so the resulting color must differ from the identity lookup.
+        let active = PaletteCycle {
+            cycles: 2,
+            mode: PaletteCycleMode::Mirror,
+        };
+        let id = PaletteCycle::default();
+        let on = map_brightness_rgb_cycled(0.25, Palette::Organic, false, false, 0.0, None, active);
+        let off = map_brightness_rgb_cycled(0.25, Palette::Organic, false, false, 0.0, None, id);
+        assert_ne!(on, off, "cycles=2 must remap the gradient index");
+    }
+
+    #[test]
+    fn colorize_subpixel_identity_cycle_matches_map_brightness_rgb() {
+        let id = PaletteCycle::default();
+        let got = colorize_subpixel(
+            0.6,
+            Palette::Organic,
+            false,
+            false,
+            0.0,
+            None,
+            0.0,
+            0.0,
+            TemporalMode::Hue,
+            id,
+        );
+        let want = map_brightness_rgb(0.6, Palette::Organic, false, false, 0.0, None);
+        assert_eq!(got, want);
     }
 }
