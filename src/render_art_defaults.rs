@@ -59,23 +59,27 @@ impl From<Preset> for RenderArtDefaults {
     fn from(preset: Preset) -> Self {
         use crate::render::charset::{Charset, GlyphConfig, GlyphSelection};
         use crate::render::palette::{
-            IntensityMapping, Palette, PaletteCycle, PaletteCycleMode, RgbColor, TemporalMode,
+            IntensityMapping, Palette, PaletteCycle, PaletteCycleMode, TemporalMode,
         };
+        // All showcase presets use Accent mode with `temporal_accent: None`, so
+        // the growing front blends toward the palette's OWN vivid stop
+        // (`palette_accent_color`, brightness 0.85) — keeping every rendered
+        // color on the palette gradient (no foreign hand-picked hues, no
+        // off-palette hue rotation).
         match preset {
             Preset::Lumen => Self {
                 temporal_color: 0.5,
                 temporal_lag_frames: 8.0,
                 temporal_mode: TemporalMode::Accent,
-                temporal_accent: Some(RgbColor::from_hex(0xffb347)), // warm gold
                 palette: Some(Palette::Slime),
                 intensity_mapping: IntensityMapping::smoothstep(),
                 ..Self::default()
             },
             Preset::Aurora => Self {
-                temporal_color: 0.3,
+                temporal_color: 0.4,
                 temporal_lag_frames: 12.0,
-                temporal_mode: TemporalMode::Hue,
-                palette: Some(Palette::Cosmic),
+                temporal_mode: TemporalMode::Accent,
+                palette: Some(Palette::Ocean),
                 intensity_mapping: IntensityMapping::smoothstep(),
                 ..Self::default()
             },
@@ -86,13 +90,12 @@ impl From<Preset> for RenderArtDefaults {
                     mode: PaletteCycleMode::Mirror,
                 },
                 temporal_color: 0.2,
-                temporal_mode: TemporalMode::Hue,
+                temporal_mode: TemporalMode::Accent,
                 ..Self::default()
             },
             Preset::Etching => Self {
                 temporal_color: 0.4,
                 temporal_mode: TemporalMode::Accent,
-                temporal_accent: Some(RgbColor::from_hex(0x00e5ff)), // cyan
                 palette: Some(Palette::Neon),
                 charset: Some(Charset::Braille),
                 glyph: GlyphConfig {
@@ -155,8 +158,30 @@ mod tests {
             lumen.temporal_mode,
             crate::render::palette::TemporalMode::Accent
         );
-        assert!(lumen.temporal_accent.is_some());
+        // Showcase presets blend toward their OWN palette's vivid stop, so the
+        // accent is intentionally None (palette-derived, not a foreign hue).
+        assert_eq!(lumen.temporal_accent, None);
         assert_eq!(lumen.palette, Some(crate::render::palette::Palette::Slime));
+
+        // All showcase presets use palette-coherent Accent mode (no hue-mode
+        // drift off the gradient).
+        for p in [
+            Preset::Lumen,
+            Preset::Aurora,
+            Preset::Bloom,
+            Preset::Etching,
+        ] {
+            let d = RenderArtDefaults::from(p);
+            assert_eq!(
+                d.temporal_mode,
+                crate::render::palette::TemporalMode::Accent,
+                "{p:?} must use Accent mode"
+            );
+            assert_eq!(
+                d.temporal_accent, None,
+                "{p:?} accent must be palette-derived"
+            );
+        }
 
         let etching = RenderArtDefaults::from(Preset::Etching);
         assert_eq!(

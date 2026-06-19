@@ -2786,10 +2786,13 @@ fn temporal_modulate(
             oklch_to_srgb(oklch.l, oklch.c, h)
         }
         TemporalMode::Accent => {
-            // Front accent = the palette's hot end (brightness 1.0). Blend toward it
-            // for the growing front (blend > 0). Mix in OKLch for perceptual evenness.
+            // Front accent defaults to the palette's own vivid bright stop
+            // (brightness 0.85), NOT the hot end (brightness 1.0) — many palettes
+            // desaturate to white/gray at 1.0, which gives a washed, off-palette
+            // front. Sampling the palette keeps the accent on its own gradient.
+            // A hand-picked `accent` (CLI/preset) overrides this.
             let accent =
-                accent.unwrap_or_else(|| map_brightness_rgb(1.0, palette, false, false, 0.0, None));
+                accent.unwrap_or_else(|| palette_accent_color(&palette, false, false, 0.0, None));
             let t = blend.max(0.0) * strength;
             mix_oklch(base, accent, t)
         }
@@ -2939,16 +2942,21 @@ mod tests {
             Palette::Slime,
             Some(custom),
         );
-        let hot_end = temporal_modulate(base, 0.9, TemporalMode::Accent, 1.0, Palette::Slime, None);
+        let palette_default =
+            temporal_modulate(base, 0.9, TemporalMode::Accent, 1.0, Palette::Slime, None);
         assert_ne!(
-            with_custom, hot_end,
-            "custom accent must differ from hot-end"
+            with_custom, palette_default,
+            "custom accent must differ from the palette-derived accent"
         );
-        // None path must equal the pre-change behavior (hot-end accent).
-        let manual_accent = map_brightness_rgb(1.0, Palette::Slime, false, false, 0.0, None);
+        // The None path blends toward the palette's own vivid stop
+        // (`palette_accent_color`, brightness 0.85), NOT the hot end (1.0).
+        let palette_accent = palette_accent_color(&Palette::Slime, false, false, 0.0, None);
         let t = (TEMPORAL_TANH_K * 0.9_f32).tanh() * 1.0;
-        let expect_none = mix_oklch(base, manual_accent, t);
-        assert_eq!(hot_end, expect_none, "None must reproduce hot-end accent");
+        let expect_none = mix_oklch(base, palette_accent, t);
+        assert_eq!(
+            palette_default, expect_none,
+            "None must blend toward palette_accent_color"
+        );
     }
 
     #[test]

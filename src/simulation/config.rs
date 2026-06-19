@@ -865,18 +865,21 @@ impl Preset {
                 }];
             }
             Preset::Aurora => {
-                // Exploratory base, slow decay, soft glow.
+                // Exploratory base, soft Gaussian glow on a deep Ocean palette.
+                // Moderate decay + restrained afterglow keep a dark body so the
+                // luminous network reads against it (avoids the washed-out fill
+                // that heavy afterglow + a low white-point produced).
                 config.sensor_angle = 45.0;
                 config.sensor_distance = 15.0;
                 config.rotation_angle = 60.0;
-                config.decay_factor = 0.96;
+                config.decay_factor = 0.92;
                 config.deposit_amount = 3.0;
                 config.diffusion_kernel = DiffusionKernel::Gaussian;
                 config.diffusion_sigma = 2.5;
                 config.diffuse_weight = 0.6;
-                config.afterglow = 0.4;
-                config.decay_gamma = 0.6;
-                config.max_brightness = 12.0;
+                config.afterglow = 0.15;
+                config.decay_gamma = 0.7;
+                config.max_brightness = 26.0;
                 config.species_configs = vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 30_000,
