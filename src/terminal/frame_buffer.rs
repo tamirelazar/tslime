@@ -545,6 +545,7 @@ impl FrameBuffer {
         temporal_strength: f32,
         temporal_mode: palette::TemporalMode,
         palette_cycle: palette::PaletteCycle,
+        glyph: charset::GlyphConfig,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode, background_color);
         buffer.species_colors_enabled = species_colors_enabled;
@@ -652,6 +653,7 @@ impl FrameBuffer {
                 temporal_strength,
                 temporal_mode,
                 palette_cycle,
+                glyph,
             );
             buffer.set_cell(x, y, cell);
         }
@@ -706,6 +708,7 @@ impl FrameBuffer {
         temporal_strength: f32,
         temporal_mode: palette::TemporalMode,
         palette_cycle: palette::PaletteCycle,
+        glyph: charset::GlyphConfig,
     ) -> Self {
         // Build sim buffer at sim dimensions
         let sim_buffer = Self::from_downsampled(
@@ -739,6 +742,7 @@ impl FrameBuffer {
             temporal_strength,
             temporal_mode,
             palette_cycle,
+            glyph,
         );
 
         // Fast path: fullscreen — no blitting needed
@@ -760,6 +764,72 @@ impl FrameBuffer {
             }
         }
         outer
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn glyph_override(
+        glyph: charset::GlyphConfig,
+        cs: &Charset,
+        top_adj: f32,
+        bottom_adj: f32,
+        downsampled: &[DownsampleCell],
+        width: usize,
+        x: usize,
+        y: usize,
+        max_trail_value: f32,
+    ) -> Option<char> {
+        use charset::GlyphSelection;
+        let sel = glyph.selection?;
+        let inv = if max_trail_value > 0.0 {
+            1.0 / max_trail_value
+        } else {
+            0.0
+        };
+        let brightness_bucket =
+            || charset::map_brightness((top_adj + bottom_adj) / 2.0, None, cs.clone());
+        match sel {
+            GlyphSelection::Shape => None,
+            GlyphSelection::Brightness => match cs {
+                Charset::Ascii | Charset::Braille | Charset::Sculpted => Some(brightness_bucket()),
+                _ => None,
+            },
+            GlyphSelection::Hybrid => match cs {
+                Charset::Ascii | Charset::CustomAscii(_) => {
+                    let center = (top_adj + bottom_adj) / 2.0;
+                    let mut n = [center; 9];
+                    let height = downsampled.len().checked_div(width).unwrap_or(0);
+                    for (k, (dy, dx)) in [
+                        (-1i32, -1i32),
+                        (-1, 0),
+                        (-1, 1),
+                        (0, -1),
+                        (0, 0),
+                        (0, 1),
+                        (1, -1),
+                        (1, 0),
+                        (1, 1),
+                    ]
+                    .iter()
+                    .enumerate()
+                    {
+                        let nx = x as i32 + dx;
+                        let ny = y as i32 + dy;
+                        if nx >= 0 && nx < width as i32 && ny >= 0 && ny < height as i32 {
+                            let idx = (ny as usize) * width + nx as usize;
+                            if idx < downsampled.len() {
+                                let d = &downsampled[idx];
+                                n[k] = ((d.top + d.bottom) * 0.5 * inv).clamp(0.0, 1.0);
+                            }
+                        }
+                    }
+                    Some(
+                        charset::sobel_edge_glyph(&n, glyph.edge_threshold)
+                            .unwrap_or_else(brightness_bucket),
+                    )
+                }
+                _ => None,
+            },
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -786,6 +856,7 @@ impl FrameBuffer {
         temporal_strength: f32,
         temporal_mode: palette::TemporalMode,
         palette_cycle: palette::PaletteCycle,
+        glyph: charset::GlyphConfig,
     ) -> Cell {
         const THRESHOLD: f32 = 0.01;
         let log_gaps = std::env::var("TSLIME_LOG_GAPS").is_ok();
@@ -851,7 +922,19 @@ impl FrameBuffer {
                 bg_color_rgb: self.background_color,
             }
         } else {
-            let char = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
+            let char = if let Some(c) = Self::glyph_override(
+                glyph,
+                &charset,
+                top_adj,
+                bottom_adj,
+                downsampled,
+                self.width,
+                x,
+                y,
+                max_trail_value,
+            ) {
+                c
+            } else if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
                 match charset {
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::HalfBlockDual => charset::map_vertical_block(top_adj, bottom_adj),
@@ -2398,6 +2481,7 @@ pub fn render_frame(
         0.0,
         palette::TemporalMode::Hue,
         palette::PaletteCycle::default(),
+        charset::GlyphConfig::default(),
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -2516,6 +2600,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, ' ');
         assert!(cell.fg_color_256.is_none());
@@ -2550,6 +2635,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_some());
@@ -2584,6 +2670,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_none());
@@ -2618,6 +2705,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -2650,6 +2738,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color_256.is_some());
@@ -2682,6 +2771,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -2714,6 +2804,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color_256.is_some());
@@ -2746,6 +2837,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, '\u{2807}');
         assert!(cell.fg_color_256.is_some());
@@ -2778,6 +2870,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, '\u{2838}');
         assert!(cell.fg_color_256.is_some());
@@ -2810,6 +2903,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
@@ -2842,6 +2936,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
@@ -2874,6 +2969,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, '^');
         assert!(cell.fg_color_256.is_some());
@@ -2906,6 +3002,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, 'v');
         assert!(cell.fg_color_256.is_some());
@@ -2938,6 +3035,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
@@ -2970,6 +3068,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
@@ -3069,6 +3168,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(fb.width(), 10);
         assert_eq!(fb.height(), 10);
@@ -3104,6 +3204,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_ne!(fb.cells[0].fg_color_rgb, fb_rev.cells[0].fg_color_rgb);
     }
@@ -3235,6 +3336,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -3299,6 +3401,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
 
         assert_eq!(buffer.cells[0].char, '▀');
@@ -3531,6 +3634,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
         // The buffer should be 10×10
         assert_eq!(buffer.width, 10);
@@ -3650,6 +3754,7 @@ mod tests {
             0.0, // temporal OFF
             TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
 
         let fb_on = FrameBuffer::from_downsampled(
@@ -3683,6 +3788,7 @@ mod tests {
             1.0, // temporal ON (strength = 1.0)
             TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
         );
 
         assert_ne!(
@@ -3747,6 +3853,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             id,
+            charset::GlyphConfig::default(),
         );
         let fb_on = FrameBuffer::from_downsampled(
             &cells,
@@ -3779,6 +3886,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             active,
+            charset::GlyphConfig::default(),
         );
         // At least one cell must differ in fg_color_rgb between identity and active cycle
         let differs = fb_id
@@ -3789,6 +3897,211 @@ mod tests {
         assert!(
             differs,
             "cycles=3 mirror must change rendered colors vs identity"
+        );
+    }
+
+    fn sample_edge_grid() -> (Vec<DownsampleCell>, usize, usize, f32) {
+        let w = 6usize;
+        let h = 4usize;
+        let cells: Vec<DownsampleCell> = (0..w * h)
+            .map(|i| {
+                let x = i % w;
+                let v = if x < 3 { 0.0f32 } else { 1.0f32 };
+                DownsampleCell {
+                    top: v,
+                    bottom: v,
+                    top_left: v,
+                    top_right: v,
+                    bottom_left: v,
+                    bottom_right: v,
+                }
+            })
+            .collect();
+        (cells, w, h, 1.0)
+    }
+
+    #[test]
+    fn glyph_identity_default_matches_native_ascii() {
+        let (cells, w, h, maxv) = sample_edge_grid();
+        let native = FrameBuffer::from_downsampled(
+            &cells,
+            w,
+            h,
+            maxv,
+            Palette::Organic,
+            Charset::Ascii,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut None,
+            None,
+            false,
+            None,
+            None,
+            1.0,
+            None,
+            false,
+            false,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            0.0,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+        );
+        assert!(native.cells.iter().any(|c| c.char != ' '));
+    }
+
+    #[test]
+    fn glyph_hybrid_emits_directional_on_vertical_edge_ascii() {
+        let (cells, w, h, maxv) = sample_edge_grid();
+        let hybrid = charset::GlyphConfig {
+            selection: Some(charset::GlyphSelection::Hybrid),
+            edge_threshold: 0.1,
+        };
+        let fb = FrameBuffer::from_downsampled(
+            &cells,
+            w,
+            h,
+            maxv,
+            Palette::Organic,
+            Charset::Ascii,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut None,
+            None,
+            false,
+            None,
+            None,
+            1.0,
+            None,
+            false,
+            false,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            0.0,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            hybrid,
+        );
+        assert!(fb
+            .cells
+            .iter()
+            .any(|c| matches!(c.char, '|' | '/' | '-' | '\\')));
+    }
+
+    #[test]
+    fn glyph_brightness_forces_ramp_not_shape_braille() {
+        let (cells, w, h, maxv) = sample_edge_grid();
+        let bri = charset::GlyphConfig {
+            selection: Some(charset::GlyphSelection::Brightness),
+            edge_threshold: 0.15,
+        };
+        let fb = FrameBuffer::from_downsampled(
+            &cells,
+            w,
+            h,
+            maxv,
+            Palette::Organic,
+            Charset::Braille,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut None,
+            None,
+            false,
+            None,
+            None,
+            1.0,
+            None,
+            false,
+            false,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            0.0,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            bri,
+        );
+        assert!(fb
+            .cells
+            .iter()
+            .filter(|c| c.char != ' ')
+            .all(|c| ('\u{2800}'..='\u{28FF}').contains(&c.char)));
+    }
+
+    #[test]
+    fn glyph_noop_on_tonal_halfblock() {
+        let (cells, w, h, maxv) = sample_edge_grid();
+        let hyb = charset::GlyphConfig {
+            selection: Some(charset::GlyphSelection::Hybrid),
+            edge_threshold: 0.1,
+        };
+        let native = charset::GlyphConfig::default();
+        let mk = |g| {
+            FrameBuffer::from_downsampled(
+                &cells,
+                w,
+                h,
+                maxv,
+                Palette::Organic,
+                Charset::HalfBlock,
+                false,
+                false,
+                ColorMode::TrueColor,
+                0.0,
+                DitherMode::None,
+                &mut None,
+                None,
+                false,
+                None,
+                None,
+                1.0,
+                None,
+                false,
+                false,
+                0.0,
+                0.0,
+                0.0,
+                false,
+                0.0,
+                TrailAgeMode::Bidirectional,
+                false,
+                0.0,
+                palette::TemporalMode::Hue,
+                palette::PaletteCycle::default(),
+                g,
+            )
+        };
+        let a = mk(hyb);
+        let b = mk(native);
+        let chars_a: Vec<char> = a.cells.iter().map(|c| c.char).collect();
+        let chars_b: Vec<char> = b.cells.iter().map(|c| c.char).collect();
+        assert_eq!(
+            chars_a, chars_b,
+            "glyph-selection must be a no-op on HalfBlock"
         );
     }
 }

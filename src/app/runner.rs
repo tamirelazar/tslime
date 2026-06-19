@@ -255,6 +255,12 @@ pub fn run_simulation(
         .palette_cycle;
     renderer.set_palette_cycle(initial_palette_cycle);
 
+    let initial_glyph = args
+        .to_render_art_defaults()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .glyph;
+    renderer.set_glyph(initial_glyph);
+
     let initial_charset_index = ALL_CHARSETS.iter().position(|c| c == &charset).unwrap_or(0);
 
     let mut runtime_state = RuntimeState::new(
@@ -273,6 +279,7 @@ pub fn run_simulation(
     );
     runtime_state.preload_pause_logo(term_width as usize, term_height as usize);
     runtime_state.palette_cycle = initial_palette_cycle;
+    runtime_state.glyph = initial_glyph;
     runtime_state.dither_mode = dither_mode;
     runtime_state.trail_age_enabled = args.trail_age;
     runtime_state.trail_delta_enabled = args.trail_delta;
@@ -1310,6 +1317,7 @@ pub fn run_simulation(
                                         runtime_state.deposit_gamma,
                                         runtime_state.deposit_cap,
                                         runtime_state.palette_cycle,
+                                        runtime_state.glyph,
                                     );
 
                                     match config_manager::save_config(saved_config) {

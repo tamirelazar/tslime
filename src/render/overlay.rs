@@ -1907,6 +1907,8 @@ mod status_line_tests {
             deposit_cap: None,
             palette_cycles: None,
             palette_cycle_mode: None,
+            glyph_selection: None,
+            glyph_edge_threshold: None,
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
@@ -1964,6 +1966,8 @@ mod status_line_tests {
             deposit_cap: None,
             palette_cycles: None,
             palette_cycle_mode: None,
+            glyph_selection: None,
+            glyph_edge_threshold: None,
         }
     }
 

@@ -50,6 +50,7 @@ tslime --preset zen --palette ocean --fps 24  # slow and quiet
 tslime --seed 42 --population 80000           # reproducible run, denser network
 tslime --braille --palette mono               # high-resolution monochrome
 tslime --palette-cycles 3 --palette-cycle-mode mirror  # banded contour coloring
+tslime --ascii --glyph-selection hybrid                # edge-aware directional glyphs on filaments
 tslime --export-gif demo.gif --export-frames 120 --export-fps 30
 tslime -p > frame.txt                         # print a single frame and exit
 ```

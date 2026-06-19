@@ -67,6 +67,65 @@ impl Charset {
     }
 }
 
+/// Character-selection strategy for the glyph-by-shape lever (#34, lever 10).
+/// `None` (via [`GlyphConfig`]) preserves each charset's native behavior.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GlyphSelection {
+    /// Force the tonal brightness ramp (`map_brightness`) on shape-capable charsets.
+    Brightness,
+    /// Use the charset's native shape path (today's behavior for Ascii/Braille/Sculpted).
+    Shape,
+    /// Sobel edge-orientation: directional glyphs on high-gradient cells,
+    /// brightness buckets in flat regions. ASCII-family only.
+    Hybrid,
+}
+
+/// Bundled glyph-selection config threaded through the render path (one param,
+/// mirroring `PaletteCycle`). `selection: None` = native per-charset behavior.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GlyphConfig {
+    /// Glyph-selection strategy (e.g., Brightness, Shape, Hybrid).
+    pub selection: Option<GlyphSelection>,
+    /// Sobel gradient-magnitude threshold for edge-glyph selection (Hybrid mode).
+    pub edge_threshold: f32,
+}
+
+impl Default for GlyphConfig {
+    fn default() -> Self {
+        Self {
+            selection: None,
+            edge_threshold: crate::config_defaults::glyph_consts::DEFAULT_GLYPH_EDGE_THRESHOLD,
+        }
+    }
+}
+
+/// Sobel edge-orientation glyph for a row-major 3×3 brightness neighborhood
+/// (`n[4]` = center). Returns a directional glyph (`| / - \`) when gradient
+/// magnitude exceeds `threshold`, else `None` (caller falls back to a
+/// brightness bucket). Gradients are normalized to `[-1,1]`. (#34, lever 10.)
+pub fn sobel_edge_glyph(n: &[f32; 9], threshold: f32) -> Option<char> {
+    let gx = ((n[2] + 2.0 * n[5] + n[8]) - (n[0] + 2.0 * n[3] + n[6])) / 4.0;
+    let gy = ((n[6] + 2.0 * n[7] + n[8]) - (n[0] + 2.0 * n[1] + n[2])) / 4.0;
+    let mag = (gx * gx + gy * gy).sqrt();
+    if mag <= threshold {
+        return None;
+    }
+    let mut a = gx.atan2(gy).to_degrees();
+    if a < 0.0 {
+        a += 180.0;
+    }
+    let glyph = if !(22.5..157.5).contains(&a) {
+        '-'
+    } else if a < 67.5 {
+        '/'
+    } else if a < 112.5 {
+        '|'
+    } else {
+        '\\'
+    };
+    Some(glyph)
+}
+
 /// List of all available charsets for cycling.
 /// This is the single source of truth for charset enumeration.
 pub const ALL_CHARSETS: [Charset; 7] = [
@@ -1920,5 +1979,53 @@ mod tests {
             "Expected at least 8 distinct outline patterns, got {}",
             patterns.len()
         );
+    }
+
+    #[test]
+    fn glyph_config_default_is_identity() {
+        let g = GlyphConfig::default();
+        assert_eq!(g.selection, None);
+        assert_eq!(
+            g.edge_threshold,
+            crate::config_defaults::glyph_consts::DEFAULT_GLYPH_EDGE_THRESHOLD
+        );
+    }
+
+    #[test]
+    fn sobel_flat_field_is_none() {
+        // Uniform brightness → zero gradient → below any positive threshold.
+        let n = [0.5_f32; 9];
+        assert_eq!(sobel_edge_glyph(&n, 0.05), None);
+    }
+
+    #[test]
+    fn sobel_below_threshold_is_none() {
+        // Tiny step, high threshold → None.
+        let n = [0.0, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.0];
+        assert_eq!(sobel_edge_glyph(&n, 0.5), None);
+    }
+
+    #[test]
+    fn sobel_vertical_edge_is_pipe() {
+        // Left column dark, right column bright → horizontal gradient → vertical edge.
+        let n = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+        assert_eq!(sobel_edge_glyph(&n, 0.1), Some('|'));
+    }
+
+    #[test]
+    fn sobel_horizontal_edge_is_dash() {
+        // Top dark, bottom bright → vertical gradient → horizontal edge.
+        let n = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        assert_eq!(sobel_edge_glyph(&n, 0.1), Some('-'));
+    }
+
+    #[test]
+    fn sobel_diagonal_edges() {
+        // Gradient pointing down-right → "/" edge.
+        let down_right = [0.0, 0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 1.0, 1.0];
+        assert_eq!(sobel_edge_glyph(&down_right, 0.1), Some('/'));
+        // Gradient pointing down-left → "\" edge.
+        let down_left = [0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 1.0, 1.0, 0.0];
+        assert_eq!(sobel_edge_glyph(&down_left, 0.1), Some('\\'));
     }
 }

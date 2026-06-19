@@ -82,6 +82,7 @@ pub fn sync_renderer_caches(runtime_state: &RuntimeState, renderer: &mut Termina
     renderer.set_charset(runtime_state.current_charset());
     renderer.set_intensity_mapping(Some(runtime_state.intensity_mapping.clone()));
     renderer.set_palette_cycle(runtime_state.palette_cycle);
+    renderer.set_glyph(runtime_state.glyph);
     renderer.set_window_frame(runtime_state.window_frame);
     renderer.set_dither_mode(runtime_state.dither_mode);
 }
@@ -549,6 +550,12 @@ pub fn print_mode(
         .map(|a| a.palette_cycle)
         .unwrap_or_default();
 
+    let glyph = args
+        .to_render_art_defaults()
+        .ok()
+        .map(|a| a.glyph)
+        .unwrap_or_default();
+
     let mut buffer = FrameBuffer::from_downsampled(
         downsampled.cells(),
         term_width,
@@ -580,6 +587,7 @@ pub fn print_mode(
         temporal_strength,
         temporal_mode,
         palette_cycle,
+        glyph,
     );
 
     if args.grid {
@@ -740,6 +748,12 @@ pub fn capture_frames_mode(
             .map(|a| a.palette_cycle)
             .unwrap_or_default();
 
+        let glyph_inner = args
+            .to_render_art_defaults()
+            .ok()
+            .map(|a| a.glyph)
+            .unwrap_or_default();
+
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(
                 None,
@@ -788,6 +802,7 @@ pub fn capture_frames_mode(
             temporal_strength,
             temporal_mode,
             palette_cycle_inner,
+            glyph_inner,
         );
 
         if args.grid {
@@ -1030,6 +1045,7 @@ pub fn export_gif_mode(
             temporal_strength,
             temporal_mode,
             palette_cycle_gif,
+            crate::render::charset::GlyphConfig::default(),
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1210,6 +1226,7 @@ pub fn export_webm_mode(
             temporal_strength,
             temporal_mode,
             palette_cycle_webm,
+            crate::render::charset::GlyphConfig::default(),
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1318,6 +1335,44 @@ mod tests {
         sync_renderer_caches(&rs, &mut r);
         assert_eq!(r.palette_cycle().cycles, 3);
         assert_eq!(r.palette_cycle().mode, PaletteCycleMode::Wrap);
+    }
+
+    #[test]
+    fn sync_renderer_caches_pushes_glyph() {
+        let mut rs = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            0,
+            0,
+            MouseInteractionMode::Disabled,
+            3.0,
+            IntensityMapping::linear(),
+            &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
+        );
+        let mut r = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            None,
+        );
+        rs.glyph = crate::render::charset::GlyphConfig {
+            selection: Some(crate::render::charset::GlyphSelection::Hybrid),
+            edge_threshold: 0.3,
+        };
+        sync_renderer_caches(&rs, &mut r);
+        assert_eq!(
+            r.glyph().selection,
+            Some(crate::render::charset::GlyphSelection::Hybrid)
+        );
+        assert_eq!(r.glyph().edge_threshold, 0.3);
     }
 
     #[test]
@@ -1505,6 +1560,7 @@ mod tests {
                     temporal_strength,
                     temporal_mode,
                     crate::render::palette::PaletteCycle::default(),
+                    crate::render::charset::GlyphConfig::default(),
                 )
                 .get_rgb_pixels()
             };

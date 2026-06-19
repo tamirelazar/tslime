@@ -182,6 +182,14 @@ pub struct SavedConfig {
     /// Palette cycle mode ("wrap" or "mirror"). None = identity.
     #[serde(default)]
     pub palette_cycle_mode: Option<String>,
+
+    // Glyph-by-shape
+    /// Glyph-selection mode ("brightness", "shape", "hybrid"). None = identity (native per-charset).
+    #[serde(default)]
+    pub glyph_selection: Option<String>,
+    /// Sobel edge-magnitude threshold for hybrid glyph mode.
+    #[serde(default)]
+    pub glyph_edge_threshold: Option<f32>,
 }
 
 fn default_chrome_style() -> String {
@@ -230,6 +238,7 @@ impl SavedConfig {
         deposit_gamma: f32,
         deposit_cap: f32,
         palette_cycle: crate::render::palette::PaletteCycle,
+        glyph: crate::render::charset::GlyphConfig,
     ) -> Self {
         let diffusion_kernel_str = match sim_config.diffusion_kernel {
             DiffusionKernel::Mean3x3 => "mean3x3",
@@ -394,6 +403,19 @@ impl SavedConfig {
             } else {
                 Some(palette_cycle.mode.to_string())
             },
+            glyph_selection: match glyph.selection {
+                None => None,
+                Some(crate::render::charset::GlyphSelection::Brightness) => {
+                    Some("brightness".to_string())
+                }
+                Some(crate::render::charset::GlyphSelection::Shape) => Some("shape".to_string()),
+                Some(crate::render::charset::GlyphSelection::Hybrid) => Some("hybrid".to_string()),
+            },
+            glyph_edge_threshold: if glyph.selection.is_none() {
+                None
+            } else {
+                Some(glyph.edge_threshold)
+            },
         }
     }
 
@@ -528,6 +550,22 @@ impl SavedConfig {
                 .unwrap_or_default();
             runtime_state.palette_cycle = PaletteCycle { cycles, mode };
         }
+
+        // Apply glyph-by-shape config
+        runtime_state.glyph = match &self.glyph_selection {
+            Some(s) => {
+                let sel = s
+                    .parse::<crate::render::charset::GlyphSelection>()
+                    .map_err(|e: String| e)?;
+                crate::render::charset::GlyphConfig {
+                    selection: Some(sel),
+                    edge_threshold: self.glyph_edge_threshold.unwrap_or(
+                        crate::config_defaults::glyph_consts::DEFAULT_GLYPH_EDGE_THRESHOLD,
+                    ),
+                }
+            }
+            None => crate::render::charset::GlyphConfig::default(),
+        };
 
         // Parameters that require simulation restart to take effect:
         // - population (agent count)
@@ -906,6 +944,8 @@ mod tests {
             deposit_cap: None,
             palette_cycles: None,
             palette_cycle_mode: None,
+            glyph_selection: None,
+            glyph_edge_threshold: None,
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -1010,6 +1050,8 @@ food_path = "assets/tslime_logo.png"
             deposit_cap: None,
             palette_cycles: None,
             palette_cycle_mode: None,
+            glyph_selection: None,
+            glyph_edge_threshold: None,
         };
         let sim_config = config.to_sim_config().unwrap();
         assert_eq!(sim_config.species_configs[0].count, 50000);
@@ -1069,6 +1111,8 @@ food_path = "assets/tslime_logo.png"
             deposit_cap: None,
             palette_cycles: None,
             palette_cycle_mode: None,
+            glyph_selection: None,
+            glyph_edge_threshold: None,
         };
 
         config
@@ -1134,6 +1178,8 @@ food_path = "assets/tslime_logo.png"
             deposit_cap: None,
             palette_cycles: None,
             palette_cycle_mode: None,
+            glyph_selection: None,
+            glyph_edge_threshold: None,
         };
 
         config
@@ -1264,6 +1310,7 @@ food_path = "assets/tslime_logo.png"
             1.0,
             0.0,
             crate::render::palette::PaletteCycle::default(),
+            crate::render::charset::GlyphConfig::default(),
         );
 
         // Create new state and apply config
@@ -1410,6 +1457,7 @@ init_mode = "Random"
             1.0,
             0.0,
             crate::render::palette::PaletteCycle::default(),
+            crate::render::charset::GlyphConfig::default(),
         );
 
         // Serialize and deserialize through TOML
@@ -1525,6 +1573,7 @@ init_mode = "Random"
             1.0,
             0.0,
             crate::render::palette::PaletteCycle::default(),
+            crate::render::charset::GlyphConfig::default(),
         );
 
         // Serialize and deserialize through TOML
@@ -1675,6 +1724,7 @@ init_mode = "Random"
             state.deposit_gamma,
             state.deposit_cap,
             crate::render::palette::PaletteCycle::default(),
+            crate::render::charset::GlyphConfig::default(),
         );
 
         // Serialize and deserialize through TOML
@@ -1746,6 +1796,7 @@ init_mode = "Random"
             1.0,
             0.0,
             state.palette_cycle,
+            crate::render::charset::GlyphConfig::default(),
         );
 
         assert_eq!(saved.palette_cycles, Some(4));
@@ -1768,6 +1819,96 @@ init_mode = "Random"
                 mode: PaletteCycleMode::Wrap
             }
         );
+    }
+
+    #[test]
+    fn glyph_round_trips_through_saved_config() {
+        use crate::render::charset::{GlyphConfig, GlyphSelection};
+
+        let mut rs = create_test_runtime_state();
+        rs.glyph = GlyphConfig {
+            selection: Some(GlyphSelection::Hybrid),
+            edge_threshold: 0.25,
+        };
+
+        let saved = SavedConfig::from_runtime(
+            "glyph_rt".to_string(),
+            &SimConfig::default(),
+            crate::cli::Palette::Organic,
+            crate::render::charset::Charset::HalfBlock,
+            false,
+            false,
+            0,
+            false,
+            false,
+            false,
+            None,
+            crate::simulation::config::InitMode::Random,
+            None,
+            None,
+            0.0,
+            8.0,
+            crate::render::palette::TemporalMode::Hue,
+            0.0,
+            0.05,
+            1.0,
+            1.0,
+            crate::simulation::config::DepositCurve::default(),
+            1.0,
+            1.0,
+            0.0,
+            crate::render::palette::PaletteCycle::default(),
+            rs.glyph,
+        );
+
+        assert_eq!(saved.glyph_selection.as_deref(), Some("hybrid"));
+        assert_eq!(saved.glyph_edge_threshold, Some(0.25));
+
+        let mut rs2 = create_test_runtime_state();
+        saved.apply_to_runtime_state(&mut rs2).unwrap();
+        assert_eq!(rs2.glyph.selection, Some(GlyphSelection::Hybrid));
+        assert_eq!(rs2.glyph.edge_threshold, 0.25);
+    }
+
+    #[test]
+    fn glyph_identity_serializes_to_none() {
+        use crate::render::charset::GlyphConfig;
+
+        let mut rs = create_test_runtime_state();
+        rs.glyph = GlyphConfig::default();
+
+        let saved = SavedConfig::from_runtime(
+            "glyph_identity".to_string(),
+            &SimConfig::default(),
+            crate::cli::Palette::Organic,
+            crate::render::charset::Charset::HalfBlock,
+            false,
+            false,
+            0,
+            false,
+            false,
+            false,
+            None,
+            crate::simulation::config::InitMode::Random,
+            None,
+            None,
+            0.0,
+            8.0,
+            crate::render::palette::TemporalMode::Hue,
+            0.0,
+            0.05,
+            1.0,
+            1.0,
+            crate::simulation::config::DepositCurve::default(),
+            1.0,
+            1.0,
+            0.0,
+            crate::render::palette::PaletteCycle::default(),
+            rs.glyph,
+        );
+
+        assert_eq!(saved.glyph_selection, None);
+        assert_eq!(saved.glyph_edge_threshold, None);
     }
 
     #[test]
@@ -1816,6 +1957,55 @@ init_mode = "Random"
             state.palette_cycle,
             PaletteCycle::default(),
             "palette_cycle must equal default"
+        );
+    }
+
+    #[test]
+    fn missing_glyph_loads_identity() {
+        use crate::render::charset::GlyphConfig;
+
+        // Old TOML without glyph fields must deserialize and produce GlyphConfig::default().
+        let toml = r#"name = "old_no_glyph"
+population = 1000
+sensor_angle = 22.5
+sensor_distance = 9.0
+rotation_angle = 45.0
+step_size = 1.0
+decay_factor = 0.9
+deposit_amount = 5.0
+max_brightness = 100.0
+diffusion_kernel = "Mean3x3"
+diffusion_sigma = 1.0
+palette = "Organic"
+charset = "HalfBlock"
+reverse_palette = false
+invert_palette = false
+warmup_frames = 0
+food_persist = false
+auto_reset = false
+grid = false
+init_mode = "Random"
+"#;
+        let cfg: SavedConfig =
+            toml::from_str(toml).expect("old config without glyph fields must load");
+        assert!(
+            cfg.glyph_selection.is_none(),
+            "missing glyph_selection must deserialize as None"
+        );
+        assert!(cfg.glyph_edge_threshold.is_none());
+
+        // apply_to_runtime_state must produce GlyphConfig::default() (selection = None).
+        let mut state = create_test_runtime_state();
+        cfg.apply_to_runtime_state(&mut state)
+            .expect("legacy config must still apply");
+        assert_eq!(
+            state.glyph,
+            GlyphConfig::default(),
+            "missing glyph keys must default to GlyphConfig::default()"
+        );
+        assert!(
+            state.glyph.selection.is_none(),
+            "missing glyph_selection must default to None"
         );
     }
 }

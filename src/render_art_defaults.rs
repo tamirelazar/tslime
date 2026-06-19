@@ -19,6 +19,8 @@ pub(crate) struct RenderArtDefaults {
     pub intensity_mapping: IntensityMapping,
     /// Spatial palette-repeat config (lever 6). Default = identity (cycles 1).
     pub palette_cycle: PaletteCycle,
+    /// Glyph-selection strategy (lever 10). Default = identity (selection: None).
+    pub glyph: crate::render::charset::GlyphConfig,
 }
 
 impl Default for RenderArtDefaults {
@@ -26,6 +28,7 @@ impl Default for RenderArtDefaults {
         Self {
             intensity_mapping: IntensityMapping::logarithmic(10.0),
             palette_cycle: PaletteCycle::default(),
+            glyph: crate::render::charset::GlyphConfig::default(),
         }
     }
 }
@@ -73,6 +76,58 @@ mod tests {
             Preset::Maze,
         ] {
             assert!(RenderArtDefaults::from(preset).palette_cycle.is_identity());
+        }
+    }
+
+    #[test]
+    fn default_glyph_is_identity() {
+        assert_eq!(
+            RenderArtDefaults::default().glyph,
+            crate::render::charset::GlyphConfig::default()
+        );
+        assert_eq!(RenderArtDefaults::default().glyph.selection, None);
+    }
+
+    #[test]
+    fn every_preset_glyph_is_identity() {
+        // Back-compat: mechanism-only ship — every preset is identity (#34).
+        for preset in [
+            Preset::Network,
+            Preset::Exploratory,
+            Preset::Tendrils,
+            Preset::Organic,
+            Preset::Minimal,
+            Preset::Moss,
+            Preset::Cosmic,
+            Preset::Fire,
+            Preset::Zen,
+            Preset::Storm,
+            Preset::River,
+            Preset::Ethereal,
+            Preset::PetriDish,
+            Preset::Vortex,
+            Preset::Lightning,
+            Preset::Crystal,
+            Preset::ChaosEdge,
+            Preset::Blob,
+            Preset::Worm,
+            Preset::Pulse,
+            Preset::Coral,
+            Preset::Flocking,
+            Preset::Maze,
+            Preset::Ripple,
+            Preset::Vortex36,
+            Preset::Chameleon,
+            Preset::DynamicTendrils,
+            Preset::MorphingCoral,
+            Preset::ReactiveSwarm,
+            Preset::DuelingModulators,
+        ] {
+            assert_eq!(
+                RenderArtDefaults::from(preset).glyph.selection,
+                None,
+                "preset {preset:?} must default to identity glyph in #34"
+            );
         }
     }
 
