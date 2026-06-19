@@ -30,6 +30,7 @@ fn png_pixel_color(
     temporal_strength: f32,
     temporal_mode: palette::TemporalMode,
     palette_cycle: palette::PaletteCycle,
+    temporal_accent: Option<palette::RgbColor>,
 ) -> palette::RgbColor {
     palette::colorize_subpixel(
         norm,
@@ -42,6 +43,7 @@ fn png_pixel_color(
         temporal_strength,
         temporal_mode,
         palette_cycle,
+        temporal_accent,
     )
 }
 
@@ -71,6 +73,7 @@ pub fn save_frame_as_png(
     temporal_mode: palette::TemporalMode,
     aux_cells: Option<&[crate::render::downsample::AuxCell]>,
     palette_cycle: palette::PaletteCycle,
+    temporal_accent: Option<palette::RgbColor>,
 ) -> Result<String, String> {
     let img_width = width;
     let img_height = height * 2;
@@ -122,6 +125,7 @@ pub fn save_frame_as_png(
             temporal_strength,
             temporal_mode,
             palette_cycle,
+            temporal_accent,
         );
         let bottom_rgb = png_pixel_color(
             bottom_norm,
@@ -134,6 +138,7 @@ pub fn save_frame_as_png(
             temporal_strength,
             temporal_mode,
             palette_cycle,
+            temporal_accent,
         );
 
         let top_pixel: Rgb<u8> = Rgb([top_rgb.r, top_rgb.g, top_rgb.b]);
@@ -197,6 +202,7 @@ mod tests {
             palette::TemporalMode::Hue,
             None,
             palette::PaletteCycle::default(),
+            None,
         );
 
         assert!(result.is_ok());
@@ -237,6 +243,7 @@ mod tests {
             palette::TemporalMode::Hue,
             None,
             palette::PaletteCycle::default(),
+            None,
         );
 
         assert!(result.is_ok());
@@ -274,6 +281,7 @@ mod tests {
             palette::TemporalMode::Hue,
             None,
             palette::PaletteCycle::default(),
+            None,
         );
 
         assert!(result.is_ok());
@@ -298,6 +306,7 @@ mod tests {
             0.0,
             TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            None,
         );
         let got = png_pixel_color(
             norm,
@@ -310,6 +319,7 @@ mod tests {
             0.0,
             TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            None,
         );
         assert_eq!(got, expected);
     }
@@ -361,6 +371,7 @@ mod tests {
                     0.0,
                     TemporalMode::Hue,
                     palette::PaletteCycle::default(),
+                    None,
                 );
                 let png = png_pixel_color(
                     b,
@@ -373,6 +384,7 @@ mod tests {
                     0.0,
                     TemporalMode::Hue,
                     palette::PaletteCycle::default(),
+                    None,
                 );
                 assert_eq!(
                     render,
@@ -398,6 +410,7 @@ mod tests {
                 0.0,
                 TemporalMode::Hue,
                 palette::PaletteCycle::default(),
+                None,
             );
             let png = png_pixel_color(
                 mid,
@@ -410,6 +423,7 @@ mod tests {
                 0.0,
                 TemporalMode::Hue,
                 palette::PaletteCycle::default(),
+                None,
             );
             assert_eq!(
                 render, png,
@@ -444,6 +458,7 @@ mod tests {
                             s,
                             mode,
                             palette::PaletteCycle::default(),
+                            None,
                         );
                         let png = png_pixel_color(
                             b,
@@ -456,6 +471,7 @@ mod tests {
                             s,
                             mode,
                             palette::PaletteCycle::default(),
+                            None,
                         );
                         assert_eq!(
                             render, png,

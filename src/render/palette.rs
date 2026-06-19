@@ -2733,6 +2733,7 @@ pub fn colorize_subpixel(
     temporal_strength: f32,
     temporal_mode: TemporalMode,
     cycle: PaletteCycle,
+    temporal_accent: Option<RgbColor>,
 ) -> RgbColor {
     let base = map_brightness_rgb_cycled(
         brightness,
@@ -2746,7 +2747,14 @@ pub fn colorize_subpixel(
     if temporal_strength <= 0.0 {
         return base;
     }
-    temporal_modulate(base, diff_norm, temporal_mode, temporal_strength, palette)
+    temporal_modulate(
+        base,
+        diff_norm,
+        temporal_mode,
+        temporal_strength,
+        palette,
+        temporal_accent,
+    )
 }
 
 /// Maximum hue rotation (degrees) at |blend| = 1, before strength scaling.
@@ -2760,6 +2768,7 @@ fn temporal_modulate(
     mode: TemporalMode,
     strength: f32,
     palette: Palette,
+    accent: Option<RgbColor>,
 ) -> RgbColor {
     let blend = (TEMPORAL_TANH_K * diff_norm).tanh(); // -1..1; growing front ⇒ +, decaying ⇒ -
     if blend == 0.0 || strength <= 0.0 {
@@ -2774,7 +2783,8 @@ fn temporal_modulate(
         TemporalMode::Accent => {
             // Front accent = the palette's hot end (brightness 1.0). Blend toward it
             // for the growing front (blend > 0). Mix in OKLch for perceptual evenness.
-            let accent = map_brightness_rgb(1.0, palette, false, false, 0.0, None);
+            let accent =
+                accent.unwrap_or_else(|| map_brightness_rgb(1.0, palette, false, false, 0.0, None));
             let t = blend.max(0.0) * strength;
             mix_oklch(base, accent, t)
         }
@@ -2803,7 +2813,7 @@ mod tests {
             g: 200,
             b: 80,
         };
-        let out = temporal_modulate(base, 0.0, TemporalMode::Hue, 1.0, Palette::Organic);
+        let out = temporal_modulate(base, 0.0, TemporalMode::Hue, 1.0, Palette::Organic, None);
         assert_eq!(out, base);
     }
 
@@ -2814,8 +2824,33 @@ mod tests {
             g: 200,
             b: 80,
         };
-        let out = temporal_modulate(base, 0.5, TemporalMode::Hue, 1.0, Palette::Organic);
+        let out = temporal_modulate(base, 0.5, TemporalMode::Hue, 1.0, Palette::Organic, None);
         assert_ne!(out, base, "a growing front should change hue");
+    }
+
+    #[test]
+    fn temporal_accent_some_overrides_hot_end() {
+        let base = RgbColor::new(10, 80, 40);
+        let custom = RgbColor::new(255, 180, 60);
+        // Accent mode, strong diff: with a custom accent the result blends toward it.
+        let with_custom = temporal_modulate(
+            base,
+            0.9,
+            TemporalMode::Accent,
+            1.0,
+            Palette::Slime,
+            Some(custom),
+        );
+        let hot_end = temporal_modulate(base, 0.9, TemporalMode::Accent, 1.0, Palette::Slime, None);
+        assert_ne!(
+            with_custom, hot_end,
+            "custom accent must differ from hot-end"
+        );
+        // None path must equal the pre-change behavior (hot-end accent).
+        let manual_accent = map_brightness_rgb(1.0, Palette::Slime, false, false, 0.0, None);
+        let t = (TEMPORAL_TANH_K * 0.9_f32).tanh() * 1.0;
+        let expect_none = mix_oklch(base, manual_accent, t);
+        assert_eq!(hot_end, expect_none, "None must reproduce hot-end accent");
     }
 
     #[test]
@@ -3825,6 +3860,7 @@ mod tests {
             0.0,
             TemporalMode::Hue,
             PaletteCycle::default(),
+            None,
         );
         assert_eq!(got, expected);
     }
@@ -3936,6 +3972,7 @@ mod tests {
             0.0,
             TemporalMode::Hue,
             id,
+            None,
         );
         let want = map_brightness_rgb(0.6, Palette::Organic, false, false, 0.0, None);
         assert_eq!(got, want);

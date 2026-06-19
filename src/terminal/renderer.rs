@@ -92,6 +92,7 @@ pub struct TerminalRenderer {
     chrome_snapshot: Option<ChromeSnapshot>,
     temporal_strength: f32,
     temporal_mode: palette::TemporalMode,
+    temporal_accent: Option<palette::RgbColor>,
     palette_cycle: palette::PaletteCycle,
     glyph: charset::GlyphConfig,
 }
@@ -143,6 +144,7 @@ impl TerminalRenderer {
             chrome_snapshot: None,
             temporal_strength: 0.0,
             temporal_mode: palette::TemporalMode::Hue,
+            temporal_accent: None,
             palette_cycle: palette::PaletteCycle::default(),
             glyph: charset::GlyphConfig::default(),
         }
@@ -339,9 +341,15 @@ impl TerminalRenderer {
     }
 
     /// Set temporal-color modulation (lever 3). strength 0.0 disables it.
-    pub fn set_temporal(&mut self, strength: f32, mode: palette::TemporalMode) {
+    pub fn set_temporal(
+        &mut self,
+        strength: f32,
+        mode: palette::TemporalMode,
+        accent: Option<palette::RgbColor>,
+    ) {
         self.temporal_strength = strength;
         self.temporal_mode = mode;
+        self.temporal_accent = accent;
     }
 
     /// Get a mutable reference to the standard output.
@@ -400,6 +408,7 @@ impl TerminalRenderer {
                 self.temporal_mode,
                 self.palette_cycle,
                 self.glyph,
+                self.temporal_accent,
             )
         } else {
             FrameBuffer::from_downsampled(
@@ -434,6 +443,7 @@ impl TerminalRenderer {
                 self.temporal_mode,
                 self.palette_cycle,
                 self.glyph,
+                self.temporal_accent,
             )
         };
 
@@ -537,6 +547,7 @@ impl TerminalRenderer {
                 self.temporal_mode,
                 self.palette_cycle,
                 self.glyph,
+                self.temporal_accent,
             )
         } else {
             FrameBuffer::from_downsampled(
@@ -571,6 +582,7 @@ impl TerminalRenderer {
                 self.temporal_mode,
                 self.palette_cycle,
                 self.glyph,
+                self.temporal_accent,
             )
         };
 
@@ -1040,6 +1052,7 @@ impl TerminalRenderer {
                     palette::TemporalMode::Hue,
                     self.palette_cycle,
                     self.glyph,
+                    None,
                 );
 
                 // Blit non-blank cells from species_buffer into main buffer at (render_x, render_y)

@@ -634,7 +634,11 @@ pub fn run_simulation(
             runtime_state.trail_age_mode,
             runtime_state.trail_age_reverse,
         );
-        renderer.set_temporal(runtime_state.temporal_color, runtime_state.temporal_mode);
+        renderer.set_temporal(
+            runtime_state.temporal_color,
+            runtime_state.temporal_mode,
+            None,
+        );
 
         let current_config = args
             .to_sim_config()
@@ -1888,6 +1892,7 @@ pub fn run_simulation(
                                 runtime_state.temporal_mode,
                                 png_aux_cells,
                                 runtime_state.palette_cycle,
+                                None,
                             ) {
                                 Ok(filename) => {
                                     runtime_state
