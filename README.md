@@ -122,11 +122,19 @@ lowercase increases and uppercase (Shift) decreases.
 
 <!-- ws6: preset/palette showcase gifs -->
 
-There are 30 named presets: network, exploratory, tendrils, organic, minimal, moss,
+There are 34 named presets: network, exploratory, tendrils, organic, minimal, moss,
 cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal,
 chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon,
-dynamictendrils, morphingcoral, reactiveswarm, and duelingmodulators. Palettes and
-character sets are independent of the preset and can be cycled at runtime.
+dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators, lumen, aurora,
+bloom, and etching. Palettes and character sets are independent of the preset and
+can be cycled at runtime.
+
+Four showcase presets highlight specific visual levers:
+
+- **lumen** — Bleuje-style front-lit veins: temporal-accent recolor of growing fronts.
+- **aurora** — Luminous network glow: afterglow + soft diffusion + long faint tails.
+- **bloom** — Banded coral depth via mirrored palette cycles.
+- **etching** — Directional filament linework via Sobel glyph selection (Braille, TUI-only).
 
 ## How it works
 

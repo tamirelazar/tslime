@@ -1370,6 +1370,112 @@ fn test_visual_regression_sculpted_brightness() {
     }
 }
 
+// ============== SHOWCASE PRESET TESTS ==============
+
+#[test]
+fn test_visual_regression_lumen_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "lumen"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("lumen_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("lumen_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: lumen preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("lumen_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_aurora_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "aurora"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("aurora_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("aurora_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: aurora preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("aurora_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_bloom_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "bloom"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("bloom_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("bloom_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: bloom preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("bloom_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_etching_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "etching", "--braille"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("etching_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("etching_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: etching preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("etching_preset", &normalized).unwrap();
+        }
+    }
+}
+
 // ============== TEMPORAL COLOR TESTS ==============
 
 #[test]
