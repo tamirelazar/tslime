@@ -2777,6 +2777,11 @@ fn temporal_modulate(
     match mode {
         TemporalMode::Hue => {
             let oklch = srgb_to_oklch(base);
+            // Achromatic colors (gray/white/black) have no hue to rotate
+            // (`srgb_to_oklch` returns NaN); leave them untouched.
+            if oklch.h.is_nan() {
+                return base;
+            }
             let h = oklch.h + blend * TEMPORAL_MAX_HUE_DEG * strength;
             oklch_to_srgb(oklch.l, oklch.c, h)
         }
@@ -2791,20 +2796,113 @@ fn temporal_modulate(
     }
 }
 
+/// Interpolate two OKLch hues (degrees) along the short arc, NaN-safe.
+///
+/// An achromatic endpoint (gray/white/black) has a "powerless" hue
+/// (`srgb_to_oklch` returns NaN). Interpolating toward NaN would poison the
+/// result (`NaN * t == NaN` for every `t`, including 0), so we fall back to the
+/// chromatic endpoint's hue — matching CSS Color 4 "missing component" rules.
+fn lerp_hue(a: f32, b: f32, t: f32) -> f32 {
+    match (a.is_nan(), b.is_nan()) {
+        (true, true) => 0.0, // both achromatic: hue irrelevant (chroma ~0)
+        (true, false) => b,
+        (false, true) => a,
+        (false, false) => {
+            let mut delta = b - a;
+            if delta > 180.0 {
+                delta -= 360.0;
+            } else if delta < -180.0 {
+                delta += 360.0;
+            }
+            a + delta * t
+        }
+    }
+}
+
 /// Linear interpolation of two sRGB colors through OKLch (t in 0..1).
 fn mix_oklch(a: RgbColor, b: RgbColor, t: f32) -> RgbColor {
     let t = t.clamp(0.0, 1.0);
+    // Short-circuit the endpoints: avoids round-tripping `a`/`b` through OKLch
+    // (lossy, and a NaN hue on an achromatic endpoint would corrupt even t==0).
+    if t <= 0.0 {
+        return a;
+    }
+    if t >= 1.0 {
+        return b;
+    }
     let oa = srgb_to_oklch(a);
     let ob = srgb_to_oklch(b);
     let l = oa.l + (ob.l - oa.l) * t;
     let c = oa.c + (ob.c - oa.c) * t;
-    let h = oa.h + (ob.h - oa.h) * t;
+    let h = lerp_hue(oa.h, ob.h, t);
     oklch_to_srgb(l, c, h)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mix_oklch_achromatic_endpoint_preserves_chromatic_hue() {
+        // Regression: white/gray has a NaN ("powerless") OKLch hue. Mixing a
+        // saturated color toward it must NOT poison the result into the
+        // complement (the old `oa.h + (NaN - oa.h)*t` bug turned green→magenta,
+        // even at t==0). Endpoints must be exact, and a partial mix must stay
+        // on the green→white path (hue near green, never magenta).
+        let green = RgbColor { r: 0, g: 100, b: 6 };
+        let white = RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        };
+        assert_eq!(
+            mix_oklch(green, white, 0.0),
+            green,
+            "t=0 must be exact base"
+        );
+        assert_eq!(
+            mix_oklch(green, white, 1.0),
+            white,
+            "t=1 must be exact target"
+        );
+        let mid = mix_oklch(green, white, 0.5);
+        // A green→white blend is a desaturated green: green channel dominant,
+        // and crucially NOT red-dominant (magenta/red = the bug signature).
+        assert!(
+            mid.g >= mid.r && mid.g >= mid.b,
+            "green→white midpoint must stay greenish, got {mid:?}"
+        );
+    }
+
+    #[test]
+    fn temporal_modulate_accent_achromatic_hot_end_stays_in_palette() {
+        // Slime's hot end is pure white (chroma 0). Accent mode with the
+        // hot-end fallback must keep a green base greenish, never flip to
+        // magenta (the NaN-hue bug).
+        let green = RgbColor {
+            r: 0,
+            g: 120,
+            b: 10,
+        };
+        let out = temporal_modulate(green, 0.6, TemporalMode::Accent, 0.5, Palette::Slime, None);
+        assert!(
+            out.g >= out.r,
+            "growing front on Slime must not flip to magenta, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn temporal_modulate_hue_achromatic_base_is_identity() {
+        // A white/gray base has no hue; hue-mode rotation must leave it intact
+        // rather than producing NaN garbage.
+        let white = RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        };
+        let out = temporal_modulate(white, 0.9, TemporalMode::Hue, 1.0, Palette::Slime, None);
+        assert_eq!(out, white, "achromatic base must be unchanged in hue mode");
+    }
 
     #[test]
     fn temporal_modulate_zero_diff_is_identity() {

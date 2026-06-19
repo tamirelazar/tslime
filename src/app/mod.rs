@@ -474,6 +474,7 @@ pub fn print_mode(
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let temporal_strength = art_defaults_print.temporal_color;
     let temporal_mode = art_defaults_print.temporal_mode;
+    let temporal_accent = art_defaults_print.temporal_accent;
     if temporal_strength > 0.0 {
         let lag = art_defaults_print.temporal_lag_frames;
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
@@ -603,7 +604,7 @@ pub fn print_mode(
         temporal_mode,
         palette_cycle,
         glyph,
-        None,
+        temporal_accent,
     );
 
     if args.grid {
@@ -700,6 +701,7 @@ pub fn capture_frames_mode(
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let temporal_strength = art_defaults_capture.temporal_color;
     let temporal_mode = art_defaults_capture.temporal_mode;
+    let temporal_accent = art_defaults_capture.temporal_accent;
     if temporal_strength > 0.0 {
         let lag = art_defaults_capture.temporal_lag_frames;
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
@@ -816,7 +818,7 @@ pub fn capture_frames_mode(
             temporal_mode,
             palette_cycle_inner,
             glyph_inner,
-            None,
+            temporal_accent,
         );
 
         if args.grid {
@@ -945,6 +947,7 @@ pub fn export_gif_mode(
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let temporal_strength = art_defaults_gif.temporal_color;
     let temporal_mode = art_defaults_gif.temporal_mode;
+    let temporal_accent = art_defaults_gif.temporal_accent;
     if temporal_strength > 0.0 {
         let lag = art_defaults_gif.temporal_lag_frames;
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
@@ -1057,7 +1060,7 @@ pub fn export_gif_mode(
             temporal_mode,
             palette_cycle_gif,
             crate::render::charset::GlyphConfig::default(),
-            None,
+            temporal_accent,
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1124,6 +1127,7 @@ pub fn export_webm_mode(
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let temporal_strength = art_defaults_webm.temporal_color;
     let temporal_mode = art_defaults_webm.temporal_mode;
+    let temporal_accent = art_defaults_webm.temporal_accent;
     if temporal_strength > 0.0 {
         let lag = art_defaults_webm.temporal_lag_frames;
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
@@ -1236,7 +1240,7 @@ pub fn export_webm_mode(
             temporal_mode,
             palette_cycle_webm,
             crate::render::charset::GlyphConfig::default(),
-            None,
+            temporal_accent,
         );
 
         let pixels = buffer.get_rgb_pixels();
