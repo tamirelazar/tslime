@@ -53,11 +53,56 @@ impl Default for RenderArtDefaults {
 }
 
 impl From<Preset> for RenderArtDefaults {
-    /// Per-preset render defaults. For #32 every preset uses the historical
-    /// global log10 so output is byte-identical; tasteful per-preset values
-    /// are deferred to the showcase-presets issue (#36).
-    fn from(_preset: Preset) -> Self {
-        Self::default()
+    /// Per-preset render defaults. The four showcase presets (#36) carry
+    /// art-on payloads; all 30 existing presets fall through to `Self::default()`
+    /// for byte-identical output.
+    fn from(preset: Preset) -> Self {
+        use crate::render::charset::{Charset, GlyphConfig, GlyphSelection};
+        use crate::render::palette::{
+            IntensityMapping, Palette, PaletteCycle, PaletteCycleMode, RgbColor, TemporalMode,
+        };
+        match preset {
+            Preset::Lumen => Self {
+                temporal_color: 0.5,
+                temporal_lag_frames: 8.0,
+                temporal_mode: TemporalMode::Accent,
+                temporal_accent: Some(RgbColor::from_hex(0xffb347)), // warm gold
+                palette: Some(Palette::Slime),
+                intensity_mapping: IntensityMapping::smoothstep(),
+                ..Self::default()
+            },
+            Preset::Aurora => Self {
+                temporal_color: 0.3,
+                temporal_lag_frames: 12.0,
+                temporal_mode: TemporalMode::Hue,
+                palette: Some(Palette::Cosmic),
+                intensity_mapping: IntensityMapping::smoothstep(),
+                ..Self::default()
+            },
+            Preset::Bloom => Self {
+                palette: Some(Palette::Warm),
+                palette_cycle: PaletteCycle {
+                    cycles: 2,
+                    mode: PaletteCycleMode::Mirror,
+                },
+                temporal_color: 0.2,
+                temporal_mode: TemporalMode::Hue,
+                ..Self::default()
+            },
+            Preset::Etching => Self {
+                temporal_color: 0.4,
+                temporal_mode: TemporalMode::Accent,
+                temporal_accent: Some(RgbColor::from_hex(0x00e5ff)), // cyan
+                palette: Some(Palette::Neon),
+                charset: Some(Charset::Braille),
+                glyph: GlyphConfig {
+                    selection: Some(GlyphSelection::Hybrid),
+                    edge_threshold: 0.08,
+                },
+                ..Self::default()
+            },
+            _ => Self::default(),
+        }
     }
 }
 
@@ -67,7 +112,9 @@ mod tests {
     use crate::render::palette::IntensityMapping;
     use crate::simulation::config::Preset;
 
-    const ALL_PRESETS_FOR_TEST: [Preset; 30] = [
+    /// The 30 original presets. The 4 showcase presets (Lumen/Aurora/Bloom/Etching)
+    /// are intentionally excluded: they carry art-on defaults, not identity.
+    const EXISTING_PRESETS: [Preset; 30] = [
         Preset::Network,
         Preset::Exploratory,
         Preset::Tendrils,
@@ -101,6 +148,41 @@ mod tests {
     ];
 
     #[test]
+    fn showcase_presets_have_art_on() {
+        let lumen = RenderArtDefaults::from(Preset::Lumen);
+        assert!(lumen.temporal_color > 0.0);
+        assert_eq!(
+            lumen.temporal_mode,
+            crate::render::palette::TemporalMode::Accent
+        );
+        assert!(lumen.temporal_accent.is_some());
+        assert_eq!(lumen.palette, Some(crate::render::palette::Palette::Slime));
+
+        let etching = RenderArtDefaults::from(Preset::Etching);
+        assert_eq!(
+            etching.charset,
+            Some(crate::render::charset::Charset::Braille)
+        );
+        assert!(etching.glyph.selection.is_some());
+
+        let bloom = RenderArtDefaults::from(Preset::Bloom);
+        assert!(bloom.palette_cycle.cycles >= 2);
+
+        // Existing presets stay identity.
+        for p in [
+            Preset::Organic,
+            Preset::Network,
+            Preset::Coral,
+            Preset::Tendrils,
+        ] {
+            let d = RenderArtDefaults::from(p);
+            assert_eq!(d.temporal_color, 0.0);
+            assert_eq!(d.palette, None);
+            assert_eq!(d.charset, None);
+        }
+    }
+
+    #[test]
     fn default_is_log10() {
         assert_eq!(
             RenderArtDefaults::default().intensity_mapping,
@@ -120,7 +202,8 @@ mod tests {
 
     #[test]
     fn every_preset_palette_cycle_is_identity() {
-        // Back-compat: mechanism-only ship — every preset is identity (#33).
+        // Back-compat: the 30 original presets are all identity (#33).
+        // (Bloom uses cycles=2; it is not in this list.)
         for preset in [
             Preset::Network,
             Preset::Organic,
@@ -142,39 +225,9 @@ mod tests {
 
     #[test]
     fn every_preset_glyph_is_identity() {
-        // Back-compat: mechanism-only ship — every preset is identity (#34).
-        for preset in [
-            Preset::Network,
-            Preset::Exploratory,
-            Preset::Tendrils,
-            Preset::Organic,
-            Preset::Minimal,
-            Preset::Moss,
-            Preset::Cosmic,
-            Preset::Fire,
-            Preset::Zen,
-            Preset::Storm,
-            Preset::River,
-            Preset::Ethereal,
-            Preset::PetriDish,
-            Preset::Vortex,
-            Preset::Lightning,
-            Preset::Crystal,
-            Preset::ChaosEdge,
-            Preset::Blob,
-            Preset::Worm,
-            Preset::Pulse,
-            Preset::Coral,
-            Preset::Flocking,
-            Preset::Maze,
-            Preset::Ripple,
-            Preset::Vortex36,
-            Preset::Chameleon,
-            Preset::DynamicTendrils,
-            Preset::MorphingCoral,
-            Preset::ReactiveSwarm,
-            Preset::DuelingModulators,
-        ] {
+        // Back-compat: all 30 original presets use identity glyph (#34).
+        // (Etching uses Hybrid; it is not in EXISTING_PRESETS.)
+        for preset in EXISTING_PRESETS {
             assert_eq!(
                 RenderArtDefaults::from(preset).glyph.selection,
                 None,
@@ -185,42 +238,11 @@ mod tests {
 
     #[test]
     fn every_preset_defaults_to_log10() {
-        // Back-compat invariant for #32: payload is pure plumbing, so every
-        // preset must resolve to today's global default. Per-preset tuning is #36.
-        // NOTE: `Preset::ALL` does not exist in this codebase — list explicitly.
+        // Back-compat invariant for #32: the 30 original presets must all
+        // resolve to the historical global log10. The showcase presets (#36)
+        // may override intensity_mapping and are excluded here.
         let log10 = IntensityMapping::logarithmic(10.0);
-        for preset in [
-            Preset::Network,
-            Preset::Exploratory,
-            Preset::Tendrils,
-            Preset::Organic,
-            Preset::Minimal,
-            Preset::Moss,
-            Preset::Cosmic,
-            Preset::Fire,
-            Preset::Zen,
-            Preset::Storm,
-            Preset::River,
-            Preset::Ethereal,
-            Preset::PetriDish,
-            Preset::Vortex,
-            Preset::Lightning,
-            Preset::Crystal,
-            Preset::ChaosEdge,
-            Preset::Blob,
-            Preset::Worm,
-            Preset::Pulse,
-            Preset::Coral,
-            Preset::Flocking,
-            Preset::Maze,
-            Preset::Ripple,
-            Preset::Vortex36,
-            Preset::Chameleon,
-            Preset::DynamicTendrils,
-            Preset::MorphingCoral,
-            Preset::ReactiveSwarm,
-            Preset::DuelingModulators,
-        ] {
+        for preset in EXISTING_PRESETS {
             assert_eq!(
                 RenderArtDefaults::from(preset).intensity_mapping,
                 log10,
@@ -242,7 +264,8 @@ mod tests {
 
     #[test]
     fn every_preset_temporal_is_off_identity() {
-        for preset in ALL_PRESETS_FOR_TEST {
+        // The 30 original presets must all have temporal off (#35 back-compat).
+        for preset in EXISTING_PRESETS {
             let d = RenderArtDefaults::from(preset);
             assert_eq!(d.temporal_color, 0.0, "{preset:?} temporal must be off");
             assert_eq!(d.palette, None, "{preset:?} palette must be identity");

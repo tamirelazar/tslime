@@ -118,6 +118,14 @@ pub enum Preset {
     ReactiveSwarm,
     /// Two-species with opposing modulation patterns.
     DuelingModulators,
+    /// Bleuje-style front-lit veins: temporal-accent recolor of growing fronts.
+    Lumen,
+    /// Luminous network glow: afterglow + soft diffusion + long faint tails.
+    Aurora,
+    /// Banded coral depth via mirrored palette cycles.
+    Bloom,
+    /// Directional filament linework via Sobel glyph selection (Braille, TUI-only).
+    Etching,
 }
 
 impl Preset {
@@ -836,6 +844,92 @@ impl Preset {
                         ..Default::default()
                     },
                 ];
+            }
+            Preset::Lumen => {
+                // Dense network base (mirrors Network) + nonlinear deposit + afterglow.
+                config.sensor_angle = 15.0;
+                config.rotation_angle = 30.0;
+                config.decay_factor = 0.85;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 20.0;
+                config.deposit_curve = DepositCurve::Sqrt;
+                config.deposit_scale = 1.5;
+                config.afterglow = 0.3;
+                config.decay_gamma = 0.8;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 50_000,
+                    sensor_angle: 15.0,
+                    rotation_angle: 30.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Aurora => {
+                // Exploratory base, slow decay, soft glow.
+                config.sensor_angle = 45.0;
+                config.sensor_distance = 15.0;
+                config.rotation_angle = 60.0;
+                config.decay_factor = 0.96;
+                config.deposit_amount = 3.0;
+                config.diffusion_kernel = DiffusionKernel::Gaussian;
+                config.diffusion_sigma = 2.5;
+                config.diffuse_weight = 0.6;
+                config.afterglow = 0.4;
+                config.decay_gamma = 0.6;
+                config.max_brightness = 12.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 30_000,
+                    sensor_angle: 45.0,
+                    rotation_angle: 60.0,
+                    deposit_amount: 3.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Bloom => {
+                // Coral base + nonlinear deposit; banding comes from palette cycles (render layer).
+                config.sensor_angle = 30.0;
+                config.sensor_distance = 20.0;
+                config.rotation_angle = 45.0;
+                config.step_size = 0.3;
+                config.decay_factor = 0.92;
+                config.deposit_amount = 3.0;
+                config.diffusion_kernel = DiffusionKernel::Gaussian;
+                config.diffusion_sigma = 1.2;
+                config.deposit_curve = DepositCurve::Sqrt;
+                config.afterglow = 0.2;
+                config.max_brightness = 15.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 40_000,
+                    sensor_angle: 30.0,
+                    rotation_angle: 45.0,
+                    step_size: 0.3,
+                    deposit_amount: 3.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Etching => {
+                // Tendrils base; directional glyphs (render layer, Braille).
+                config.sensor_angle = 30.0;
+                config.sensor_distance = 12.0;
+                config.rotation_angle = 45.0;
+                config.step_size = 2.0;
+                config.decay_factor = 0.90;
+                config.deposit_amount = 4.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.deposit_curve = DepositCurve::Sqrt;
+                config.afterglow = 0.2;
+                config.max_brightness = 16.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 40_000,
+                    sensor_angle: 30.0,
+                    rotation_angle: 45.0,
+                    step_size: 2.0,
+                    deposit_amount: 4.0,
+                    ..Default::default()
+                }];
             }
         }
     }

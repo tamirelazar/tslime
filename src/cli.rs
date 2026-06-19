@@ -321,8 +321,12 @@ impl FromStr for Preset {
             "morphingcoral" | "morphing-coral" | "morphing_coral" => Ok(Preset::MorphingCoral),
             "reactiveswarm" | "reactive-swarm" | "reactive_swar" => Ok(Preset::ReactiveSwarm),
             "duelingmodulators" | "dueling-modulators" | "dueling_modulators" => Ok(Preset::DuelingModulators),
+            "lumen" => Ok(Preset::Lumen),
+            "aurora" => Ok(Preset::Aurora),
+            "bloom" => Ok(Preset::Bloom),
+            "etching" => Ok(Preset::Etching),
             _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon, dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators",
+                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon, dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators, lumen, aurora, bloom, etching",
                 s
             )),
         }
