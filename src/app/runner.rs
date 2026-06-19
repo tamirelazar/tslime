@@ -232,7 +232,18 @@ pub fn run_simulation(
     });
 
     let initial_preset = args.preset.unwrap_or(Preset::Organic);
-    let initial_palette = args.palette().unwrap_or(cli::Palette::Moss);
+
+    let art_defaults = args
+        .to_render_art_defaults()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+
+    let initial_palette = if args.palette_explicitly_set() {
+        args.palette().unwrap_or(cli::Palette::Moss)
+    } else {
+        art_defaults
+            .palette
+            .unwrap_or_else(|| args.palette().unwrap_or(cli::Palette::Moss))
+    };
     let initial_palette_index = if let cli::Palette::Custom(_) = initial_palette {
         4 // Default to Forest for custom palettes
     } else {
@@ -241,10 +252,6 @@ pub fn run_simulation(
             .position(|p| *p == initial_palette)
             .unwrap_or(4)
     };
-
-    let art_defaults = args
-        .to_render_art_defaults()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
     let initial_intensity_mapping = art_defaults.intensity_mapping.clone();
     renderer.set_intensity_mapping(Some(initial_intensity_mapping.clone()));

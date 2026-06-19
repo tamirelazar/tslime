@@ -1834,6 +1834,23 @@ impl Args {
         }
     }
 
+    /// True when the user passed `--palette` (vs the clap default sentinel).
+    pub fn palette_explicitly_set(&self) -> bool {
+        self.palette != palette::DEFAULT_PALETTE_NAME
+    }
+
+    /// True when the user selected any charset flag (vs the HalfBlockDual default).
+    pub fn charset_explicitly_set(&self) -> bool {
+        self.sculpted
+            || self.quadrant
+            || self.shade
+            || self.points
+            || self.braille
+            || self.half_block_dual
+            || self.ascii
+            || self.ascii_chars.is_some()
+    }
+
     /// The intensity-mapping type string, falling back to the historical
     /// default when the flag is absent. Used by paths that always need a
     /// concrete mapping (e.g. the pause-logo "sim" passthrough).
@@ -3043,5 +3060,16 @@ mod tests {
         let mut args = Args::parse_from(["tslime"]);
         args.glyph_selection = Some("nope".into());
         assert!(args.to_render_art_defaults().is_err());
+    }
+
+    #[test]
+    fn explicit_setters_detect_cli_overrides() {
+        let a = Args::parse_from(["tslime"]);
+        assert!(!a.palette_explicitly_set());
+        assert!(!a.charset_explicitly_set());
+        let a = Args::parse_from(["tslime", "--palette", "heat"]);
+        assert!(a.palette_explicitly_set());
+        let a = Args::parse_from(["tslime", "--braille"]);
+        assert!(a.charset_explicitly_set());
     }
 }

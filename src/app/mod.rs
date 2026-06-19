@@ -390,10 +390,28 @@ pub fn run() -> io::Result<()> {
     let config = args
         .to_sim_config()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let palette = args
-        .palette()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let charset = Charset::from_args(&args);
+    let art_defaults = args.to_render_art_defaults().ok();
+    let palette = {
+        let cli_palette = args
+            .palette()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        if !args.palette_explicitly_set() {
+            art_defaults
+                .as_ref()
+                .and_then(|d| d.palette.clone())
+                .unwrap_or(cli_palette)
+        } else {
+            cli_palette
+        }
+    };
+    let charset = if args.charset_explicitly_set() {
+        Charset::from_args(&args)
+    } else {
+        art_defaults
+            .as_ref()
+            .and_then(|d| d.charset.clone())
+            .unwrap_or_else(|| Charset::from_args(&args))
+    };
 
     let seed = args.seed.unwrap_or_else(|| {
         std::time::SystemTime::now()
