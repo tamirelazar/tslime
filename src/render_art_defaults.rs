@@ -6,7 +6,8 @@
 //! For now every preset uses the historical global default (log10); tasteful
 //! per-preset values land in the showcase-presets issue (#36).
 
-use crate::render::palette::{IntensityMapping, PaletteCycle};
+use crate::render::charset::Charset;
+use crate::render::palette::{IntensityMapping, Palette, PaletteCycle, RgbColor, TemporalMode};
 use crate::simulation::config::Preset;
 
 /// Render-layer art defaults resolved per [`Preset`], emitted alongside
@@ -21,6 +22,18 @@ pub(crate) struct RenderArtDefaults {
     pub palette_cycle: PaletteCycle,
     /// Glyph-selection strategy (lever 10). Default = identity (selection: None).
     pub glyph: crate::render::charset::GlyphConfig,
+    /// Temporal-color strength (lever 3). Identity = 0.0 (off).
+    pub temporal_color: f32,
+    /// Temporal lag in frames (lever 3). Identity = 8.0.
+    pub temporal_lag_frames: f32,
+    /// Temporal color mode (lever 3). Identity = Hue.
+    pub temporal_mode: TemporalMode,
+    /// Hand-picked front accent (Accent mode). None = derive from palette hot-end.
+    pub temporal_accent: Option<RgbColor>,
+    /// Per-preset default palette. None = use the global/CLI palette.
+    pub palette: Option<Palette>,
+    /// Per-preset default charset. None = use the global/CLI charset.
+    pub charset: Option<Charset>,
 }
 
 impl Default for RenderArtDefaults {
@@ -29,6 +42,12 @@ impl Default for RenderArtDefaults {
             intensity_mapping: IntensityMapping::logarithmic(10.0),
             palette_cycle: PaletteCycle::default(),
             glyph: crate::render::charset::GlyphConfig::default(),
+            temporal_color: 0.0,
+            temporal_lag_frames: 8.0,
+            temporal_mode: TemporalMode::Hue,
+            temporal_accent: None,
+            palette: None,
+            charset: None,
         }
     }
 }
@@ -47,6 +66,39 @@ mod tests {
     use super::*;
     use crate::render::palette::IntensityMapping;
     use crate::simulation::config::Preset;
+
+    const ALL_PRESETS_FOR_TEST: [Preset; 30] = [
+        Preset::Network,
+        Preset::Exploratory,
+        Preset::Tendrils,
+        Preset::Organic,
+        Preset::Minimal,
+        Preset::Moss,
+        Preset::Cosmic,
+        Preset::Fire,
+        Preset::Zen,
+        Preset::Storm,
+        Preset::River,
+        Preset::Ethereal,
+        Preset::PetriDish,
+        Preset::Vortex,
+        Preset::Lightning,
+        Preset::Crystal,
+        Preset::ChaosEdge,
+        Preset::Blob,
+        Preset::Worm,
+        Preset::Pulse,
+        Preset::Coral,
+        Preset::Flocking,
+        Preset::Maze,
+        Preset::Ripple,
+        Preset::Vortex36,
+        Preset::Chameleon,
+        Preset::DynamicTendrils,
+        Preset::MorphingCoral,
+        Preset::ReactiveSwarm,
+        Preset::DuelingModulators,
+    ];
 
     #[test]
     fn default_is_log10() {
@@ -174,6 +226,27 @@ mod tests {
                 log10,
                 "preset {preset:?} must default to log10 in #32"
             );
+        }
+    }
+
+    #[test]
+    fn default_temporal_palette_charset_are_identity() {
+        let d = RenderArtDefaults::default();
+        assert_eq!(d.temporal_color, 0.0);
+        assert_eq!(d.temporal_lag_frames, 8.0);
+        assert_eq!(d.temporal_mode, crate::render::palette::TemporalMode::Hue);
+        assert_eq!(d.temporal_accent, None);
+        assert_eq!(d.palette, None);
+        assert_eq!(d.charset, None);
+    }
+
+    #[test]
+    fn every_preset_temporal_is_off_identity() {
+        for preset in ALL_PRESETS_FOR_TEST {
+            let d = RenderArtDefaults::from(preset);
+            assert_eq!(d.temporal_color, 0.0, "{preset:?} temporal must be off");
+            assert_eq!(d.palette, None, "{preset:?} palette must be identity");
+            assert_eq!(d.charset, None, "{preset:?} charset must be identity");
         }
     }
 }
