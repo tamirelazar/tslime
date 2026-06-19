@@ -319,7 +319,7 @@ impl FromStr for Preset {
             "chameleon" => Ok(Preset::Chameleon),
             "dynamictendrils" | "dynamic-tendrils" | "dynamic_tendrils" => Ok(Preset::DynamicTendrils),
             "morphingcoral" | "morphing-coral" | "morphing_coral" => Ok(Preset::MorphingCoral),
-            "reactiveswarm" | "reactive-swarm" | "reactive_swar" => Ok(Preset::ReactiveSwarm),
+            "reactiveswarm" | "reactive-swarm" | "reactive_swarm" => Ok(Preset::ReactiveSwarm),
             "duelingmodulators" | "dueling-modulators" | "dueling_modulators" => Ok(Preset::DuelingModulators),
             "lumen" => Ok(Preset::Lumen),
             "aurora" => Ok(Preset::Aurora),

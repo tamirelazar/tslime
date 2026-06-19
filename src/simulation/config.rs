@@ -2635,6 +2635,10 @@ mod tests {
             Preset::MorphingCoral,
             Preset::ReactiveSwarm,
             Preset::DuelingModulators,
+            Preset::Lumen,
+            Preset::Aurora,
+            Preset::Bloom,
+            Preset::Etching,
         ];
         for preset in presets {
             let config: SimConfig = preset.into();
