@@ -190,6 +190,12 @@ pub struct SavedConfig {
     /// Sobel edge-magnitude threshold for hybrid glyph mode.
     #[serde(default)]
     pub glyph_edge_threshold: Option<f32>,
+
+    // Temporal accent color
+    /// Hand-picked accent color for temporal-accent mode, as a 6-digit lowercase hex string (e.g. "ffb347").
+    /// None means no accent override (use palette-derived color).
+    #[serde(default)]
+    pub temporal_accent: Option<String>,
 }
 
 fn default_chrome_style() -> String {
@@ -239,6 +245,7 @@ impl SavedConfig {
         deposit_cap: f32,
         palette_cycle: crate::render::palette::PaletteCycle,
         glyph: crate::render::charset::GlyphConfig,
+        temporal_accent: Option<crate::render::palette::RgbColor>,
     ) -> Self {
         let diffusion_kernel_str = match sim_config.diffusion_kernel {
             DiffusionKernel::Mean3x3 => "mean3x3",
@@ -416,6 +423,7 @@ impl SavedConfig {
             } else {
                 Some(glyph.edge_threshold)
             },
+            temporal_accent: temporal_accent.map(|c| format!("{:02x}{:02x}{:02x}", c.r, c.g, c.b)),
         }
     }
 
@@ -566,6 +574,13 @@ impl SavedConfig {
             }
             None => crate::render::charset::GlyphConfig::default(),
         };
+
+        // Apply temporal accent color
+        runtime_state.temporal_accent = self.temporal_accent.as_deref().and_then(|hex| {
+            u32::from_str_radix(hex, 16)
+                .ok()
+                .map(crate::render::palette::RgbColor::from_hex)
+        });
 
         // Parameters that require simulation restart to take effect:
         // - population (agent count)
@@ -946,6 +961,7 @@ mod tests {
             palette_cycle_mode: None,
             glyph_selection: None,
             glyph_edge_threshold: None,
+            temporal_accent: None,
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -1052,6 +1068,7 @@ food_path = "assets/tslime_logo.png"
             palette_cycle_mode: None,
             glyph_selection: None,
             glyph_edge_threshold: None,
+            temporal_accent: None,
         };
         let sim_config = config.to_sim_config().unwrap();
         assert_eq!(sim_config.species_configs[0].count, 50000);
@@ -1113,6 +1130,7 @@ food_path = "assets/tslime_logo.png"
             palette_cycle_mode: None,
             glyph_selection: None,
             glyph_edge_threshold: None,
+            temporal_accent: None,
         };
 
         config
@@ -1180,6 +1198,7 @@ food_path = "assets/tslime_logo.png"
             palette_cycle_mode: None,
             glyph_selection: None,
             glyph_edge_threshold: None,
+            temporal_accent: None,
         };
 
         config
@@ -1311,6 +1330,7 @@ food_path = "assets/tslime_logo.png"
             0.0,
             crate::render::palette::PaletteCycle::default(),
             crate::render::charset::GlyphConfig::default(),
+            None,
         );
 
         // Create new state and apply config
@@ -1458,6 +1478,7 @@ init_mode = "Random"
             0.0,
             crate::render::palette::PaletteCycle::default(),
             crate::render::charset::GlyphConfig::default(),
+            None,
         );
 
         // Serialize and deserialize through TOML
@@ -1574,6 +1595,7 @@ init_mode = "Random"
             0.0,
             crate::render::palette::PaletteCycle::default(),
             crate::render::charset::GlyphConfig::default(),
+            None,
         );
 
         // Serialize and deserialize through TOML
@@ -1725,6 +1747,7 @@ init_mode = "Random"
             state.deposit_cap,
             crate::render::palette::PaletteCycle::default(),
             crate::render::charset::GlyphConfig::default(),
+            None,
         );
 
         // Serialize and deserialize through TOML
@@ -1797,6 +1820,7 @@ init_mode = "Random"
             0.0,
             state.palette_cycle,
             crate::render::charset::GlyphConfig::default(),
+            None,
         );
 
         assert_eq!(saved.palette_cycles, Some(4));
@@ -1859,6 +1883,7 @@ init_mode = "Random"
             0.0,
             crate::render::palette::PaletteCycle::default(),
             rs.glyph,
+            None,
         );
 
         assert_eq!(saved.glyph_selection.as_deref(), Some("hybrid"));
@@ -1905,6 +1930,7 @@ init_mode = "Random"
             0.0,
             crate::render::palette::PaletteCycle::default(),
             rs.glyph,
+            None,
         );
 
         assert_eq!(saved.glyph_selection, None);
@@ -2006,6 +2032,86 @@ init_mode = "Random"
         assert!(
             state.glyph.selection.is_none(),
             "missing glyph_selection must default to None"
+        );
+    }
+
+    #[test]
+    fn temporal_accent_round_trips_and_back_compat() {
+        use crate::render::palette::RgbColor;
+
+        // Missing field deserializes to None (old TOML — back-compat).
+        let old_toml = r#"name = "x"
+population = 1000
+sensor_angle = 22.5
+sensor_distance = 9.0
+rotation_angle = 45.0
+step_size = 1.0
+decay_factor = 0.9
+deposit_amount = 5.0
+max_brightness = 100.0
+diffusion_kernel = "mean3x3"
+diffusion_sigma = 1.0
+palette = "moss"
+charset = "halfblockdual"
+reverse_palette = false
+invert_palette = false
+warmup_frames = 0
+food_persist = false
+auto_reset = false
+grid = false
+init_mode = "random"
+"#;
+        let old: SavedConfig = toml::from_str(old_toml).unwrap();
+        assert_eq!(old.temporal_accent, None);
+
+        // Some(color) → hex → serialize → deserialize → apply → same color.
+        let accent = RgbColor::new(0xff, 0xb3, 0x47);
+        let saved = SavedConfig::from_runtime(
+            "accent_rt".to_string(),
+            &SimConfig::default(),
+            crate::cli::Palette::Organic,
+            crate::render::charset::Charset::HalfBlock,
+            false,
+            false,
+            0,
+            false,
+            false,
+            false,
+            None,
+            crate::simulation::config::InitMode::Random,
+            None,
+            None,
+            0.0,
+            8.0,
+            crate::render::palette::TemporalMode::Hue,
+            0.0,
+            0.05,
+            1.0,
+            1.0,
+            crate::simulation::config::DepositCurve::default(),
+            1.0,
+            1.0,
+            0.0,
+            crate::render::palette::PaletteCycle::default(),
+            crate::render::charset::GlyphConfig::default(),
+            Some(accent),
+        );
+
+        // Hex encoding must be lowercase 6-digit.
+        assert_eq!(saved.temporal_accent.as_deref(), Some("ffb347"));
+
+        // Round-trip through TOML.
+        let toml_str = toml::to_string(&saved).expect("serialize must succeed");
+        let reloaded: SavedConfig = toml::from_str(&toml_str).expect("deserialize must succeed");
+        let mut rs = create_test_runtime_state();
+        reloaded
+            .apply_to_runtime_state(&mut rs)
+            .expect("apply must succeed");
+
+        assert_eq!(
+            rs.temporal_accent,
+            Some(accent),
+            "temporal_accent must survive round-trip"
         );
     }
 }
