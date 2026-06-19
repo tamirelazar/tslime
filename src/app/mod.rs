@@ -451,21 +451,18 @@ pub fn print_mode(
 
     // Enable temporal computation if requested, then warm up enough frames
     // to populate the EMA lag buffer before capturing the final frame.
-    let temporal_strength = args.temporal_color;
-    let temporal_mode = match args.temporal_mode.to_ascii_lowercase().as_str() {
-        "accent" => crate::render::palette::TemporalMode::Accent,
-        _ => crate::render::palette::TemporalMode::Hue,
-    };
+    let art_defaults_print = args
+        .to_render_art_defaults()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let temporal_strength = art_defaults_print.temporal_color;
+    let temporal_mode = art_defaults_print.temporal_mode;
     if temporal_strength > 0.0 {
-        let temporal_alpha = if args.temporal_lag > 0.0 {
-            1.0 / args.temporal_lag
-        } else {
-            1.0
-        };
+        let lag = art_defaults_print.temporal_lag_frames;
+        let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
         // Warm up enough frames so the EMA lag buffer is populated before we
         // capture the golden frame (lag_frames warmup gives a representative diff).
-        let warmup = (args.temporal_lag.ceil() as usize).max(1);
+        let warmup = (lag.ceil() as usize).max(1);
         for _ in 0..warmup {
             sim.update(1.0);
         }
@@ -680,17 +677,14 @@ pub fn capture_frames_mode(
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
     // Temporal-color setup: enable EMA computation once before the loop.
-    let temporal_strength = args.temporal_color;
-    let temporal_mode = match args.temporal_mode.to_ascii_lowercase().as_str() {
-        "accent" => crate::render::palette::TemporalMode::Accent,
-        _ => crate::render::palette::TemporalMode::Hue,
-    };
+    let art_defaults_capture = args
+        .to_render_art_defaults()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let temporal_strength = art_defaults_capture.temporal_color;
+    let temporal_mode = art_defaults_capture.temporal_mode;
     if temporal_strength > 0.0 {
-        let temporal_alpha = if args.temporal_lag > 0.0 {
-            1.0 / args.temporal_lag
-        } else {
-            1.0
-        };
+        let lag = art_defaults_capture.temporal_lag_frames;
+        let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
     if args.afterglow > 0.0 {
@@ -928,17 +922,14 @@ pub fn export_gif_mode(
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
     // Temporal-color setup: enable EMA computation once before the loop.
-    let temporal_strength = args.temporal_color;
-    let temporal_mode = match args.temporal_mode.to_ascii_lowercase().as_str() {
-        "accent" => crate::render::palette::TemporalMode::Accent,
-        _ => crate::render::palette::TemporalMode::Hue,
-    };
+    let art_defaults_gif = args
+        .to_render_art_defaults()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let temporal_strength = art_defaults_gif.temporal_color;
+    let temporal_mode = art_defaults_gif.temporal_mode;
     if temporal_strength > 0.0 {
-        let temporal_alpha = if args.temporal_lag > 0.0 {
-            1.0 / args.temporal_lag
-        } else {
-            1.0
-        };
+        let lag = art_defaults_gif.temporal_lag_frames;
+        let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
     if args.afterglow > 0.0 {
@@ -1110,17 +1101,14 @@ pub fn export_webm_mode(
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
     // Temporal-color setup: enable EMA computation once before the loop.
-    let temporal_strength = args.temporal_color;
-    let temporal_mode = match args.temporal_mode.to_ascii_lowercase().as_str() {
-        "accent" => crate::render::palette::TemporalMode::Accent,
-        _ => crate::render::palette::TemporalMode::Hue,
-    };
+    let art_defaults_webm = args
+        .to_render_art_defaults()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let temporal_strength = art_defaults_webm.temporal_color;
+    let temporal_mode = art_defaults_webm.temporal_mode;
     if temporal_strength > 0.0 {
-        let temporal_alpha = if args.temporal_lag > 0.0 {
-            1.0 / args.temporal_lag
-        } else {
-            1.0
-        };
+        let lag = art_defaults_webm.temporal_lag_frames;
+        let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
     if args.afterglow > 0.0 {
