@@ -546,6 +546,7 @@ impl FrameBuffer {
         temporal_mode: palette::TemporalMode,
         palette_cycle: palette::PaletteCycle,
         glyph: charset::GlyphConfig,
+        temporal_accent: Option<palette::RgbColor>,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode, background_color);
         buffer.species_colors_enabled = species_colors_enabled;
@@ -654,6 +655,7 @@ impl FrameBuffer {
                 temporal_mode,
                 palette_cycle,
                 glyph,
+                temporal_accent,
             );
             buffer.set_cell(x, y, cell);
         }
@@ -709,6 +711,7 @@ impl FrameBuffer {
         temporal_mode: palette::TemporalMode,
         palette_cycle: palette::PaletteCycle,
         glyph: charset::GlyphConfig,
+        temporal_accent: Option<palette::RgbColor>,
     ) -> Self {
         // Build sim buffer at sim dimensions
         let sim_buffer = Self::from_downsampled(
@@ -743,6 +746,7 @@ impl FrameBuffer {
             temporal_mode,
             palette_cycle,
             glyph,
+            temporal_accent,
         );
 
         // Fast path: fullscreen — no blitting needed
@@ -857,6 +861,7 @@ impl FrameBuffer {
         temporal_mode: palette::TemporalMode,
         palette_cycle: palette::PaletteCycle,
         glyph: charset::GlyphConfig,
+        temporal_accent: Option<palette::RgbColor>,
     ) -> Cell {
         const THRESHOLD: f32 = 0.01;
         let log_gaps = std::env::var("TSLIME_LOG_GAPS").is_ok();
@@ -1289,6 +1294,7 @@ impl FrameBuffer {
                 temporal_strength,
                 temporal_mode,
                 palette_cycle,
+                temporal_accent,
             )
         }
     }
@@ -1310,6 +1316,7 @@ impl FrameBuffer {
         temporal_strength: f32,
         temporal_mode: palette::TemporalMode,
         palette_cycle: palette::PaletteCycle,
+        temporal_accent: Option<palette::RgbColor>,
     ) -> Cell {
         match color_mode {
             ColorMode::TrueColor => {
@@ -1335,6 +1342,7 @@ impl FrameBuffer {
                         temporal_strength,
                         temporal_mode,
                         palette_cycle,
+                        temporal_accent,
                     )
                 };
                 Cell {
@@ -2482,6 +2490,7 @@ pub fn render_frame(
         palette::TemporalMode::Hue,
         palette::PaletteCycle::default(),
         charset::GlyphConfig::default(),
+        None,
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -2601,6 +2610,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, ' ');
         assert!(cell.fg_color_256.is_none());
@@ -2636,6 +2646,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_some());
@@ -2671,6 +2682,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_none());
@@ -2706,6 +2718,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -2739,6 +2752,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color_256.is_some());
@@ -2772,6 +2786,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -2805,6 +2820,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '▄');
         assert!(cell.fg_color_256.is_some());
@@ -2838,6 +2854,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '\u{2807}');
         assert!(cell.fg_color_256.is_some());
@@ -2871,6 +2888,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '\u{2838}');
         assert!(cell.fg_color_256.is_some());
@@ -2904,6 +2922,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
@@ -2937,6 +2956,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
@@ -2970,6 +2990,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '^');
         assert!(cell.fg_color_256.is_some());
@@ -3003,6 +3024,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, 'v');
         assert!(cell.fg_color_256.is_some());
@@ -3036,6 +3058,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
@@ -3069,6 +3092,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
@@ -3169,6 +3193,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(fb.width(), 10);
         assert_eq!(fb.height(), 10);
@@ -3205,6 +3230,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_ne!(fb.cells[0].fg_color_rgb, fb_rev.cells[0].fg_color_rgb);
     }
@@ -3337,6 +3363,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -3402,6 +3429,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
 
         assert_eq!(buffer.cells[0].char, '▀');
@@ -3481,6 +3509,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            None,
         );
 
         // Should be reddish (based on first species color)
@@ -3512,6 +3541,7 @@ mod tests {
             0.0,
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            None,
         );
 
         // Should be an index close to red (196 or similar)
@@ -3635,6 +3665,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         // The buffer should be 10×10
         assert_eq!(buffer.width, 10);
@@ -3671,6 +3702,7 @@ mod tests {
             0.0,
             TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            None,
         );
         let on = palette::colorize_subpixel(
             0.6,
@@ -3683,6 +3715,7 @@ mod tests {
             1.0,
             TemporalMode::Hue,
             palette::PaletteCycle::default(),
+            None,
         );
         assert_ne!(
             off, on,
@@ -3755,6 +3788,7 @@ mod tests {
             TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
 
         let fb_on = FrameBuffer::from_downsampled(
@@ -3789,6 +3823,7 @@ mod tests {
             TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
 
         assert_ne!(
@@ -3854,6 +3889,7 @@ mod tests {
             palette::TemporalMode::Hue,
             id,
             charset::GlyphConfig::default(),
+            None,
         );
         let fb_on = FrameBuffer::from_downsampled(
             &cells,
@@ -3887,6 +3923,7 @@ mod tests {
             palette::TemporalMode::Hue,
             active,
             charset::GlyphConfig::default(),
+            None,
         );
         // At least one cell must differ in fg_color_rgb between identity and active cycle
         let differs = fb_id
@@ -3955,6 +3992,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
+            None,
         );
         assert!(native.cells.iter().any(|c| c.char != ' '));
     }
@@ -3998,6 +4036,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             hybrid,
+            None,
         );
         assert!(fb
             .cells
@@ -4044,6 +4083,7 @@ mod tests {
             palette::TemporalMode::Hue,
             palette::PaletteCycle::default(),
             bri,
+            None,
         );
         assert!(fb
             .cells
@@ -4093,6 +4133,7 @@ mod tests {
                 palette::TemporalMode::Hue,
                 palette::PaletteCycle::default(),
                 g,
+                None,
             )
         };
         let a = mk(hyb);

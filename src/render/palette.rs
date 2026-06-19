@@ -2733,6 +2733,7 @@ pub fn colorize_subpixel(
     temporal_strength: f32,
     temporal_mode: TemporalMode,
     cycle: PaletteCycle,
+    temporal_accent: Option<RgbColor>,
 ) -> RgbColor {
     let base = map_brightness_rgb_cycled(
         brightness,
@@ -2746,7 +2747,14 @@ pub fn colorize_subpixel(
     if temporal_strength <= 0.0 {
         return base;
     }
-    temporal_modulate(base, diff_norm, temporal_mode, temporal_strength, palette)
+    temporal_modulate(
+        base,
+        diff_norm,
+        temporal_mode,
+        temporal_strength,
+        palette,
+        temporal_accent,
+    )
 }
 
 /// Maximum hue rotation (degrees) at |blend| = 1, before strength scaling.
@@ -2760,6 +2768,7 @@ fn temporal_modulate(
     mode: TemporalMode,
     strength: f32,
     palette: Palette,
+    accent: Option<RgbColor>,
 ) -> RgbColor {
     let blend = (TEMPORAL_TANH_K * diff_norm).tanh(); // -1..1; growing front ⇒ +, decaying ⇒ -
     if blend == 0.0 || strength <= 0.0 {
@@ -2768,15 +2777,47 @@ fn temporal_modulate(
     match mode {
         TemporalMode::Hue => {
             let oklch = srgb_to_oklch(base);
+            // Achromatic colors (gray/white/black) have no hue to rotate
+            // (`srgb_to_oklch` returns NaN); leave them untouched.
+            if oklch.h.is_nan() {
+                return base;
+            }
             let h = oklch.h + blend * TEMPORAL_MAX_HUE_DEG * strength;
             oklch_to_srgb(oklch.l, oklch.c, h)
         }
         TemporalMode::Accent => {
-            // Front accent = the palette's hot end (brightness 1.0). Blend toward it
-            // for the growing front (blend > 0). Mix in OKLch for perceptual evenness.
-            let accent = map_brightness_rgb(1.0, palette, false, false, 0.0, None);
+            // Front accent defaults to the palette's own vivid bright stop
+            // (brightness 0.85), NOT the hot end (brightness 1.0) — many palettes
+            // desaturate to white/gray at 1.0, which gives a washed, off-palette
+            // front. Sampling the palette keeps the accent on its own gradient.
+            // A hand-picked `accent` (CLI/preset) overrides this.
+            let accent =
+                accent.unwrap_or_else(|| palette_accent_color(&palette, false, false, 0.0, None));
             let t = blend.max(0.0) * strength;
             mix_oklch(base, accent, t)
+        }
+    }
+}
+
+/// Interpolate two OKLch hues (degrees) along the short arc, NaN-safe.
+///
+/// An achromatic endpoint (gray/white/black) has a "powerless" hue
+/// (`srgb_to_oklch` returns NaN). Interpolating toward NaN would poison the
+/// result (`NaN * t == NaN` for every `t`, including 0), so we fall back to the
+/// chromatic endpoint's hue — matching CSS Color 4 "missing component" rules.
+fn lerp_hue(a: f32, b: f32, t: f32) -> f32 {
+    match (a.is_nan(), b.is_nan()) {
+        (true, true) => 0.0, // both achromatic: hue irrelevant (chroma ~0)
+        (true, false) => b,
+        (false, true) => a,
+        (false, false) => {
+            let mut delta = b - a;
+            if delta > 180.0 {
+                delta -= 360.0;
+            } else if delta < -180.0 {
+                delta += 360.0;
+            }
+            a + delta * t
         }
     }
 }
@@ -2784,11 +2825,19 @@ fn temporal_modulate(
 /// Linear interpolation of two sRGB colors through OKLch (t in 0..1).
 fn mix_oklch(a: RgbColor, b: RgbColor, t: f32) -> RgbColor {
     let t = t.clamp(0.0, 1.0);
+    // Short-circuit the endpoints: avoids round-tripping `a`/`b` through OKLch
+    // (lossy, and a NaN hue on an achromatic endpoint would corrupt even t==0).
+    if t <= 0.0 {
+        return a;
+    }
+    if t >= 1.0 {
+        return b;
+    }
     let oa = srgb_to_oklch(a);
     let ob = srgb_to_oklch(b);
     let l = oa.l + (ob.l - oa.l) * t;
     let c = oa.c + (ob.c - oa.c) * t;
-    let h = oa.h + (ob.h - oa.h) * t;
+    let h = lerp_hue(oa.h, ob.h, t);
     oklch_to_srgb(l, c, h)
 }
 
@@ -2797,13 +2846,75 @@ mod tests {
     use super::*;
 
     #[test]
+    fn mix_oklch_achromatic_endpoint_preserves_chromatic_hue() {
+        // Regression: white/gray has a NaN ("powerless") OKLch hue. Mixing a
+        // saturated color toward it must NOT poison the result into the
+        // complement (the old `oa.h + (NaN - oa.h)*t` bug turned green→magenta,
+        // even at t==0). Endpoints must be exact, and a partial mix must stay
+        // on the green→white path (hue near green, never magenta).
+        let green = RgbColor { r: 0, g: 100, b: 6 };
+        let white = RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        };
+        assert_eq!(
+            mix_oklch(green, white, 0.0),
+            green,
+            "t=0 must be exact base"
+        );
+        assert_eq!(
+            mix_oklch(green, white, 1.0),
+            white,
+            "t=1 must be exact target"
+        );
+        let mid = mix_oklch(green, white, 0.5);
+        // A green→white blend is a desaturated green: green channel dominant,
+        // and crucially NOT red-dominant (magenta/red = the bug signature).
+        assert!(
+            mid.g >= mid.r && mid.g >= mid.b,
+            "green→white midpoint must stay greenish, got {mid:?}"
+        );
+    }
+
+    #[test]
+    fn temporal_modulate_accent_achromatic_hot_end_stays_in_palette() {
+        // Slime's hot end is pure white (chroma 0). Accent mode with the
+        // hot-end fallback must keep a green base greenish, never flip to
+        // magenta (the NaN-hue bug).
+        let green = RgbColor {
+            r: 0,
+            g: 120,
+            b: 10,
+        };
+        let out = temporal_modulate(green, 0.6, TemporalMode::Accent, 0.5, Palette::Slime, None);
+        assert!(
+            out.g >= out.r,
+            "growing front on Slime must not flip to magenta, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn temporal_modulate_hue_achromatic_base_is_identity() {
+        // A white/gray base has no hue; hue-mode rotation must leave it intact
+        // rather than producing NaN garbage.
+        let white = RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        };
+        let out = temporal_modulate(white, 0.9, TemporalMode::Hue, 1.0, Palette::Slime, None);
+        assert_eq!(out, white, "achromatic base must be unchanged in hue mode");
+    }
+
+    #[test]
     fn temporal_modulate_zero_diff_is_identity() {
         let base = RgbColor {
             r: 120,
             g: 200,
             b: 80,
         };
-        let out = temporal_modulate(base, 0.0, TemporalMode::Hue, 1.0, Palette::Organic);
+        let out = temporal_modulate(base, 0.0, TemporalMode::Hue, 1.0, Palette::Organic, None);
         assert_eq!(out, base);
     }
 
@@ -2814,8 +2925,38 @@ mod tests {
             g: 200,
             b: 80,
         };
-        let out = temporal_modulate(base, 0.5, TemporalMode::Hue, 1.0, Palette::Organic);
+        let out = temporal_modulate(base, 0.5, TemporalMode::Hue, 1.0, Palette::Organic, None);
         assert_ne!(out, base, "a growing front should change hue");
+    }
+
+    #[test]
+    fn temporal_accent_some_overrides_hot_end() {
+        let base = RgbColor::new(10, 80, 40);
+        let custom = RgbColor::new(255, 180, 60);
+        // Accent mode, strong diff: with a custom accent the result blends toward it.
+        let with_custom = temporal_modulate(
+            base,
+            0.9,
+            TemporalMode::Accent,
+            1.0,
+            Palette::Slime,
+            Some(custom),
+        );
+        let palette_default =
+            temporal_modulate(base, 0.9, TemporalMode::Accent, 1.0, Palette::Slime, None);
+        assert_ne!(
+            with_custom, palette_default,
+            "custom accent must differ from the palette-derived accent"
+        );
+        // The None path blends toward the palette's own vivid stop
+        // (`palette_accent_color`, brightness 0.85), NOT the hot end (1.0).
+        let palette_accent = palette_accent_color(&Palette::Slime, false, false, 0.0, None);
+        let t = (TEMPORAL_TANH_K * 0.9_f32).tanh() * 1.0;
+        let expect_none = mix_oklch(base, palette_accent, t);
+        assert_eq!(
+            palette_default, expect_none,
+            "None must blend toward palette_accent_color"
+        );
     }
 
     #[test]
@@ -3825,6 +3966,7 @@ mod tests {
             0.0,
             TemporalMode::Hue,
             PaletteCycle::default(),
+            None,
         );
         assert_eq!(got, expected);
     }
@@ -3936,6 +4078,7 @@ mod tests {
             0.0,
             TemporalMode::Hue,
             id,
+            None,
         );
         let want = map_brightness_rgb(0.6, Palette::Organic, false, false, 0.0, None);
         assert_eq!(got, want);

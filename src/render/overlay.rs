@@ -1909,6 +1909,7 @@ mod status_line_tests {
             palette_cycle_mode: None,
             glyph_selection: None,
             glyph_edge_threshold: None,
+            temporal_accent: None,
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
@@ -1968,6 +1969,7 @@ mod status_line_tests {
             palette_cycle_mode: None,
             glyph_selection: None,
             glyph_edge_threshold: None,
+            temporal_accent: None,
         }
     }
 

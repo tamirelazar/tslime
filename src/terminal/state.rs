@@ -635,6 +635,8 @@ pub struct RuntimeState {
     pub temporal_lag_frames: f32,
     /// Temporal color modulation mode.
     pub temporal_mode: crate::render::palette::TemporalMode,
+    /// Hand-picked front accent color (Accent mode). None = derive from palette hot-end.
+    pub temporal_accent: Option<crate::render::palette::RgbColor>,
     /// Afterglow strength (0.0 = off).
     pub afterglow: f32,
     /// Afterglow EMA rate.
@@ -785,6 +787,7 @@ impl RuntimeState {
             temporal_color: 0.0,
             temporal_lag_frames: 8.0,
             temporal_mode: crate::render::palette::TemporalMode::Hue,
+            temporal_accent: None,
             afterglow: 0.0,
             afterglow_rate: 0.05,
             decay_gamma: 1.0,

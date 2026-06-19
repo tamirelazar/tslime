@@ -319,10 +319,14 @@ impl FromStr for Preset {
             "chameleon" => Ok(Preset::Chameleon),
             "dynamictendrils" | "dynamic-tendrils" | "dynamic_tendrils" => Ok(Preset::DynamicTendrils),
             "morphingcoral" | "morphing-coral" | "morphing_coral" => Ok(Preset::MorphingCoral),
-            "reactiveswarm" | "reactive-swarm" | "reactive_swar" => Ok(Preset::ReactiveSwarm),
+            "reactiveswarm" | "reactive-swarm" | "reactive_swarm" => Ok(Preset::ReactiveSwarm),
             "duelingmodulators" | "dueling-modulators" | "dueling_modulators" => Ok(Preset::DuelingModulators),
+            "lumen" => Ok(Preset::Lumen),
+            "aurora" => Ok(Preset::Aurora),
+            "bloom" => Ok(Preset::Bloom),
+            "etching" => Ok(Preset::Etching),
             _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon, dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators",
+                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon, dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators, lumen, aurora, bloom, etching",
                 s
             )),
         }
@@ -1264,29 +1268,34 @@ pub struct Args {
     #[arg(
         long = "temporal-color",
         value_name = "VALUE",
-        default_value_t = 0.0,
         help = "Temporal-color strength (0.0 = off). Colors the growing front."
     )]
     /// Temporal-color modulation strength (lever 3).
-    pub temporal_color: f32,
+    pub temporal_color: Option<f32>,
 
     #[arg(
         long = "temporal-lag",
         value_name = "FRAMES",
-        default_value_t = 8.0,
         help = "Temporal lag in frames (larger = longer-lived front color); values below 1 are treated as 1 frame"
     )]
     /// Temporal lag in frames; values below 1 are treated as 1 frame.
-    pub temporal_lag: f32,
+    pub temporal_lag: Option<f32>,
 
     #[arg(
         long = "temporal-mode",
         value_name = "MODE",
-        default_value = "hue",
         help = "Temporal color mode: \"hue\" or \"accent\""
     )]
     /// Temporal color modulation mode.
-    pub temporal_mode: String,
+    pub temporal_mode: Option<String>,
+
+    #[arg(
+        long = "temporal-accent",
+        value_name = "HEX",
+        help = "Hand-picked front accent color (Accent mode), e.g. ffb347; default = palette hot-end"
+    )]
+    /// Hand-picked front accent color hex (Accent mode).
+    pub temporal_accent: Option<String>,
 
     #[arg(
         long = "afterglow",
@@ -1829,6 +1838,23 @@ impl Args {
         }
     }
 
+    /// True when the user passed `--palette` (vs the clap default sentinel).
+    pub fn palette_explicitly_set(&self) -> bool {
+        self.palette != palette::DEFAULT_PALETTE_NAME
+    }
+
+    /// True when the user selected any charset flag (vs the HalfBlockDual default).
+    pub fn charset_explicitly_set(&self) -> bool {
+        self.sculpted
+            || self.quadrant
+            || self.shade
+            || self.points
+            || self.braille
+            || self.half_block_dual
+            || self.ascii
+            || self.ascii_chars.is_some()
+    }
+
     /// The intensity-mapping type string, falling back to the historical
     /// default when the flag is absent. Used by paths that always need a
     /// concrete mapping (e.g. the pause-logo "sim" passthrough).
@@ -2068,6 +2094,23 @@ impl Args {
         if self.glyph_selection.is_some() || self.glyph_edge_threshold.is_some() {
             art.glyph = self.glyph_config_parsed(art.glyph)?;
         }
+        if let Some(c) = self.temporal_color {
+            art.temporal_color = c;
+        }
+        if let Some(l) = self.temporal_lag {
+            art.temporal_lag_frames = l;
+        }
+        if let Some(ref m) = self.temporal_mode {
+            art.temporal_mode = match m.to_ascii_lowercase().as_str() {
+                "accent" => crate::render::palette::TemporalMode::Accent,
+                _ => crate::render::palette::TemporalMode::Hue,
+            };
+        }
+        if let Some(ref hex) = self.temporal_accent {
+            let h = u32::from_str_radix(hex.trim_start_matches('#'), 16)
+                .map_err(|_| format!("invalid --temporal-accent hex: {hex}"))?;
+            art.temporal_accent = Some(crate::render::palette::RgbColor::from_hex(h));
+        }
         Ok(art)
     }
 
@@ -2304,9 +2347,10 @@ impl Default for Args {
             trail_delta_strength: 0.5,
             gradient_magnitude: false,
             gradient_strength: 0.3,
-            temporal_color: 0.0,
-            temporal_lag: 8.0,
-            temporal_mode: "hue".to_string(),
+            temporal_color: None,
+            temporal_lag: None,
+            temporal_mode: None,
+            temporal_accent: None,
             afterglow: 0.0,
             afterglow_rate: 0.05,
             decay_gamma: 1.0,
@@ -2884,17 +2928,29 @@ mod tests {
             "accent",
         ])
         .unwrap();
-        assert!((a.temporal_color - 0.7).abs() < 1e-6);
-        assert!((a.temporal_lag - 12.0).abs() < 1e-6);
-        assert_eq!(a.temporal_mode, "accent");
+        assert!((a.temporal_color.unwrap() - 0.7).abs() < 1e-6);
+        assert!((a.temporal_lag.unwrap() - 12.0).abs() < 1e-6);
+        assert_eq!(a.temporal_mode.as_deref(), Some("accent"));
     }
 
     #[test]
     fn temporal_flags_defaults() {
         let a = Args::try_parse_from(["tslime"]).unwrap();
-        assert_eq!(a.temporal_color, 0.0);
-        assert_eq!(a.temporal_lag, 8.0);
-        assert_eq!(a.temporal_mode, "hue");
+        assert_eq!(a.temporal_color, None);
+        assert_eq!(a.temporal_lag, None);
+        assert_eq!(a.temporal_mode, None);
+    }
+
+    #[test]
+    fn temporal_resolves_from_preset_then_cli_override() {
+        // Bare run, default preset → temporal off (back-compat).
+        let a = Args::parse_from(["tslime"]);
+        let d = a.to_render_art_defaults().unwrap();
+        assert_eq!(d.temporal_color, 0.0);
+        // Explicit CLI strength overrides.
+        let a = Args::parse_from(["tslime", "--temporal-color", "0.5"]);
+        let d = a.to_render_art_defaults().unwrap();
+        assert_eq!(d.temporal_color, 0.5);
     }
 
     #[test]
@@ -3008,5 +3064,16 @@ mod tests {
         let mut args = Args::parse_from(["tslime"]);
         args.glyph_selection = Some("nope".into());
         assert!(args.to_render_art_defaults().is_err());
+    }
+
+    #[test]
+    fn explicit_setters_detect_cli_overrides() {
+        let a = Args::parse_from(["tslime"]);
+        assert!(!a.palette_explicitly_set());
+        assert!(!a.charset_explicitly_set());
+        let a = Args::parse_from(["tslime", "--palette", "heat"]);
+        assert!(a.palette_explicitly_set());
+        let a = Args::parse_from(["tslime", "--braille"]);
+        assert!(a.charset_explicitly_set());
     }
 }

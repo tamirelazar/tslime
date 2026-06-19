@@ -307,6 +307,10 @@ pub fn preset_name(preset: Preset) -> &'static str {
         Preset::MorphingCoral => "MorphingCoral",
         Preset::ReactiveSwarm => "ReactiveSwarm",
         Preset::DuelingModulators => "DuelingModulators",
+        Preset::Lumen => "Lumen",
+        Preset::Aurora => "Aurora",
+        Preset::Bloom => "Bloom",
+        Preset::Etching => "Etching",
     }
 }
 
