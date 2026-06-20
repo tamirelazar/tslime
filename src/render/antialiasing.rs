@@ -60,6 +60,19 @@ impl AaStrength {
     }
 }
 
+impl std::str::FromStr for AaStrength {
+    type Err = String;
+
+    /// Parse a CLI token, rejecting unrecognized values with a helpful message
+    /// (used by clap so bad `--color-aa` input errors instead of silently
+    /// falling back).
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse_cli(s).ok_or_else(|| {
+            format!("invalid color-aa mode: {s}. Valid options: off, subtle, strong")
+        })
+    }
+}
+
 /// True for charsets whose shape resolution exceeds their color resolution and
 /// therefore benefit from color anti-aliasing.
 pub fn charset_aa_eligible(charset: &Charset) -> bool {
@@ -78,13 +91,18 @@ pub fn blur_field(src: &[f32], width: usize, height: usize, strength: AaStrength
     if strength == AaStrength::Off || width == 0 || height == 0 {
         return src.to_vec();
     }
+    // Invariant: src is exactly the row-major field. With it, idx = y*width+x and
+    // every in-range nidx are provably < src.len(), so the inner indexing needs no
+    // per-cell bounds check (debug builds catch a caller that violates this).
+    debug_assert_eq!(
+        src.len(),
+        width * height,
+        "blur_field: src must be width*height"
+    );
     let mut out = vec![0.0_f32; src.len()];
     for y in 0..height {
         for x in 0..width {
             let idx = y * width + x;
-            if idx >= src.len() {
-                continue;
-            }
             let center = src[idx];
             let mut neighbor_sum = 0.0_f32;
             let mut neighbor_count = 0u32;
@@ -97,10 +115,8 @@ pub fn blur_field(src: &[f32], width: usize, height: usize, strength: AaStrength
                     let ny = y as i32 + dy;
                     if nx >= 0 && nx < width as i32 && ny >= 0 && ny < height as i32 {
                         let nidx = ny as usize * width + nx as usize;
-                        if nidx < src.len() {
-                            neighbor_sum += src[nidx];
-                            neighbor_count += 1;
-                        }
+                        neighbor_sum += src[nidx];
+                        neighbor_count += 1;
                     }
                 }
             }

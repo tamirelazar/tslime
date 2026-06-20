@@ -1715,7 +1715,7 @@ pub struct Args {
         help = "Color anti-aliasing for subcell charsets: off | subtle | strong (default: auto — strong for braille, off otherwise)"
     )]
     /// Color anti-aliasing mode for subcell charsets.
-    pub color_aa: Option<String>,
+    pub color_aa: Option<crate::render::antialiasing::AaStrength>,
 
     #[arg(
         long = "bg-color",
@@ -1870,8 +1870,8 @@ impl Args {
         charset: &crate::render::charset::Charset,
     ) -> crate::render::antialiasing::AaStrength {
         use crate::render::antialiasing::AaStrength;
-        if let Some(ref s) = self.color_aa {
-            return AaStrength::parse_cli(s).unwrap_or(AaStrength::Off);
+        if let Some(aa) = self.color_aa {
+            return aa;
         }
         if matches!(charset, crate::render::charset::Charset::Braille) {
             AaStrength::Strong

@@ -252,7 +252,7 @@ impl SavedConfig {
         palette_cycle: crate::render::palette::PaletteCycle,
         glyph: crate::render::charset::GlyphConfig,
         temporal_accent: Option<crate::render::palette::RgbColor>,
-        color_aa: [crate::render::antialiasing::AaStrength; 7],
+        color_aa: [crate::render::antialiasing::AaStrength; crate::render::charset::NUM_CHARSETS],
     ) -> Self {
         let diffusion_kernel_str = match sim_config.diffusion_kernel {
             DiffusionKernel::Mean3x3 => "mean3x3",

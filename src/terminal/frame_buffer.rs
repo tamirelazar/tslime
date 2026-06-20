@@ -566,6 +566,10 @@ impl FrameBuffer {
         // Color anti-aliasing: when active for this (frame-uniform) charset,
         // pre-blur two per-cell color fields. The glyph/shape path below reads
         // raw quadrant data and is unaffected.
+        // PERF: when active this allocates ~3 Vec<f32> per frame (base, diff, and
+        // each blur_field output). Only runs for AA-eligible charsets (braille by
+        // default). Revisit with reusable scratch buffers if a frame-time profile
+        // shows braille-AA as hot; not worth the restructure unprofiled.
         use crate::render::antialiasing::{blur_field, charset_aa_eligible};
         let aa_active = aa_strength != crate::render::antialiasing::AaStrength::Off
             && charset_aa_eligible(&charset);

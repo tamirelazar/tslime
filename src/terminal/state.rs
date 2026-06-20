@@ -387,7 +387,7 @@ pub struct ParameterState {
     /// Window frame display mode.
     pub window_frame: WindowFrame,
     /// Per-charset color-AA strength, indexed by `charset_index`.
-    pub color_aa: [crate::render::antialiasing::AaStrength; 7],
+    pub color_aa: [crate::render::antialiasing::AaStrength; crate::render::charset::NUM_CHARSETS],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -487,7 +487,7 @@ pub struct RuntimeState {
     /// Index of current charset.
     pub charset_index: usize,
     /// Per-charset color-AA strength, indexed by `charset_index`.
-    pub color_aa: [crate::render::antialiasing::AaStrength; 7],
+    pub color_aa: [crate::render::antialiasing::AaStrength; crate::render::charset::NUM_CHARSETS],
     /// Random seed used for initialization.
     pub original_seed: u64,
     /// Initialization mode used.
@@ -586,7 +586,8 @@ pub struct RuntimeState {
     /// (`cli_overrides: SimConfig` covers sim-layer params; these cover the render layer.)
     initial_palette_index: usize,
     initial_charset_index: usize,
-    initial_color_aa: [crate::render::antialiasing::AaStrength; 7],
+    initial_color_aa:
+        [crate::render::antialiasing::AaStrength; crate::render::charset::NUM_CHARSETS],
     initial_intensity_mapping: IntensityMapping,
     initial_window_frame: WindowFrame,
     /// Undo history stack.
