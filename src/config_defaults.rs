@@ -485,6 +485,14 @@ pub mod rendering {
     pub const ASCII_CONTRAST_DEFAULT: f32 = ascii::DEFAULT_CONTRAST;
 }
 
+/// Default per-charset color-AA strength, indexed by `ALL_CHARSETS` order:
+/// [HalfBlock, HalfBlockDual, Ascii, Braille, Quadrant, Shade, Points].
+/// Braille defaults to Strong; everything else Off.
+pub const DEFAULT_COLOR_AA: [crate::render::antialiasing::AaStrength; 7] = {
+    use crate::render::antialiasing::AaStrength::{Off, Strong};
+    [Off, Off, Off, Strong, Off, Off, Off]
+};
+
 /// Charset level counts.
 pub mod charset_levels {
     /// Half-block character levels.

@@ -384,6 +384,8 @@ pub struct ParameterState {
     pub motion_blur_frames: usize,
     /// Window frame display mode.
     pub window_frame: WindowFrame,
+    /// Per-charset color-AA strength, indexed by `charset_index`.
+    pub color_aa: [crate::render::antialiasing::AaStrength; 7],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -482,6 +484,8 @@ pub struct RuntimeState {
     pub palette_index: usize,
     /// Index of current charset.
     pub charset_index: usize,
+    /// Per-charset color-AA strength, indexed by `charset_index`.
+    pub color_aa: [crate::render::antialiasing::AaStrength; 7],
     /// Random seed used for initialization.
     pub original_seed: u64,
     /// Initialization mode used.
@@ -580,6 +584,7 @@ pub struct RuntimeState {
     /// (`cli_overrides: SimConfig` covers sim-layer params; these cover the render layer.)
     initial_palette_index: usize,
     initial_charset_index: usize,
+    initial_color_aa: [crate::render::antialiasing::AaStrength; 7],
     initial_intensity_mapping: IntensityMapping,
     initial_window_frame: WindowFrame,
     /// Undo history stack.
@@ -687,6 +692,7 @@ impl RuntimeState {
             current_preset: initial_preset,
             palette_index: initial_palette_index,
             charset_index: initial_charset_index,
+            color_aa: crate::config_defaults::DEFAULT_COLOR_AA,
             original_seed: seed,
             original_init_mode: init_mode,
             dither_mode: DitherMode::None,
@@ -759,6 +765,7 @@ impl RuntimeState {
             cli_overrides: Some(cli_config.clone()),
             initial_palette_index,
             initial_charset_index,
+            initial_color_aa: crate::config_defaults::DEFAULT_COLOR_AA,
             initial_intensity_mapping: intensity_mapping.clone(),
             initial_window_frame: cli_config.window_frame,
             undo_stack: std::collections::VecDeque::with_capacity(50),
@@ -824,6 +831,7 @@ impl RuntimeState {
             dither_mode: self.dither_mode,
             motion_blur_frames: self.motion_blur_frames,
             window_frame: self.window_frame,
+            color_aa: self.color_aa,
         }
     }
 
@@ -849,6 +857,7 @@ impl RuntimeState {
         self.dither_mode = state.dither_mode;
         self.motion_blur_frames = state.motion_blur_frames;
         self.window_frame = state.window_frame;
+        self.color_aa = state.color_aa;
     }
 
     /// Creates an undo checkpoint if enough time has passed.
@@ -1142,6 +1151,22 @@ impl RuntimeState {
     /// Gets the currently active charset.
     pub fn current_charset(&self) -> Charset {
         ALL_CHARSETS[self.charset_index].clone()
+    }
+
+    /// Color-AA strength for the active charset.
+    pub fn current_color_aa(&self) -> crate::render::antialiasing::AaStrength {
+        self.color_aa[self.charset_index % self.color_aa.len()]
+    }
+
+    /// Cycle the active charset's color-AA strength. No-op (returns false) when
+    /// the active charset is AA-ineligible.
+    pub fn cycle_color_aa(&mut self) -> bool {
+        if !crate::render::antialiasing::charset_aa_eligible(&self.current_charset()) {
+            return false;
+        }
+        let i = self.charset_index % self.color_aa.len();
+        self.color_aa[i] = self.color_aa[i].cycle();
+        true
     }
 
     /// Gets the currently active palette.
@@ -1573,6 +1598,7 @@ impl RuntimeState {
         // Restore render-layer params to their launch values.
         self.palette_index = self.initial_palette_index;
         self.charset_index = self.initial_charset_index;
+        self.color_aa = self.initial_color_aa;
         self.intensity_mapping = self.initial_intensity_mapping.clone();
         self.intensity_mapping_index = Self::find_intensity_mapping_index(&self.intensity_mapping);
         self.window_frame = self.initial_window_frame;
@@ -2296,6 +2322,60 @@ mod tests {
         assert_eq!(state.chrome_style, ChromeStyle::Minimal);
         assert_eq!(state.base_chrome_state, ChromeState::Minimal);
         assert_eq!(state.chrome_state, ChromeState::Minimal);
+    }
+
+    #[test]
+    fn color_aa_default_is_strong_for_braille_only() {
+        use crate::render::antialiasing::AaStrength;
+        use crate::render::charset::Charset;
+        let rs = create_test_runtime_state();
+        // ALL_CHARSETS index 3 == Braille.
+        assert_eq!(rs.color_aa[3], AaStrength::Strong);
+        for (i, c) in ALL_CHARSETS.iter().enumerate() {
+            if *c != Charset::Braille {
+                assert_eq!(rs.color_aa[i], AaStrength::Off);
+            }
+        }
+    }
+
+    #[test]
+    fn cycle_color_aa_is_per_charset_and_skips_ineligible() {
+        use crate::render::antialiasing::AaStrength;
+        let mut rs = create_test_runtime_state();
+        // Move to Quadrant (index 4).
+        rs.charset_index = 4;
+        assert_eq!(rs.current_color_aa(), AaStrength::Off);
+        assert!(rs.cycle_color_aa());
+        assert_eq!(rs.current_color_aa(), AaStrength::Subtle);
+        // Braille's entry is untouched by cycling Quadrant.
+        assert_eq!(rs.color_aa[3], AaStrength::Strong);
+        // HalfBlockDual (index 1) is ineligible → no-op.
+        rs.charset_index = 1;
+        assert!(!rs.cycle_color_aa());
+        assert_eq!(rs.current_color_aa(), AaStrength::Off);
+    }
+
+    #[test]
+    fn color_aa_round_trips_undo() {
+        use crate::render::antialiasing::AaStrength;
+        let mut rs = create_test_runtime_state();
+        rs.charset_index = 4; // Quadrant
+        rs.cycle_color_aa(); // → Subtle
+        let snap = rs.capture_parameter_state();
+        rs.cycle_color_aa(); // → Strong
+        rs.apply_parameter_state(snap);
+        assert_eq!(rs.color_aa[4], AaStrength::Subtle);
+    }
+
+    #[test]
+    fn reset_restores_initial_color_aa() {
+        use crate::render::antialiasing::AaStrength;
+        let mut rs = create_test_runtime_state();
+        rs.charset_index = 4;
+        rs.cycle_color_aa();
+        rs.reset_to_defaults();
+        assert_eq!(rs.color_aa[4], AaStrength::Off);
+        assert_eq!(rs.color_aa[3], AaStrength::Strong);
     }
 
     #[test]

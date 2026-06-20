@@ -80,6 +80,7 @@ pub fn sync_renderer_caches(runtime_state: &RuntimeState, renderer: &mut Termina
     renderer.set_invert_palette(runtime_state.invert_palette);
     renderer.set_reverse_palette(runtime_state.reverse_palette);
     renderer.set_charset(runtime_state.current_charset());
+    renderer.set_color_aa(runtime_state.current_color_aa());
     renderer.set_intensity_mapping(Some(runtime_state.intensity_mapping.clone()));
     renderer.set_palette_cycle(runtime_state.palette_cycle);
     renderer.set_glyph(runtime_state.glyph);
