@@ -231,6 +231,8 @@ pub enum ControlAction {
     CycleCharset,
     /// Cycle to previous charset.
     CycleCharsetReverse,
+    /// Cycle color anti-aliasing strength for the active charset.
+    CycleColorAa,
     /// Toggle controls overlay.
     ToggleControls,
     /// Toggle keyboard shortcuts overlay.

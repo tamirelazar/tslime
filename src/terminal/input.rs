@@ -261,6 +261,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('/') => ControlAction::ShowPaletteEditor,
         KeyCode::Char('`') => ControlAction::CycleCharset,
         KeyCode::Char('~') => ControlAction::CycleCharsetReverse,
+        KeyCode::Char('"') => ControlAction::CycleColorAa,
         KeyCode::Char('\'') => ControlAction::ToggleTrailAge,
         KeyCode::Char('.') => ControlAction::ToggleTrailDelta,
         KeyCode::Char('>') => ControlAction::ToggleGradientMagnitude,
@@ -541,5 +542,17 @@ mod tests {
             state: KeyEventState::empty(),
         };
         assert!(matches!(handle_key_event(&f10), ControlAction::CycleChrome));
+    }
+
+    #[test]
+    fn double_quote_cycles_color_aa() {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        let ev = KeyEvent {
+            code: KeyCode::Char('"'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert_eq!(handle_key_event(&ev), ControlAction::CycleColorAa);
     }
 }

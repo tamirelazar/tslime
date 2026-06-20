@@ -782,6 +782,7 @@ pub fn run_simulation(
                     runtime_state.fast_mode_enabled,
                     runtime_state.current_palette(&ALL_PALETTES).name(),
                     charset_name(&runtime_state.current_charset()),
+                    runtime_state.current_color_aa().as_label(),
                     runtime_state.palette_shift_speed,
                     runtime_state.invert_palette,
                     runtime_state.reverse_palette,
@@ -1585,6 +1586,7 @@ pub fn run_simulation(
                         ControlAction::CycleCharset => {
                             runtime_state.cycle_charset();
                             renderer.set_charset(runtime_state.current_charset());
+                            renderer.set_color_aa(runtime_state.current_color_aa());
                             runtime_state.show_notification(format!(
                                 "Charset: {}",
                                 charset_name(&runtime_state.current_charset())
@@ -1593,10 +1595,26 @@ pub fn run_simulation(
                         ControlAction::CycleCharsetReverse => {
                             runtime_state.cycle_charset_reverse();
                             renderer.set_charset(runtime_state.current_charset());
+                            renderer.set_color_aa(runtime_state.current_color_aa());
                             runtime_state.show_notification(format!(
                                 "Charset: {}",
                                 charset_name(&runtime_state.current_charset())
                             ));
+                        }
+                        ControlAction::CycleColorAa => {
+                            if runtime_state.cycle_color_aa() {
+                                renderer.set_color_aa(runtime_state.current_color_aa());
+                                runtime_state.show_notification(format!(
+                                    "Color AA ({}): {}",
+                                    charset_name(&runtime_state.current_charset()),
+                                    runtime_state.current_color_aa().as_label()
+                                ));
+                            } else {
+                                runtime_state.show_notification(format!(
+                                    "Color AA not applicable to {}",
+                                    charset_name(&runtime_state.current_charset())
+                                ));
+                            }
                         }
                         ControlAction::ToggleDither => {
                             if dither_unlocked {
