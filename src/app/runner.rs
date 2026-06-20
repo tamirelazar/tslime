@@ -1330,6 +1330,7 @@ pub fn run_simulation(
                                         runtime_state.palette_cycle,
                                         runtime_state.glyph,
                                         runtime_state.temporal_accent,
+                                        runtime_state.color_aa,
                                     );
 
                                     match config_manager::save_config(saved_config) {
