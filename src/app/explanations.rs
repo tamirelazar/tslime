@@ -165,6 +165,17 @@ pub fn print_parameter_explanations() {
     println!("    • --braille: Braille Unicode characters (2× vertical resolution)");
     println!("    • --quadrant: Quadrant blocks (2×2 subpixels per cell)");
 
+    println!("\n  --color-aa <off|subtle|strong> (default: auto)");
+    println!("    Color anti-aliasing for subcell-shape charsets (braille,");
+    println!("    quadrant, half-block, ascii). These render shape at higher");
+    println!("    resolution than color, so thin diagonal veins staircase in");
+    println!("    color. AA low-passes the per-cell color so it washes into a");
+    println!("    gradient while the glyph stays crisp.");
+    println!("    • off:    raw per-cell color (no blur)");
+    println!("    • subtle: gentle weighted-center 3×3 blur");
+    println!("    • strong: full 3×3 box blur");
+    println!("    Auto = strong for braille, off otherwise. Toggle live with \".");
+
     println!("\n  --resolution <WxH> (default: 400x200)");
     println!("    Internal simulation grid size.");
     println!("    • Smaller (200×100): Faster, less detail");
