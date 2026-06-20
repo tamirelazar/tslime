@@ -69,14 +69,65 @@ pub fn charset_aa_eligible(charset: &Charset) -> bool {
     )
 }
 
+/// Dev A/B: 2-tap blur along the local low-gradient axis. Averages the two
+/// neighbors on the axis with the SMALLER intensity difference (i.e. along the
+/// vein), preserving the sharp cross-vein edge. Not wired to config — env only.
+pub fn blur_field_directional(src: &[f32], width: usize, height: usize) -> Vec<f32> {
+    let mut out = src.to_vec();
+    for y in 0..height {
+        for x in 0..width {
+            let idx = y * width + x;
+            if idx >= src.len() {
+                continue;
+            }
+            let at = |xx: i32, yy: i32| -> Option<f32> {
+                if xx >= 0 && xx < width as i32 && yy >= 0 && yy < height as i32 {
+                    src.get(yy as usize * width + xx as usize).copied()
+                } else {
+                    None
+                }
+            };
+            let c = src[idx];
+            let h = match (at(x as i32 - 1, y as i32), at(x as i32 + 1, y as i32)) {
+                (Some(l), Some(r)) => Some(((l + r) * 0.5, (l - r).abs())),
+                _ => None,
+            };
+            let v = match (at(x as i32, y as i32 - 1), at(x as i32, y as i32 + 1)) {
+                (Some(u), Some(d)) => Some(((u + d) * 0.5, (u - d).abs())),
+                _ => None,
+            };
+            out[idx] = match (h, v) {
+                (Some((ha, hd)), Some((va, vd))) => {
+                    let along = if hd <= vd { ha } else { va };
+                    0.5 * c + 0.5 * along
+                }
+                (Some((ha, _)), None) => 0.5 * c + 0.5 * ha,
+                (None, Some((va, _))) => 0.5 * c + 0.5 * va,
+                (None, None) => c,
+            };
+        }
+    }
+    out
+}
+
 /// Low-pass a row-major `width*height` color field with a 3×3 kernel.
 ///
 /// Edge cells average only the neighbors that exist (no wrap, no padding). The
 /// shape/glyph path does NOT use this — only the per-cell color does. Allocates
 /// exactly one output `Vec<f32>`; no per-cell allocation.
+///
+/// When `strength` is `Subtle` and the environment variable
+/// `TSLIME_AA_SUBTLE_DIRECTIONAL` is set, delegates to
+/// [`blur_field_directional`] for A/B comparison purposes.
 pub fn blur_field(src: &[f32], width: usize, height: usize, strength: AaStrength) -> Vec<f32> {
     if strength == AaStrength::Off || width == 0 || height == 0 {
         return src.to_vec();
+    }
+    // Read env var once here, outside the cell loop, to avoid per-cell syscalls.
+    let directional =
+        strength == AaStrength::Subtle && std::env::var("TSLIME_AA_SUBTLE_DIRECTIONAL").is_ok();
+    if directional {
+        return blur_field_directional(src, width, height);
     }
     let mut out = vec![0.0_f32; src.len()];
     for y in 0..height {
@@ -182,6 +233,37 @@ mod tests {
         }
         assert_eq!(AaStrength::parse_cli("STRONG"), Some(AaStrength::Strong));
         assert_eq!(AaStrength::parse_cli("nope"), None);
+    }
+
+    /// Directional kernel should preserve a horizontal ridge's center brightness
+    /// better than weighted-center Subtle, because it blurs ALONG the ridge
+    /// (horizontally) rather than across it (vertically).
+    #[test]
+    fn directional_preserves_horizontal_ridge_better_than_weighted_center() {
+        // 3 rows × 5 cols. Middle row is the "ridge" (lit), top/bottom are dark.
+        // width=5, height=3; middle row = row index 1.
+        let width = 5;
+        let height = 3;
+        let mut src = vec![0.0_f32; width * height];
+        for x in 0..width {
+            src[width + x] = 1.0; // middle row (y=1) fully lit
+        }
+
+        // Weighted-center Subtle: blurs in all 8 directions, so vertical dark
+        // neighbors drag the lit row's center cell down significantly.
+        let wc = blur_field(&src, width, height, AaStrength::Subtle);
+        // Directional: blurs only along the low-gradient axis (horizontal for a
+        // horizontal ridge), so the lit row stays brighter at its center.
+        let dir = blur_field_directional(&src, width, height);
+
+        // The center cell of the lit row is (x=2, y=1) → idx = width+2 = 7.
+        let center_idx = width + 2;
+        assert!(
+            dir[center_idx] > wc[center_idx],
+            "directional ({}) should be brighter than weighted-center ({}) at ridge center",
+            dir[center_idx],
+            wc[center_idx]
+        );
     }
 
     #[test]
