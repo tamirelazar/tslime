@@ -4327,14 +4327,14 @@ mod tests {
         cells[0].top = 0.8;
         cells[0].bottom = 0.4;
 
-        let build = |aa: AaStrength| {
+        let build = |cs: Charset, aa: AaStrength| {
             FrameBuffer::from_downsampled(
                 &cells,
                 w,
                 h,
                 1.0,
                 Palette::Organic,
-                Charset::Braille,
+                cs,
                 false,
                 false,
                 ColorMode::TrueColor,
@@ -4365,11 +4365,20 @@ mod tests {
             )
         };
 
-        let a = build(AaStrength::Off);
-        let b = build(AaStrength::Off);
+        // For AA-ineligible charsets, AaStrength::Strong must produce byte-identical
+        // output to AaStrength::Off because the eligibility gate forces AA off.
+        // HalfBlockDual is AA-ineligible (per charset_aa_eligible).
+        let a = build(Charset::HalfBlockDual, AaStrength::Strong);
+        let b = build(Charset::HalfBlockDual, AaStrength::Off);
         for i in 0..w * h {
-            assert_eq!(a.cells[i].fg_color_rgb, b.cells[i].fg_color_rgb);
-            assert_eq!(a.cells[i].char, b.cells[i].char);
+            assert_eq!(
+                a.cells[i].fg_color_rgb, b.cells[i].fg_color_rgb,
+                "AA-ineligible charset: Strong and Off must produce identical fg_color_rgb"
+            );
+            assert_eq!(
+                a.cells[i].char, b.cells[i].char,
+                "AA-ineligible charset: Strong and Off must produce identical char"
+            );
         }
     }
 }
