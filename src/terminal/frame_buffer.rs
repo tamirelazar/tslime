@@ -580,6 +580,12 @@ impl FrameBuffer {
             } else {
                 0.0
             };
+            // NOTE: this AA color field samples the raw normalized trail value,
+            // intentionally BEFORE the per-cell trail-delta and edge-glow (gradient
+            // magnitude) brightness boosts applied later in create_cell. So with AA
+            // active AND those FX enabled, the AA-blurred base tone reflects the
+            // un-boosted trail; the glyph and temporal-accent paths still see the
+            // boosts. This is a deliberate, minor tonal divergence, not a bug.
             // Base color field: mean of top/bottom trail, normalized.
             let base: Vec<f32> = downsampled
                 .iter()
