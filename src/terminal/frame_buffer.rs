@@ -79,6 +79,13 @@ pub struct FrameBuffer {
     pub(crate) species_rgb_colors: Vec<RgbColor>,
     background_color: Option<RgbColor>,
     ascii_contrast: f32,
+    /// Resolved color-AA strength for this frame's charset (Off when disabled
+    /// or charset ineligible). Drives the blurred color fields below.
+    aa_strength: crate::render::antialiasing::AaStrength,
+    /// Per-cell blurred base brightness (color only); empty when AA inactive.
+    aa_brightness: Vec<f32>,
+    /// Per-cell blurred temporal diff_norm (accent color); empty when inactive.
+    aa_diff_norm: Vec<f32>,
 }
 
 impl FrameBuffer {
@@ -126,6 +133,9 @@ impl FrameBuffer {
             species_rgb_colors: Vec::new(),
             background_color,
             ascii_contrast: 1.5,
+            aa_strength: crate::render::antialiasing::AaStrength::Off,
+            aa_brightness: Vec::new(),
+            aa_diff_norm: Vec::new(),
         }
     }
 
@@ -547,10 +557,57 @@ impl FrameBuffer {
         palette_cycle: palette::PaletteCycle,
         glyph: charset::GlyphConfig,
         temporal_accent: Option<palette::RgbColor>,
+        aa_strength: crate::render::antialiasing::AaStrength,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode, background_color);
         buffer.species_colors_enabled = species_colors_enabled;
         buffer.ascii_contrast = ascii_contrast;
+
+        // Color anti-aliasing: when active for this (frame-uniform) charset,
+        // pre-blur two per-cell color fields. The glyph/shape path below reads
+        // raw quadrant data and is unaffected.
+        // PERF: when active this allocates ~3 Vec<f32> per frame (base, diff, and
+        // each blur_field output). Only runs for AA-eligible charsets (braille by
+        // default). Revisit with reusable scratch buffers if a frame-time profile
+        // shows braille-AA as hot; not worth the restructure unprofiled.
+        use crate::render::antialiasing::{blur_field, charset_aa_eligible};
+        let aa_active = aa_strength != crate::render::antialiasing::AaStrength::Off
+            && charset_aa_eligible(&charset);
+        buffer.aa_strength = if aa_active {
+            aa_strength
+        } else {
+            crate::render::antialiasing::AaStrength::Off
+        };
+        if aa_active {
+            let inv = if max_trail_value > 0.0 {
+                1.0 / max_trail_value
+            } else {
+                0.0
+            };
+            // NOTE: this AA color field samples the raw normalized trail value,
+            // intentionally BEFORE the per-cell trail-delta and edge-glow (gradient
+            // magnitude) brightness boosts applied later in create_cell. So with AA
+            // active AND those FX enabled, the AA-blurred base tone reflects the
+            // un-boosted trail; the glyph and temporal-accent paths still see the
+            // boosts. This is a deliberate, minor tonal divergence, not a bug.
+            // Base color field: mean of top/bottom trail, normalized.
+            let base: Vec<f32> = downsampled
+                .iter()
+                .take(width * height)
+                .map(|d| ((d.top + d.bottom) * 0.5 * inv).clamp(0.0, 1.0))
+                .collect();
+            buffer.aa_brightness = blur_field(&base, width, height, aa_strength);
+            // Temporal accent field: signed diff normalized (0 when no aux).
+            if let Some(aux) = aux_frame {
+                let diff: Vec<f32> = (0..width * height)
+                    .map(|i| {
+                        let cell = &aux.cells[i.min(aux.cells.len().saturating_sub(1))];
+                        cell.signed_diff * inv
+                    })
+                    .collect();
+                buffer.aa_diff_norm = blur_field(&diff, width, height, aa_strength);
+            }
+        }
 
         let species_colors_slice = species_rgb_colors.as_deref();
 
@@ -626,7 +683,12 @@ impl FrameBuffer {
                 (hue_shift, 0.0)
             };
 
-            let diff_norm = if max_trail_value > 0.0 {
+            let diff_norm = if buffer.aa_strength != crate::render::antialiasing::AaStrength::Off
+                && !buffer.aa_diff_norm.is_empty()
+                && idx < buffer.aa_diff_norm.len()
+            {
+                buffer.aa_diff_norm[idx]
+            } else if max_trail_value > 0.0 {
                 cell_signed_diff / max_trail_value
             } else {
                 0.0
@@ -712,6 +774,7 @@ impl FrameBuffer {
         palette_cycle: palette::PaletteCycle,
         glyph: charset::GlyphConfig,
         temporal_accent: Option<palette::RgbColor>,
+        aa_strength: crate::render::antialiasing::AaStrength,
     ) -> Self {
         // Build sim buffer at sim dimensions
         let sim_buffer = Self::from_downsampled(
@@ -747,6 +810,7 @@ impl FrameBuffer {
             palette_cycle,
             glyph,
             temporal_accent,
+            aa_strength,
         );
 
         // Fast path: fullscreen — no blitting needed
@@ -1271,12 +1335,24 @@ impl FrameBuffer {
                 }
             };
 
-            let brightness = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
+            let cell_avg = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
                 (top_adj + bottom_adj) / 2.0
             } else if top_adj > bottom_adj {
                 top_adj
             } else {
                 bottom_adj
+            };
+
+            // Color anti-aliasing: when active, color subcell-shape charsets from
+            // the pre-blurred base-brightness field (set in from_downsampled).
+            // The glyph above used raw quadrant data, so shape stays crisp.
+            let aa_idx = y * self.width + x;
+            let brightness = if self.aa_strength != crate::render::antialiasing::AaStrength::Off
+                && aa_idx < self.aa_brightness.len()
+            {
+                self.aa_brightness[aa_idx]
+            } else {
+                cell_avg
             };
 
             self.render_colored_cell(
@@ -2491,6 +2567,7 @@ pub fn render_frame(
         palette::PaletteCycle::default(),
         charset::GlyphConfig::default(),
         None,
+        crate::render::antialiasing::AaStrength::Off,
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -3194,6 +3271,7 @@ mod tests {
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         assert_eq!(fb.width(), 10);
         assert_eq!(fb.height(), 10);
@@ -3231,6 +3309,7 @@ mod tests {
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         assert_ne!(fb.cells[0].fg_color_rgb, fb_rev.cells[0].fg_color_rgb);
     }
@@ -3364,6 +3443,7 @@ mod tests {
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -3430,6 +3510,7 @@ mod tests {
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
 
         assert_eq!(buffer.cells[0].char, '▀');
@@ -3666,6 +3747,7 @@ mod tests {
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         // The buffer should be 10×10
         assert_eq!(buffer.width, 10);
@@ -3682,6 +3764,94 @@ mod tests {
             "Expected non-blank cell at sim offset but got character='{}' fg={:?}",
             cell_at_offset.char,
             cell_at_offset.fg_color_rgb
+        );
+    }
+
+    /// Regression: from_downsampled_at must thread aa_strength through to the
+    /// inner from_downsampled call.  Before the fix AaStrength::Off was
+    /// hardcoded, so the window-layout path ignored the caller's strength.
+    /// Uses a 3×3 fullscreen layout (sim == term dims, so no blit) with a
+    /// bright center cell surrounded by dim neighbors — the same contrast
+    /// pattern as `color_aa_changes_color_not_glyph_for_braille` so the blur
+    /// has enough contrast to shift the center cell's color.
+    #[test]
+    fn from_downsampled_at_honors_aa_strength() {
+        use crate::render::antialiasing::AaStrength;
+
+        let w = 3usize;
+        let h = 3usize;
+        let dim = 0.3f32;
+        let mut downsampled = vec![
+            DownsampleCell {
+                top: dim,
+                bottom: dim,
+                top_left: dim,
+                top_right: dim,
+                bottom_left: dim,
+                bottom_right: dim,
+            };
+            w * h
+        ];
+        // Center cell (index 4) is full brightness; all neighbors are dim.
+        let c = &mut downsampled[4];
+        c.top = 1.0;
+        c.bottom = 1.0;
+        c.top_left = 1.0;
+        c.top_right = 1.0;
+        c.bottom_left = 1.0;
+        c.bottom_right = 1.0;
+
+        let build_at = |aa: AaStrength| {
+            FrameBuffer::from_downsampled_at(
+                &downsampled,
+                w,
+                h,
+                w, // term_w == sim_w (fast path, no blit)
+                h, // term_h == sim_h
+                0,
+                0,
+                1.0,
+                Palette::Mono,
+                Charset::Braille,
+                false,
+                false,
+                ColorMode::TrueColor,
+                0.0,
+                DitherMode::None,
+                &mut None,
+                None,
+                false,
+                None,
+                None,
+                1.5,
+                None,
+                false,
+                false,
+                60.0,
+                1.0,
+                0.5,
+                false,
+                0.3,
+                TrailAgeMode::Bidirectional,
+                false,
+                0.0,
+                palette::TemporalMode::Hue,
+                palette::PaletteCycle::default(),
+                charset::GlyphConfig::default(),
+                None,
+                aa,
+            )
+        };
+
+        let off_buf = build_at(AaStrength::Off);
+        let strong_buf = build_at(AaStrength::Strong);
+
+        // The center cell (index 4) has raw brightness 1.0 but with Strong AA
+        // its blurred brightness is pulled toward its dim (0.3) neighbors.
+        assert_ne!(
+            off_buf.cells[4].fg_color_rgb, strong_buf.cells[4].fg_color_rgb,
+            "from_downsampled_at: center cell fg must differ between Off and Strong \
+             AA — aa_strength is not being threaded through to from_downsampled"
         );
     }
 
@@ -3789,6 +3959,7 @@ mod tests {
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
 
         let fb_on = FrameBuffer::from_downsampled(
@@ -3824,6 +3995,7 @@ mod tests {
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
 
         assert_ne!(
@@ -3890,6 +4062,7 @@ mod tests {
             id,
             charset::GlyphConfig::default(),
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         let fb_on = FrameBuffer::from_downsampled(
             &cells,
@@ -3924,6 +4097,7 @@ mod tests {
             active,
             charset::GlyphConfig::default(),
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         // At least one cell must differ in fg_color_rgb between identity and active cycle
         let differs = fb_id
@@ -3993,6 +4167,7 @@ mod tests {
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         assert!(native.cells.iter().any(|c| c.char != ' '));
     }
@@ -4037,6 +4212,7 @@ mod tests {
             palette::PaletteCycle::default(),
             hybrid,
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         assert!(fb
             .cells
@@ -4084,6 +4260,7 @@ mod tests {
             palette::PaletteCycle::default(),
             bri,
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         assert!(fb
             .cells
@@ -4134,6 +4311,7 @@ mod tests {
                 palette::PaletteCycle::default(),
                 g,
                 None,
+                crate::render::antialiasing::AaStrength::Off,
             )
         };
         let a = mk(hyb);
@@ -4144,5 +4322,163 @@ mod tests {
             chars_a, chars_b,
             "glyph-selection must be a no-op on HalfBlock"
         );
+    }
+
+    #[test]
+    fn color_aa_changes_color_not_glyph_for_braille() {
+        use crate::render::antialiasing::AaStrength;
+        use crate::render::charset::Charset;
+        use crate::render::palette::Palette;
+
+        // 3×3 frame: center cell at full brightness, all others at dim (0.3).
+        // With AA on, the center's blurred brightness is pulled down toward its
+        // neighbors; with AA off it stays at 1.0. The center cell's color must differ.
+        let w = 3usize;
+        let h = 3usize;
+        let dim = 0.3f32;
+        let mut cells = vec![
+            DownsampleCell {
+                top: dim,
+                bottom: dim,
+                top_left: dim,
+                top_right: dim,
+                bottom_left: dim,
+                bottom_right: dim,
+            };
+            w * h
+        ];
+        let c = &mut cells[4]; // center (y=1, x=1)
+        c.top = 1.0;
+        c.bottom = 1.0;
+        c.top_left = 1.0;
+        c.top_right = 1.0;
+        c.bottom_left = 1.0;
+        c.bottom_right = 1.0;
+
+        let build = |aa: AaStrength| {
+            FrameBuffer::from_downsampled(
+                &cells,
+                w,
+                h,
+                1.0,
+                Palette::Mono,
+                Charset::Braille,
+                false,
+                false,
+                ColorMode::TrueColor,
+                0.0,
+                DitherMode::None,
+                &mut None,
+                None,
+                false,
+                None,
+                None,
+                1.5,
+                None,
+                false,
+                false,
+                60.0,
+                1.0,
+                0.5,
+                false,
+                0.3,
+                crate::config_defaults::TrailAgeMode::Bidirectional,
+                false,
+                0.0,
+                palette::TemporalMode::Hue,
+                palette::PaletteCycle::default(),
+                charset::GlyphConfig::default(),
+                None,
+                aa,
+            )
+        };
+
+        let off = build(AaStrength::Off);
+        let strong = build(AaStrength::Strong);
+
+        // The center cell (index 4) has raw brightness 1.0 but with Strong AA its
+        // blurred brightness is pulled toward its dim (0.3) neighbors; the resulting
+        // color must differ from the non-AA render.
+        let off_fg = off.cells[4].fg_color_rgb;
+        let strong_fg = strong.cells[4].fg_color_rgb;
+        assert_ne!(
+            off_fg, strong_fg,
+            "AA must change center cell color when neighbors differ"
+        );
+
+        // The glyph (shape) of every cell is identical regardless of AA.
+        for i in 0..w * h {
+            assert_eq!(
+                off.cells[i].char, strong.cells[i].char,
+                "glyph must not change"
+            );
+        }
+    }
+
+    #[test]
+    fn color_aa_off_is_identical_to_no_aa() {
+        use crate::render::antialiasing::AaStrength;
+        use crate::render::charset::Charset;
+        use crate::render::palette::Palette;
+
+        let w = 2usize;
+        let h = 2usize;
+        let mut cells = vec![DownsampleCell::default(); w * h];
+        cells[0].top = 0.8;
+        cells[0].bottom = 0.4;
+
+        let build = |cs: Charset, aa: AaStrength| {
+            FrameBuffer::from_downsampled(
+                &cells,
+                w,
+                h,
+                1.0,
+                Palette::Organic,
+                cs,
+                false,
+                false,
+                ColorMode::TrueColor,
+                0.0,
+                DitherMode::None,
+                &mut None,
+                None,
+                false,
+                None,
+                None,
+                1.5,
+                None,
+                false,
+                false,
+                60.0,
+                1.0,
+                0.5,
+                false,
+                0.3,
+                crate::config_defaults::TrailAgeMode::Bidirectional,
+                false,
+                0.0,
+                palette::TemporalMode::Hue,
+                palette::PaletteCycle::default(),
+                charset::GlyphConfig::default(),
+                None,
+                aa,
+            )
+        };
+
+        // For AA-ineligible charsets, AaStrength::Strong must produce byte-identical
+        // output to AaStrength::Off because the eligibility gate forces AA off.
+        // HalfBlockDual is AA-ineligible (per charset_aa_eligible).
+        let a = build(Charset::HalfBlockDual, AaStrength::Strong);
+        let b = build(Charset::HalfBlockDual, AaStrength::Off);
+        for i in 0..w * h {
+            assert_eq!(
+                a.cells[i].fg_color_rgb, b.cells[i].fg_color_rgb,
+                "AA-ineligible charset: Strong and Off must produce identical fg_color_rgb"
+            );
+            assert_eq!(
+                a.cells[i].char, b.cells[i].char,
+                "AA-ineligible charset: Strong and Off must produce identical char"
+            );
+        }
     }
 }

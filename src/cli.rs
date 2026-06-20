@@ -1710,6 +1710,14 @@ pub struct Args {
     pub ascii_contrast: f32,
 
     #[arg(
+        long = "color-aa",
+        value_name = "MODE",
+        help = "Color anti-aliasing for subcell charsets: off | subtle | strong (default: auto — strong for braille, off otherwise)"
+    )]
+    /// Color anti-aliasing mode for subcell charsets.
+    pub color_aa: Option<crate::render::antialiasing::AaStrength>,
+
+    #[arg(
         long = "bg-color",
         alias = "bg",
         value_name = "HEX",
@@ -1853,6 +1861,23 @@ impl Args {
             || self.half_block_dual
             || self.ascii
             || self.ascii_chars.is_some()
+    }
+
+    /// Resolve color-AA strength for the launch charset. Explicit `--color-aa`
+    /// wins; otherwise auto: Strong for Braille, Off for everything else.
+    pub fn resolved_color_aa(
+        &self,
+        charset: &crate::render::charset::Charset,
+    ) -> crate::render::antialiasing::AaStrength {
+        use crate::render::antialiasing::AaStrength;
+        if let Some(aa) = self.color_aa {
+            return aa;
+        }
+        if matches!(charset, crate::render::charset::Charset::Braille) {
+            AaStrength::Strong
+        } else {
+            AaStrength::Off
+        }
     }
 
     /// The intensity-mapping type string, falling back to the historical
@@ -2333,6 +2358,7 @@ impl Default for Args {
             choir: false,
             #[cfg(feature = "audio")]
             choir_volume: 0.5,
+            color_aa: None,
             bg_color: None,
             pause_style: PauseStyle::Minimal,
             pause_logo: false,
@@ -3075,5 +3101,35 @@ mod tests {
         assert!(a.palette_explicitly_set());
         let a = Args::parse_from(["tslime", "--braille"]);
         assert!(a.charset_explicitly_set());
+    }
+
+    #[test]
+    fn resolved_color_aa_auto_defaults() {
+        use crate::render::antialiasing::AaStrength;
+        use crate::render::charset::Charset;
+        let args = Args::parse_from(["tslime"]);
+        assert_eq!(args.color_aa, None);
+        // Auto: Braille → Strong, others → Off.
+        assert_eq!(
+            args.resolved_color_aa(&Charset::Braille),
+            AaStrength::Strong
+        );
+        assert_eq!(args.resolved_color_aa(&Charset::Quadrant), AaStrength::Off);
+    }
+
+    #[test]
+    fn resolved_color_aa_explicit_overrides() {
+        use crate::render::antialiasing::AaStrength;
+        use crate::render::charset::Charset;
+        let args = Args::parse_from(["tslime", "--color-aa", "subtle"]);
+        // Explicit applies to whatever charset is queried (CLI is scoped to launch charset).
+        assert_eq!(
+            args.resolved_color_aa(&Charset::Quadrant),
+            AaStrength::Subtle
+        );
+        assert_eq!(
+            args.resolved_color_aa(&Charset::Braille),
+            AaStrength::Subtle
+        );
     }
 }

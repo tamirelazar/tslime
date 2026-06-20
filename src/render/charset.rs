@@ -138,6 +138,10 @@ pub const ALL_CHARSETS: [Charset; 7] = [
     Charset::Points,
 ];
 
+/// Number of distinct charsets. Single source of truth for any per-charset
+/// array (e.g. color-AA strength) so they stay locked to [`ALL_CHARSETS`].
+pub const NUM_CHARSETS: usize = ALL_CHARSETS.len();
+
 const HALF_BLOCK_CHARS: [char; 9] = [
     ' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
     '\u{2588}',

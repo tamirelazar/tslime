@@ -25,6 +25,8 @@
 
 /// Adaptive brightness normalization logic.
 pub mod adaptive_brightness;
+/// Color anti-aliasing for subcell-shape charsets.
+pub mod antialiasing;
 /// Character set definitions and mapping logic.
 pub mod charset;
 /// Standalone (non-palette) color constants.

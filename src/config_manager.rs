@@ -196,6 +196,12 @@ pub struct SavedConfig {
     /// None means no accent override (use palette-derived color).
     #[serde(default)]
     pub temporal_accent: Option<String>,
+
+    // Color anti-aliasing
+    /// Per-charset color-AA tokens, indexed by ALL_CHARSETS order. `None` for
+    /// configs saved before this feature existed.
+    #[serde(default)]
+    pub color_aa: Option<Vec<String>>,
 }
 
 fn default_chrome_style() -> String {
@@ -246,6 +252,7 @@ impl SavedConfig {
         palette_cycle: crate::render::palette::PaletteCycle,
         glyph: crate::render::charset::GlyphConfig,
         temporal_accent: Option<crate::render::palette::RgbColor>,
+        color_aa: [crate::render::antialiasing::AaStrength; crate::render::charset::NUM_CHARSETS],
     ) -> Self {
         let diffusion_kernel_str = match sim_config.diffusion_kernel {
             DiffusionKernel::Mean3x3 => "mean3x3",
@@ -424,6 +431,7 @@ impl SavedConfig {
                 Some(glyph.edge_threshold)
             },
             temporal_accent: temporal_accent.map(|c| format!("{:02x}{:02x}{:02x}", c.r, c.g, c.b)),
+            color_aa: Some(color_aa.iter().map(|a| a.as_cli().to_string()).collect()),
         }
     }
 
@@ -581,6 +589,18 @@ impl SavedConfig {
                 .ok()
                 .map(crate::render::palette::RgbColor::from_hex)
         });
+
+        // Apply per-charset color-AA (defensive: only overwrite slots the config provides and
+        // that parse; missing/short/unparseable slots preserve the runtime default).
+        if let Some(ref tokens) = self.color_aa {
+            for (i, tok) in tokens.iter().enumerate() {
+                if i < runtime_state.color_aa.len() {
+                    if let Some(aa) = crate::render::antialiasing::AaStrength::parse_cli(tok) {
+                        runtime_state.color_aa[i] = aa;
+                    }
+                }
+            }
+        }
 
         // Parameters that require simulation restart to take effect:
         // - population (agent count)
@@ -962,6 +982,7 @@ mod tests {
             glyph_selection: None,
             glyph_edge_threshold: None,
             temporal_accent: None,
+            color_aa: None,
         };
 
         let toml_str = toml::to_string(&config).unwrap();
@@ -1069,6 +1090,7 @@ food_path = "assets/tslime_logo.png"
             glyph_selection: None,
             glyph_edge_threshold: None,
             temporal_accent: None,
+            color_aa: None,
         };
         let sim_config = config.to_sim_config().unwrap();
         assert_eq!(sim_config.species_configs[0].count, 50000);
@@ -1131,6 +1153,7 @@ food_path = "assets/tslime_logo.png"
             glyph_selection: None,
             glyph_edge_threshold: None,
             temporal_accent: None,
+            color_aa: None,
         };
 
         config
@@ -1199,6 +1222,7 @@ food_path = "assets/tslime_logo.png"
             glyph_selection: None,
             glyph_edge_threshold: None,
             temporal_accent: None,
+            color_aa: None,
         };
 
         config
@@ -1331,6 +1355,7 @@ food_path = "assets/tslime_logo.png"
             crate::render::palette::PaletteCycle::default(),
             crate::render::charset::GlyphConfig::default(),
             None,
+            crate::config_defaults::DEFAULT_COLOR_AA,
         );
 
         // Create new state and apply config
@@ -1479,6 +1504,7 @@ init_mode = "Random"
             crate::render::palette::PaletteCycle::default(),
             crate::render::charset::GlyphConfig::default(),
             None,
+            crate::config_defaults::DEFAULT_COLOR_AA,
         );
 
         // Serialize and deserialize through TOML
@@ -1596,6 +1622,7 @@ init_mode = "Random"
             crate::render::palette::PaletteCycle::default(),
             crate::render::charset::GlyphConfig::default(),
             None,
+            crate::config_defaults::DEFAULT_COLOR_AA,
         );
 
         // Serialize and deserialize through TOML
@@ -1748,6 +1775,7 @@ init_mode = "Random"
             crate::render::palette::PaletteCycle::default(),
             crate::render::charset::GlyphConfig::default(),
             None,
+            crate::config_defaults::DEFAULT_COLOR_AA,
         );
 
         // Serialize and deserialize through TOML
@@ -1821,6 +1849,7 @@ init_mode = "Random"
             state.palette_cycle,
             crate::render::charset::GlyphConfig::default(),
             None,
+            crate::config_defaults::DEFAULT_COLOR_AA,
         );
 
         assert_eq!(saved.palette_cycles, Some(4));
@@ -1884,6 +1913,7 @@ init_mode = "Random"
             crate::render::palette::PaletteCycle::default(),
             rs.glyph,
             None,
+            crate::config_defaults::DEFAULT_COLOR_AA,
         );
 
         assert_eq!(saved.glyph_selection.as_deref(), Some("hybrid"));
@@ -1931,6 +1961,7 @@ init_mode = "Random"
             crate::render::palette::PaletteCycle::default(),
             rs.glyph,
             None,
+            crate::config_defaults::DEFAULT_COLOR_AA,
         );
 
         assert_eq!(saved.glyph_selection, None);
@@ -2095,6 +2126,7 @@ init_mode = "random"
             crate::render::palette::PaletteCycle::default(),
             crate::render::charset::GlyphConfig::default(),
             Some(accent),
+            crate::config_defaults::DEFAULT_COLOR_AA,
         );
 
         // Hex encoding must be lowercase 6-digit.
@@ -2113,5 +2145,108 @@ init_mode = "random"
             Some(accent),
             "temporal_accent must survive round-trip"
         );
+    }
+
+    #[test]
+    fn color_aa_round_trips_through_saved_config() {
+        use crate::render::antialiasing::AaStrength;
+        let mut rs = create_test_runtime_state();
+        rs.color_aa[4] = AaStrength::Subtle; // Quadrant
+        rs.color_aa[3] = AaStrength::Strong; // Braille (already default, set explicitly)
+        let saved = SavedConfig::from_runtime(
+            "aa_rt".to_string(),
+            &SimConfig::default(),
+            crate::cli::Palette::Organic,
+            crate::render::charset::Charset::HalfBlock,
+            false,
+            false,
+            0,
+            false,
+            false,
+            false,
+            None,
+            crate::simulation::config::InitMode::Random,
+            None,
+            None,
+            0.0,
+            8.0,
+            crate::render::palette::TemporalMode::Hue,
+            0.0,
+            0.05,
+            1.0,
+            1.0,
+            crate::simulation::config::DepositCurve::default(),
+            1.0,
+            1.0,
+            0.0,
+            crate::render::palette::PaletteCycle::default(),
+            crate::render::charset::GlyphConfig::default(),
+            None,
+            rs.color_aa,
+        );
+        assert_eq!(
+            saved.color_aa,
+            Some(vec![
+                "off".into(),
+                "off".into(),
+                "off".into(),
+                "strong".into(),
+                "subtle".into(),
+                "off".into(),
+                "off".into(),
+            ])
+        );
+        let mut rs2 = create_test_runtime_state();
+        saved
+            .apply_to_runtime_state(&mut rs2)
+            .expect("apply must succeed");
+        assert_eq!(rs2.color_aa[4], AaStrength::Subtle);
+        assert_eq!(rs2.color_aa[3], AaStrength::Strong);
+    }
+
+    #[test]
+    fn color_aa_absent_in_old_config_keeps_defaults() {
+        use crate::render::antialiasing::AaStrength;
+        let rs = create_test_runtime_state();
+        // color_aa[3] == Strong by default (Braille)
+        let mut saved = SavedConfig::from_runtime(
+            "aa_absent".to_string(),
+            &SimConfig::default(),
+            crate::cli::Palette::Organic,
+            crate::render::charset::Charset::HalfBlock,
+            false,
+            false,
+            0,
+            false,
+            false,
+            false,
+            None,
+            crate::simulation::config::InitMode::Random,
+            None,
+            None,
+            0.0,
+            8.0,
+            crate::render::palette::TemporalMode::Hue,
+            0.0,
+            0.05,
+            1.0,
+            1.0,
+            crate::simulation::config::DepositCurve::default(),
+            1.0,
+            1.0,
+            0.0,
+            crate::render::palette::PaletteCycle::default(),
+            crate::render::charset::GlyphConfig::default(),
+            None,
+            rs.color_aa,
+        );
+        // Simulate a config saved before this feature existed
+        saved.color_aa = None;
+        let mut rs2 = create_test_runtime_state();
+        saved
+            .apply_to_runtime_state(&mut rs2)
+            .expect("apply must succeed");
+        // Default Strong for Braille must survive (not overwritten by absent field)
+        assert_eq!(rs2.color_aa[3], AaStrength::Strong);
     }
 }

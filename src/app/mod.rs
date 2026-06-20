@@ -80,6 +80,7 @@ pub fn sync_renderer_caches(runtime_state: &RuntimeState, renderer: &mut Termina
     renderer.set_invert_palette(runtime_state.invert_palette);
     renderer.set_reverse_palette(runtime_state.reverse_palette);
     renderer.set_charset(runtime_state.current_charset());
+    renderer.set_color_aa(runtime_state.current_color_aa());
     renderer.set_intensity_mapping(Some(runtime_state.intensity_mapping.clone()));
     renderer.set_palette_cycle(runtime_state.palette_cycle);
     renderer.set_glyph(runtime_state.glyph);
@@ -578,7 +579,7 @@ pub fn print_mode(
         term_height,
         max_brightness,
         palette.clone(),
-        charset,
+        charset.clone(),
         args.reverse_palette,
         args.invert_palette,
         color_mode,
@@ -605,6 +606,7 @@ pub fn print_mode(
         palette_cycle,
         glyph,
         temporal_accent,
+        args.resolved_color_aa(&charset),
     );
 
     if args.grid {
@@ -819,6 +821,7 @@ pub fn capture_frames_mode(
             palette_cycle_inner,
             glyph_inner,
             temporal_accent,
+            args.resolved_color_aa(&charset),
         );
 
         if args.grid {
@@ -1061,6 +1064,7 @@ pub fn export_gif_mode(
             palette_cycle_gif,
             crate::render::charset::GlyphConfig::default(),
             temporal_accent,
+            args.resolved_color_aa(&charset),
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1241,6 +1245,7 @@ pub fn export_webm_mode(
             palette_cycle_webm,
             crate::render::charset::GlyphConfig::default(),
             temporal_accent,
+            args.resolved_color_aa(&Charset::Ascii),
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1576,6 +1581,7 @@ mod tests {
                     crate::render::palette::PaletteCycle::default(),
                     crate::render::charset::GlyphConfig::default(),
                     None,
+                    crate::render::antialiasing::AaStrength::Off,
                 )
                 .get_rgb_pixels()
             };

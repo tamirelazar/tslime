@@ -74,6 +74,7 @@ pub struct TerminalRenderer {
     species_rgb_colors: Vec<RgbColor>,
     background_color: Option<RgbColor>,
     ascii_contrast: f32,
+    color_aa: crate::render::antialiasing::AaStrength,
     aux_frame: Option<crate::render::downsample::AuxFrame>,
     /// Pre-allocated frame buffer to avoid per-frame allocations
     frame_buffer: Option<crate::render::downsample::DownsampledFrame>,
@@ -127,6 +128,7 @@ impl TerminalRenderer {
             species_rgb_colors: Vec::new(),
             background_color,
             ascii_contrast: 1.5,
+            color_aa: crate::render::antialiasing::AaStrength::Off,
             aux_frame: None,
             frame_buffer: None,
             trail_age_enabled: false,
@@ -307,6 +309,11 @@ impl TerminalRenderer {
         self.ascii_contrast = contrast;
     }
 
+    /// Sets the resolved color-AA strength for the current charset.
+    pub fn set_color_aa(&mut self, aa: crate::render::antialiasing::AaStrength) {
+        self.color_aa = aa;
+    }
+
     /// Set specific colors for multi-species rendering.
     pub fn set_species_colors(&mut self, enabled: bool, colors: Vec<RgbColor>) {
         self.species_colors_enabled = enabled;
@@ -409,6 +416,7 @@ impl TerminalRenderer {
                 self.palette_cycle,
                 self.glyph,
                 self.temporal_accent,
+                self.color_aa,
             )
         } else {
             FrameBuffer::from_downsampled(
@@ -444,6 +452,7 @@ impl TerminalRenderer {
                 self.palette_cycle,
                 self.glyph,
                 self.temporal_accent,
+                self.color_aa,
             )
         };
 
@@ -548,6 +557,7 @@ impl TerminalRenderer {
                 self.palette_cycle,
                 self.glyph,
                 self.temporal_accent,
+                self.color_aa,
             )
         } else {
             FrameBuffer::from_downsampled(
@@ -583,6 +593,7 @@ impl TerminalRenderer {
                 self.palette_cycle,
                 self.glyph,
                 self.temporal_accent,
+                self.color_aa,
             )
         };
 
@@ -1053,6 +1064,7 @@ impl TerminalRenderer {
                     self.palette_cycle,
                     self.glyph,
                     None,
+                    crate::render::antialiasing::AaStrength::Off,
                 );
 
                 // Blit non-blank cells from species_buffer into main buffer at (render_x, render_y)

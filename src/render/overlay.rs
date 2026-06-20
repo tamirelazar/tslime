@@ -1910,6 +1910,7 @@ mod status_line_tests {
             glyph_selection: None,
             glyph_edge_threshold: None,
             temporal_accent: None,
+            color_aa: None,
         }];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
@@ -1970,6 +1971,7 @@ mod status_line_tests {
             glyph_selection: None,
             glyph_edge_threshold: None,
             temporal_accent: None,
+            color_aa: None,
         }
     }
 

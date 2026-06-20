@@ -91,6 +91,7 @@ lowercase increases and uppercase (Shift) decreases.
 | `c` / `C` | Cycle palette |
 | `9` / `*` | Cycle theme |
 | `` ` `` / `~` | Cycle character set |
+| `"` | Cycle color anti-aliasing (active charset) |
 | `n` / `N` | Brightness |
 | `m` / `M` | Cycle intensity mapping |
 | `x` | Invert palette |
