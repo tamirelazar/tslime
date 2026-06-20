@@ -444,6 +444,7 @@ impl TerminalRenderer {
                 self.palette_cycle,
                 self.glyph,
                 self.temporal_accent,
+                crate::render::antialiasing::AaStrength::Off,
             )
         };
 
@@ -583,6 +584,7 @@ impl TerminalRenderer {
                 self.palette_cycle,
                 self.glyph,
                 self.temporal_accent,
+                crate::render::antialiasing::AaStrength::Off,
             )
         };
 
@@ -1053,6 +1055,7 @@ impl TerminalRenderer {
                     self.palette_cycle,
                     self.glyph,
                     None,
+                    crate::render::antialiasing::AaStrength::Off,
                 );
 
                 // Blit non-blank cells from species_buffer into main buffer at (render_x, render_y)
