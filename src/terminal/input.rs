@@ -312,31 +312,7 @@ pub fn preset_name(preset: Preset) -> &'static str {
 
 /// Returns the display name of a palette.
 pub fn palette_name(palette: Palette) -> &'static str {
-    match palette {
-        Palette::Organic => "Organic",
-        Palette::Heat => "Heat",
-        Palette::Ocean => "Ocean",
-        Palette::Mono => "Mono",
-        Palette::Forest => "Forest",
-        Palette::Neon => "Neon",
-        Palette::Warm => "Warm",
-        Palette::Vibrant => "Vibrant",
-        Palette::LegibleMono => "LegibleMono",
-        Palette::Slime => "Slime",
-        Palette::Mold => "Mold",
-        Palette::Fungus => "Fungus",
-        Palette::Swamp => "Swamp",
-        Palette::Moss => "Moss",
-        Palette::Cosmic => "Cosmic",
-        Palette::Ethereal => "Ethereal",
-        Palette::Jade => "Jade",
-        Palette::Amber => "Amber",
-        Palette::Slate => "Slate",
-        Palette::Pastel => "Pastel",
-        Palette::Ink => "Ink",
-        Palette::Copper => "Copper",
-        Palette::Custom(_) => "Custom",
-    }
+    palette.name()
 }
 
 /// Returns the display name of a charset.

@@ -707,31 +707,12 @@ impl SavedConfig {
 // Helper functions for parsing saved config strings
 
 fn parse_palette_index(palette_str: &str) -> Result<usize, String> {
-    match palette_str.to_lowercase().as_str() {
-        "organic" => Ok(0),
-        "heat" => Ok(1),
-        "ocean" => Ok(2),
-        "mono" => Ok(3),
-        "forest" => Ok(4),
-        "neon" => Ok(5),
-        "warm" => Ok(6),
-        "vibrant" => Ok(7),
-        "legiblemono" => Ok(8),
-        "slime" => Ok(9),
-        "mold" => Ok(10),
-        "fungus" => Ok(11),
-        "swamp" => Ok(12),
-        "moss" => Ok(13),
-        "cosmic" => Ok(14),
-        "ethereal" => Ok(15),
-        "jade" => Ok(16),
-        "amber" => Ok(17),
-        "slate" => Ok(18),
-        "pastel" => Ok(19),
-        "ink" => Ok(20),
-        "copper" => Ok(21),
-        _ => Err(format!("Unknown palette: {}", palette_str)),
-    }
+    // The index is the palette's position in PALETTES, which a unit test keeps
+    // aligned with ALL_PALETTES (what `palette_index` indexes into).
+    crate::render::palette::PALETTES
+        .iter()
+        .position(|spec| spec.name.eq_ignore_ascii_case(palette_str))
+        .ok_or_else(|| format!("Unknown palette: {}", palette_str))
 }
 
 fn parse_diffusion_kernel(s: &str) -> Result<DiffusionKernel, String> {

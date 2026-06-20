@@ -105,7 +105,7 @@ impl std::str::FromStr for PauseStyle {
 }
 
 // Re-export palette types from render module for backward compatibility
-pub use crate::render::palette::{num_palettes, Palette, ALL_PALETTES, NUM_PALETTES};
+pub use crate::render::palette::{num_palettes, Palette, ALL_PALETTES, NUM_PALETTES, PALETTES};
 
 #[derive(Debug, Clone)]
 /// Simulation grid resolution.
@@ -1820,31 +1820,11 @@ impl Args {
         if self.palette.starts_with('#') || self.palette.contains(',') {
             return parse_custom_palette(&self.palette);
         }
-        match self.palette.as_str() {
-            "organic" => Ok(Palette::Organic),
-            "heat" => Ok(Palette::Heat),
-            "ocean" => Ok(Palette::Ocean),
-            "mono" => Ok(Palette::Mono),
-            "forest" => Ok(Palette::Forest),
-            "neon" => Ok(Palette::Neon),
-            "warm" => Ok(Palette::Warm),
-            "vibrant" => Ok(Palette::Vibrant),
-            "legiblemono" => Ok(Palette::LegibleMono),
-            "slime" => Ok(Palette::Slime),
-            "mold" => Ok(Palette::Mold),
-            "fungus" => Ok(Palette::Fungus),
-            "swamp" => Ok(Palette::Swamp),
-            "moss" => Ok(Palette::Moss),
-            "cosmic" => Ok(Palette::Cosmic),
-            "ethereal" => Ok(Palette::Ethereal),
-            "jade" => Ok(Palette::Jade),
-            "amber" => Ok(Palette::Amber),
-            "slate" => Ok(Palette::Slate),
-            "pastel" => Ok(Palette::Pastel),
-            "ink" => Ok(Palette::Ink),
-            "copper" => Ok(Palette::Copper),
-            _ => Err(format!("Invalid palette: {}", self.palette)),
-        }
+        PALETTES
+            .iter()
+            .find(|spec| spec.name.eq_ignore_ascii_case(&self.palette))
+            .map(|spec| spec.palette.clone())
+            .ok_or_else(|| format!("Invalid palette: {}", self.palette))
     }
 
     /// True when the user passed `--palette` (vs the clap default sentinel).
