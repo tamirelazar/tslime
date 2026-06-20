@@ -1160,6 +1160,13 @@ impl RuntimeState {
         self.color_aa[self.charset_index % self.color_aa.len()]
     }
 
+    /// Apply a CLI `--color-aa` override to the launch charset and re-baseline.
+    pub fn apply_cli_color_aa(&mut self, aa: crate::render::antialiasing::AaStrength) {
+        let i = self.charset_index;
+        self.color_aa[i] = aa;
+        self.initial_color_aa[i] = aa;
+    }
+
     /// Cycle the active charset's color-AA strength. No-op (returns false) when
     /// the active charset is AA-ineligible.
     pub fn cycle_color_aa(&mut self) -> bool {

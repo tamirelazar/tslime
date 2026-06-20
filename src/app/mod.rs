@@ -579,7 +579,7 @@ pub fn print_mode(
         term_height,
         max_brightness,
         palette.clone(),
-        charset,
+        charset.clone(),
         args.reverse_palette,
         args.invert_palette,
         color_mode,
@@ -606,7 +606,7 @@ pub fn print_mode(
         palette_cycle,
         glyph,
         temporal_accent,
-        crate::render::antialiasing::AaStrength::Off,
+        args.resolved_color_aa(&charset),
     );
 
     if args.grid {
@@ -821,7 +821,7 @@ pub fn capture_frames_mode(
             palette_cycle_inner,
             glyph_inner,
             temporal_accent,
-            crate::render::antialiasing::AaStrength::Off,
+            args.resolved_color_aa(&charset),
         );
 
         if args.grid {
@@ -1064,7 +1064,7 @@ pub fn export_gif_mode(
             palette_cycle_gif,
             crate::render::charset::GlyphConfig::default(),
             temporal_accent,
-            crate::render::antialiasing::AaStrength::Off,
+            args.resolved_color_aa(&charset),
         );
 
         let pixels = buffer.get_rgb_pixels();
@@ -1245,7 +1245,7 @@ pub fn export_webm_mode(
             palette_cycle_webm,
             crate::render::charset::GlyphConfig::default(),
             temporal_accent,
-            crate::render::antialiasing::AaStrength::Off,
+            args.resolved_color_aa(&Charset::Ascii),
         );
 
         let pixels = buffer.get_rgb_pixels();

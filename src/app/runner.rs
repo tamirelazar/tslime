@@ -323,6 +323,16 @@ pub fn run_simulation(
     }
     renderer.set_dither_mode(dither_mode);
 
+    // Apply CLI --color-aa override to the launch charset (else the per-charset default stands).
+    if let Some(ref s) = args.color_aa {
+        if let Some(aa) = crate::render::antialiasing::AaStrength::parse_cli(s) {
+            runtime_state.apply_cli_color_aa(aa);
+        }
+    }
+    // Push the resolved launch AA (default or CLI override) to the renderer so the
+    // FIRST frame already reflects it (renderer's color_aa otherwise inits to Off).
+    renderer.set_color_aa(runtime_state.current_color_aa());
+
     // Initialize food persistence
     if args.food_persist && init_mode == InitMode::Food {
         runtime_state.food_persist_enabled = true;
