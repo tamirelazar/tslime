@@ -277,6 +277,12 @@ impl SavedConfig {
             Palette::Moss => "moss".to_string(),
             Palette::Cosmic => "cosmic".to_string(),
             Palette::Ethereal => "ethereal".to_string(),
+            Palette::Jade => "jade".to_string(),
+            Palette::Amber => "amber".to_string(),
+            Palette::Slate => "slate".to_string(),
+            Palette::Pastel => "pastel".to_string(),
+            Palette::Ink => "ink".to_string(),
+            Palette::Copper => "copper".to_string(),
             Palette::Custom(colors) => {
                 let hex_colors: Vec<String> = colors
                     .iter()
@@ -718,6 +724,12 @@ fn parse_palette_index(palette_str: &str) -> Result<usize, String> {
         "moss" => Ok(13),
         "cosmic" => Ok(14),
         "ethereal" => Ok(15),
+        "jade" => Ok(16),
+        "amber" => Ok(17),
+        "slate" => Ok(18),
+        "pastel" => Ok(19),
+        "ink" => Ok(20),
+        "copper" => Ok(21),
         _ => Err(format!("Unknown palette: {}", palette_str)),
     }
 }

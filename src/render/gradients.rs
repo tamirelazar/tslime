@@ -977,6 +977,12 @@ pub fn get_256_gradient(palette: Palette) -> &'static [u8; 11] {
         Palette::Moss => &MOSS_GRADIENT,
         Palette::Cosmic => &COSMIC_GRADIENT,
         Palette::Ethereal => &ETHEREAL_GRADIENT,
+        Palette::Jade => &JADE_GRADIENT,
+        Palette::Amber => &AMBER_GRADIENT,
+        Palette::Slate => &SLATE_GRADIENT,
+        Palette::Pastel => &PASTEL_GRADIENT,
+        Palette::Ink => &INK_GRADIENT,
+        Palette::Copper => &COPPER_GRADIENT,
         Palette::Custom(_) => &FOREST_GRADIENT,
     }
 }
@@ -1004,6 +1010,12 @@ pub fn get_rgb_gradient(palette: Palette) -> &'static [RgbColor; 11] {
         Palette::Moss => &MOSS_RGB,
         Palette::Cosmic => &COSMIC_RGB,
         Palette::Ethereal => &ETHEREAL_RGB,
+        Palette::Jade => &JADE_RGB,
+        Palette::Amber => &AMBER_RGB,
+        Palette::Slate => &SLATE_RGB,
+        Palette::Pastel => &PASTEL_RGB,
+        Palette::Ink => &INK_RGB,
+        Palette::Copper => &COPPER_RGB,
         Palette::Custom(_) => panic!("Custom palette requires special handling"),
     }
 }
@@ -2139,6 +2151,768 @@ const ETHEREAL_OKLCH: [OklchStop; 11] = [
     },
 ];
 
+// =============================================================================
+// New palettes (completion pass): OKLCH + RGB fallback + 256-color codes.
+// OKLch stops are hand-authored design; RGB/256 arrays generated from them via
+// oklch_to_srgb + rgb_to_256 for perceptual consistency.
+// =============================================================================
+
+// Jade: dark green → mid-saturation jade → pale green
+const JADE_OKLCH: [OklchStop; 11] = [
+    OklchStop {
+        position: 0.0,
+        l: 0.2,
+        c: 0.03,
+        h: 155.0,
+    },
+    OklchStop {
+        position: 0.1,
+        l: 0.26,
+        c: 0.05,
+        h: 153.0,
+    },
+    OklchStop {
+        position: 0.2,
+        l: 0.32,
+        c: 0.07,
+        h: 152.0,
+    },
+    OklchStop {
+        position: 0.3,
+        l: 0.38,
+        c: 0.09,
+        h: 151.0,
+    },
+    OklchStop {
+        position: 0.4,
+        l: 0.44,
+        c: 0.11,
+        h: 150.0,
+    },
+    OklchStop {
+        position: 0.5,
+        l: 0.5,
+        c: 0.13,
+        h: 150.0,
+    },
+    OklchStop {
+        position: 0.6,
+        l: 0.56,
+        c: 0.14,
+        h: 149.0,
+    },
+    OklchStop {
+        position: 0.7,
+        l: 0.63,
+        c: 0.14,
+        h: 150.0,
+    },
+    OklchStop {
+        position: 0.8,
+        l: 0.71,
+        c: 0.12,
+        h: 152.0,
+    },
+    OklchStop {
+        position: 0.9,
+        l: 0.8,
+        c: 0.09,
+        h: 155.0,
+    },
+    OklchStop {
+        position: 1.0,
+        l: 0.9,
+        c: 0.05,
+        h: 158.0,
+    },
+];
+const JADE_RGB: [RgbColor; 11] = [
+    RgbColor {
+        r: 10,
+        g: 26,
+        b: 16,
+    },
+    RgbColor {
+        r: 14,
+        g: 43,
+        b: 24,
+    },
+    RgbColor {
+        r: 16,
+        g: 61,
+        b: 32,
+    },
+    RgbColor {
+        r: 18,
+        g: 79,
+        b: 40,
+    },
+    RgbColor {
+        r: 21,
+        g: 99,
+        b: 47,
+    },
+    RgbColor {
+        r: 19,
+        g: 119,
+        b: 56,
+    },
+    RgbColor {
+        r: 37,
+        g: 138,
+        b: 67,
+    },
+    RgbColor {
+        r: 60,
+        g: 160,
+        b: 89,
+    },
+    RgbColor {
+        r: 98,
+        g: 183,
+        b: 124,
+    },
+    RgbColor {
+        r: 142,
+        g: 207,
+        b: 164,
+    },
+    RgbColor {
+        r: 195,
+        g: 233,
+        b: 210,
+    },
+];
+const JADE_GRADIENT: [u8; 11] = [0, 22, 23, 29, 29, 29, 71, 72, 114, 151, 194];
+
+// Amber: dark honey → gold → pale warm
+const AMBER_OKLCH: [OklchStop; 11] = [
+    OklchStop {
+        position: 0.0,
+        l: 0.22,
+        c: 0.04,
+        h: 50.0,
+    },
+    OklchStop {
+        position: 0.1,
+        l: 0.28,
+        c: 0.07,
+        h: 52.0,
+    },
+    OklchStop {
+        position: 0.2,
+        l: 0.34,
+        c: 0.1,
+        h: 54.0,
+    },
+    OklchStop {
+        position: 0.3,
+        l: 0.4,
+        c: 0.13,
+        h: 56.0,
+    },
+    OklchStop {
+        position: 0.4,
+        l: 0.47,
+        c: 0.15,
+        h: 60.0,
+    },
+    OklchStop {
+        position: 0.5,
+        l: 0.54,
+        c: 0.16,
+        h: 66.0,
+    },
+    OklchStop {
+        position: 0.6,
+        l: 0.61,
+        c: 0.15,
+        h: 72.0,
+    },
+    OklchStop {
+        position: 0.7,
+        l: 0.69,
+        c: 0.14,
+        h: 78.0,
+    },
+    OklchStop {
+        position: 0.8,
+        l: 0.77,
+        c: 0.12,
+        h: 84.0,
+    },
+    OklchStop {
+        position: 0.9,
+        l: 0.85,
+        c: 0.09,
+        h: 90.0,
+    },
+    OklchStop {
+        position: 1.0,
+        l: 0.93,
+        c: 0.05,
+        h: 95.0,
+    },
+];
+const AMBER_RGB: [RgbColor; 11] = [
+    RgbColor { r: 41, g: 21, b: 8 },
+    RgbColor { r: 67, g: 29, b: 1 },
+    RgbColor { r: 93, g: 37, b: 0 },
+    RgbColor {
+        r: 121,
+        g: 45,
+        b: 0,
+    },
+    RgbColor {
+        r: 148,
+        g: 62,
+        b: 0,
+    },
+    RgbColor {
+        r: 170,
+        g: 85,
+        b: 0,
+    },
+    RgbColor {
+        r: 185,
+        g: 113,
+        b: 0,
+    },
+    RgbColor {
+        r: 202,
+        g: 143,
+        b: 18,
+    },
+    RgbColor {
+        r: 216,
+        g: 173,
+        b: 82,
+    },
+    RgbColor {
+        r: 229,
+        g: 204,
+        b: 137,
+    },
+    RgbColor {
+        r: 242,
+        g: 232,
+        b: 195,
+    },
+];
+const AMBER_GRADIENT: [u8; 11] = [52, 58, 94, 94, 130, 136, 172, 178, 180, 187, 230];
+
+// Slate: cool stone grey ramp, very low chroma
+const SLATE_OKLCH: [OklchStop; 11] = [
+    OklchStop {
+        position: 0.0,
+        l: 0.2,
+        c: 0.005,
+        h: 250.0,
+    },
+    OklchStop {
+        position: 0.1,
+        l: 0.27,
+        c: 0.01,
+        h: 250.0,
+    },
+    OklchStop {
+        position: 0.2,
+        l: 0.34,
+        c: 0.015,
+        h: 248.0,
+    },
+    OklchStop {
+        position: 0.3,
+        l: 0.41,
+        c: 0.02,
+        h: 246.0,
+    },
+    OklchStop {
+        position: 0.4,
+        l: 0.48,
+        c: 0.025,
+        h: 245.0,
+    },
+    OklchStop {
+        position: 0.5,
+        l: 0.55,
+        c: 0.028,
+        h: 245.0,
+    },
+    OklchStop {
+        position: 0.6,
+        l: 0.62,
+        c: 0.028,
+        h: 246.0,
+    },
+    OklchStop {
+        position: 0.7,
+        l: 0.69,
+        c: 0.025,
+        h: 248.0,
+    },
+    OklchStop {
+        position: 0.8,
+        l: 0.76,
+        c: 0.02,
+        h: 250.0,
+    },
+    OklchStop {
+        position: 0.9,
+        l: 0.84,
+        c: 0.014,
+        h: 252.0,
+    },
+    OklchStop {
+        position: 1.0,
+        l: 0.92,
+        c: 0.008,
+        h: 254.0,
+    },
+];
+const SLATE_RGB: [RgbColor; 11] = [
+    RgbColor {
+        r: 20,
+        g: 22,
+        b: 24,
+    },
+    RgbColor {
+        r: 35,
+        g: 39,
+        b: 43,
+    },
+    RgbColor {
+        r: 50,
+        g: 57,
+        b: 64,
+    },
+    RgbColor {
+        r: 66,
+        g: 76,
+        b: 85,
+    },
+    RgbColor {
+        r: 82,
+        g: 95,
+        b: 107,
+    },
+    RgbColor {
+        r: 100,
+        g: 116,
+        b: 129,
+    },
+    RgbColor {
+        r: 121,
+        g: 136,
+        b: 150,
+    },
+    RgbColor {
+        r: 144,
+        g: 157,
+        b: 170,
+    },
+    RgbColor {
+        r: 168,
+        g: 178,
+        b: 190,
+    },
+    RgbColor {
+        r: 196,
+        g: 203,
+        b: 212,
+    },
+    RgbColor {
+        r: 225,
+        g: 229,
+        b: 234,
+    },
+];
+const SLATE_GRADIENT: [u8; 11] = [0, 59, 59, 60, 102, 8, 8, 145, 7, 7, 189];
+
+// Pastel: high-key airy multi-hue drift, low chroma
+const PASTEL_OKLCH: [OklchStop; 11] = [
+    OklchStop {
+        position: 0.0,
+        l: 0.55,
+        c: 0.04,
+        h: 320.0,
+    },
+    OklchStop {
+        position: 0.1,
+        l: 0.6,
+        c: 0.05,
+        h: 340.0,
+    },
+    OklchStop {
+        position: 0.2,
+        l: 0.65,
+        c: 0.06,
+        h: 20.0,
+    },
+    OklchStop {
+        position: 0.3,
+        l: 0.7,
+        c: 0.06,
+        h: 60.0,
+    },
+    OklchStop {
+        position: 0.4,
+        l: 0.74,
+        c: 0.07,
+        h: 120.0,
+    },
+    OklchStop {
+        position: 0.5,
+        l: 0.78,
+        c: 0.07,
+        h: 160.0,
+    },
+    OklchStop {
+        position: 0.6,
+        l: 0.82,
+        c: 0.07,
+        h: 200.0,
+    },
+    OklchStop {
+        position: 0.7,
+        l: 0.86,
+        c: 0.06,
+        h: 240.0,
+    },
+    OklchStop {
+        position: 0.8,
+        l: 0.9,
+        c: 0.05,
+        h: 280.0,
+    },
+    OklchStop {
+        position: 0.9,
+        l: 0.94,
+        c: 0.03,
+        h: 300.0,
+    },
+    OklchStop {
+        position: 1.0,
+        l: 0.97,
+        c: 0.015,
+        h: 320.0,
+    },
+];
+const PASTEL_RGB: [RgbColor; 11] = [
+    RgbColor {
+        r: 124,
+        g: 106,
+        b: 128,
+    },
+    RgbColor {
+        r: 149,
+        g: 117,
+        b: 138,
+    },
+    RgbColor {
+        r: 177,
+        g: 129,
+        b: 128,
+    },
+    RgbColor {
+        r: 187,
+        g: 150,
+        b: 121,
+    },
+    RgbColor {
+        r: 165,
+        g: 178,
+        b: 128,
+    },
+    RgbColor {
+        r: 144,
+        g: 198,
+        b: 168,
+    },
+    RgbColor {
+        r: 141,
+        g: 210,
+        b: 214,
+    },
+    RgbColor {
+        r: 174,
+        g: 215,
+        b: 245,
+    },
+    RgbColor {
+        r: 215,
+        g: 219,
+        b: 255,
+    },
+    RgbColor {
+        r: 238,
+        g: 231,
+        b: 253,
+    },
+    RgbColor {
+        r: 250,
+        g: 242,
+        b: 252,
+    },
+];
+const PASTEL_GRADIENT: [u8; 11] = [8, 8, 145, 180, 145, 151, 152, 153, 189, 15, 15];
+
+// Ink: duotone cool-dark ink → warm paper white
+const INK_OKLCH: [OklchStop; 11] = [
+    OklchStop {
+        position: 0.0,
+        l: 0.16,
+        c: 0.012,
+        h: 260.0,
+    },
+    OklchStop {
+        position: 0.1,
+        l: 0.18,
+        c: 0.012,
+        h: 260.0,
+    },
+    OklchStop {
+        position: 0.2,
+        l: 0.21,
+        c: 0.01,
+        h: 260.0,
+    },
+    OklchStop {
+        position: 0.3,
+        l: 0.25,
+        c: 0.008,
+        h: 262.0,
+    },
+    OklchStop {
+        position: 0.4,
+        l: 0.31,
+        c: 0.006,
+        h: 264.0,
+    },
+    OklchStop {
+        position: 0.5,
+        l: 0.4,
+        c: 0.005,
+        h: 266.0,
+    },
+    OklchStop {
+        position: 0.6,
+        l: 0.52,
+        c: 0.004,
+        h: 268.0,
+    },
+    OklchStop {
+        position: 0.7,
+        l: 0.65,
+        c: 0.004,
+        h: 270.0,
+    },
+    OklchStop {
+        position: 0.8,
+        l: 0.78,
+        c: 0.005,
+        h: 80.0,
+    },
+    OklchStop {
+        position: 0.9,
+        l: 0.88,
+        c: 0.006,
+        h: 85.0,
+    },
+    OklchStop {
+        position: 1.0,
+        l: 0.95,
+        c: 0.004,
+        h: 90.0,
+    },
+];
+const INK_RGB: [RgbColor; 11] = [
+    RgbColor {
+        r: 10,
+        g: 13,
+        b: 18,
+    },
+    RgbColor {
+        r: 14,
+        g: 18,
+        b: 23,
+    },
+    RgbColor {
+        r: 22,
+        g: 24,
+        b: 29,
+    },
+    RgbColor {
+        r: 32,
+        g: 34,
+        b: 38,
+    },
+    RgbColor {
+        r: 47,
+        g: 48,
+        b: 51,
+    },
+    RgbColor {
+        r: 70,
+        g: 72,
+        b: 74,
+    },
+    RgbColor {
+        r: 104,
+        g: 105,
+        b: 107,
+    },
+    RgbColor {
+        r: 142,
+        g: 143,
+        b: 146,
+    },
+    RgbColor {
+        r: 185,
+        g: 183,
+        b: 180,
+    },
+    RgbColor {
+        r: 217,
+        g: 215,
+        b: 211,
+    },
+    RgbColor {
+        r: 239,
+        g: 238,
+        b: 235,
+    },
+];
+const INK_GRADIENT: [u8; 11] = [0, 0, 0, 59, 59, 59, 8, 8, 7, 7, 15];
+
+// Copper: oxidized rust → desaturated crossover → verdigris teal
+const COPPER_OKLCH: [OklchStop; 11] = [
+    OklchStop {
+        position: 0.0,
+        l: 0.22,
+        c: 0.05,
+        h: 32.0,
+    },
+    OklchStop {
+        position: 0.1,
+        l: 0.29,
+        c: 0.08,
+        h: 33.0,
+    },
+    OklchStop {
+        position: 0.2,
+        l: 0.36,
+        c: 0.11,
+        h: 35.0,
+    },
+    OklchStop {
+        position: 0.3,
+        l: 0.43,
+        c: 0.12,
+        h: 38.0,
+    },
+    OklchStop {
+        position: 0.4,
+        l: 0.49,
+        c: 0.1,
+        h: 50.0,
+    },
+    OklchStop {
+        position: 0.5,
+        l: 0.55,
+        c: 0.06,
+        h: 120.0,
+    },
+    OklchStop {
+        position: 0.6,
+        l: 0.6,
+        c: 0.08,
+        h: 165.0,
+    },
+    OklchStop {
+        position: 0.7,
+        l: 0.66,
+        c: 0.11,
+        h: 175.0,
+    },
+    OklchStop {
+        position: 0.8,
+        l: 0.72,
+        c: 0.12,
+        h: 180.0,
+    },
+    OklchStop {
+        position: 0.9,
+        l: 0.8,
+        c: 0.1,
+        h: 183.0,
+    },
+    OklchStop {
+        position: 1.0,
+        l: 0.88,
+        c: 0.06,
+        h: 185.0,
+    },
+];
+const COPPER_RGB: [RgbColor; 11] = [
+    RgbColor {
+        r: 46,
+        g: 16,
+        b: 11,
+    },
+    RgbColor {
+        r: 75,
+        g: 24,
+        b: 14,
+    },
+    RgbColor {
+        r: 107,
+        g: 32,
+        b: 14,
+    },
+    RgbColor {
+        r: 132,
+        g: 50,
+        b: 23,
+    },
+    RgbColor {
+        r: 141,
+        g: 77,
+        b: 39,
+    },
+    RgbColor {
+        r: 109,
+        g: 119,
+        b: 79,
+    },
+    RgbColor {
+        r: 78,
+        g: 144,
+        b: 116,
+    },
+    RgbColor {
+        r: 50,
+        g: 168,
+        b: 142,
+    },
+    RgbColor {
+        r: 47,
+        g: 189,
+        b: 167,
+    },
+    RgbColor {
+        r: 107,
+        g: 211,
+        b: 196,
+    },
+    RgbColor {
+        r: 171,
+        g: 229,
+        b: 221,
+    },
+];
+const COPPER_GRADIENT: [u8; 11] = [52, 52, 1, 130, 137, 102, 108, 73, 79, 116, 152];
+
 /// Returns the OKLch gradient control points for a given built-in palette.
 ///
 /// These stops define the palette in perceptual OKLch space. The caller is
@@ -2164,6 +2938,12 @@ pub fn get_oklch_gradient(palette: Palette) -> &'static [OklchStop] {
         Palette::Moss => &MOSS_OKLCH,
         Palette::Cosmic => &COSMIC_OKLCH,
         Palette::Ethereal => &ETHEREAL_OKLCH,
+        Palette::Jade => &JADE_OKLCH,
+        Palette::Amber => &AMBER_OKLCH,
+        Palette::Slate => &SLATE_OKLCH,
+        Palette::Pastel => &PASTEL_OKLCH,
+        Palette::Ink => &INK_OKLCH,
+        Palette::Copper => &COPPER_OKLCH,
         Palette::Custom(_) => panic!("Custom palette has no OKLch definition"),
     }
 }

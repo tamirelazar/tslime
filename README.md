@@ -123,19 +123,31 @@ lowercase increases and uppercase (Shift) decreases.
 
 <!-- ws6: preset/palette showcase gifs -->
 
-There are 34 named presets: network, exploratory, tendrils, organic, minimal, moss,
-cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal,
-chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon,
-dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators, lumen, aurora,
-bloom, and etching. Palettes and character sets are independent of the preset and
-can be cycled at runtime.
+There are 29 named presets: network, exploratory, tendrils, organic, fire, river,
+petri, vortex, lightning, chaosedge, blob, pulse, flocking, ripple, vortex36,
+dynamictendrils, lumen, etching, drift, constellation, mosaic, marble, prism, vellum,
+forge, wane, gossamer, codex, and tide. Palettes and character sets are independent of
+the preset and can be cycled at runtime.
 
-Four showcase presets highlight specific visual levers:
+Showcase presets highlight specific visual levers:
 
 - **lumen** — Bleuje-style front-lit veins: temporal-accent recolor of growing fronts.
-- **aurora** — Luminous network glow: afterglow + soft diffusion + long faint tails.
-- **bloom** — Banded coral depth via mirrored palette cycles.
 - **etching** — Directional filament linework via Sobel glyph selection (Braille, TUI-only).
+- **drift** — Color that shifts with motion direction (temporal Hue mode).
+- **constellation** — Sparse star-map scatter via the Points charset.
+- **mosaic** — Posterized color bands: Quantize mapping + wrapped palette cycles.
+- **marble** — Veined stone via heavy Gaussian diffusion + Perlin intensity mapping.
+- **prism** — Maximum color resolution: HalfBlockDual charset + strong color anti-aliasing.
+- **vellum** — Soft parchment density: Shade charset + logarithmic deposit curve.
+- **forge** — Grainy molten thermal: exponential intensity mapping + afterglow.
+- **wane** — Slow ghosting decay via low decay-gamma + power deposit curve.
+- **gossamer** — Delicate Braille threads with brightness glyphs + power mapping.
+- **codex** — Typographic engraving: custom ASCII charset + sigmoid contrast.
+- **tide** — Living water with animated hue-shift over time.
+
+Six new palettes accompany them: **jade** (mid-saturation green), **amber** (warm
+earth), **slate** (cool stone grey), **pastel** (high-key airy), **ink** (duotone
+ink-on-paper), and **copper** (oxidized rust-to-verdigris).
 
 ## How it works
 

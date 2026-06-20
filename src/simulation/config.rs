@@ -66,66 +66,56 @@ pub enum Preset {
     Tendrils,
     /// Balanced, natural-looking growth (default).
     Organic,
-    /// Minimal, sparse patterns with fewer agents.
-    Minimal,
-    /// Organic moss-like growth patterns.
-    Moss,
-    /// Space-inspired ethereal patterns.
-    Cosmic,
     /// Aggressive, fast-moving flame-like patterns.
     Fire,
-    /// Calm, meditative slow-moving patterns.
-    Zen,
-    /// Dynamic, turbulent patterns.
-    Storm,
     /// Flowing, water-like patterns.
     River,
-    /// Ethereal, ghost-like patterns.
-    Ethereal,
     /// Petri dish simulation: starts center, slow growth, persistent trails.
     PetriDish,
     /// Spinning vortex patterns (rotation_angle > sensor_angle).
     Vortex,
     /// Fast dendritic branching like lightning.
     Lightning,
-    /// Slow, stable geometric crystal growth.
-    Crystal,
     /// Edge-of-chaos sensitive patterns (sensor_angle ≈ rotation_angle).
     ChaosEdge,
     /// Aggregating blob clusters.
     Blob,
-    /// Long snaking worm-like trails.
-    Worm,
     /// Rhythmic pulsing waves with trail-based modulation.
     Pulse,
-    /// Dense coral-like branching structures.
-    Coral,
     /// Cohesive flocking group movement.
     Flocking,
-    /// Complex maze-like corridor patterns.
-    Maze,
     /// Concentric ripple patterns.
     Ripple,
     /// Enhanced vortex with trail modulation.
     Vortex36,
-    /// Dramatic behavior shifts based on trail density.
-    Chameleon,
     /// Dynamic tendrils with trail-based sensor modulation.
     DynamicTendrils,
-    /// Morphing coral with dramatic parameter shifts.
-    MorphingCoral,
-    /// Reactive swarm with trail-dependent behavior.
-    ReactiveSwarm,
-    /// Two-species with opposing modulation patterns.
-    DuelingModulators,
     /// Bleuje-style front-lit veins: temporal-accent recolor of growing fronts.
     Lumen,
-    /// Luminous network glow: afterglow + soft diffusion + long faint tails.
-    Aurora,
-    /// Banded coral depth via mirrored palette cycles.
-    Bloom,
     /// Directional filament linework via Sobel glyph selection (Braille, TUI-only).
     Etching,
+    /// Color that shifts with motion direction (temporal Hue mode).
+    Drift,
+    /// Sparse star-map scatter (Points charset).
+    Constellation,
+    /// Posterized color bands (Quantize mapping + Wrap palette cycles).
+    Mosaic,
+    /// Veined stone via heavy Gaussian + Perlin intensity mapping.
+    Marble,
+    /// Maximum color resolution (HalfBlockDual + SquareRoot mapping).
+    Prism,
+    /// Soft parchment density (Shade charset + Log deposit curve).
+    Vellum,
+    /// Grainy molten thermal (Exponential mapping + afterglow).
+    Forge,
+    /// Slow ghosting decay via low decay-gamma + Pow deposit curve.
+    Wane,
+    /// Delicate threads (Braille + brightness glyphs + Power mapping).
+    Gossamer,
+    /// Typographic engraving (custom ASCII + Sigmoid mapping).
+    Codex,
+    /// Living water with animated hue-shift over time.
+    Tide,
 }
 
 impl Preset {
@@ -191,62 +181,6 @@ impl Preset {
                 config.diffusion_kernel = DiffusionKernel::Mean3x3;
                 config.max_brightness = 20.0;
             }
-            Preset::Minimal => {
-                config.sensor_angle = 30.0;
-                config.sensor_distance = 9.0;
-                config.rotation_angle = 30.0;
-                config.step_size = 0.8;
-                config.decay_factor = 0.95;
-                config.deposit_amount = 3.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 15.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 15_000,
-                    sensor_angle: 30.0,
-                    rotation_angle: 30.0,
-                    step_size: 0.8,
-                    deposit_amount: 3.0,
-                    ..Default::default()
-                }];
-            }
-            Preset::Moss => {
-                config.sensor_angle = 22.0;
-                config.sensor_distance = 12.0;
-                config.rotation_angle = 35.0;
-                config.decay_factor = 0.88;
-                config.deposit_amount = 4.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 18.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 35_000,
-                    sensor_angle: 22.0,
-                    rotation_angle: 35.0,
-                    deposit_amount: 4.0,
-                    color: RgbColor::from_hex(0x4a7a4a),
-                    ..Default::default()
-                }];
-            }
-            Preset::Cosmic => {
-                config.sensor_angle = 55.0;
-                config.sensor_distance = 15.0;
-                config.rotation_angle = 45.0;
-                config.step_size = 0.7;
-                config.decay_factor = 0.93;
-                config.deposit_amount = 3.0;
-                config.max_brightness = 14.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 25_000,
-                    sensor_angle: 55.0,
-                    rotation_angle: 45.0,
-                    step_size: 0.7,
-                    deposit_amount: 3.0,
-                    color: RgbColor::from_hex(0x8a2be2),
-                    ..Default::default()
-                }];
-            }
             Preset::Fire => {
                 config.sensor_angle = 15.0;
                 config.rotation_angle = 30.0;
@@ -264,44 +198,6 @@ impl Preset {
                     ..Default::default()
                 }];
             }
-            Preset::Zen => {
-                config.sensor_distance = 12.0;
-                config.sensor_angle = 25.0;
-                config.rotation_angle = 30.0;
-                config.step_size = 0.5;
-                config.decay_factor = 0.94;
-                config.deposit_amount = 2.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 12.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 10_000,
-                    sensor_angle: 25.0,
-                    rotation_angle: 30.0,
-                    step_size: 0.5,
-                    deposit_amount: 2.0,
-                    color: RgbColor::from_hex(0xffffff),
-                    ..Default::default()
-                }];
-            }
-            Preset::Storm => {
-                config.sensor_angle = 20.0;
-                config.rotation_angle = 60.0;
-                config.step_size = 2.0;
-                config.decay_factor = 0.80;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 18.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 80_000,
-                    sensor_angle: 20.0,
-                    rotation_angle: 60.0,
-                    step_size: 2.0,
-                    color: RgbColor::from_hex(0x4682b4),
-                    ..Default::default()
-                }];
-                config.wind = Some(Wind::new(0.1, 0.05));
-            }
             Preset::River => {
                 config.sensor_angle = 25.0;
                 config.step_size = 1.2;
@@ -317,22 +213,6 @@ impl Preset {
                     ..Default::default()
                 }];
                 config.wind = Some(Wind::new(0.3, 0.0));
-            }
-            Preset::Ethereal => {
-                config.sensor_angle = 40.0;
-                config.step_size = 0.7;
-                config.decay_factor = 0.98;
-                config.deposit_amount = 2.0;
-                config.max_brightness = 12.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 25_000,
-                    sensor_angle: 40.0,
-                    step_size: 0.7,
-                    deposit_amount: 2.0,
-                    color: RgbColor::from_hex(0xe6e6fa),
-                    ..Default::default()
-                }];
             }
             Preset::PetriDish => {
                 config.sensor_angle = 45.0;
@@ -398,25 +278,6 @@ impl Preset {
                     ..Default::default()
                 }];
             }
-            Preset::Crystal => {
-                config.sensor_angle = 38.9;
-                config.sensor_distance = 30.6;
-                config.rotation_angle = 21.5;
-                config.step_size = 1.47;
-                config.decay_factor = 0.50;
-                config.deposit_amount = 2.1;
-                config.diffusion_sigma = 1.2;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 38_000,
-                    sensor_angle: 38.9,
-                    rotation_angle: 21.5,
-                    step_size: 1.47,
-                    deposit_amount: 2.1,
-                    color: RgbColor::from_hex(0xb0e0e6),
-                    ..Default::default()
-                }];
-            }
             Preset::ChaosEdge => {
                 config.sensor_angle = 5.0;
                 config.sensor_distance = 26.4;
@@ -457,25 +318,6 @@ impl Preset {
                     ..Default::default()
                 }];
             }
-            Preset::Worm => {
-                config.sensor_angle = 38.8;
-                config.sensor_distance = 50.0;
-                config.rotation_angle = 13.4;
-                config.step_size = 1.96;
-                config.decay_factor = 0.65;
-                config.deposit_amount = 6.3;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 6_000,
-                    sensor_angle: 38.8,
-                    rotation_angle: 13.4,
-                    step_size: 1.96,
-                    deposit_amount: 6.3,
-                    color: RgbColor::from_hex(0xdaa520),
-                    ..Default::default()
-                }];
-            }
             Preset::Pulse => {
                 config.sensor_angle = 60.0;
                 config.sensor_distance = 30.0;
@@ -510,41 +352,6 @@ impl Preset {
                     }),
                 }];
             }
-            Preset::Coral => {
-                config.sensor_angle = 30.0;
-                config.sensor_distance = 20.0;
-                config.rotation_angle = 45.0;
-                config.step_size = 0.3;
-                config.decay_factor = 0.92;
-                config.deposit_amount = 3.0;
-                config.diffusion_kernel = DiffusionKernel::Gaussian;
-                config.diffusion_sigma = 1.2;
-                config.max_brightness = 15.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 40_000,
-                    sensor_angle: 30.0,
-                    rotation_angle: 45.0,
-                    step_size: 0.3,
-                    deposit_amount: 3.0,
-                    color: RgbColor::from_hex(0xff7f50),
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 20.0,
-                        sensor_distance_multiplier: 10.0,
-                        sensor_distance_exponent: 0.5,
-                        sensor_angle_base: 30.0,
-                        sensor_angle_multiplier: 40.0,
-                        sensor_angle_exponent: 1.0,
-                        rotation_angle_base: 45.0,
-                        rotation_angle_multiplier: -20.0,
-                        rotation_angle_exponent: 1.0,
-                        step_size_base: 0.3,
-                        step_size_multiplier: 0.0,
-                        step_size_exponent: 1.0,
-                        ..Default::default()
-                    }),
-                }];
-            }
             Preset::Flocking => {
                 config.sensor_angle = 45.0;
                 config.sensor_distance = 25.0;
@@ -574,40 +381,6 @@ impl Preset {
                         rotation_angle_exponent: 1.5,
                         step_size_base: 1.5,
                         step_size_multiplier: 1.0,
-                        step_size_exponent: 1.0,
-                        ..Default::default()
-                    }),
-                }];
-            }
-            Preset::Maze => {
-                config.sensor_angle = 85.0;
-                config.sensor_distance = 15.0;
-                config.rotation_angle = 20.0;
-                config.step_size = 0.8;
-                config.decay_factor = 0.85;
-                config.deposit_amount = 6.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 22.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 45_000,
-                    sensor_angle: 85.0,
-                    rotation_angle: 20.0,
-                    step_size: 0.8,
-                    deposit_amount: 6.0,
-                    color: RgbColor::from_hex(0x8b4513),
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 15.0,
-                        sensor_distance_multiplier: 5.0,
-                        sensor_distance_exponent: 1.0,
-                        sensor_angle_base: 85.0,
-                        sensor_angle_multiplier: 0.0,
-                        sensor_angle_exponent: 1.0,
-                        rotation_angle_base: 20.0,
-                        rotation_angle_multiplier: 40.0,
-                        rotation_angle_exponent: 2.0,
-                        step_size_base: 0.8,
-                        step_size_multiplier: 0.4,
                         step_size_exponent: 1.0,
                         ..Default::default()
                     }),
@@ -682,40 +455,6 @@ impl Preset {
                     }),
                 }];
             }
-            Preset::Chameleon => {
-                config.sensor_angle = 40.0;
-                config.sensor_distance = 25.0;
-                config.rotation_angle = 45.0;
-                config.step_size = 2.5;
-                config.decay_factor = 0.90;
-                config.deposit_amount = 5.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 25.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 35_000,
-                    sensor_angle: 40.0,
-                    rotation_angle: 45.0,
-                    step_size: 2.5,
-                    deposit_amount: 5.0,
-                    color: RgbColor::from_hex(0x9932cc),
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 5.0,
-                        sensor_distance_multiplier: 40.0,
-                        sensor_distance_exponent: 2.0,
-                        sensor_angle_base: 10.0,
-                        sensor_angle_multiplier: 70.0,
-                        sensor_angle_exponent: 2.0,
-                        rotation_angle_base: 5.0,
-                        rotation_angle_multiplier: 80.0,
-                        rotation_angle_exponent: 2.0,
-                        step_size_base: 0.1,
-                        step_size_multiplier: 5.0,
-                        step_size_exponent: 1.5,
-                        ..Default::default()
-                    }),
-                }];
-            }
             Preset::DynamicTendrils => {
                 config.decay_factor = 0.92;
                 config.species_configs = vec![SpeciesConfig {
@@ -740,111 +479,6 @@ impl Preset {
                     ..Default::default()
                 }];
             }
-            Preset::MorphingCoral => {
-                config.decay_factor = 0.88;
-                config.diffusion_kernel = DiffusionKernel::Gaussian;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "coral".to_string(),
-                    count: 30_000,
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 40.0,
-                        sensor_distance_multiplier: -35.0,
-                        sensor_distance_exponent: 0.5,
-                        sensor_angle_base: 5.0,
-                        sensor_angle_multiplier: 80.0,
-                        sensor_angle_exponent: 2.5,
-                        rotation_angle_base: 5.0,
-                        rotation_angle_multiplier: 75.0,
-                        rotation_angle_exponent: 2.0,
-                        step_size_base: 0.2,
-                        step_size_multiplier: 2.0,
-                        step_size_exponent: 1.0,
-                        trail_rescale: 2.0,
-                        ..Default::default()
-                    }),
-                    color: RgbColor::from_hex(0xff69b4),
-                    ..Default::default()
-                }];
-            }
-            Preset::ReactiveSwarm => {
-                config.decay_factor = 0.85;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "swarm".to_string(),
-                    count: 60_000,
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 25.0,
-                        sensor_distance_multiplier: -20.0,
-                        sensor_distance_exponent: 1.0,
-                        sensor_angle_base: 45.0,
-                        sensor_angle_multiplier: -30.0,
-                        sensor_angle_exponent: 1.5,
-                        rotation_angle_base: 45.0,
-                        rotation_angle_multiplier: -40.0,
-                        rotation_angle_exponent: 1.0,
-                        step_size_base: 1.5,
-                        step_size_multiplier: 2.0,
-                        step_size_exponent: 1.0,
-                        heading_offset: 5.0,
-                        ..Default::default()
-                    }),
-                    color: RgbColor::from_hex(0xffd700),
-                    ..Default::default()
-                }];
-                config.respawn_config = RespawnConfig {
-                    interval: 60,
-                    base_probability: 0.02,
-                    trail_dependent: true,
-                    max_probability_multiplier: 5.0,
-                };
-            }
-            Preset::DuelingModulators => {
-                config.decay_factor = 0.90;
-                config.separate_species_trails = true;
-                config.species_configs = vec![
-                    SpeciesConfig {
-                        name: "expander".to_string(),
-                        count: 20_000,
-                        trail_modulation: Some(PointConfig {
-                            sensor_distance_base: 10.0,
-                            sensor_distance_multiplier: 30.0,
-                            sensor_distance_exponent: 1.0,
-                            sensor_angle_base: 20.0,
-                            sensor_angle_multiplier: 40.0,
-                            sensor_angle_exponent: 1.0,
-                            rotation_angle_base: 30.0,
-                            rotation_angle_multiplier: 20.0,
-                            rotation_angle_exponent: 1.0,
-                            step_size_base: 1.0,
-                            step_size_multiplier: 0.5,
-                            step_size_exponent: 1.0,
-                            ..Default::default()
-                        }),
-                        color: RgbColor::from_hex(0x00ced1),
-                        ..Default::default()
-                    },
-                    SpeciesConfig {
-                        name: "contractor".to_string(),
-                        count: 20_000,
-                        trail_modulation: Some(PointConfig {
-                            sensor_distance_base: 40.0,
-                            sensor_distance_multiplier: -30.0,
-                            sensor_distance_exponent: 1.0,
-                            sensor_angle_base: 60.0,
-                            sensor_angle_multiplier: -30.0,
-                            sensor_angle_exponent: 1.0,
-                            rotation_angle_base: 30.0,
-                            rotation_angle_multiplier: -20.0,
-                            rotation_angle_exponent: 1.0,
-                            step_size_base: 1.0,
-                            step_size_multiplier: -0.3,
-                            step_size_exponent: 1.0,
-                            ..Default::default()
-                        }),
-                        color: RgbColor::from_hex(0xff6347),
-                        ..Default::default()
-                    },
-                ];
-            }
             Preset::Lumen => {
                 // Dense network base (mirrors Network) + nonlinear deposit + afterglow.
                 config.sensor_angle = 15.0;
@@ -861,54 +495,6 @@ impl Preset {
                     count: 50_000,
                     sensor_angle: 15.0,
                     rotation_angle: 30.0,
-                    ..Default::default()
-                }];
-            }
-            Preset::Aurora => {
-                // Exploratory base, soft Gaussian glow on a deep Ocean palette.
-                // Moderate decay + restrained afterglow keep a dark body so the
-                // luminous network reads against it (avoids the washed-out fill
-                // that heavy afterglow + a low white-point produced).
-                config.sensor_angle = 45.0;
-                config.sensor_distance = 15.0;
-                config.rotation_angle = 60.0;
-                config.decay_factor = 0.92;
-                config.deposit_amount = 3.0;
-                config.diffusion_kernel = DiffusionKernel::Gaussian;
-                config.diffusion_sigma = 2.5;
-                config.diffuse_weight = 0.6;
-                config.afterglow = 0.15;
-                config.decay_gamma = 0.7;
-                config.max_brightness = 26.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 30_000,
-                    sensor_angle: 45.0,
-                    rotation_angle: 60.0,
-                    deposit_amount: 3.0,
-                    ..Default::default()
-                }];
-            }
-            Preset::Bloom => {
-                // Coral base + nonlinear deposit; banding comes from palette cycles (render layer).
-                config.sensor_angle = 30.0;
-                config.sensor_distance = 20.0;
-                config.rotation_angle = 45.0;
-                config.step_size = 0.3;
-                config.decay_factor = 0.92;
-                config.deposit_amount = 3.0;
-                config.diffusion_kernel = DiffusionKernel::Gaussian;
-                config.diffusion_sigma = 1.2;
-                config.deposit_curve = DepositCurve::Sqrt;
-                config.afterglow = 0.2;
-                config.max_brightness = 15.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 40_000,
-                    sensor_angle: 30.0,
-                    rotation_angle: 45.0,
-                    step_size: 0.3,
-                    deposit_amount: 3.0,
                     ..Default::default()
                 }];
             }
@@ -931,6 +517,238 @@ impl Preset {
                     rotation_angle: 45.0,
                     step_size: 2.0,
                     deposit_amount: 4.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Drift => {
+                // Smooth flowing base; temporal-Hue recolor lives in the render layer.
+                config.sensor_angle = 30.0;
+                config.sensor_distance = 14.0;
+                config.rotation_angle = 35.0;
+                config.step_size = 1.2;
+                config.decay_factor = 0.93;
+                config.deposit_amount = 3.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.afterglow = 0.1;
+                config.max_brightness = 16.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 35_000,
+                    sensor_angle: 30.0,
+                    rotation_angle: 35.0,
+                    step_size: 1.2,
+                    deposit_amount: 3.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Constellation => {
+                // Sparse, persistent scatter for a star-map (Points charset, render layer).
+                config.sensor_angle = 45.0;
+                config.sensor_distance = 12.0;
+                config.rotation_angle = 25.0;
+                config.step_size = 0.8;
+                config.decay_factor = 0.96;
+                config.deposit_amount = 4.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 30.0;
+                config.preferred_init_mode = Some(InitMode::Random);
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 12_000,
+                    sensor_angle: 45.0,
+                    rotation_angle: 25.0,
+                    step_size: 0.8,
+                    deposit_amount: 4.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Mosaic => {
+                // Dense smooth body so posterized bands (Quantize + Wrap cycles) read clean.
+                config.sensor_angle = 30.0;
+                config.sensor_distance = 15.0;
+                config.rotation_angle = 40.0;
+                config.step_size = 1.0;
+                config.decay_factor = 0.94;
+                config.deposit_amount = 3.5;
+                config.diffusion_kernel = DiffusionKernel::Gaussian;
+                config.diffusion_sigma = 1.5;
+                config.max_brightness = 16.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 40_000,
+                    sensor_angle: 30.0,
+                    rotation_angle: 40.0,
+                    step_size: 1.0,
+                    deposit_amount: 3.5,
+                    ..Default::default()
+                }];
+            }
+            Preset::Marble => {
+                // Heavy Gaussian smear for veined stone (Perlin intensity, render layer).
+                config.sensor_angle = 50.0;
+                config.sensor_distance = 18.0;
+                config.rotation_angle = 45.0;
+                config.step_size = 0.7;
+                config.decay_factor = 0.95;
+                config.deposit_amount = 3.0;
+                config.diffusion_kernel = DiffusionKernel::Gaussian;
+                config.diffusion_sigma = 2.5;
+                config.diffuse_weight = 0.8;
+                config.max_brightness = 18.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 30_000,
+                    sensor_angle: 50.0,
+                    rotation_angle: 45.0,
+                    step_size: 0.7,
+                    deposit_amount: 3.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Prism => {
+                // Balanced colorful base (HalfBlockDual + SquareRoot, render layer).
+                config.sensor_angle = 25.0;
+                config.sensor_distance = 12.0;
+                config.rotation_angle = 40.0;
+                config.step_size = 1.0;
+                config.decay_factor = 0.90;
+                config.deposit_amount = 3.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 16.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 45_000,
+                    sensor_angle: 25.0,
+                    rotation_angle: 40.0,
+                    step_size: 1.0,
+                    deposit_amount: 3.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Vellum => {
+                // Soft parchment density; Log deposit compresses spikes (Shade charset).
+                config.sensor_angle = 28.0;
+                config.sensor_distance = 12.0;
+                config.rotation_angle = 40.0;
+                config.step_size = 1.0;
+                config.decay_factor = 0.91;
+                config.deposit_amount = 4.0;
+                config.diffusion_kernel = DiffusionKernel::Gaussian;
+                config.diffusion_sigma = 1.2;
+                config.deposit_curve = DepositCurve::Log;
+                config.max_brightness = 18.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 35_000,
+                    sensor_angle: 28.0,
+                    rotation_angle: 40.0,
+                    step_size: 1.0,
+                    deposit_amount: 4.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Forge => {
+                // Aggressive, fast, molten; afterglow for embers (Exponential intensity).
+                config.sensor_angle = 15.0;
+                config.sensor_distance = 9.0;
+                config.rotation_angle = 30.0;
+                config.step_size = 1.5;
+                config.decay_factor = 0.85;
+                config.deposit_amount = 5.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.afterglow = 0.3;
+                config.max_brightness = 20.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 80_000,
+                    sensor_angle: 15.0,
+                    rotation_angle: 30.0,
+                    step_size: 1.5,
+                    deposit_amount: 5.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Wane => {
+                // Long faint tails: low decay_gamma + Pow deposit + high decay_factor.
+                config.sensor_angle = 25.0;
+                config.sensor_distance = 12.0;
+                config.rotation_angle = 30.0;
+                config.step_size = 0.9;
+                config.decay_factor = 0.97;
+                config.deposit_amount = 3.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.decay_gamma = 0.6;
+                config.deposit_curve = DepositCurve::Pow;
+                config.deposit_gamma = 0.6;
+                config.max_brightness = 16.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 30_000,
+                    sensor_angle: 25.0,
+                    rotation_angle: 30.0,
+                    step_size: 0.9,
+                    deposit_amount: 3.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Gossamer => {
+                // Fine, sparse threads with afterglow (Braille + Brightness glyph + Power).
+                config.sensor_angle = 35.0;
+                config.sensor_distance = 10.0;
+                config.rotation_angle = 40.0;
+                config.step_size = 0.7;
+                config.decay_factor = 0.96;
+                config.deposit_amount = 2.5;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.afterglow = 0.2;
+                config.max_brightness = 14.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 25_000,
+                    sensor_angle: 35.0,
+                    rotation_angle: 40.0,
+                    step_size: 0.7,
+                    deposit_amount: 2.5,
+                    ..Default::default()
+                }];
+            }
+            Preset::Codex => {
+                // Typographic linework base (CustomAscii + Sigmoid, render layer).
+                config.sensor_angle = 30.0;
+                config.sensor_distance = 14.0;
+                config.rotation_angle = 45.0;
+                config.step_size = 1.5;
+                config.decay_factor = 0.90;
+                config.deposit_amount = 4.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 16.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 40_000,
+                    sensor_angle: 30.0,
+                    rotation_angle: 45.0,
+                    step_size: 1.5,
+                    deposit_amount: 4.0,
+                    ..Default::default()
+                }];
+            }
+            Preset::Tide => {
+                // Flowing water body; animated hue-shift lives in the render layer.
+                config.sensor_angle = 25.0;
+                config.sensor_distance = 12.0;
+                config.rotation_angle = 30.0;
+                config.step_size = 1.2;
+                config.decay_factor = 0.92;
+                config.deposit_amount = 3.0;
+                config.diffusion_kernel = DiffusionKernel::Mean3x3;
+                config.max_brightness = 16.0;
+                config.species_configs = vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 40_000,
+                    sensor_angle: 25.0,
+                    rotation_angle: 30.0,
+                    step_size: 1.2,
+                    deposit_amount: 3.0,
                     ..Default::default()
                 }];
             }
@@ -2612,36 +2430,31 @@ mod tests {
             Preset::Exploratory,
             Preset::Tendrils,
             Preset::Organic,
-            Preset::Minimal,
-            Preset::Moss,
-            Preset::Cosmic,
             Preset::Fire,
-            Preset::Zen,
-            Preset::Storm,
             Preset::River,
-            Preset::Ethereal,
             Preset::PetriDish,
             Preset::Vortex,
             Preset::Lightning,
-            Preset::Crystal,
             Preset::ChaosEdge,
             Preset::Blob,
-            Preset::Worm,
             Preset::Pulse,
-            Preset::Coral,
             Preset::Flocking,
-            Preset::Maze,
             Preset::Ripple,
             Preset::Vortex36,
-            Preset::Chameleon,
             Preset::DynamicTendrils,
-            Preset::MorphingCoral,
-            Preset::ReactiveSwarm,
-            Preset::DuelingModulators,
             Preset::Lumen,
-            Preset::Aurora,
-            Preset::Bloom,
             Preset::Etching,
+            Preset::Drift,
+            Preset::Constellation,
+            Preset::Mosaic,
+            Preset::Marble,
+            Preset::Prism,
+            Preset::Vellum,
+            Preset::Forge,
+            Preset::Wane,
+            Preset::Gossamer,
+            Preset::Codex,
+            Preset::Tide,
         ];
         for preset in presets {
             let config: SimConfig = preset.into();

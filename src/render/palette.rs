@@ -25,6 +25,12 @@ fn get_gradient_stops_cache() -> &'static HashMap<Palette, Vec<GradientStop>> {
             Palette::Moss,
             Palette::Cosmic,
             Palette::Ethereal,
+            Palette::Jade,
+            Palette::Amber,
+            Palette::Slate,
+            Palette::Pastel,
+            Palette::Ink,
+            Palette::Copper,
         ];
 
         for palette in built_in_palettes {
@@ -72,6 +78,18 @@ pub enum Palette {
     Cosmic,
     /// Ghostly pale colors.
     Ethereal,
+    /// Mid-saturation jade green.
+    Jade,
+    /// Rich warm amber and honey tones.
+    Amber,
+    /// Cool stone grey, very low chroma.
+    Slate,
+    /// High-key airy pastel multi-hue.
+    Pastel,
+    /// Duotone ink-on-paper.
+    Ink,
+    /// Oxidized copper rust to verdigris teal.
+    Copper,
     /// Custom user-defined palette.
     Custom(Vec<RgbColor>),
 }
@@ -96,6 +114,12 @@ impl Palette {
             Palette::Moss => "Moss",
             Palette::Cosmic => "Cosmic",
             Palette::Ethereal => "Ethereal",
+            Palette::Jade => "Jade",
+            Palette::Amber => "Amber",
+            Palette::Slate => "Slate",
+            Palette::Pastel => "Pastel",
+            Palette::Ink => "Ink",
+            Palette::Copper => "Copper",
             Palette::Custom(_) => "Custom",
         }
     }
@@ -103,7 +127,7 @@ impl Palette {
 
 /// List of all available color palettes for cycling.
 /// This is the single source of truth for palette enumeration.
-pub const ALL_PALETTES: [Palette; 16] = [
+pub const ALL_PALETTES: [Palette; 22] = [
     Palette::Organic,
     Palette::Heat,
     Palette::Ocean,
@@ -120,6 +144,12 @@ pub const ALL_PALETTES: [Palette; 16] = [
     Palette::Moss,
     Palette::Cosmic,
     Palette::Ethereal,
+    Palette::Jade,
+    Palette::Amber,
+    Palette::Slate,
+    Palette::Pastel,
+    Palette::Ink,
+    Palette::Copper,
 ];
 
 /// The number of palettes in ALL_PALETTES.
@@ -919,6 +949,18 @@ impl IntensityMapping {
                 start: 0.0,
                 end: 1.0,
                 function: MappingFunction::Quantize { levels },
+            }],
+        }
+    }
+
+    /// Sigmoid (S-curve) mapping for punchy contrast. Higher `steepness`
+    /// sharpens the mid-tone transition.
+    pub fn sigmoid(steepness: f32) -> Self {
+        Self {
+            segments: vec![MappingSegment {
+                start: 0.0,
+                end: 1.0,
+                function: MappingFunction::Sigmoid { steepness },
             }],
         }
     }
