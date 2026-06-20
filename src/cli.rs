@@ -290,41 +290,13 @@ impl FromStr for Preset {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "network" => Ok(Preset::Network),
-            "exploratory" => Ok(Preset::Exploratory),
-            "tendrils" => Ok(Preset::Tendrils),
-            "organic" => Ok(Preset::Organic),
-            "fire" => Ok(Preset::Fire),
-            "river" => Ok(Preset::River),
-            "petri" | "petridish" => Ok(Preset::PetriDish),
-            "vortex" => Ok(Preset::Vortex),
-            "lightning" => Ok(Preset::Lightning),
-            "chaosedge" | "chaos-edge" | "chaos_edge" => Ok(Preset::ChaosEdge),
-            "blob" => Ok(Preset::Blob),
-            "pulse" => Ok(Preset::Pulse),
-            "flocking" => Ok(Preset::Flocking),
-            "ripple" => Ok(Preset::Ripple),
-            "vortex36" | "vortex-36" | "vortex_36" => Ok(Preset::Vortex36),
-            "dynamictendrils" | "dynamic-tendrils" | "dynamic_tendrils" => Ok(Preset::DynamicTendrils),
-            "lumen" => Ok(Preset::Lumen),
-            "etching" => Ok(Preset::Etching),
-            "drift" => Ok(Preset::Drift),
-            "constellation" => Ok(Preset::Constellation),
-            "mosaic" => Ok(Preset::Mosaic),
-            "marble" => Ok(Preset::Marble),
-            "prism" => Ok(Preset::Prism),
-            "vellum" => Ok(Preset::Vellum),
-            "forge" => Ok(Preset::Forge),
-            "wane" => Ok(Preset::Wane),
-            "gossamer" => Ok(Preset::Gossamer),
-            "codex" => Ok(Preset::Codex),
-            "tide" => Ok(Preset::Tide),
-            _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, fire, river, petri, vortex, lightning, chaosedge, blob, pulse, flocking, ripple, vortex36, dynamictendrils, lumen, etching, drift, constellation, mosaic, marble, prism, vellum, forge, wane, gossamer, codex, tide",
-                s
-            )),
-        }
+        crate::simulation::config::preset_from_name(s).ok_or_else(|| {
+            format!(
+                "Invalid preset: {}. Must be one of: {}",
+                s,
+                crate::simulation::config::preset_name_list()
+            )
+        })
     }
 }
 

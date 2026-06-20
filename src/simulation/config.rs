@@ -118,6 +118,268 @@ pub enum Preset {
     Tide,
 }
 
+/// Static identity of one preset: the enum variant, its display name, extra
+/// parse aliases, and an optional number-row quick-select key.
+///
+/// [`PRESETS`] is the single source of truth for preset *identity*: CLI parsing,
+/// display names, the live quick-select keys, and the validation test all derive
+/// from it. Per-preset simulation parameters live in [`Preset::apply`]; per-preset
+/// render defaults live in `RenderArtDefaults`. This table deliberately does not
+/// duplicate either payload — only identity.
+pub struct PresetSpec {
+    /// The preset this entry describes.
+    pub preset: Preset,
+    /// Display name; also the canonical case-insensitive CLI parse key.
+    pub name: &'static str,
+    /// Additional case-insensitive names accepted on the CLI (hyphen/underscore
+    /// variants, short forms).
+    pub aliases: &'static [&'static str],
+    /// Number-row key (`1`–`7`) that live-switches to this preset, if any. The
+    /// shifted form selects it for A/B comparison.
+    pub quick_key: Option<char>,
+}
+
+/// Identity table for every preset — the single list to edit when adding or
+/// removing one (alongside the [`Preset`] variant and its [`Preset::apply`] arm).
+pub const PRESETS: &[PresetSpec] = &[
+    PresetSpec {
+        preset: Preset::Network,
+        name: "Network",
+        aliases: &[],
+        quick_key: Some('1'),
+    },
+    PresetSpec {
+        preset: Preset::Exploratory,
+        name: "Exploratory",
+        aliases: &[],
+        quick_key: Some('2'),
+    },
+    PresetSpec {
+        preset: Preset::Tendrils,
+        name: "Tendrils",
+        aliases: &[],
+        quick_key: Some('3'),
+    },
+    PresetSpec {
+        preset: Preset::Organic,
+        name: "Organic",
+        aliases: &[],
+        quick_key: Some('4'),
+    },
+    PresetSpec {
+        preset: Preset::Fire,
+        name: "Fire",
+        aliases: &[],
+        quick_key: Some('5'),
+    },
+    PresetSpec {
+        preset: Preset::River,
+        name: "River",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::PetriDish,
+        name: "PetriDish",
+        aliases: &["petri"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Vortex,
+        name: "Vortex",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Lightning,
+        name: "Lightning",
+        aliases: &[],
+        quick_key: Some('6'),
+    },
+    PresetSpec {
+        preset: Preset::ChaosEdge,
+        name: "ChaosEdge",
+        aliases: &["chaos-edge", "chaos_edge"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Blob,
+        name: "Blob",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Pulse,
+        name: "Pulse",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Flocking,
+        name: "Flocking",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Ripple,
+        name: "Ripple",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Vortex36,
+        name: "Vortex36",
+        aliases: &["vortex-36", "vortex_36"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::DynamicTendrils,
+        name: "DynamicTendrils",
+        aliases: &["dynamic-tendrils", "dynamic_tendrils"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Lumen,
+        name: "Lumen",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Etching,
+        name: "Etching",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Drift,
+        name: "Drift",
+        aliases: &[],
+        quick_key: Some('7'),
+    },
+    PresetSpec {
+        preset: Preset::Constellation,
+        name: "Constellation",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Mosaic,
+        name: "Mosaic",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Marble,
+        name: "Marble",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Prism,
+        name: "Prism",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Vellum,
+        name: "Vellum",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Forge,
+        name: "Forge",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Wane,
+        name: "Wane",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Gossamer,
+        name: "Gossamer",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Codex,
+        name: "Codex",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Tide,
+        name: "Tide",
+        aliases: &[],
+        quick_key: None,
+    },
+];
+
+/// Looks up a preset by display name or alias (case-insensitive).
+#[must_use]
+pub fn preset_from_name(name: &str) -> Option<Preset> {
+    PRESETS
+        .iter()
+        .find(|spec| {
+            spec.name.eq_ignore_ascii_case(name)
+                || spec.aliases.iter().any(|a| a.eq_ignore_ascii_case(name))
+        })
+        .map(|spec| spec.preset)
+}
+
+/// Comma-separated list of canonical preset names, for CLI error messages.
+#[must_use]
+pub fn preset_name_list() -> String {
+    PRESETS
+        .iter()
+        .map(|spec| spec.name.to_lowercase())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Preset bound to a number-row key (`1`–`7`) for live switching, if any.
+#[must_use]
+pub fn preset_for_set_key(key: char) -> Option<Preset> {
+    PRESETS
+        .iter()
+        .find(|spec| spec.quick_key == Some(key))
+        .map(|spec| spec.preset)
+}
+
+/// Preset bound to a shifted number key (`!@#$%^&`) for A/B comparison, if any.
+#[must_use]
+pub fn preset_for_compare_key(key: char) -> Option<Preset> {
+    shifted_digit(key).and_then(preset_for_set_key)
+}
+
+/// Maps a shifted number key to its base digit (`!`→`1` … `&`→`7`).
+fn shifted_digit(key: char) -> Option<char> {
+    match key {
+        '!' => Some('1'),
+        '@' => Some('2'),
+        '#' => Some('3'),
+        '$' => Some('4'),
+        '%' => Some('5'),
+        '^' => Some('6'),
+        '&' => Some('7'),
+        _ => None,
+    }
+}
+
+impl Preset {
+    /// Display name of this preset (from [`PRESETS`]).
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        PRESETS
+            .iter()
+            .find(|spec| spec.preset == *self)
+            .map_or("Unknown", |spec| spec.name)
+    }
+}
+
 impl Preset {
     /// Apply this preset to a SimConfig, modifying only the fields that differ from defaults.
     pub fn apply(&self, config: &mut SimConfig) {
@@ -2425,45 +2687,66 @@ mod tests {
 
     #[test]
     fn test_presets_valid() {
-        let presets = [
-            Preset::Network,
-            Preset::Exploratory,
-            Preset::Tendrils,
-            Preset::Organic,
-            Preset::Fire,
-            Preset::River,
-            Preset::PetriDish,
-            Preset::Vortex,
-            Preset::Lightning,
-            Preset::ChaosEdge,
-            Preset::Blob,
-            Preset::Pulse,
-            Preset::Flocking,
-            Preset::Ripple,
-            Preset::Vortex36,
-            Preset::DynamicTendrils,
-            Preset::Lumen,
-            Preset::Etching,
-            Preset::Drift,
-            Preset::Constellation,
-            Preset::Mosaic,
-            Preset::Marble,
-            Preset::Prism,
-            Preset::Vellum,
-            Preset::Forge,
-            Preset::Wane,
-            Preset::Gossamer,
-            Preset::Codex,
-            Preset::Tide,
-        ];
-        for preset in presets {
-            let config: SimConfig = preset.into();
+        for spec in PRESETS {
+            let config: SimConfig = spec.preset.into();
             assert!(
                 config.validate().is_ok(),
                 "Preset {:?} failed validation: {:?}",
-                preset,
+                spec.preset,
                 config.validate()
             );
+        }
+    }
+
+    #[test]
+    fn preset_names_and_aliases_round_trip() {
+        for spec in PRESETS {
+            // Display name resolves back to this preset, both via the method and
+            // the parser, case-insensitively.
+            assert_eq!(spec.preset.name(), spec.name);
+            assert_eq!(preset_from_name(spec.name), Some(spec.preset));
+            assert_eq!(
+                preset_from_name(&spec.name.to_lowercase()),
+                Some(spec.preset)
+            );
+            for alias in spec.aliases {
+                assert_eq!(
+                    preset_from_name(alias),
+                    Some(spec.preset),
+                    "alias {alias} did not resolve to {:?}",
+                    spec.preset
+                );
+            }
+        }
+        assert_eq!(preset_from_name("definitely-not-a-preset"), None);
+    }
+
+    #[test]
+    fn preset_quick_keys_are_consistent() {
+        let mut seen = Vec::new();
+        for spec in PRESETS {
+            if let Some(key) = spec.quick_key {
+                assert!(
+                    key.is_ascii_digit() && key != '0',
+                    "quick_key {key} is not 1-9"
+                );
+                assert!(!seen.contains(&key), "duplicate quick_key {key}");
+                seen.push(key);
+                // The set key round-trips, and its shifted form selects the same
+                // preset for comparison.
+                assert_eq!(preset_for_set_key(key), Some(spec.preset));
+                let shifted = match key {
+                    '1' => '!',
+                    '2' => '@',
+                    '3' => '#',
+                    '4' => '$',
+                    '5' => '%',
+                    '6' => '^',
+                    '7' => '&',
+                    _ => continue,
+                };
+                assert_eq!(preset_for_compare_key(shifted), Some(spec.preset));
+            }
         }
     }
 

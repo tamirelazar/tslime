@@ -5,7 +5,7 @@
 
 use crate::cli::Palette;
 use crate::render::charset::Charset;
-use crate::simulation::config::Preset;
+use crate::simulation::config::{preset_for_compare_key, preset_for_set_key, Preset};
 use crate::terminal::state::ControlAction;
 pub use crate::terminal::state::MousePosition;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, MouseEventKind};
@@ -134,20 +134,12 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char(' ') => ControlAction::TogglePause,
         KeyCode::Char('p') | KeyCode::Char('P') => ControlAction::ShowPaletteEditor,
         KeyCode::Char('r') | KeyCode::Char('R') => ControlAction::Restart,
-        KeyCode::Char('1') => ControlAction::SetPreset(Preset::Network),
-        KeyCode::Char('2') => ControlAction::SetPreset(Preset::Exploratory),
-        KeyCode::Char('3') => ControlAction::SetPreset(Preset::Tendrils),
-        KeyCode::Char('4') => ControlAction::SetPreset(Preset::Organic),
-        KeyCode::Char('5') => ControlAction::SetPreset(Preset::Fire),
-        KeyCode::Char('6') => ControlAction::SetPreset(Preset::Lightning),
-        KeyCode::Char('7') => ControlAction::SetPreset(Preset::Drift),
-        KeyCode::Char('!') => ControlAction::ComparePreset(Preset::Network),
-        KeyCode::Char('@') => ControlAction::ComparePreset(Preset::Exploratory),
-        KeyCode::Char('#') => ControlAction::ComparePreset(Preset::Tendrils),
-        KeyCode::Char('$') => ControlAction::ComparePreset(Preset::Organic),
-        KeyCode::Char('%') => ControlAction::ComparePreset(Preset::Fire),
-        KeyCode::Char('^') => ControlAction::ComparePreset(Preset::Lightning),
-        KeyCode::Char('&') => ControlAction::ComparePreset(Preset::Drift),
+        KeyCode::Char(c) if preset_for_set_key(c).is_some() => {
+            ControlAction::SetPreset(preset_for_set_key(c).expect("guard ensures Some"))
+        }
+        KeyCode::Char(c) if preset_for_compare_key(c).is_some() => {
+            ControlAction::ComparePreset(preset_for_compare_key(c).expect("guard ensures Some"))
+        }
         KeyCode::Char('8') => ControlAction::RandomizeParams,
         KeyCode::Char('9') => ControlAction::CycleTheme,
         KeyCode::Char('*') => ControlAction::CycleThemeReverse,
@@ -277,37 +269,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
 
 /// Returns the display name of a preset.
 pub fn preset_name(preset: Preset) -> &'static str {
-    match preset {
-        Preset::Network => "Network",
-        Preset::Exploratory => "Exploratory",
-        Preset::Tendrils => "Tendrils",
-        Preset::Organic => "Organic",
-        Preset::Fire => "Fire",
-        Preset::River => "River",
-        Preset::PetriDish => "PetriDish",
-        Preset::Vortex => "Vortex",
-        Preset::Lightning => "Lightning",
-        Preset::ChaosEdge => "ChaosEdge",
-        Preset::Blob => "Blob",
-        Preset::Pulse => "Pulse",
-        Preset::Flocking => "Flocking",
-        Preset::Ripple => "Ripple",
-        Preset::Vortex36 => "Vortex36",
-        Preset::DynamicTendrils => "DynamicTendrils",
-        Preset::Lumen => "Lumen",
-        Preset::Etching => "Etching",
-        Preset::Drift => "Drift",
-        Preset::Constellation => "Constellation",
-        Preset::Mosaic => "Mosaic",
-        Preset::Marble => "Marble",
-        Preset::Prism => "Prism",
-        Preset::Vellum => "Vellum",
-        Preset::Forge => "Forge",
-        Preset::Wane => "Wane",
-        Preset::Gossamer => "Gossamer",
-        Preset::Codex => "Codex",
-        Preset::Tide => "Tide",
-    }
+    preset.name()
 }
 
 /// Returns the display name of a palette.
