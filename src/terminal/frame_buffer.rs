@@ -764,6 +764,7 @@ impl FrameBuffer {
         palette_cycle: palette::PaletteCycle,
         glyph: charset::GlyphConfig,
         temporal_accent: Option<palette::RgbColor>,
+        aa_strength: crate::render::antialiasing::AaStrength,
     ) -> Self {
         // Build sim buffer at sim dimensions
         let sim_buffer = Self::from_downsampled(
@@ -799,7 +800,7 @@ impl FrameBuffer {
             palette_cycle,
             glyph,
             temporal_accent,
-            crate::render::antialiasing::AaStrength::Off,
+            aa_strength,
         );
 
         // Fast path: fullscreen — no blitting needed
@@ -3736,6 +3737,7 @@ mod tests {
             palette::PaletteCycle::default(),
             charset::GlyphConfig::default(),
             None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         // The buffer should be 10×10
         assert_eq!(buffer.width, 10);
@@ -3752,6 +3754,94 @@ mod tests {
             "Expected non-blank cell at sim offset but got character='{}' fg={:?}",
             cell_at_offset.char,
             cell_at_offset.fg_color_rgb
+        );
+    }
+
+    /// Regression: from_downsampled_at must thread aa_strength through to the
+    /// inner from_downsampled call.  Before the fix AaStrength::Off was
+    /// hardcoded, so the window-layout path ignored the caller's strength.
+    /// Uses a 3×3 fullscreen layout (sim == term dims, so no blit) with a
+    /// bright center cell surrounded by dim neighbors — the same contrast
+    /// pattern as `color_aa_changes_color_not_glyph_for_braille` so the blur
+    /// has enough contrast to shift the center cell's color.
+    #[test]
+    fn from_downsampled_at_honors_aa_strength() {
+        use crate::render::antialiasing::AaStrength;
+
+        let w = 3usize;
+        let h = 3usize;
+        let dim = 0.3f32;
+        let mut downsampled = vec![
+            DownsampleCell {
+                top: dim,
+                bottom: dim,
+                top_left: dim,
+                top_right: dim,
+                bottom_left: dim,
+                bottom_right: dim,
+            };
+            w * h
+        ];
+        // Center cell (index 4) is full brightness; all neighbors are dim.
+        let c = &mut downsampled[4];
+        c.top = 1.0;
+        c.bottom = 1.0;
+        c.top_left = 1.0;
+        c.top_right = 1.0;
+        c.bottom_left = 1.0;
+        c.bottom_right = 1.0;
+
+        let build_at = |aa: AaStrength| {
+            FrameBuffer::from_downsampled_at(
+                &downsampled,
+                w,
+                h,
+                w, // term_w == sim_w (fast path, no blit)
+                h, // term_h == sim_h
+                0,
+                0,
+                1.0,
+                Palette::Mono,
+                Charset::Braille,
+                false,
+                false,
+                ColorMode::TrueColor,
+                0.0,
+                DitherMode::None,
+                &mut None,
+                None,
+                false,
+                None,
+                None,
+                1.5,
+                None,
+                false,
+                false,
+                60.0,
+                1.0,
+                0.5,
+                false,
+                0.3,
+                TrailAgeMode::Bidirectional,
+                false,
+                0.0,
+                palette::TemporalMode::Hue,
+                palette::PaletteCycle::default(),
+                charset::GlyphConfig::default(),
+                None,
+                aa,
+            )
+        };
+
+        let off_buf = build_at(AaStrength::Off);
+        let strong_buf = build_at(AaStrength::Strong);
+
+        // The center cell (index 4) has raw brightness 1.0 but with Strong AA
+        // its blurred brightness is pulled toward its dim (0.3) neighbors.
+        assert_ne!(
+            off_buf.cells[4].fg_color_rgb, strong_buf.cells[4].fg_color_rgb,
+            "from_downsampled_at: center cell fg must differ between Off and Strong \
+             AA — aa_strength is not being threaded through to from_downsampled"
         );
     }
 

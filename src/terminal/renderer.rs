@@ -416,6 +416,7 @@ impl TerminalRenderer {
                 self.palette_cycle,
                 self.glyph,
                 self.temporal_accent,
+                self.color_aa,
             )
         } else {
             FrameBuffer::from_downsampled(
@@ -556,6 +557,7 @@ impl TerminalRenderer {
                 self.palette_cycle,
                 self.glyph,
                 self.temporal_accent,
+                self.color_aa,
             )
         } else {
             FrameBuffer::from_downsampled(
