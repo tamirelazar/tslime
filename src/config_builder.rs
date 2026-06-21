@@ -52,8 +52,8 @@ pub(crate) struct ConfigBuilder {
     respawn_interval: Option<u32>,
     afterglow: f32,
     afterglow_rate: f32,
-    decay_gamma: f32,
-    diffuse_weight: f32,
+    decay_gamma: Option<f32>,
+    diffuse_weight: Option<f32>,
     deposit_curve: Option<DepositCurve>,
     deposit_scale: Option<f32>,
     deposit_gamma: Option<f32>,
@@ -180,11 +180,15 @@ impl ConfigBuilder {
         config.afterglow = self.afterglow;
         config.afterglow_rate = self.afterglow_rate;
 
-        // Decay gamma
-        config.decay_gamma = self.decay_gamma;
+        // Decay gamma (override only when explicitly set; else keep preset/default)
+        if let Some(g) = self.decay_gamma {
+            config.decay_gamma = g;
+        }
 
-        // Diffuse weight (Lague blend)
-        config.diffuse_weight = self.diffuse_weight;
+        // Diffuse weight (Lague blend) — override only when explicitly set
+        if let Some(w) = self.diffuse_weight {
+            config.diffuse_weight = w;
+        }
 
         // Deposit curve knobs (override only when explicitly set)
         if let Some(c) = self.deposit_curve {
@@ -376,5 +380,57 @@ mod tests {
 
         // Preset defines 22.5, but we overrode it with 15.0
         assert_eq!(config.sensor_angle, 15.0);
+    }
+
+    #[test]
+    fn test_preset_decay_gamma_survives_assemble() {
+        // Wane sets decay_gamma = 0.6 in apply(); with no CLI override the
+        // assembled config must keep the preset value, not the global default.
+        let args = Args::parse_from(["tslime", "--preset", "wane"]);
+        let config = ConfigBuilder::from_args(&args)
+            .assemble()
+            .expect("assemble should succeed");
+        assert_eq!(config.decay_gamma, 0.6);
+    }
+
+    #[test]
+    fn test_preset_diffuse_weight_survives_assemble() {
+        // Marble sets diffuse_weight = 0.8 in apply(); no CLI override must
+        // keep the preset value.
+        let args = Args::parse_from(["tslime", "--preset", "marble"]);
+        let config = ConfigBuilder::from_args(&args)
+            .assemble()
+            .expect("assemble should succeed");
+        assert_eq!(config.diffuse_weight, 0.8);
+    }
+
+    #[test]
+    fn test_cli_overrides_preset_decay_gamma_and_diffuse_weight() {
+        // Explicit CLI flags must still win over the preset's values.
+        let args = Args::parse_from([
+            "tslime",
+            "--preset",
+            "wane",
+            "--decay-gamma",
+            "0.3",
+            "--diffuse-weight",
+            "0.5",
+        ]);
+        let config = ConfigBuilder::from_args(&args)
+            .assemble()
+            .expect("assemble should succeed");
+        assert_eq!(config.decay_gamma, 0.3);
+        assert_eq!(config.diffuse_weight, 0.5);
+    }
+
+    #[test]
+    fn test_no_preset_no_flag_uses_default_decay_gamma_and_diffuse_weight() {
+        use crate::config_defaults::trail;
+        let args = Args::parse_from(["tslime"]);
+        let config = ConfigBuilder::from_args(&args)
+            .assemble()
+            .expect("assemble should succeed");
+        assert_eq!(config.decay_gamma, trail::DEFAULT_DECAY_GAMMA);
+        assert_eq!(config.diffuse_weight, trail::DEFAULT_DIFFUSE_WEIGHT);
     }
 }

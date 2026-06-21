@@ -300,7 +300,8 @@ pub fn run_simulation(
     runtime_state.temporal_accent = art_defaults.temporal_accent;
     runtime_state.afterglow = args.afterglow;
     runtime_state.afterglow_rate = args.afterglow_rate;
-    runtime_state.diffuse_weight = args.diffuse_weight;
+    // decay_gamma / diffuse_weight come from the assembled config via
+    // RuntimeState::new — do not re-clobber them from raw CLI args here.
     if args.stats {
         runtime_state.overlay_state.open(OverlayType::Dashboard);
     }

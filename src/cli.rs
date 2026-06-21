@@ -1285,21 +1285,20 @@ pub struct Args {
     #[arg(
         long = "decay-gamma",
         value_name = "GAMMA",
-        default_value_t = 1.0,
-        help = "Decay gamma (1.0 = uniform decay; <1.0 = faint cells decay less, longer tails)."
+        help = "Decay gamma (default: 1.0 = uniform decay; <1.0 = faint cells decay less, \
+                longer tails). Unset lets the preset choose."
     )]
-    /// Value-dependent decay exponent.
-    pub decay_gamma: f32,
+    /// Value-dependent decay exponent (None = use preset/default).
+    pub decay_gamma: Option<f32>,
 
     #[arg(
         long = "diffuse-weight",
         value_name = "WEIGHT",
-        default_value_t = 1.0,
-        help = "Diffusion blend weight (1.0 = full blur; 0.0 = no diffusion; \
-                intermediate values blend old and blurred trail)."
+        help = "Diffusion blend weight (default: 1.0 = full blur; 0.0 = no diffusion; \
+                intermediate values blend old and blurred trail). Unset lets the preset choose."
     )]
-    /// Lague diffuse-weight blend factor (0.0–1.0).
-    pub diffuse_weight: f32,
+    /// Lague diffuse-weight blend factor 0.0–1.0 (None = use preset/default).
+    pub diffuse_weight: Option<f32>,
 
     #[arg(
         long = "auto-normalize",
@@ -2332,8 +2331,8 @@ impl Default for Args {
             temporal_accent: None,
             afterglow: 0.0,
             afterglow_rate: 0.05,
-            decay_gamma: 1.0,
-            diffuse_weight: 1.0,
+            decay_gamma: None,
+            diffuse_weight: None,
             deposit_curve: None,
             deposit_scale: None,
             deposit_gamma: None,
