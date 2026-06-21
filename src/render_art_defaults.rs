@@ -38,6 +38,10 @@ pub(crate) struct RenderArtDefaults {
     pub color_aa: Option<crate::render::antialiasing::AaStrength>,
     /// Per-preset animated hue-shift in degrees/second. Identity = 0.0 (off).
     pub hue_shift: f32,
+    /// Afterglow strength (lever 7). Identity = 0.0 (off).
+    pub afterglow: f32,
+    /// Afterglow EMA rate. Identity = 0.05.
+    pub afterglow_rate: f32,
 }
 
 impl Default for RenderArtDefaults {
@@ -54,6 +58,8 @@ impl Default for RenderArtDefaults {
             charset: None,
             color_aa: None,
             hue_shift: 0.0,
+            afterglow: 0.0,
+            afterglow_rate: 0.05,
         }
     }
 }
@@ -80,6 +86,7 @@ impl From<Preset> for RenderArtDefaults {
                 temporal_mode: TemporalMode::Accent,
                 palette: Some(Palette::Slime),
                 intensity_mapping: IntensityMapping::smoothstep(),
+                afterglow: 0.3,
                 ..Self::default()
             },
             Preset::Etching => Self {
@@ -91,6 +98,7 @@ impl From<Preset> for RenderArtDefaults {
                     selection: Some(GlyphSelection::Hybrid),
                     edge_threshold: 0.08,
                 },
+                afterglow: 0.2,
                 ..Self::default()
             },
             // Temporal Hue mode: front recolors by motion direction (not Accent).
@@ -99,6 +107,7 @@ impl From<Preset> for RenderArtDefaults {
                 temporal_lag_frames: 10.0,
                 temporal_mode: TemporalMode::Hue,
                 palette: Some(Palette::Vibrant),
+                afterglow: 0.1,
                 ..Self::default()
             },
             // Points charset: sparse particle star-map.
@@ -141,6 +150,7 @@ impl From<Preset> for RenderArtDefaults {
             Preset::Forge => Self {
                 intensity_mapping: IntensityMapping::exponential(4.0),
                 palette: Some(Palette::Heat),
+                afterglow: 0.3,
                 ..Self::default()
             },
             // Sim-driven (decay-gamma + Pow deposit); Copper palette for oxidized fade.
@@ -158,6 +168,7 @@ impl From<Preset> for RenderArtDefaults {
                 intensity_mapping: IntensityMapping::power(1.6),
                 palette: Some(Palette::Ethereal),
                 color_aa: Some(AaStrength::Subtle),
+                afterglow: 0.2,
                 ..Self::default()
             },
             // Custom ASCII charset + Sigmoid contrast: typographic engraving.
@@ -350,5 +361,21 @@ mod tests {
             assert_eq!(d.palette, None, "{preset:?} palette must be identity");
             assert_eq!(d.charset, None, "{preset:?} charset must be identity");
         }
+    }
+
+    #[test]
+    fn afterglow_default_is_off() {
+        let d = RenderArtDefaults::default();
+        assert_eq!(d.afterglow, 0.0);
+        assert_eq!(d.afterglow_rate, 0.05);
+    }
+
+    #[test]
+    fn afterglow_presets_glow() {
+        assert_eq!(RenderArtDefaults::from(Preset::Lumen).afterglow, 0.3);
+        assert_eq!(RenderArtDefaults::from(Preset::Etching).afterglow, 0.2);
+        assert_eq!(RenderArtDefaults::from(Preset::Drift).afterglow, 0.1);
+        assert_eq!(RenderArtDefaults::from(Preset::Forge).afterglow, 0.3);
+        assert_eq!(RenderArtDefaults::from(Preset::Gossamer).afterglow, 0.2);
     }
 }
