@@ -102,7 +102,11 @@ impl ProfileOverrides {
     /// `ConfigBuilder::from_args` (`src/config_builder.rs:64-117`). Render block
     /// mirrors the predicates from `Args::resolve_render_config` /
     /// `to_render_art_defaults` (`src/cli.rs:2064-2167`).
-    pub(crate) fn from_args(args: &Args) -> Self {
+    ///
+    /// Returns `Err` on the same parse failures as the oracle's `resolve_render_config`:
+    /// invalid `--glyph-selection`, `--palette`, `--intensity-mapping`,
+    /// `--palette-cycle-mode`, or `--temporal-accent`.
+    pub(crate) fn from_args(args: &Args) -> Result<Self, String> {
         // Render: glyph — store the raw CLI-flag values separately so resolve_render
         // can apply them onto the PRESET's art.glyph exactly as glyph_config_parsed
         // does (src/cli.rs:2006-2018). Pre-parsing against GlyphConfig::default() would
@@ -110,17 +114,15 @@ impl ProfileOverrides {
         // from "not set", silently dropping the override on presets with a different
         // default edge_threshold (e.g. Etching). Clamp edge_threshold here to mirror
         // the clamp inside glyph_config_parsed.
-        //
-        // Note: glyph_selection parsing here via .ok() is safe — clap validates the
-        // string against the GlyphSelection enum before Args is constructed, so the
-        // error path is unreachable at runtime. (Finding 3: kept .ok() with comment.)
         let glyph_selection = args
             .glyph_selection
             .as_ref()
-            .and_then(|s| s.parse::<GlyphSelection>().ok());
+            .map(|s| s.parse::<GlyphSelection>())
+            .transpose()?;
         let glyph_edge_threshold = args.glyph_edge_threshold.map(|t| t.clamp(0.0, 2.0));
 
         // Render: temporal_mode parsed from string, mirroring to_render_art_defaults.
+        // Uses a catch-all `_ => Hue` — never errors.
         let temporal_mode =
             args.temporal_mode
                 .as_ref()
@@ -129,34 +131,35 @@ impl ProfileOverrides {
                     _ => TemporalMode::Hue,
                 });
 
-        // Render: temporal_accent parsed from hex string.
-        // .ok(): hex string is validated by clap; parse error is unreachable at runtime.
-        // (Finding 3: kept .ok() with comment rather than restructuring from_args.)
-        let temporal_accent = args.temporal_accent.as_ref().and_then(|hex| {
-            u32::from_str_radix(hex.trim_start_matches('#'), 16)
-                .ok()
-                .map(RgbColor::from_hex)
-        });
+        // Render: temporal_accent parsed from hex string. Oracle errors via
+        // `map_err(|_| format!("invalid --temporal-accent hex: {hex}"))`.
+        let temporal_accent = args
+            .temporal_accent
+            .as_ref()
+            .map(|hex| {
+                u32::from_str_radix(hex.trim_start_matches('#'), 16)
+                    .map(RgbColor::from_hex)
+                    .map_err(|_| format!("invalid --temporal-accent hex: {hex}"))
+            })
+            .transpose()?;
 
-        // Render: palette — Some only when explicitly set on CLI.
-        // .ok(): palette string is validated by clap; parse error is unreachable at runtime.
-        // (Finding 3: kept .ok() with comment rather than restructuring from_args.)
+        // Render: palette — Some only when explicitly set on CLI. Oracle errors via
+        // `self.palette().map_err(|e| e.to_string())?` in resolve_render_config.
         let palette = if args.palette_explicitly_set() {
-            args.palette().ok()
+            Some(args.palette()?)
         } else {
             None
         };
 
         // Render: palette_cycle — Some when either palette_cycles or palette_cycle_mode is set.
+        // Oracle errors via `palette_cycle_mode_parsed()?` in to_render_art_defaults.
         let palette_cycle = if args.palette_cycles.is_some() || args.palette_cycle_mode.is_some() {
             // Build the PaletteCycle from CLI flags, same as to_render_art_defaults.
             let mut pc = PaletteCycle::default();
             if let Some(n) = args.palette_cycles {
                 pc.cycles = n;
             }
-            // .ok(): palette_cycle_mode string is clap-validated; error is unreachable.
-            // (Finding 3: kept .ok() with comment.)
-            if let Some(mode) = args.palette_cycle_mode_parsed().ok().flatten() {
+            if let Some(mode) = args.palette_cycle_mode_parsed()? {
                 pc.mode = mode;
             }
             Some(pc)
@@ -164,16 +167,15 @@ impl ProfileOverrides {
             None
         };
 
-        // Render: intensity_mapping — Some when explicitly set on CLI.
-        // .ok(): intensity_mapping string is clap-validated; error is unreachable.
-        // (Finding 3: kept .ok() with comment.)
+        // Render: intensity_mapping — Some when explicitly set on CLI. Oracle errors via
+        // `self.intensity_mapping()?` in to_render_art_defaults.
         let intensity_mapping = if args.intensity_mapping.is_some() {
-            args.intensity_mapping().ok()
+            Some(args.intensity_mapping()?)
         } else {
             None
         };
 
-        Self {
+        Ok(Self {
             // SIM block: verbatim from ConfigBuilder::from_args (src/config_builder.rs:64-117).
             preset: args.preset,
             seed: args.seed,
@@ -243,7 +245,7 @@ impl ProfileOverrides {
             temporal_accent,
             afterglow: args.afterglow,
             afterglow_rate: args.afterglow_rate,
-        }
+        })
     }
 
     /// Resolve to a concrete `Profile`. Byte-identical to the legacy
@@ -626,7 +628,9 @@ mod tests {
     #[test]
     fn sim_parity_default() {
         let a = args(&[]);
-        let got = ProfileOverrides::from_args(&a).resolve().expect("resolve");
+        let got = ProfileOverrides::from_args(&a)
+            .and_then(|o| o.resolve())
+            .expect("resolve");
         let want = ConfigBuilder::from_args(&a).assemble().expect("assemble");
         assert_eq!(got.sim, want);
     }
@@ -636,7 +640,9 @@ mod tests {
     fn sim_parity_every_preset() {
         for spec in PRESETS {
             let a = args(&["--preset", spec.name]);
-            let got = ProfileOverrides::from_args(&a).resolve().expect("resolve");
+            let got = ProfileOverrides::from_args(&a)
+                .and_then(|o| o.resolve())
+                .expect("resolve");
             let want = ConfigBuilder::from_args(&a).assemble().expect("assemble");
             assert_eq!(got.sim, want, "sim parity broke for {}", spec.name);
         }
@@ -659,7 +665,9 @@ mod tests {
         ];
         for c in cases {
             let a = args(c);
-            let got = ProfileOverrides::from_args(&a).resolve().expect("resolve");
+            let got = ProfileOverrides::from_args(&a)
+                .and_then(|o| o.resolve())
+                .expect("resolve");
             let want = ConfigBuilder::from_args(&a).assemble().expect("assemble");
             assert_eq!(got.sim, want, "sim parity broke for {c:?}");
         }
@@ -685,7 +693,9 @@ mod tests {
         ];
         for c in cases {
             let a = args(c);
-            let got = ProfileOverrides::from_args(&a).resolve().expect("resolve");
+            let got = ProfileOverrides::from_args(&a)
+                .and_then(|o| o.resolve())
+                .expect("resolve");
             let want = a.resolve_render_config().expect("render");
             assert_eq!(got.render, want, "render parity broke for {c:?}");
         }
@@ -695,7 +705,76 @@ mod tests {
     #[test]
     fn resolve_rejects_invalid_sensor_angle() {
         let a = args(&["--sensor-angle", "999"]);
-        assert!(ProfileOverrides::from_args(&a).resolve().is_err());
+        assert!(ProfileOverrides::from_args(&a)
+            .and_then(|o| o.resolve())
+            .is_err());
+    }
+
+    /// Error parity: malformed render-string args that the oracle rejects must also
+    /// be rejected by `from_args`. These inputs are NOT clap-validated (plain
+    /// `Option<String>` fields) so they reach the parsers at runtime.
+    #[test]
+    fn error_parity_malformed_render_strings() {
+        // --glyph-selection xyz → GlyphSelection::from_str Err
+        {
+            let a = args(&["--glyph-selection", "xyz"]);
+            assert!(
+                a.resolve_render_config().is_err(),
+                "oracle should Err on --glyph-selection xyz"
+            );
+            assert!(
+                ProfileOverrides::from_args(&a).is_err(),
+                "port must also Err on --glyph-selection xyz"
+            );
+        }
+        // --palette nonsense → palette() returns Err("Invalid palette: nonsense")
+        {
+            let a = args(&["--palette", "nonsense"]);
+            assert!(
+                a.resolve_render_config().is_err(),
+                "oracle should Err on --palette nonsense"
+            );
+            assert!(
+                ProfileOverrides::from_args(&a).is_err(),
+                "port must also Err on --palette nonsense"
+            );
+        }
+        // --intensity-mapping xyz → intensity_mapping() Err
+        {
+            let a = args(&["--intensity-mapping", "xyz"]);
+            assert!(
+                a.resolve_render_config().is_err(),
+                "oracle should Err on --intensity-mapping xyz"
+            );
+            assert!(
+                ProfileOverrides::from_args(&a).is_err(),
+                "port must also Err on --intensity-mapping xyz"
+            );
+        }
+        // --palette-cycle-mode xyz → palette_cycle_mode_parsed() Err
+        {
+            let a = args(&["--palette-cycle-mode", "xyz"]);
+            assert!(
+                a.resolve_render_config().is_err(),
+                "oracle should Err on --palette-cycle-mode xyz"
+            );
+            assert!(
+                ProfileOverrides::from_args(&a).is_err(),
+                "port must also Err on --palette-cycle-mode xyz"
+            );
+        }
+        // --temporal-accent zzzzzz (not valid hex) → Err
+        {
+            let a = args(&["--temporal-accent", "zzzzzz"]);
+            assert!(
+                a.resolve_render_config().is_err(),
+                "oracle should Err on --temporal-accent zzzzzz"
+            );
+            assert!(
+                ProfileOverrides::from_args(&a).is_err(),
+                "port must also Err on --temporal-accent zzzzzz"
+            );
+        }
     }
 
     /// Seed passthrough.
@@ -703,14 +782,14 @@ mod tests {
     fn seed_passthrough() {
         assert_eq!(
             ProfileOverrides::from_args(&args(&[]))
-                .resolve()
+                .and_then(|o| o.resolve())
                 .unwrap()
                 .seed,
             None
         );
         assert_eq!(
             ProfileOverrides::from_args(&args(&["--seed", "7"]))
-                .resolve()
+                .and_then(|o| o.resolve())
                 .unwrap()
                 .seed,
             Some(7)
