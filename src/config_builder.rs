@@ -351,6 +351,51 @@ impl ConfigBuilder {
     }
 }
 
+/// Deterministic, afterglow-free dump of the sim-relevant assembled fields.
+/// Used by the preset-config snapshot net (tests/preset_config_snapshot.rs).
+pub(crate) fn dump_sim_config(config: &SimConfig) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+    let _ = writeln!(s, "sensor_angle={:?}", config.sensor_angle);
+    let _ = writeln!(s, "sensor_distance={:?}", config.sensor_distance);
+    let _ = writeln!(s, "rotation_angle={:?}", config.rotation_angle);
+    let _ = writeln!(s, "step_size={:?}", config.step_size);
+    let _ = writeln!(s, "decay_factor={:?}", config.decay_factor);
+    let _ = writeln!(s, "deposit_amount={:?}", config.deposit_amount);
+    let _ = writeln!(s, "diffusion_kernel={:?}", config.diffusion_kernel);
+    let _ = writeln!(s, "diffusion_sigma={:?}", config.diffusion_sigma);
+    let _ = writeln!(s, "max_brightness={:?}", config.max_brightness);
+    let _ = writeln!(s, "decay_gamma={:?}", config.decay_gamma);
+    let _ = writeln!(s, "diffuse_weight={:?}", config.diffuse_weight);
+    let _ = writeln!(s, "deposit_curve={:?}", config.deposit_curve);
+    let _ = writeln!(s, "deposit_scale={:?}", config.deposit_scale);
+    let _ = writeln!(s, "deposit_gamma={:?}", config.deposit_gamma);
+    let _ = writeln!(s, "deposit_cap={:?}", config.deposit_cap);
+    let _ = writeln!(s, "boundary_mode={:?}", config.boundary_mode);
+    let _ = writeln!(s, "preferred_init_mode={:?}", config.preferred_init_mode);
+    let _ = writeln!(s, "wind={:?}", config.wind);
+    let _ = writeln!(s, "background_color={:?}", config.background_color);
+    let _ = writeln!(s, "obstacles={:?}", config.obstacles);
+    for (i, sp) in config.species_configs.iter().enumerate() {
+        let _ = writeln!(
+            s,
+            "species[{i}]: name={:?} count={} sa={:?} ra={:?} ss={:?} da={:?} color={:?} mod={}",
+            sp.name,
+            sp.count,
+            sp.sensor_angle,
+            sp.rotation_angle,
+            sp.step_size,
+            sp.deposit_amount,
+            sp.color,
+            sp.trail_modulation.is_some()
+        );
+        if let Some(ref m) = sp.trail_modulation {
+            let _ = writeln!(s, "  modulation={m:?}");
+        }
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

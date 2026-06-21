@@ -380,6 +380,14 @@ pub fn run() -> io::Result<()> {
         return Ok(());
     }
 
+    if args.dump_config {
+        let config = crate::config_builder::ConfigBuilder::from_args(&args)
+            .assemble()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        print!("{}", crate::config_builder::dump_sim_config(&config));
+        return Ok(());
+    }
+
     if args.explore {
         run_exploration(&args)?;
         return Ok(());

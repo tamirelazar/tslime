@@ -1728,6 +1728,10 @@ pub struct Args {
     /// Explain parameters and exit.
     pub explain: bool,
 
+    #[arg(long = "dump-config", hide = true)]
+    /// Dev-only: print the assembled SimConfig field dump and exit (snapshot test net).
+    pub dump_config: bool,
+
     #[arg(
         long = "completions",
         value_name = "SHELL",
@@ -2305,6 +2309,7 @@ impl Default for Args {
             ascii_contrast: ascii::DEFAULT_CONTRAST,
             random: false,
             explain: false,
+            dump_config: false,
             completions: None,
             #[cfg(feature = "audio")]
             choir: false,
