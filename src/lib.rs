@@ -72,6 +72,8 @@ pub mod palette_manager;
 pub(crate) mod preset_sim_defaults;
 /// Shared resolved lever set for presets and saved configs.
 pub(crate) mod profile;
+/// Single all-Option authored partial (sim ⊕ render ⊕ seed).
+pub(crate) mod profile_overrides;
 /// Rendering logic (ASCII/Unicode, color palettes, dithering).
 pub mod render;
 /// Per-preset render/art-layer defaults.

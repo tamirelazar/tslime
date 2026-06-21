@@ -116,7 +116,7 @@ pub struct Resolution {
     pub height: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 /// Configuration for a specific agent species.
 pub struct SpeciesArg {
     /// Name of the species.
@@ -322,7 +322,7 @@ impl FromStr for InitMode {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 /// Configuration for a point attractor/repeller.
 pub struct AttractorArg {
     /// X coordinate.
@@ -359,7 +359,7 @@ impl std::str::FromStr for AttractorArg {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 /// Configuration for wind force.
 pub struct WindArg {
     /// Horizontal wind component.
@@ -390,7 +390,7 @@ impl std::str::FromStr for WindArg {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 /// Configuration for a physical obstacle.
 pub struct ObstacleArg {
     /// The obstacle definition.
