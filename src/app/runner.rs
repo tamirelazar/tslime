@@ -1309,17 +1309,14 @@ pub fn run_simulation(
                         use crossterm::event::KeyCode;
                         if key_event.code == KeyCode::Enter {
                             let preset = runtime_state.comparison_preset;
-                            runtime_state.set_preset(preset);
-                            let mut new_config = SimConfig::from(preset);
-                            // Maintain existing environment/setup
-                            new_config.attractors = sim.config().attractors.clone();
-                            new_config.attractor_strength = sim.config().attractor_strength;
-                            new_config.food_image_path = sim.config().food_image_path.clone();
-                            new_config.food_image_invert = sim.config().food_image_invert;
-                            new_config.obstacles = sim.config().obstacles.clone();
-                            new_config.obstacle_masks = sim.config().obstacle_masks.clone();
-                            sim.update_config(new_config);
-
+                            switch_preset(
+                                preset,
+                                args,
+                                &mut runtime_state,
+                                &mut renderer,
+                                sim,
+                                &mut timer,
+                            )?;
                             runtime_state.show_notification(format!(
                                 "Applied preset: {}",
                                 crate::terminal::control::preset_name(preset)
@@ -1507,16 +1504,14 @@ pub fn run_simulation(
                             );
                         }
                         ControlAction::SetPreset(preset) => {
-                            runtime_state.set_preset(preset);
-                            let mut new_config = SimConfig::from(preset);
-                            new_config.attractors = sim.config().attractors.clone();
-                            new_config.attractor_strength = sim.config().attractor_strength;
-                            new_config.food_image_path = sim.config().food_image_path.clone();
-                            new_config.food_image_invert = sim.config().food_image_invert;
-                            new_config.obstacles = sim.config().obstacles.clone();
-                            new_config.obstacle_masks = sim.config().obstacle_masks.clone();
-                            sim.update_config(new_config);
-                            timer.set_time_scale(runtime_state.time_scale);
+                            switch_preset(
+                                preset,
+                                args,
+                                &mut runtime_state,
+                                &mut renderer,
+                                sim,
+                                &mut timer,
+                            )?;
                         }
                         ControlAction::ComparePreset(preset) => {
                             runtime_state.toggle_preset_comparison(preset);
@@ -2430,6 +2425,44 @@ pub fn run_simulation(
         let _ = crate::terminal::disable_mouse_tracking();
     }
 
+    Ok(())
+}
+
+/// Live preset-switch: re-resolve the full launch pipeline (sim ⊕ render) with
+/// `new_preset` and the original launch CLI (Model B), preserving the live
+/// environment (attractors/food/obstacles), then re-baseline reset targets.
+fn switch_preset(
+    new_preset: Preset,
+    args: &Args,
+    rs: &mut RuntimeState,
+    renderer: &mut TerminalRenderer,
+    sim: &mut Simulation,
+    timer: &mut FrameTimer,
+) -> io::Result<()> {
+    rs.set_preset(new_preset);
+    let mut a = args.clone();
+    a.preset = Some(new_preset);
+    let mut new_config = crate::config_builder::ConfigBuilder::from_args(&a)
+        .assemble()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    // Preserve the live environment (as the old switch did).
+    new_config.attractors = sim.config().attractors.clone();
+    new_config.attractor_strength = sim.config().attractor_strength;
+    new_config.food_image_path = sim.config().food_image_path.clone();
+    new_config.food_image_invert = sim.config().food_image_invert;
+    new_config.obstacles = sim.config().obstacles.clone();
+    new_config.obstacle_masks = sim.config().obstacle_masks.clone();
+
+    let resolved = a
+        .resolve_render_config()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    sim.update_config(new_config.clone());
+    apply_render_config(&resolved, rs, renderer, sim);
+
+    // Re-baseline so "reset" = this preset ⊕ launch CLI (Model B).
+    rs.cli_overrides = Some(new_config);
+    rs.set_render_baseline(resolved);
+    timer.set_time_scale(rs.time_scale);
     Ok(())
 }
 
