@@ -11,8 +11,8 @@
 
 use crate::config_defaults::{agent, trail};
 use crate::simulation::config::{
-    BoundaryMode, DepositCurve, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig,
-    SpeciesConfig, Wind,
+    Attractor, BoundaryMode, DepositCurve, DiffusionKernel, InitMode, Obstacle, Preset,
+    RespawnConfig, SamplingMode, SimConfig, SpeciesConfig, Wind,
 };
 
 /// Declarative per-preset sim-layer spec. Replaces the imperative
@@ -41,6 +41,11 @@ pub(crate) struct PresetSimDefaults {
     pub background_color: Option<String>,
     pub obstacles: Vec<Obstacle>,
     pub species_configs: Vec<SpeciesConfig>,
+    pub deposit_cap: f32,
+    pub attractors: Vec<Attractor>,
+    pub separate_species_trails: bool,
+    pub sampling_mode: SamplingMode,
+    pub respawn_config: RespawnConfig,
 }
 
 impl Default for PresetSimDefaults {
@@ -68,6 +73,11 @@ impl Default for PresetSimDefaults {
             background_color: None,
             obstacles: Vec::new(),
             species_configs: vec![SpeciesConfig::default()],
+            deposit_cap: trail::DEFAULT_DEPOSIT_CAP,
+            attractors: Vec::new(),
+            separate_species_trails: false,
+            sampling_mode: SamplingMode::Nearest,
+            respawn_config: RespawnConfig::default(),
         }
     }
 }
@@ -96,6 +106,11 @@ impl PresetSimDefaults {
         config.background_color = self.background_color.clone();
         config.obstacles = self.obstacles.clone();
         config.species_configs = self.species_configs.clone();
+        config.deposit_cap = self.deposit_cap;
+        config.attractors = self.attractors.clone();
+        config.separate_species_trails = self.separate_species_trails;
+        config.sampling_mode = self.sampling_mode;
+        config.respawn_config = self.respawn_config;
     }
 }
 
@@ -845,6 +860,46 @@ mod tests {
         assert_eq!(s.deposit_curve, DepositCurve::Sqrt);
         assert_eq!(s.deposit_scale, 1.5);
         // afterglow is NOT a field of PresetSimDefaults (moved to render layer).
+    }
+
+    #[test]
+    fn apply_to_lands_the_five_new_levers() {
+        use crate::simulation::config::{Attractor, RespawnConfig, SamplingMode, SimConfig};
+        let spec = PresetSimDefaults {
+            deposit_cap: 5.0,
+            attractors: vec![Attractor {
+                x: 10.0,
+                y: 20.0,
+                strength: 1.5,
+            }],
+            separate_species_trails: true,
+            sampling_mode: SamplingMode::Bilinear,
+            respawn_config: RespawnConfig {
+                interval: 42,
+                ..RespawnConfig::default()
+            },
+            ..PresetSimDefaults::default()
+        };
+        let mut cfg = SimConfig::default();
+        spec.apply_to(&mut cfg);
+        assert_eq!(cfg.deposit_cap, 5.0);
+        assert_eq!(cfg.attractors.len(), 1);
+        assert_eq!(cfg.attractors[0].strength, 1.5);
+        assert!(cfg.separate_species_trails);
+        assert_eq!(cfg.sampling_mode, SamplingMode::Bilinear);
+        assert_eq!(cfg.respawn_config.interval, 42);
+    }
+
+    #[test]
+    fn default_new_levers_match_simconfig_default() {
+        use crate::simulation::config::SimConfig;
+        let plain = SimConfig::default();
+        let d = PresetSimDefaults::default();
+        assert_eq!(d.deposit_cap, plain.deposit_cap);
+        assert_eq!(d.attractors, plain.attractors);
+        assert_eq!(d.separate_species_trails, plain.separate_species_trails);
+        assert_eq!(d.sampling_mode, plain.sampling_mode);
+        assert_eq!(d.respawn_config, plain.respawn_config);
     }
 
     #[test]
