@@ -40,6 +40,7 @@ impl Profile {
         let sim = crate::config_builder::ConfigBuilder::from_args(args)
             .assemble()
             .map_err(|e| e.to_string())?;
+        crate::validation::Validatable::validate(&sim).map_err(|e| e.to_string())?;
         let render = args.resolve_render_config()?;
         Ok(Self {
             sim,
@@ -108,6 +109,22 @@ mod tests {
         assert_eq!(
             Profile::resolve_from_args(&args).expect("resolve").seed,
             None
+        );
+    }
+
+    /// Out-of-range CLI args must be rejected by resolve_from_args (validation parity with
+    /// the old `SimConfig::try_from(&Args)` path). sensor_angle > MAX (90.0) is a clear
+    /// out-of-range value that validate() rejects.
+    #[test]
+    fn resolve_from_args_rejects_invalid_sensor_angle() {
+        // sensor_angle=999.0 is far above MAX_SENSOR_ANGLE (90.0)
+        let args = Args {
+            sensor_angle: Some(999.0),
+            ..Args::default()
+        };
+        assert!(
+            Profile::resolve_from_args(&args).is_err(),
+            "expected Err for sensor_angle=999.0 but got Ok"
         );
     }
 }
