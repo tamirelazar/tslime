@@ -389,7 +389,8 @@ impl Preset {
 }
 
 /// How agents are initially distributed in the simulation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum InitMode {
     /// Agents randomly distributed across the entire canvas.
     Random,

@@ -152,6 +152,26 @@ pub fn capture_overrides(
         food_persist: Some(food_persist),
         // Full per-charset AA array — mirrors old from_runtime which stored the whole array.
         color_aa_all: Some(rs.color_aa.to_vec()),
+
+        // app-runtime levers — Task 3 will wire these from rs.app (the live source).
+        // For now, source from defaults; no observable change since runner doesn't read rs.app yet.
+        // TODO(task-3): replace AppRuntimeConfig::default() with rs.app.* field reads.
+        init_mode: None,
+        warmup_frames: None,
+        skip_warmup: None,
+        warmup_brightness_multiplier: None,
+        auto_reset: None,
+        auto_reset_entropy_threshold: None,
+        auto_reset_duration_frames: None,
+        grid: None,
+        grid_style: None,
+        grid_size: None,
+        grid_color: None,
+        grid_opacity: None,
+        grid_adaptive: None,
+        food_persist_strength: None,
+        food_persist_radius: None,
+        food_persist_duration: None,
     }
 }
 

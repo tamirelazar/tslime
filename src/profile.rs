@@ -2,19 +2,22 @@
 //!
 //! A preset and a saved config both answer "what is the complete tunable lever
 //! set?". `Profile` is that answer as one concrete value: the resolved sim
-//! config, the resolved render config, and the (optional) seed. `ProfileSource`
-//! records where the active profile came from. See `CONTEXT.md`.
+//! config, the resolved render config, the app runtime config, and the (optional)
+//! seed. `ProfileSource` records where the active profile came from. See `CONTEXT.md`.
 
+use crate::app_config::AppRuntimeConfig;
 use crate::cli::Args;
 use crate::render_art_defaults::ResolvedRenderConfig;
 use crate::simulation::config::{Preset, SimConfig};
 
-/// The complete resolved lever set (sim ⊕ render ⊕ seed). The shared basis for
+/// The complete resolved lever set (sim ⊕ render ⊕ app ⊕ seed). The shared basis for
 /// presets and saved configs.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Profile {
     pub sim: SimConfig,
     pub render: ResolvedRenderConfig,
+    /// Restart-only app-level levers (warmup, auto-reset, grid, food-persist).
+    pub app: AppRuntimeConfig,
     /// `None` = fresh random each run. `Some` only when a seed was pinned
     /// explicitly (a CLI `--seed`); presets never pin a seed.
     pub seed: Option<u64>,

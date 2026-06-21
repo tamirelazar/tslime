@@ -41,6 +41,8 @@
 /// Application entry point and high-level logic.
 #[cfg(feature = "terminal")]
 pub mod app;
+/// Restart-only application-level runtime configuration (warmup, auto-reset, grid, food-persist).
+pub(crate) mod app_config;
 /// Choir-mode audio, after Miranda, Adamatzky & Jones (2011), "Sounds
 /// Synthesis with Slime Mould of Physarum Polycephalum".
 #[cfg(feature = "audio")]

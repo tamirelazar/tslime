@@ -1,7 +1,9 @@
 use crate::render::palette::RgbColor;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 /// Visual style of the background grid.
 pub enum GridStyle {
     /// Solid lines intersecting at grid points.

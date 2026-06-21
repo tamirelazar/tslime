@@ -8,14 +8,16 @@
 //! so `resolve()` can be a verbatim port of the old two-call resolution. See
 //! `CONTEXT.md`.
 
+use crate::app_config::AppRuntimeConfig;
 use crate::cli::{Args, AttractorArg, ObstacleArg, SpeciesArg, WindArg};
 use crate::profile::Profile;
 use crate::render::antialiasing::AaStrength;
 use crate::render::charset::{Charset, GlyphSelection};
+use crate::render::grid::GridStyle;
 use crate::render::palette::{IntensityMapping, Palette, PaletteCycle, RgbColor, TemporalMode};
 use crate::render_art_defaults::ResolvedRenderConfig;
 use crate::simulation::config::{
-    Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, Preset, SimConfig,
+    Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode, Preset, SimConfig,
     TerminalSizeThreshold, WindowFrame, WindowPadding,
 };
 use serde::{Deserialize, Serialize};
@@ -139,6 +141,60 @@ pub struct ProfileOverrides {
     /// Phase C may unify these.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color_aa_all: Option<Vec<AaStrength>>,
+
+    // ── app-runtime levers (consumed by resolve_app; see AppRuntimeConfig) ──
+    /// Preferred initial distribution of agents (resolves into `sim.preferred_init_mode`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub init_mode: Option<InitMode>,
+    /// Number of warmup frames at simulation start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warmup_frames: Option<usize>,
+    /// Skip the warmup phase entirely.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip_warmup: Option<bool>,
+    /// Brightness multiplier during warmup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warmup_brightness_multiplier: Option<f32>,
+    /// Enable automatic reset when the simulation collapses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_reset: Option<bool>,
+    /// Entropy threshold above which the simulation is considered collapsed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_reset_entropy_threshold: Option<f32>,
+    /// Number of frames the simulation must remain collapsed before auto-reset fires.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_reset_duration_frames: Option<usize>,
+    /// Enable background grid rendering.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid: Option<bool>,
+    /// Visual style of the grid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_style: Option<GridStyle>,
+    /// Grid cell size (number of cells per dimension).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_size: Option<usize>,
+    /// Grid line color (stored as hex string via serde helper).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_opt_rgb_hex"
+    )]
+    pub grid_color: Option<RgbColor>,
+    /// Base opacity of the grid (0.0–1.0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_opacity: Option<f32>,
+    /// Whether grid opacity adapts to trail density.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_adaptive: Option<bool>,
+    /// Strength of persistent food attractors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub food_persist_strength: Option<f32>,
+    /// Radius of persistent food attractors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub food_persist_radius: Option<f32>,
+    /// Duration of food persistence in frames.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub food_persist_duration: Option<usize>,
 }
 
 impl ProfileOverrides {
@@ -296,6 +352,27 @@ impl ProfileOverrides {
             invert_palette: None,
             food_persist: None,
             color_aa_all: None,
+
+            // app-runtime levers — read directly from args.* (the real CLI field names).
+            init_mode: args.init,
+            warmup_frames: Some(args.warmup_frames),
+            skip_warmup: Some(args.skip_warmup),
+            warmup_brightness_multiplier: Some(args.warmup_brightness_multiplier),
+            auto_reset: Some(args.auto_reset),
+            auto_reset_entropy_threshold: Some(args.collapse_entropy_threshold),
+            auto_reset_duration_frames: Some(args.collapse_duration_frames),
+            grid: Some(args.grid),
+            grid_style: args.grid_style.parse::<GridStyle>().ok(),
+            grid_size: Some(args.grid_size),
+            grid_color: {
+                let hex = args.grid_color.trim_start_matches('#');
+                u32::from_str_radix(hex, 16).ok().map(RgbColor::from_hex)
+            },
+            grid_opacity: Some(args.grid_opacity),
+            grid_adaptive: Some(args.grid_adaptive),
+            food_persist_strength: Some(args.food_persist_strength),
+            food_persist_radius: Some(args.food_persist_radius),
+            food_persist_duration: Some(args.food_persist_duration),
         })
     }
 
@@ -307,11 +384,47 @@ impl ProfileOverrides {
         // Keep the exact same call: crate::validation::Validatable::validate(&sim).
         crate::validation::Validatable::validate(&sim).map_err(|e| e.to_string())?;
         let render = self.resolve_render()?;
+        let app = self.resolve_app();
         Ok(Profile {
             sim,
             render,
+            app,
             seed: self.seed,
         })
+    }
+
+    /// Resolve the app-runtime levers into an `AppRuntimeConfig`.
+    ///
+    /// Each field falls back to its `AppRuntimeConfig::default()` when not set.
+    pub(crate) fn resolve_app(&self) -> AppRuntimeConfig {
+        let d = AppRuntimeConfig::default();
+        AppRuntimeConfig {
+            warmup_frames: self.warmup_frames.unwrap_or(d.warmup_frames),
+            skip_warmup: self.skip_warmup.unwrap_or(d.skip_warmup),
+            warmup_brightness_multiplier: self
+                .warmup_brightness_multiplier
+                .unwrap_or(d.warmup_brightness_multiplier),
+            auto_reset: self.auto_reset.unwrap_or(d.auto_reset),
+            auto_reset_entropy_threshold: self
+                .auto_reset_entropy_threshold
+                .unwrap_or(d.auto_reset_entropy_threshold),
+            auto_reset_duration_frames: self
+                .auto_reset_duration_frames
+                .unwrap_or(d.auto_reset_duration_frames),
+            grid: self.grid.unwrap_or(d.grid),
+            grid_style: self.grid_style.unwrap_or(d.grid_style),
+            grid_size: self.grid_size.unwrap_or(d.grid_size),
+            grid_color: self.grid_color.unwrap_or(d.grid_color),
+            grid_opacity: self.grid_opacity.unwrap_or(d.grid_opacity),
+            grid_adaptive: self.grid_adaptive.unwrap_or(d.grid_adaptive),
+            food_persist_strength: self
+                .food_persist_strength
+                .unwrap_or(d.food_persist_strength),
+            food_persist_radius: self.food_persist_radius.unwrap_or(d.food_persist_radius),
+            food_persist_duration: self
+                .food_persist_duration
+                .unwrap_or(d.food_persist_duration),
+        }
     }
 
     /// Resolves the sim-side `ProfileOverrides` fields into a `SimConfig`.
@@ -549,6 +662,10 @@ impl ProfileOverrides {
         if let Some(interval) = self.respawn_interval {
             config.respawn_config.interval = interval;
         }
+
+        // init_mode: CLI --init overrides; absent the flag, the preset's preferred_init_mode
+        // survives (or stays None if neither preset nor CLI sets it).
+        config.preferred_init_mode = self.init_mode.or(config.preferred_init_mode);
 
         Ok(config)
     }
@@ -1479,5 +1596,45 @@ mod tests {
                 "AaStrength::{variant:?} must round-trip"
             );
         }
+    }
+
+    // ── Task 2: AppRuntimeConfig / init_mode tests ──
+
+    #[test]
+    fn app_levers_round_trip() {
+        use crate::render::grid::GridStyle;
+        let o = ProfileOverrides {
+            warmup_frames: Some(120),
+            auto_reset: Some(true),
+            grid: Some(true),
+            grid_style: Some(GridStyle::Dots),
+            ..Default::default()
+        };
+        let s = toml::to_string(&o).unwrap();
+        assert_eq!(o, toml::from_str::<ProfileOverrides>(&s).unwrap());
+    }
+
+    #[test]
+    fn app_levers_resolve() {
+        let o = ProfileOverrides {
+            warmup_frames: Some(120),
+            grid: Some(true),
+            ..Default::default()
+        };
+        let p = o.resolve().unwrap();
+        assert_eq!(p.app.warmup_frames, 120);
+        assert!(p.app.grid);
+    }
+
+    #[test]
+    fn init_mode_resolves_into_sim() {
+        use crate::simulation::config::InitMode;
+        let p = ProfileOverrides {
+            init_mode: Some(InitMode::Random),
+            ..Default::default()
+        }
+        .resolve()
+        .unwrap();
+        assert_eq!(p.sim.preferred_init_mode, Some(InitMode::Random));
     }
 }
