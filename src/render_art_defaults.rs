@@ -64,6 +64,27 @@ impl Default for RenderArtDefaults {
     }
 }
 
+/// Every render lever fully resolved to a concrete value (CLI ⊕ preset ⊕ default).
+/// `RenderArtDefaults` is the per-preset Option spec; this is the merged result
+/// used by startup, live preset-switch, and reset identically.
+#[allow(dead_code)] // wired in Task 13
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ResolvedRenderConfig {
+    pub palette: crate::cli::Palette,
+    pub charset: crate::render::charset::Charset,
+    pub color_aa: crate::render::antialiasing::AaStrength,
+    pub hue_shift: f32,
+    pub intensity_mapping: crate::render::palette::IntensityMapping,
+    pub palette_cycle: crate::render::palette::PaletteCycle,
+    pub glyph: crate::render::charset::GlyphConfig,
+    pub temporal_color: f32,
+    pub temporal_lag_frames: f32,
+    pub temporal_mode: crate::render::palette::TemporalMode,
+    pub temporal_accent: Option<crate::render::palette::RgbColor>,
+    pub afterglow: f32,
+    pub afterglow_rate: f32,
+}
+
 impl From<Preset> for RenderArtDefaults {
     /// Per-preset render defaults. The showcase presets (the original four plus
     /// the completion-pass set) carry art-on payloads; the 30 original presets

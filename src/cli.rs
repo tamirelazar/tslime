@@ -1043,11 +1043,10 @@ pub struct Args {
     #[arg(
         long = "palette-shift",
         value_name = "DEG",
-        default_value = "0",
-        help = "Rotate palette hue over time (degrees per second, negative for reverse rotation)"
+        help = "Rotate palette hue over time (degrees/sec, negative reverses)"
     )]
-    /// Palette hue shift speed (degrees/sec).
-    pub palette_shift: f32,
+    /// Palette hue shift speed (degrees/sec). None = use per-preset default or 0.
+    pub palette_shift: Option<f32>,
 
     #[arg(
         long = "intensity-mapping",
@@ -1817,6 +1816,16 @@ impl Args {
             || self.ascii_chars.is_some()
     }
 
+    /// Returns `Some(charset)` when the user passed a `--charset` flag, else `None`.
+    /// Used by `resolve_render_config` to distinguish "CLI set" from "use preset/default".
+    pub(crate) fn charset_parsed(&self) -> Result<Option<crate::render::charset::Charset>, String> {
+        if self.charset_explicitly_set() {
+            Ok(Some(crate::render::charset::Charset::from_args(self)))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Resolve color-AA strength for the launch charset. Explicit `--color-aa`
     /// wins; otherwise auto: Strong for Braille, Off for everything else.
     pub fn resolved_color_aa(
@@ -2107,6 +2116,56 @@ impl Args {
         Ok(art)
     }
 
+    /// Performs the complete preset ⊕ CLI ⊕ default merge for all 13 render levers,
+    /// producing a fully-resolved [`crate::render_art_defaults::ResolvedRenderConfig`]
+    /// (no Option-means-unset) ready for startup, live preset-switch, and reset.
+    ///
+    /// Resolution order (Model B, CLI > preset > default):
+    /// - `palette`: CLI `--palette` wins; else preset default; else global default.
+    /// - `charset`: CLI `--charset` if set; else preset default; else `ALL_CHARSETS[0]`.
+    /// - `color_aa`: `--color-aa` if set; else preset default; else `AaStrength::Off`.
+    /// - `hue_shift`: `--palette-shift` if set; else preset default; else `0.0`.
+    /// - All other levers: taken from `to_render_art_defaults()` (already merged).
+    #[allow(dead_code)] // wired in Task 13
+    pub(crate) fn resolve_render_config(
+        &self,
+    ) -> Result<crate::render_art_defaults::ResolvedRenderConfig, String> {
+        use crate::render::charset::ALL_CHARSETS;
+        use crate::render_art_defaults::ResolvedRenderConfig;
+        // art merges intensity/cycle/glyph/temporal/afterglow/palette/charset/hue_shift + preset
+        let art = self.to_render_art_defaults()?;
+        let palette = if self.palette_explicitly_set() {
+            self.palette().map_err(|e| e.to_string())?
+        } else {
+            art.palette
+                .unwrap_or_else(|| self.palette().unwrap_or(crate::cli::Palette::Moss))
+        };
+        let charset = self
+            .charset_parsed()? // CLI --charset if set
+            .or(art.charset)
+            .unwrap_or_else(|| ALL_CHARSETS[0].clone());
+        let color_aa = self
+            .color_aa
+            .or(art.color_aa)
+            .unwrap_or(crate::render::antialiasing::AaStrength::Off);
+        let hue_shift = self.palette_shift.unwrap_or(art.hue_shift);
+        Ok(ResolvedRenderConfig {
+            palette,
+            charset,
+            color_aa,
+            hue_shift,
+            intensity_mapping: art.intensity_mapping,
+            palette_cycle: art.palette_cycle,
+            glyph: art.glyph,
+            temporal_color: art.temporal_color,
+            temporal_lag_frames: art.temporal_lag_frames,
+            temporal_mode: art.temporal_mode,
+            temporal_accent: art.temporal_accent,
+            afterglow: art.afterglow,
+            afterglow_rate: art.afterglow_rate,
+        })
+    }
+
     /// Validates arguments at the CLI boundary.
     ///
     /// Covers terminal/resolution/fps bounds and other CLI-specific options that
@@ -2253,7 +2312,7 @@ impl Default for Args {
             verbose: false,
             reverse_palette: false,
             invert_palette: false,
-            palette_shift: 0.0,
+            palette_shift: None,
             intensity_mapping: None,
             intensity_mapping_base: intensity::DEFAULT_LOG_BASE,
             intensity_mapping_gamma: 2.2,
@@ -3118,5 +3177,31 @@ mod tests {
     fn afterglow_out_of_range_rejected() {
         let a = Args::parse_from(["tslime", "--afterglow", "99"]);
         assert!(a.to_render_art_defaults().is_err());
+    }
+
+    #[test]
+    fn resolve_palette_cli_wins() {
+        let a = Args::parse_from(["tslime", "--palette", "ocean", "--preset", "lumen"]);
+        let r = a.resolve_render_config().unwrap();
+        assert_eq!(r.palette, crate::cli::Palette::Ocean);
+    }
+
+    #[test]
+    fn resolve_palette_preset_default() {
+        let a = Args::parse_from(["tslime", "--preset", "lumen"]);
+        let r = a.resolve_render_config().unwrap();
+        assert_eq!(r.palette, crate::cli::Palette::Slime);
+    }
+
+    #[test]
+    fn resolve_hue_cli_over_preset() {
+        let a = Args::parse_from(["tslime", "--preset", "tide", "--palette-shift", "20"]);
+        assert_eq!(a.resolve_render_config().unwrap().hue_shift, 20.0);
+    }
+
+    #[test]
+    fn resolve_hue_preset_when_no_flag() {
+        let a = Args::parse_from(["tslime", "--preset", "tide"]);
+        assert_eq!(a.resolve_render_config().unwrap().hue_shift, 8.0);
     }
 }
