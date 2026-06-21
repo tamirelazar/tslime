@@ -67,7 +67,6 @@ impl Default for RenderArtDefaults {
 /// Every render lever fully resolved to a concrete value (CLI ⊕ preset ⊕ default).
 /// `RenderArtDefaults` is the per-preset Option spec; this is the merged result
 /// used by startup, live preset-switch, and reset identically.
-#[allow(dead_code)] // wired in Task 13
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ResolvedRenderConfig {
     pub palette: crate::cli::Palette,
@@ -95,6 +94,27 @@ impl ResolvedRenderConfig {
             1.0 / lag.max(1.0)
         } else {
             1.0
+        }
+    }
+}
+
+impl Default for ResolvedRenderConfig {
+    fn default() -> Self {
+        use crate::render::charset::ALL_CHARSETS;
+        Self {
+            palette: crate::cli::Palette::Moss,
+            charset: ALL_CHARSETS[0].clone(),
+            color_aa: crate::config_defaults::DEFAULT_COLOR_AA[0],
+            hue_shift: 0.0,
+            intensity_mapping: crate::render::palette::IntensityMapping::logarithmic(10.0),
+            palette_cycle: crate::render::palette::PaletteCycle::default(),
+            glyph: crate::render::charset::GlyphConfig::default(),
+            temporal_color: 0.0,
+            temporal_lag_frames: 8.0,
+            temporal_mode: crate::render::palette::TemporalMode::Hue,
+            temporal_accent: None,
+            afterglow: 0.0,
+            afterglow_rate: 0.05,
         }
     }
 }

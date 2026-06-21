@@ -1825,18 +1825,14 @@ mod status_line_tests {
     #[test]
     fn test_preset_comparison_overlay() {
         use crate::cli::PauseStyle;
-        use crate::render::palette::IntensityMapping;
         use crate::simulation::config::{InitMode, SimConfig};
 
         let mut state = crate::terminal::control::RuntimeState::new(
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             crate::terminal::control::MouseInteractionMode::Disabled,
             0.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,

@@ -233,54 +233,22 @@ pub fn run_simulation(
 
     let initial_preset = args.preset.unwrap_or(Preset::Organic);
 
-    let art_defaults = args
-        .to_render_art_defaults()
+    let resolved = args
+        .resolve_render_config()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-
-    let initial_palette = if args.palette_explicitly_set() {
-        args.palette().unwrap_or(cli::Palette::Moss)
-    } else {
-        art_defaults
-            .palette
-            .unwrap_or_else(|| args.palette().unwrap_or(cli::Palette::Moss))
-    };
-    let initial_palette_index = if let cli::Palette::Custom(_) = initial_palette {
-        4 // Default to Forest for custom palettes
-    } else {
-        ALL_PALETTES
-            .iter()
-            .position(|p| *p == initial_palette)
-            .unwrap_or(4)
-    };
-
-    let initial_intensity_mapping = art_defaults.intensity_mapping.clone();
-    renderer.set_intensity_mapping(Some(initial_intensity_mapping.clone()));
-
-    let initial_palette_cycle = art_defaults.palette_cycle;
-    renderer.set_palette_cycle(initial_palette_cycle);
-
-    let initial_glyph = art_defaults.glyph;
-    renderer.set_glyph(initial_glyph);
-
-    let initial_charset_index = ALL_CHARSETS.iter().position(|c| c == &charset).unwrap_or(0);
 
     let mut runtime_state = RuntimeState::new(
         seed,
         init_mode,
         initial_preset,
-        initial_palette_index,
-        initial_charset_index,
         mouse_mode,
         args.mouse_timeout,
-        initial_intensity_mapping,
         &config,
         args.pause_style,
         args.pause_logo,
         args.pause_pulse_draw_mode,
     );
     runtime_state.preload_pause_logo(term_width as usize, term_height as usize);
-    runtime_state.palette_cycle = initial_palette_cycle;
-    runtime_state.glyph = initial_glyph;
     runtime_state.dither_mode = dither_mode;
     runtime_state.trail_age_enabled = args.trail_age;
     runtime_state.trail_delta_enabled = args.trail_delta;
@@ -294,12 +262,6 @@ pub fn run_simulation(
     };
     runtime_state.trail_age_reverse = args.trail_age_reverse;
     runtime_state.trail_delta_strength = args.trail_delta_strength;
-    runtime_state.temporal_color = art_defaults.temporal_color;
-    runtime_state.temporal_lag_frames = art_defaults.temporal_lag_frames;
-    runtime_state.temporal_mode = art_defaults.temporal_mode;
-    runtime_state.temporal_accent = art_defaults.temporal_accent;
-    runtime_state.afterglow = art_defaults.afterglow;
-    runtime_state.afterglow_rate = art_defaults.afterglow_rate;
     // decay_gamma / diffuse_weight come from the assembled config via
     // RuntimeState::new — do not re-clobber them from raw CLI args here.
     if args.stats {
@@ -314,38 +276,8 @@ pub fn run_simulation(
     if args.gradient_magnitude {
         sim.set_compute_gradient_magnitude(true);
     }
-    if art_defaults.temporal_color > 0.0 {
-        let lag = art_defaults.temporal_lag_frames;
-        let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
-        sim.set_compute_temporal(true, temporal_alpha);
-    }
-    if runtime_state.afterglow > 0.0 {
-        sim.set_compute_afterglow(true, runtime_state.afterglow_rate);
-    }
-    renderer.set_dither_mode(dither_mode);
-
-    // Resolve launch color-AA: CLI override wins, else the preset's render default,
-    // else the per-charset default stands.
-    if let Some(aa) = args.color_aa {
-        runtime_state.apply_cli_color_aa(aa);
-    } else if let Some(aa) = art_defaults.color_aa {
-        runtime_state.apply_cli_color_aa(aa);
-    }
-
-    // Apply the preset's animated hue-shift default (degrees/sec → nearest discrete
-    // speed). Only when the preset requests it; runtime key-cycling still overrides.
-    if art_defaults.hue_shift > 0.0 {
-        runtime_state.palette_shift_speed = if art_defaults.hue_shift <= 10.0 {
-            crate::terminal::state::PaletteShiftSpeed::Slow
-        } else if art_defaults.hue_shift <= 30.0 {
-            crate::terminal::state::PaletteShiftSpeed::Medium
-        } else {
-            crate::terminal::state::PaletteShiftSpeed::Fast
-        };
-    }
-    // Push the resolved launch AA (default or CLI override) to the renderer so the
-    // FIRST frame already reflects it (renderer's color_aa otherwise inits to Off).
-    renderer.set_color_aa(runtime_state.current_color_aa());
+    apply_render_config(&resolved, &mut runtime_state, &mut renderer, sim);
+    runtime_state.set_render_baseline(resolved.clone());
 
     // Initialize food persistence
     if args.food_persist && init_mode == InitMode::Food {
@@ -1996,6 +1928,8 @@ pub fn run_simulation(
                         }
                         ControlAction::ResetToDefaults => {
                             runtime_state.reset_to_defaults();
+                            let baseline = runtime_state.baseline_render.clone();
+                            apply_render_config(&baseline, &mut runtime_state, &mut renderer, sim);
                             // Rebuild the sim from the launch snapshot (initial run params,
                             // including CLI flags), not the bare preset, then overlay the
                             // restored runtime-state live fields and push renderer caches.
@@ -2501,8 +2435,7 @@ pub fn run_simulation(
 
 /// Apply a fully-resolved render config to the live renderer, runtime state, and
 /// sim compute buffers. Shared by startup, live preset-switch, and reset so the
-/// three paths can't diverge. Wired in Task 14.
-#[allow(dead_code)] // wired in Task 14
+/// three paths can't diverge.
 fn apply_render_config(
     r: &crate::render_art_defaults::ResolvedRenderConfig,
     rs: &mut RuntimeState,

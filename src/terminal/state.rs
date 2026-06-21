@@ -582,13 +582,9 @@ pub struct RuntimeState {
     pub default_values: DefaultValues,
     /// CLI overrides for custom parameters (stored when launched with CLI args).
     pub cli_overrides: Option<SimConfig>,
-    /// Render-layer parameters captured at launch, restored by `reset_to_defaults`.
-    /// (`cli_overrides: SimConfig` covers sim-layer params; these cover the render layer.)
-    initial_palette_index: usize,
-    initial_charset_index: usize,
-    initial_color_aa:
-        [crate::render::antialiasing::AaStrength; crate::render::charset::NUM_CHARSETS],
-    initial_intensity_mapping: IntensityMapping,
+    /// Render config snapshot captured at launch and after every baseline change;
+    /// restored by `apply_render_config` in the `ResetToDefaults` handler.
+    pub(crate) baseline_render: crate::render_art_defaults::ResolvedRenderConfig,
     initial_window_frame: WindowFrame,
     /// Undo history stack.
     pub undo_stack: std::collections::VecDeque<ParameterState>,
@@ -674,11 +670,8 @@ impl RuntimeState {
         seed: u64,
         init_mode: InitMode,
         initial_preset: Preset,
-        initial_palette_index: usize,
-        initial_charset_index: usize,
         mouse_mode: MouseInteractionMode,
         mouse_timeout: f32,
-        intensity_mapping: IntensityMapping,
         cli_config: &SimConfig,
         pause_style: PauseStyle,
         pause_logo_enabled: bool,
@@ -693,8 +686,8 @@ impl RuntimeState {
             controls_category_idx: 0,
             time_scale: cli_config.time_scale,
             current_preset: initial_preset,
-            palette_index: initial_palette_index,
-            charset_index: initial_charset_index,
+            palette_index: 0,
+            charset_index: 0,
             color_aa: crate::config_defaults::DEFAULT_COLOR_AA,
             original_seed: seed,
             original_init_mode: init_mode,
@@ -753,8 +746,8 @@ impl RuntimeState {
             palette_shift_speed: PaletteShiftSpeed::Off,
             invert_palette: false,
             reverse_palette: false,
-            intensity_mapping: intensity_mapping.clone(),
-            intensity_mapping_index: Self::find_intensity_mapping_index(&intensity_mapping),
+            intensity_mapping: crate::render::palette::IntensityMapping::linear(),
+            intensity_mapping_index: 0,
             saved_palette_name: None,
             notification: None,
             collapse_frame_counter: 0,
@@ -766,10 +759,7 @@ impl RuntimeState {
             config_save_name_input: String::new(),
             default_values,
             cli_overrides: Some(cli_config.clone()),
-            initial_palette_index,
-            initial_charset_index,
-            initial_color_aa: crate::config_defaults::DEFAULT_COLOR_AA,
-            initial_intensity_mapping: intensity_mapping.clone(),
+            baseline_render: crate::render_art_defaults::ResolvedRenderConfig::default(),
             initial_window_frame: cli_config.window_frame,
             undo_stack: std::collections::VecDeque::with_capacity(50),
             redo_stack: std::collections::VecDeque::with_capacity(50),
@@ -809,6 +799,14 @@ impl RuntimeState {
             palette_cycle: crate::render::palette::PaletteCycle::default(),
             glyph: crate::render::charset::GlyphConfig::default(),
         }
+    }
+
+    /// Stores the resolved render config as the baseline for reset.
+    pub(crate) fn set_render_baseline(
+        &mut self,
+        r: crate::render_art_defaults::ResolvedRenderConfig,
+    ) {
+        self.baseline_render = r;
     }
 
     /// Captures the current state of parameters for undo.
@@ -1165,7 +1163,6 @@ impl RuntimeState {
     pub fn apply_cli_color_aa(&mut self, aa: crate::render::antialiasing::AaStrength) {
         let i = self.charset_index;
         self.color_aa[i] = aa;
-        self.initial_color_aa[i] = aa;
     }
 
     /// Cycle the active charset's color-AA strength. No-op (returns false) when
@@ -1605,17 +1602,11 @@ impl RuntimeState {
             self.terrain_strength = defaults.terrain_strength;
             self.max_brightness = defaults.max_brightness;
         }
-        // Restore render-layer params to their launch values.
-        self.palette_index = self.initial_palette_index;
-        self.charset_index = self.initial_charset_index;
-        self.color_aa = self.initial_color_aa;
-        self.intensity_mapping = self.initial_intensity_mapping.clone();
-        self.intensity_mapping_index = Self::find_intensity_mapping_index(&self.intensity_mapping);
+        // Restore non-render state.
         self.window_frame = self.initial_window_frame;
         self.auto_normalize = false;
         self.motion_blur_frames = 0;
         self.fast_mode_enabled = false;
-        self.palette_shift_speed = PaletteShiftSpeed::Off;
         self.invert_palette = false;
         self.reverse_palette = false;
     }
@@ -1763,11 +1754,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Network,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             0.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -1776,16 +1764,12 @@ mod tests {
     }
 
     #[test]
-    fn reset_to_defaults_restores_initial_charset_and_window_frame() {
+    fn reset_to_defaults_restores_window_frame() {
         use crate::simulation::config::WindowFrame;
         let mut rs = create_test_runtime_state();
-        let initial_charset = rs.charset_index;
-        let initial_frame = rs.window_frame; // Frame, from SimConfig::default()
-                                             // Simulate runtime changes:
-        rs.charset_index = (rs.charset_index + 1) % ALL_CHARSETS.len();
-        rs.window_frame = WindowFrame::Negative; // differs from the Frame launch default
+        let initial_frame = rs.window_frame;
+        rs.window_frame = WindowFrame::Negative;
         rs.reset_to_defaults();
-        assert_eq!(rs.charset_index, initial_charset);
         assert_eq!(rs.window_frame, initial_frame);
     }
 
@@ -1937,11 +1921,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -1959,11 +1940,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -1988,11 +1966,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -2011,11 +1986,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -2035,11 +2007,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -2057,11 +2026,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -2081,11 +2047,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -2162,11 +2125,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -2378,14 +2338,12 @@ mod tests {
     }
 
     #[test]
-    fn reset_restores_initial_color_aa() {
+    fn apply_cli_color_aa_sets_current_charset_aa() {
         use crate::render::antialiasing::AaStrength;
         let mut rs = create_test_runtime_state();
         rs.charset_index = 4;
-        rs.cycle_color_aa();
-        rs.reset_to_defaults();
-        assert_eq!(rs.color_aa[4], AaStrength::Off);
-        assert_eq!(rs.color_aa[3], AaStrength::Strong);
+        rs.apply_cli_color_aa(AaStrength::Subtle);
+        assert_eq!(rs.color_aa[4], AaStrength::Subtle);
     }
 
     #[test]

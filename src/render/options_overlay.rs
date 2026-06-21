@@ -1085,7 +1085,6 @@ mod tests {
 #[test]
 fn test_options_overlay_renders_all_categories() {
     use crate::cli::PauseStyle;
-    use crate::render::palette::IntensityMapping;
     use crate::render::theme::GRUVBOX_DARK;
     use crate::simulation::config::{InitMode, Preset, SimConfig};
     use crate::terminal::control::RuntimeState;
@@ -1094,11 +1093,8 @@ fn test_options_overlay_renders_all_categories() {
         42,
         InitMode::Random,
         Preset::Organic,
-        0,
-        0,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
-        IntensityMapping::linear(),
         &SimConfig::default(),
         PauseStyle::Vignette,
         false,
@@ -1296,7 +1292,6 @@ fn test_options_overlay_renders_all_categories() {
 #[test]
 fn test_options_overlay_shows_live_parameter_values() {
     use crate::cli::PauseStyle;
-    use crate::render::palette::IntensityMapping;
     use crate::render::theme::GRUVBOX_DARK;
     use crate::simulation::config::{InitMode, Preset, SimConfig};
     use crate::terminal::control::RuntimeState;
@@ -1305,11 +1300,8 @@ fn test_options_overlay_shows_live_parameter_values() {
         42,
         InitMode::Random,
         Preset::Organic,
-        0,
-        0,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
-        IntensityMapping::linear(),
         &SimConfig::default(),
         PauseStyle::Vignette,
         false,
@@ -1389,7 +1381,6 @@ fn test_options_overlay_shows_live_parameter_values() {
 #[test]
 fn test_options_overlay_format() {
     use crate::cli::PauseStyle;
-    use crate::render::palette::IntensityMapping;
     use crate::render::theme::GRUVBOX_DARK;
     use crate::simulation::config::{InitMode, Preset, SimConfig};
     use crate::terminal::control::RuntimeState;
@@ -1398,11 +1389,8 @@ fn test_options_overlay_format() {
         42,
         InitMode::Random,
         Preset::Organic,
-        0,
-        0,
         crate::terminal::control::MouseInteractionMode::Disabled,
         0.0,
-        IntensityMapping::linear(),
         &SimConfig::default(),
         PauseStyle::Vignette,
         false,
