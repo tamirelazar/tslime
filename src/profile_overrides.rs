@@ -865,4 +865,66 @@ mod tests {
             Some(7)
         );
     }
+
+    /// GUARD: TUI uses Profile.render (resolve_render); headless uses
+    /// Args::to_render_art_defaults. Both run live until Phase C collapses them —
+    /// they MUST stay equal.
+    ///
+    /// This is NOT an oracle/port-gate — it is a permanent divergence guard for the
+    /// two-body duplication that exists while both paths are in production.
+    #[test]
+    fn render_two_live_bodies_stay_equivalent() {
+        let cases: &[&[&str]] = &[
+            &[],
+            &["--preset", "lumen"],
+            &["--preset", "etching"],
+            &["--palette", "heat", "--braille"],
+            &["--temporal-color", "0.6", "--temporal-mode", "accent"],
+            &["--afterglow", "0.4", "--palette-shift", "8"],
+            // glyph-edge-threshold on a preset whose base differs from the CLI value —
+            // regression guard for the "equal-to-GlyphConfig::default()" silent-drop bug.
+            &["--preset", "etching", "--glyph-edge-threshold", "0.15"],
+        ];
+        for c in cases {
+            let a = args(c);
+            let got = ProfileOverrides::from_args(&a)
+                .and_then(|o| o.resolve())
+                .expect("resolve");
+            let want = a.resolve_render_config().expect("render");
+            assert_eq!(got.render, want, "render two-body divergence for {c:?}");
+        }
+    }
+
+    /// Brightness gain→white-point: --brightness 2.0 must produce the white-point
+    /// that `white_point_from_gain(2.0)` returns. Pins the conversion so it cannot
+    /// silently break.
+    #[test]
+    fn brightness_gain_to_white_point_conversion() {
+        use crate::config_defaults::trail;
+        let gain = 2.0_f32;
+        let expected = trail::white_point_from_gain(gain);
+        let c = resolve(&["--brightness", "2.0"]).sim;
+        assert_eq!(
+            c.max_brightness, expected,
+            "--brightness 2.0 should map to white_point_from_gain(2.0) = {expected}"
+        );
+    }
+
+    /// High-FPS branch: --fps 60 (with no explicit kernel/sigma flags) must
+    /// activate the Gaussian kernel with sigma 0.5. This branch previously had zero
+    /// direct assertion.
+    #[test]
+    fn high_fps_activates_gaussian_kernel() {
+        use crate::simulation::config::DiffusionKernel;
+        let c = resolve(&["--fps", "60"]).sim;
+        assert_eq!(
+            c.diffusion_kernel,
+            DiffusionKernel::Gaussian,
+            "--fps 60 should switch diffusion kernel to Gaussian"
+        );
+        assert_eq!(
+            c.diffusion_sigma, 0.5,
+            "--fps 60 Gaussian branch should set sigma to 0.5"
+        );
+    }
 }
