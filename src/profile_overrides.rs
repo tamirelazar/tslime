@@ -132,6 +132,13 @@ pub struct ProfileOverrides {
     /// `resolve()`. `from_args` leaves this `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub food_persist: Option<bool>,
+    /// Apply/persist-only: full per-charset AA array for config save/load. NOT consumed by
+    /// `resolve()` (the resolve-side `color_aa` single scalar is the CLI lever). When present,
+    /// `apply_to_runtime_state` restores all slots from this Vec; the scalar `color_aa` is used
+    /// as a fallback for the active charset only when this field is absent (back-compat).
+    /// Phase C may unify these.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_aa_all: Option<Vec<AaStrength>>,
 }
 
 impl ProfileOverrides {
@@ -288,6 +295,7 @@ impl ProfileOverrides {
             reverse_palette: None,
             invert_palette: None,
             food_persist: None,
+            color_aa_all: None,
         })
     }
 

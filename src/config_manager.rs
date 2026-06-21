@@ -96,7 +96,9 @@ pub fn capture_overrides(
         diffusion_sigma: Some(sim_config.diffusion_sigma),
         // sim levers not round-trippable via apply (restart-only) — drop per Phase B spec
         time_scale: None,
-        population: None,
+        // population: capture for display (config-browser "Nk agents") only; NOT applied by
+        // apply_to_runtime_state (restart-only lever). Mirrors old from_runtime: first_species.count.
+        population: Some(sim_config.total_population()),
         fps: None,
         food_image_path: None,
         food_image_invert: None,
@@ -148,6 +150,8 @@ pub fn capture_overrides(
         reverse_palette: Some(reverse),
         invert_palette: Some(invert),
         food_persist: Some(food_persist),
+        // Full per-charset AA array — mirrors old from_runtime which stored the whole array.
+        color_aa_all: Some(rs.color_aa.to_vec()),
     }
 }
 
@@ -323,9 +327,17 @@ pub fn apply_to_runtime_state(
     // Apply temporal accent color (typed Option<RgbColor> — no hex parse needed).
     runtime_state.temporal_accent = overrides.temporal_accent;
 
-    // Apply per-charset color-AA (defensive: single AaStrength scalar applied to
-    // active charset only; missing/None preserves runtime defaults).
-    if let Some(aa) = overrides.color_aa {
+    // Apply per-charset color-AA. When color_aa_all is present (new format), restore
+    // all slots from the Vec (matches old from_runtime/apply_to_runtime_state behavior).
+    // Fall back to the scalar color_aa for the active charset only (back-compat with
+    // configs saved before color_aa_all was introduced).
+    if let Some(ref arr) = overrides.color_aa_all {
+        for (i, aa) in arr.iter().enumerate() {
+            if i < runtime_state.color_aa.len() {
+                runtime_state.color_aa[i] = *aa;
+            }
+        }
+    } else if let Some(aa) = overrides.color_aa {
         let i = runtime_state.charset_index % runtime_state.color_aa.len();
         runtime_state.color_aa[i] = aa;
     }
@@ -1107,6 +1119,96 @@ charset = "halfblock"
         apply_to_runtime_state(&overrides, &mut rs2).expect("apply must succeed");
         // Default Strong for Braille must survive (not overwritten by absent field).
         assert_eq!(rs2.color_aa[3], AaStrength::Strong);
+    }
+
+    #[test]
+    fn color_aa_all_full_per_charset_array_round_trips() {
+        // Verify that ALL per-charset AA slots are saved and restored faithfully.
+        // This guards the regression where the old per-slot Vec was collapsed to a
+        // single scalar, silently dropping non-active charsets' AA settings.
+        use crate::render::antialiasing::AaStrength;
+        use crate::render::charset::NUM_CHARSETS;
+
+        let mut rs = create_test_runtime_state();
+        // Set DISTINCT values for every charset slot so any slot-drop is detectable.
+        // Cycle through Off/Subtle/Strong/Off/Subtle/Strong/Off... for NUM_CHARSETS slots.
+        let values = [AaStrength::Off, AaStrength::Subtle, AaStrength::Strong];
+        for i in 0..NUM_CHARSETS {
+            rs.color_aa[i] = values[i % values.len()];
+        }
+
+        let overrides = capture_overrides(
+            &SimConfig::default(),
+            Palette::Organic,
+            Charset::HalfBlock,
+            &rs,
+            false,
+            false,
+            false,
+        );
+
+        // color_aa_all must capture the full array.
+        let captured = overrides
+            .color_aa_all
+            .as_ref()
+            .expect("color_aa_all must be Some");
+        assert_eq!(
+            captured.len(),
+            NUM_CHARSETS,
+            "must capture all charset slots"
+        );
+        for i in 0..NUM_CHARSETS {
+            assert_eq!(
+                captured[i],
+                values[i % values.len()],
+                "slot {i} must match the source value"
+            );
+        }
+
+        // Serialize to TOML and deserialize back.
+        let toml_str = toml::to_string(&overrides).expect("serialize must succeed");
+        let reloaded: ProfileOverrides =
+            toml::from_str(&toml_str).expect("deserialize must succeed");
+
+        // Apply into a fresh RuntimeState and verify all slots.
+        let mut rs2 = create_test_runtime_state();
+        apply_to_runtime_state(&reloaded, &mut rs2).expect("apply must succeed");
+        for i in 0..NUM_CHARSETS {
+            assert_eq!(
+                rs2.color_aa[i],
+                values[i % values.len()],
+                "slot {i} must be restored after round-trip"
+            );
+        }
+    }
+
+    #[test]
+    fn color_aa_all_fallback_to_scalar_when_absent() {
+        // When color_aa_all is None (old saved-config format), the scalar color_aa
+        // must still be applied to the active charset slot (back-compat).
+        use crate::render::antialiasing::AaStrength;
+
+        let mut rs = create_test_runtime_state();
+        rs.color_aa[0] = AaStrength::Subtle;
+
+        let mut overrides = capture_overrides(
+            &SimConfig::default(),
+            Palette::Organic,
+            Charset::HalfBlock,
+            &rs,
+            false,
+            false,
+            false,
+        );
+        // Simulate a config saved before color_aa_all existed.
+        overrides.color_aa_all = None;
+        // color_aa scalar should still be Some(Subtle) from capture_overrides.
+        assert_eq!(overrides.color_aa, Some(AaStrength::Subtle));
+
+        let mut rs2 = create_test_runtime_state();
+        apply_to_runtime_state(&overrides, &mut rs2).expect("apply must succeed");
+        // Active charset slot (0) must be restored via the scalar fallback.
+        assert_eq!(rs2.color_aa[0], AaStrength::Subtle);
     }
 
     #[test]
