@@ -2123,7 +2123,7 @@ impl Args {
     /// Resolution order (Model B, CLI > preset > default):
     /// - `palette`: CLI `--palette` wins; else preset default; else global default.
     /// - `charset`: CLI `--charset` if set; else preset default; else `ALL_CHARSETS[0]`.
-    /// - `color_aa`: `--color-aa` if set; else preset default; else `AaStrength::Off`.
+    /// - `color_aa`: `--color-aa` if set; else preset default; else the per-charset default (`DEFAULT_COLOR_AA`).
     /// - `hue_shift`: `--palette-shift` if set; else preset default; else `0.0`.
     /// - All other levers: taken from `to_render_art_defaults()` (already merged).
     #[allow(dead_code)] // wired in Task 13
@@ -2144,10 +2144,11 @@ impl Args {
             .charset_parsed()? // CLI --charset if set
             .or(art.charset)
             .unwrap_or_else(|| ALL_CHARSETS[0].clone());
+        let charset_index = ALL_CHARSETS.iter().position(|c| c == &charset).unwrap_or(0);
         let color_aa = self
             .color_aa
             .or(art.color_aa)
-            .unwrap_or(crate::render::antialiasing::AaStrength::Off);
+            .unwrap_or(crate::config_defaults::DEFAULT_COLOR_AA[charset_index]);
         let hue_shift = self.palette_shift.unwrap_or(art.hue_shift);
         Ok(ResolvedRenderConfig {
             palette,
@@ -3203,5 +3204,22 @@ mod tests {
     fn resolve_hue_preset_when_no_flag() {
         let a = Args::parse_from(["tslime", "--preset", "tide"]);
         assert_eq!(a.resolve_render_config().unwrap().hue_shift, 8.0);
+    }
+
+    #[test]
+    fn resolve_color_aa_braille_default_is_strong() {
+        // No --color-aa, no preset override: Braille must keep its per-charset Strong default.
+        use crate::render::antialiasing::AaStrength;
+        let a = Args::parse_from(["tslime", "--braille"]);
+        let r = a.resolve_render_config().unwrap();
+        assert_eq!(r.color_aa, AaStrength::Strong);
+    }
+
+    #[test]
+    fn resolve_color_aa_halfblock_default_is_off() {
+        use crate::render::antialiasing::AaStrength;
+        let a = Args::parse_from(["tslime"]);
+        let r = a.resolve_render_config().unwrap();
+        assert_eq!(r.color_aa, AaStrength::Off);
     }
 }
