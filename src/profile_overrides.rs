@@ -3,7 +3,7 @@
 //! A preset, a CLI invocation, and a saved TOML each produce a
 //! `ProfileOverrides`; `resolve()` turns one into a [`Profile`]. It unifies the
 //! sim-side partial (formerly `ConfigBuilder`) and the render-side partial
-//! (formerly the ad-hoc extraction in `Args::resolve_render_config`). Field
+//! (formerly inline startup resolution of palette, charset, and art defaults). Field
 //! shapes are CLI-ish (e.g. `brightness` is a user gain, `terrain` a string)
 //! so `resolve()` can be a verbatim port of the old two-call resolution. See
 //! `CONTEXT.md`.
@@ -23,8 +23,8 @@ use crate::simulation::config::{
 use serde::{Deserialize, Serialize};
 
 /// The single all-`Option` authored partial (sim ⊕ render ⊕ seed). Sim fields
-/// mirror the former `ConfigBuilder`; render fields mirror what
-/// `Args::resolve_render_config` reads.
+/// mirror the former `ConfigBuilder`; render fields mirror the startup
+/// palette/charset/art-defaults resolution.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProfileOverrides {
@@ -81,7 +81,7 @@ pub struct ProfileOverrides {
     pub deposit_gamma: Option<f32>,
     pub deposit_cap: Option<f32>,
 
-    // ── render levers (mirror src/cli.rs resolve_render_config + to_render_art_defaults) ──
+    // ── render levers (mirror startup resolution of palette, charset, art defaults) ──
     /// `Some` only when the CLI palette was explicitly set (see `palette_explicitly_set`).
     #[serde(
         default,
@@ -122,23 +122,23 @@ pub struct ProfileOverrides {
     pub afterglow_rate: Option<f32>,
 
     // ── apply/persistence-only levers (NOT consumed by resolve_sim/resolve_render) ──
-    /// Saved palette-reverse flag. Only written by `apply_to_runtime_state`; ignored by
+    /// Saved palette-reverse flag. Only written by `capture_overrides`; ignored by
     /// `resolve()`. `from_args` leaves this `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reverse_palette: Option<bool>,
-    /// Saved palette-invert flag. Only written by `apply_to_runtime_state`; ignored by
+    /// Saved palette-invert flag. Only written by `capture_overrides`; ignored by
     /// `resolve()`. `from_args` leaves this `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invert_palette: Option<bool>,
-    /// Saved food-persist flag. Only written by `apply_to_runtime_state`; ignored by
+    /// Saved food-persist flag. Only written by `capture_overrides`; ignored by
     /// `resolve()`. `from_args` leaves this `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub food_persist: Option<bool>,
     /// Apply/persist-only: full per-charset AA array for config save/load. NOT consumed by
     /// `resolve()` (the resolve-side `color_aa` single scalar is the CLI lever). When present,
-    /// `apply_to_runtime_state` restores all slots from this Vec; the scalar `color_aa` is used
-    /// as a fallback for the active charset only when this field is absent (back-compat).
-    /// Phase C may unify these.
+    /// `apply_color_aa_all` / `apply_to_runtime_state` restores all slots from this Vec;
+    /// the scalar `color_aa` is used as a fallback for the active charset only when this
+    /// field is absent (back-compat for configs saved before this field was added).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color_aa_all: Option<Vec<AaStrength>>,
 
@@ -200,12 +200,10 @@ pub struct ProfileOverrides {
 impl ProfileOverrides {
     /// Builds a `ProfileOverrides` from CLI args. Sim block mirrors the sim-field
     /// extraction that the former `ConfigBuilder::from_args` performed. Render block
-    /// mirrors the predicates from `Args::resolve_render_config` /
-    /// `to_render_art_defaults`.
+    /// mirrors the palette/charset/art-defaults predicates from the startup resolution path.
     ///
-    /// Returns `Err` on the same parse failures as the oracle's `resolve_render_config`:
-    /// invalid `--glyph-selection`, `--palette`, `--intensity-mapping`,
-    /// `--palette-cycle-mode`, or `--temporal-accent`.
+    /// Returns `Err` on parse failures from invalid `--glyph-selection`, `--palette`,
+    /// `--intensity-mapping`, `--palette-cycle-mode`, or `--temporal-accent`.
     pub(crate) fn from_args(args: &Args) -> Result<Self, String> {
         // Render: glyph — store the raw CLI-flag values separately so resolve_render
         // can apply them onto the PRESET's art.glyph exactly as glyph_config_parsed
@@ -221,7 +219,7 @@ impl ProfileOverrides {
             .transpose()?;
         let glyph_edge_threshold = args.glyph_edge_threshold.map(|t| t.clamp(0.0, 2.0));
 
-        // Render: temporal_mode parsed from string, mirroring to_render_art_defaults.
+        // Render: temporal_mode parsed from string, mirroring startup art-defaults resolution.
         // Uses a catch-all `_ => Hue` — never errors.
         let temporal_mode =
             args.temporal_mode
@@ -243,8 +241,8 @@ impl ProfileOverrides {
             })
             .transpose()?;
 
-        // Render: palette — Some only when explicitly set on CLI. Oracle errors via
-        // `self.palette().map_err(|e| e.to_string())?` in resolve_render_config.
+        // Render: palette — Some only when explicitly set on CLI. Errors if the palette
+        // name is not recognized.
         let palette = if args.palette_explicitly_set() {
             Some(args.palette()?)
         } else {
@@ -252,9 +250,9 @@ impl ProfileOverrides {
         };
 
         // Render: palette_cycle — Some when either palette_cycles or palette_cycle_mode is set.
-        // Oracle errors via `palette_cycle_mode_parsed()?` in to_render_art_defaults.
+        // Errors if the cycle mode string is not recognized.
         let palette_cycle = if args.palette_cycles.is_some() || args.palette_cycle_mode.is_some() {
-            // Build the PaletteCycle from CLI flags, same as to_render_art_defaults.
+            // Build the PaletteCycle from CLI flags (same logic as startup art-defaults resolution).
             let mut pc = PaletteCycle::default();
             if let Some(n) = args.palette_cycles {
                 pc.cycles = n;
@@ -267,8 +265,8 @@ impl ProfileOverrides {
             None
         };
 
-        // Render: intensity_mapping — Some when explicitly set on CLI. Oracle errors via
-        // `self.intensity_mapping()?` in to_render_art_defaults.
+        // Render: intensity_mapping — Some when explicitly set on CLI.
+        // Errors if the mapping string is not recognized.
         let intensity_mapping = if args.intensity_mapping.is_some() {
             Some(args.intensity_mapping()?)
         } else {
@@ -329,8 +327,7 @@ impl ProfileOverrides {
             deposit_gamma: args.deposit_gamma,
             deposit_cap: args.deposit_cap,
 
-            // RENDER block: mirror src/cli.rs resolve_render_config (2129-2167) +
-            // to_render_art_defaults (2064-2117).
+            // RENDER block: palette, charset, art defaults (temporal, glyph, afterglow, etc.).
             palette,
             charset: args.charset_parsed().ok().flatten(),
             color_aa: args.color_aa,
@@ -396,7 +393,7 @@ impl ProfileOverrides {
     }
 
     /// Resolve to a concrete `Profile`. Byte-identical to the legacy startup
-    /// two-call path (`assemble` → `resolve_render_config`).
+    /// two-call path (sim assemble → render resolution → validation).
     pub(crate) fn resolve(&self) -> Result<Profile, String> {
         let sim = self.resolve_sim().map_err(|e| e.to_string())?;
         // Validation parity: Profile::resolve_from_args calls validate() after assemble().
@@ -689,17 +686,14 @@ impl ProfileOverrides {
         Ok(config)
     }
 
-    /// Verbatim port of `Args::to_render_art_defaults` (`src/cli.rs:2064-2117`) +
-    /// `Args::resolve_render_config` (`src/cli.rs:2129-2167`), reading `self`
-    /// render fields instead of `Args` fields.
-    ///
-    /// Choice: option (a) — duplicate the body here, leaving cli.rs originals
-    /// intact as the parity oracle for Task 1 tests. Task 2 deletes the originals.
+    /// Resolves render fields into a `ResolvedRenderConfig`, mirroring what the
+    /// old startup two-call path (art-defaults → render-config resolution) computed.
+    /// Reads `self` render fields instead of `Args` fields.
     fn resolve_render(&self) -> Result<ResolvedRenderConfig, String> {
         use crate::render::charset::ALL_CHARSETS;
         use crate::render_art_defaults::RenderArtDefaults;
 
-        // ── to_render_art_defaults body (src/cli.rs:2064-2117) ──
+        // ── art defaults: build from preset then apply per-field overrides ──
         let mut art = match self.preset {
             Some(preset) => RenderArtDefaults::from(preset),
             None => RenderArtDefaults::default(),
@@ -739,7 +733,7 @@ impl ProfileOverrides {
         if let Some(r) = self.afterglow_rate {
             art.afterglow_rate = r;
         }
-        // Validation parity: enforce afterglow ranges as in to_render_art_defaults.
+        // Validate afterglow ranges (same bounds as the startup resolution path).
         crate::validation::rules::AFTERGLOW
             .validate_f32(art.afterglow)
             .map_err(|e| e.to_string())?;
@@ -747,7 +741,7 @@ impl ProfileOverrides {
             .validate_f32(art.afterglow_rate)
             .map_err(|e| e.to_string())?;
 
-        // ── resolve_render_config body (src/cli.rs:2129-2167) ──
+        // ── resolve palette, charset, color-AA from art + overrides ──
         let palette = if let Some(ref p) = self.palette {
             // CLI explicitly set
             p.clone()

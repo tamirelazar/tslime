@@ -343,8 +343,8 @@ pub fn apply_to_runtime_state(
     // Apply per-charset color-AA via the same priority as apply_color_aa_all:
     // color_aa_all (full array) takes precedence; scalar color_aa is the fallback
     // for configs saved before color_aa_all was introduced (back-compat).
-    // NOTE: `apply_to_runtime_state` is the legacy path used by tests; the seam
-    // (app/mod.rs apply_overrides) delegates to rs.apply_color_aa_all() instead.
+    // NOTE: `apply_overrides` (app/mod.rs) delegates to rs.apply_color_aa_all() for
+    // the same logic; this path mirrors that behavior for unit-test use.
     if let Some(ref arr) = overrides.color_aa_all {
         for (i, aa) in arr.iter().enumerate() {
             if i < runtime_state.color_aa.len() {
@@ -356,8 +356,8 @@ pub fn apply_to_runtime_state(
         runtime_state.color_aa[i] = aa;
     }
 
-    // Phase C: apply seam extends this (restart-only levers: population, init_mode,
-    // food_path, auto_reset, grid, grid_style, warmup_frames).
+    // Restart-only levers (population, init_mode, food_path, auto_reset, grid, warmup_frames)
+    // are handled by apply_overrides (app/mod.rs) which re-initialises the simulation.
 
     Ok(())
 }

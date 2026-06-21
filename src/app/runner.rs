@@ -937,7 +937,10 @@ pub fn run_simulation(
                 let frame_time_ms = timer.last_frame_ms();
                 let cpu_percent = (frame_time_ms / TARGET_FRAME_TIME_MS) * 100.0;
 
-                let init_mode_name = match init_mode {
+                // Use the live original_init_mode (updated by apply_overrides on config load),
+                // not the startup-time `init_mode` local which is stale after a config load.
+                let live_init_mode = runtime_state.original_init_mode;
+                let init_mode_name = match live_init_mode {
                     InitMode::Random => "Random",
                     InitMode::CentralBurst => "Central",
                     InitMode::Circle => "Circle",
@@ -968,7 +971,7 @@ pub fn run_simulation(
                     Charset::CustomAscii(_) => "Custom",
                 };
 
-                let food_source = if init_mode == InitMode::Food {
+                let food_source = if live_init_mode == InitMode::Food {
                     Some(args.food.clone())
                 } else {
                     None

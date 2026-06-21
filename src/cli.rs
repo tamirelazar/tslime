@@ -1818,7 +1818,7 @@ impl Args {
     }
 
     /// Returns `Some(charset)` when the user passed a `--charset` flag, else `None`.
-    /// Used by `resolve_render_config` to distinguish "CLI set" from "use preset/default".
+    /// Used to distinguish "CLI set" from "use preset/default" during render resolution.
     pub(crate) fn charset_parsed(&self) -> Result<Option<crate::render::charset::Charset>, String> {
         if self.charset_explicitly_set() {
             Ok(Some(crate::render::charset::Charset::from_args(self)))
