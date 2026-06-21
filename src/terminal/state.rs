@@ -2790,4 +2790,23 @@ mod tests {
             "editing sensor_angle away from the startup value must read dirty"
         );
     }
+
+    /// FALSE-POSITIVE GATE: a bare-preset session for PetriDish (which carries a
+    /// Circle obstacle in its sim defaults) must NOT read dirty immediately after
+    /// applying the preset.  Before the capture_overrides fix this returned true
+    /// because obstacles: Vec::new() was emitted, causing the live projection to
+    /// resolve to no obstacle while the active side resolved to the preset obstacle.
+    #[test]
+    fn clean_preset_swap_with_obstacles_is_not_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        let ov = ProfileOverrides {
+            preset: Some(Preset::PetriDish),
+            ..Default::default()
+        };
+        let (rs, sim) = clean_session(ov);
+        assert!(
+            !rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "a freshly-applied PetriDish preset (with obstacles) must not read dirty"
+        );
+    }
 }

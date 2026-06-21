@@ -1,7 +1,8 @@
+use crate::cli::{AttractorArg, ObstacleArg, SpeciesArg};
 use crate::profile_overrides::ProfileOverrides;
 use crate::render::charset::{Charset, GlyphConfig, ALL_CHARSETS};
 use crate::render::palette::{IntensityMapping, Palette, PaletteCycle, TemporalMode, PALETTES};
-use crate::simulation::config::SimConfig;
+use crate::simulation::config::{SimConfig, TerrainType};
 use crate::terminal::control::RuntimeState;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -27,6 +28,21 @@ pub struct NamedProfile {
 struct ConfigFile {
     #[serde(rename = "preset")]
     presets: Vec<NamedProfile>,
+}
+
+/// Convert a `TerrainType` value to the string form used by `ProfileOverrides.terrain`.
+///
+/// `TerrainType` only implements `FromStr` (no `Display`), so this helper provides
+/// the reverse mapping for capture.  Returns `None` for `TerrainType::None` so that
+/// the field round-trips identically to what `from_args` emits for the default
+/// `--terrain none` flag.
+fn terrain_name(t: TerrainType) -> Option<String> {
+    match t {
+        TerrainType::None => Some("none".to_string()),
+        TerrainType::Smooth => Some("smooth".to_string()),
+        TerrainType::Turbulent => Some("turbulent".to_string()),
+        TerrainType::Mixed => Some("mixed".to_string()),
+    }
 }
 
 /// Build a `ProfileOverrides` from live runtime state for config-save.
@@ -98,16 +114,42 @@ pub fn capture_overrides(
         food_image_path: None,
         food_image_invert: None,
         food_image_scale: None,
-        attractors: Vec::new(),
-        attractor_strength: None,
-        obstacles: Vec::new(),
-        species: Vec::new(),
-        separate_species_trails: false,
+        attractors: sim_config
+            .attractors
+            .iter()
+            .map(|a| AttractorArg {
+                x: a.x,
+                y: a.y,
+                strength: a.strength,
+            })
+            .collect(),
+        attractor_strength: Some(sim_config.attractor_strength),
+        obstacles: sim_config
+            .obstacles
+            .iter()
+            .map(|o| ObstacleArg {
+                obstacle: o.clone(),
+            })
+            .collect(),
+        species: sim_config
+            .species_configs
+            .iter()
+            .map(|s| SpeciesArg {
+                name: s.name.clone(),
+                count: s.count,
+                sensor_angle: s.sensor_angle,
+                rotation_angle: s.rotation_angle,
+                step_size: s.step_size,
+                deposit_amount: s.deposit_amount,
+                color: s.color,
+            })
+            .collect(),
+        separate_species_trails: sim_config.separate_species_trails,
         species_colors: false,
         use_simd: None,
         wind: rs.wind.map(|w| crate::cli::WindArg { dx: w.dx, dy: w.dy }),
-        terrain: None,
-        terrain_strength: None,
+        terrain: terrain_name(sim_config.terrain),
+        terrain_strength: Some(sim_config.terrain_strength),
         background_color: sim_config.background_color.clone(),
         boundary_mode: None,
         window_frame: Some(sim_config.window_frame),
@@ -1306,5 +1348,103 @@ charset = "halfblock"
             AaStrength::Subtle,
             "scalar fallback must set the active charset slot"
         );
+    }
+
+    /// capture_overrides must round-trip obstacles, attractors, attractor_strength,
+    /// terrain, and terrain_strength through resolve() so a clean session stays clean.
+    /// This is the regression test for I-1: before the fix, these fields were hardcoded
+    /// to empty / None, causing resolved SimConfigs to diverge on re-capture.
+    #[test]
+    fn capture_roundtrip_obstacle_attractor_and_terrain() {
+        use crate::simulation::config::{Attractor, TerrainType};
+
+        // Build a SimConfig carrying all the fields the fix addresses.
+        let obstacle = crate::simulation::config::Obstacle::Circle {
+            x: 200.0,
+            y: 100.0,
+            radius: 90.0,
+        };
+        let attractor = Attractor::new(10.0, 20.0, 0.8);
+        let sim = SimConfig {
+            obstacles: vec![obstacle.clone()],
+            attractors: vec![attractor],
+            attractor_strength: 1.5,
+            terrain: TerrainType::Smooth,
+            terrain_strength: 2.0,
+            ..SimConfig::default()
+        };
+
+        let rs = create_test_runtime_state();
+        let overrides = capture_overrides(&sim, Palette::Organic, Charset::HalfBlock, &rs);
+
+        // obstacles must be captured, not empty.
+        assert_eq!(
+            overrides.obstacles.len(),
+            1,
+            "obstacles must be captured from sim_config"
+        );
+        assert_eq!(overrides.obstacles[0].obstacle, obstacle);
+
+        // attractors must be captured.
+        assert_eq!(
+            overrides.attractors.len(),
+            1,
+            "attractors must be captured from sim_config"
+        );
+        assert!((overrides.attractors[0].x - 10.0).abs() < 1e-6);
+        assert!((overrides.attractors[0].y - 20.0).abs() < 1e-6);
+        assert!((overrides.attractors[0].strength - 0.8).abs() < 1e-6);
+
+        // attractor_strength must be captured.
+        assert_eq!(overrides.attractor_strength, Some(1.5));
+
+        // terrain must be captured as "smooth".
+        assert_eq!(overrides.terrain, Some("smooth".to_string()));
+
+        // terrain_strength must be captured.
+        assert_eq!(overrides.terrain_strength, Some(2.0));
+
+        // Round-trip through resolve: the resolved SimConfig must carry the same values.
+        let profile = overrides.resolve().expect("overrides must resolve");
+        assert_eq!(
+            profile.sim.obstacles,
+            vec![obstacle],
+            "resolved obstacles must match capture source"
+        );
+        assert_eq!(
+            profile.sim.attractors.len(),
+            1,
+            "resolved attractors must match capture source"
+        );
+        assert!((profile.sim.attractors[0].x - 10.0).abs() < 1e-6);
+        assert!((profile.sim.attractor_strength - 1.5).abs() < 1e-6);
+        assert_eq!(profile.sim.terrain, TerrainType::Smooth);
+        assert!((profile.sim.terrain_strength - 2.0).abs() < 1e-6);
+    }
+
+    /// terrain_name helper: all four variants map to the expected strings.
+    #[test]
+    fn terrain_name_covers_all_variants() {
+        use crate::simulation::config::TerrainType;
+        assert_eq!(terrain_name(TerrainType::None), Some("none".to_string()));
+        assert_eq!(
+            terrain_name(TerrainType::Smooth),
+            Some("smooth".to_string())
+        );
+        assert_eq!(
+            terrain_name(TerrainType::Turbulent),
+            Some("turbulent".to_string())
+        );
+        assert_eq!(terrain_name(TerrainType::Mixed), Some("mixed".to_string()));
+        // Each string must round-trip through FromStr.
+        for (t, s) in [
+            (TerrainType::None, "none"),
+            (TerrainType::Smooth, "smooth"),
+            (TerrainType::Turbulent, "turbulent"),
+            (TerrainType::Mixed, "mixed"),
+        ] {
+            let parsed: TerrainType = s.parse().expect("must parse");
+            assert_eq!(parsed, t, "terrain_name/FromStr must be inverse for {s}");
+        }
     }
 }
