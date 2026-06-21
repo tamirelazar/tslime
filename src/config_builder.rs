@@ -305,13 +305,10 @@ impl ConfigBuilder {
         // Background color
         config.background_color = self.background_color;
 
-        // Boundary mode: preset suggests (via PresetSimDefaults), CLI overrides,
-        // default fills. The preset layer goes first so an explicit --boundary-mode
-        // still wins below.
+        // Boundary mode: preset suggests (via PresetSimDefaults), CLI overrides.
+        // The preset layer goes first so an explicit --boundary-mode still wins.
         if let Some(preset) = self.preset {
-            if let Some(bm) = PresetSimDefaults::from(preset).boundary_mode {
-                config.boundary_mode = bm;
-            }
+            config.boundary_mode = PresetSimDefaults::from(preset).boundary_mode;
         }
         if let Some(mode) = self.boundary_mode {
             config.boundary_mode = mode;
