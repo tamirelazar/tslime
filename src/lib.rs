@@ -70,6 +70,8 @@ pub mod overlay;
 pub mod palette_manager;
 /// Per-preset optional sim-layer overrides.
 pub(crate) mod preset_sim_defaults;
+/// Shared resolved lever set for presets and saved configs.
+pub(crate) mod profile;
 /// Rendering logic (ASCII/Unicode, color palettes, dithering).
 pub mod render;
 /// Per-preset render/art-layer defaults.

@@ -1224,7 +1224,7 @@ impl Default for SpeciesConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 /// Global simulation configuration.
 pub struct SimConfig {
     /// Sensor angle (degrees).
