@@ -375,6 +375,14 @@ pub(crate) fn dump_sim_config(config: &SimConfig) -> String {
     let _ = writeln!(s, "wind={:?}", config.wind);
     let _ = writeln!(s, "background_color={:?}", config.background_color);
     let _ = writeln!(s, "obstacles={:?}", config.obstacles);
+    let _ = writeln!(s, "attractors={:?}", config.attractors);
+    let _ = writeln!(
+        s,
+        "separate_species_trails={:?}",
+        config.separate_species_trails
+    );
+    let _ = writeln!(s, "sampling_mode={:?}", config.sampling_mode);
+    let _ = writeln!(s, "respawn_config={:?}", config.respawn_config);
     for (i, sp) in config.species_configs.iter().enumerate() {
         let _ = writeln!(
             s,
