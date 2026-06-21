@@ -1266,6 +1266,22 @@ impl RuntimeState {
         self.color_aa[i] = aa;
     }
 
+    /// Restore per-charset color-AA from a `ProfileOverrides`.
+    ///
+    /// Priority: `color_aa_all` (full array) > `color_aa` (active-slot scalar) > leave defaults.
+    /// The caller must then push `rs.current_color_aa()` into the renderer.
+    pub fn apply_color_aa_all(&mut self, ov: &crate::profile_overrides::ProfileOverrides) {
+        if let Some(ref all) = ov.color_aa_all {
+            for (slot, aa) in self.color_aa.iter_mut().zip(all.iter()) {
+                *slot = *aa;
+            }
+        } else if let Some(aa) = ov.color_aa {
+            let i = self.charset_index % self.color_aa.len();
+            self.color_aa[i] = aa;
+        }
+        // else: leave all slots at their current defaults
+    }
+
     /// Cycle the active charset's color-AA strength. No-op (returns false) when
     /// the active charset is AA-ineligible.
     pub fn cycle_color_aa(&mut self) -> bool {

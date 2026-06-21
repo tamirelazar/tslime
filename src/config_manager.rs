@@ -31,22 +31,17 @@ struct ConfigFile {
 
 /// Build a `ProfileOverrides` from live runtime state for config-save.
 ///
-/// Sources each lever from the SAME place the old `SavedConfig::from_runtime` did:
+/// Sources each lever from the live runtime state:
 /// - sim levers from `sim_config` (as-resolved)
 /// - render/art levers from `runtime_state` (live session values)
-/// - reverse/invert/food_persist from startup `args.*` (preserving the
-///   known latent bug that saving captures startup args, not live toggles;
-///   Phase C fixes this at the apply seam)
-///
-/// Signature: capture_overrides(sim, palette, charset, rs, reverse, invert, food_persist)
+/// - reverse/invert/food_persist from `rs.*` (live toggles, not startup args)
+/// - app-runtime levers from `rs.app.*`
+/// - wind from `rs.wind` (lossless precise vector)
 pub fn capture_overrides(
     sim_config: &SimConfig,
     palette: Palette,
     charset: Charset,
     rs: &RuntimeState,
-    reverse: bool,
-    invert: bool,
-    food_persist: bool,
 ) -> ProfileOverrides {
     // Convert sim.max_brightness (white-point) back to user-facing brightness gain.
     let brightness_gain = crate::config_defaults::trail::brightness_gain(sim_config.max_brightness);
@@ -110,7 +105,7 @@ pub fn capture_overrides(
         separate_species_trails: false,
         species_colors: false,
         use_simd: None,
-        wind: None,
+        wind: rs.wind.map(|w| crate::cli::WindArg { dx: w.dx, dy: w.dy }),
         terrain: None,
         terrain_strength: None,
         background_color: sim_config.background_color.clone(),
@@ -146,34 +141,30 @@ pub fn capture_overrides(
         afterglow: Some(rs.afterglow),
         afterglow_rate: Some(rs.afterglow_rate),
 
-        // apply/persistence-only levers (sourced from startup args, per Phase B spec)
-        reverse_palette: Some(reverse),
-        invert_palette: Some(invert),
-        food_persist: Some(food_persist),
+        // apply/persistence-only levers (sourced from live rs, not startup args)
+        reverse_palette: Some(rs.reverse_palette),
+        invert_palette: Some(rs.invert_palette),
+        food_persist: Some(rs.food_persist_enabled),
         // Full per-charset AA array — mirrors old from_runtime which stored the whole array.
         color_aa_all: Some(rs.color_aa.to_vec()),
 
-        // app-runtime levers — the live source `rs.app` now exists (Task 3 wired the
-        // runner to read it). Capturing these from `rs.app` into saved configs is
-        // formally Task 5's scope (capture-from-live); left None here so save output
-        // and the serde/snapshot round-trip tests stay stable until then.
-        // TODO(task-5): capture from rs.app.* (warmup/auto_reset/grid/food_persist).
-        init_mode: None,
-        warmup_frames: None,
-        skip_warmup: None,
-        warmup_brightness_multiplier: None,
-        auto_reset: None,
-        auto_reset_entropy_threshold: None,
-        auto_reset_duration_frames: None,
-        grid: None,
-        grid_style: None,
-        grid_size: None,
-        grid_color: None,
-        grid_opacity: None,
-        grid_adaptive: None,
-        food_persist_strength: None,
-        food_persist_radius: None,
-        food_persist_duration: None,
+        // app-runtime levers — sourced from rs.app (live session values).
+        init_mode: sim_config.preferred_init_mode,
+        warmup_frames: Some(rs.app.warmup_frames),
+        skip_warmup: Some(rs.app.skip_warmup),
+        warmup_brightness_multiplier: Some(rs.app.warmup_brightness_multiplier),
+        auto_reset: Some(rs.app.auto_reset),
+        auto_reset_entropy_threshold: Some(rs.app.auto_reset_entropy_threshold),
+        auto_reset_duration_frames: Some(rs.app.auto_reset_duration_frames),
+        grid: Some(rs.app.grid),
+        grid_style: Some(rs.app.grid_style),
+        grid_size: Some(rs.app.grid_size),
+        grid_color: Some(rs.app.grid_color),
+        grid_opacity: Some(rs.app.grid_opacity),
+        grid_adaptive: Some(rs.app.grid_adaptive),
+        food_persist_strength: Some(rs.app.food_persist_strength),
+        food_persist_radius: Some(rs.app.food_persist_radius),
+        food_persist_duration: Some(rs.app.food_persist_duration),
     }
 }
 
@@ -349,10 +340,11 @@ pub fn apply_to_runtime_state(
     // Apply temporal accent color (typed Option<RgbColor> — no hex parse needed).
     runtime_state.temporal_accent = overrides.temporal_accent;
 
-    // Apply per-charset color-AA. When color_aa_all is present (new format), restore
-    // all slots from the Vec (matches old from_runtime/apply_to_runtime_state behavior).
-    // Fall back to the scalar color_aa for the active charset only (back-compat with
-    // configs saved before color_aa_all was introduced).
+    // Apply per-charset color-AA via the same priority as apply_color_aa_all:
+    // color_aa_all (full array) takes precedence; scalar color_aa is the fallback
+    // for configs saved before color_aa_all was introduced (back-compat).
+    // NOTE: `apply_to_runtime_state` is the legacy path used by tests; the seam
+    // (app/mod.rs apply_overrides) delegates to rs.apply_color_aa_all() instead.
     if let Some(ref arr) = overrides.color_aa_all {
         for (i, aa) in arr.iter().enumerate() {
             if i < runtime_state.color_aa.len() {
@@ -498,15 +490,7 @@ mod tests {
         NamedProfile {
             name: name.to_string(),
             description: None,
-            overrides: capture_overrides(
-                &sim,
-                Palette::Organic,
-                Charset::HalfBlock,
-                &rs,
-                false,
-                false,
-                false,
-            ),
+            overrides: capture_overrides(&sim, Palette::Organic, Charset::HalfBlock, &rs),
         }
     }
 
@@ -539,15 +523,7 @@ mod tests {
         let profile = NamedProfile {
             name: "test_palette".to_string(),
             description: None,
-            overrides: capture_overrides(
-                &sim,
-                Palette::Heat,
-                Charset::HalfBlock,
-                &rs,
-                false,
-                false,
-                false,
-            ),
+            overrides: capture_overrides(&sim, Palette::Heat, Charset::HalfBlock, &rs),
         };
 
         let mut new_state = create_test_runtime_state();
@@ -572,15 +548,7 @@ mod tests {
         let profile = NamedProfile {
             name: "test_sigma".to_string(),
             description: None,
-            overrides: capture_overrides(
-                &sim,
-                Palette::Heat,
-                Charset::HalfBlock,
-                &rs,
-                false,
-                false,
-                false,
-            ),
+            overrides: capture_overrides(&sim, Palette::Heat, Charset::HalfBlock, &rs),
         };
 
         let mut new_state = create_test_runtime_state();
@@ -604,9 +572,6 @@ mod tests {
             Palette::Heat,
             Charset::HalfBlock,
             &rs,
-            false,
-            false,
-            false,
         );
         overrides.intensity_mapping = None;
 
@@ -658,15 +623,7 @@ mod tests {
             ..SimConfig::default()
         };
 
-        let overrides = capture_overrides(
-            &sim_config,
-            Palette::Neon,
-            Charset::HalfBlock,
-            &state,
-            state.reverse_palette,
-            state.invert_palette,
-            false,
-        );
+        let overrides = capture_overrides(&sim_config, Palette::Neon, Charset::HalfBlock, &state);
 
         // Create new state and apply config
         let mut new_state = create_test_runtime_state();
@@ -697,9 +654,6 @@ mod tests {
             Palette::Organic,
             Charset::HalfBlock,
             &create_test_runtime_state(),
-            false,
-            false,
-            false,
         );
         // Simulate an old-format config that had no temporal field.
         overrides.temporal_color = None;
@@ -723,9 +677,6 @@ mod tests {
             Palette::Organic,
             Charset::HalfBlock,
             &state,
-            false,
-            false,
-            false,
         );
 
         // Serialize and deserialize through TOML
@@ -758,15 +709,7 @@ mod tests {
             ..SimConfig::default()
         };
 
-        let overrides = capture_overrides(
-            &sim,
-            Palette::Organic,
-            Charset::HalfBlock,
-            &state,
-            false,
-            false,
-            false,
-        );
+        let overrides = capture_overrides(&sim, Palette::Organic, Charset::HalfBlock, &state);
 
         // Serialize and deserialize through TOML
         let toml_str = toml::to_string(&overrides).expect("serialize must succeed");
@@ -863,9 +806,6 @@ charset = "halfblock"
             Palette::Organic,
             Charset::HalfBlock,
             &state,
-            false,
-            false,
-            false,
         );
 
         // Serialize and deserialize through TOML
@@ -912,9 +852,6 @@ charset = "halfblock"
             Palette::Organic,
             Charset::HalfBlock,
             &state,
-            false,
-            false,
-            false,
         );
 
         assert_eq!(
@@ -958,9 +895,6 @@ charset = "halfblock"
             Palette::Organic,
             Charset::HalfBlock,
             &rs,
-            false,
-            false,
-            false,
         );
 
         assert_eq!(overrides.glyph_selection, Some(GlyphSelection::Hybrid));
@@ -984,9 +918,6 @@ charset = "halfblock"
             Palette::Organic,
             Charset::HalfBlock,
             &rs,
-            false,
-            false,
-            false,
         );
 
         assert_eq!(overrides.glyph_selection, None);
@@ -1072,9 +1003,6 @@ charset = "halfblock"
             Palette::Organic,
             Charset::HalfBlock,
             &rs,
-            false,
-            false,
-            false,
         );
 
         // Verify it's set in the overrides.
@@ -1108,9 +1036,6 @@ charset = "halfblock"
             Palette::Organic,
             Charset::HalfBlock,
             &rs,
-            false,
-            false,
-            false,
         );
         // Should capture the active slot value.
         assert_eq!(overrides.color_aa, Some(AaStrength::Subtle));
@@ -1130,9 +1055,6 @@ charset = "halfblock"
             Palette::Organic,
             Charset::HalfBlock,
             &rs,
-            false,
-            false,
-            false,
         );
         // Simulate a config saved before this feature existed.
         overrides.color_aa = None;
@@ -1164,9 +1086,6 @@ charset = "halfblock"
             Palette::Organic,
             Charset::HalfBlock,
             &rs,
-            false,
-            false,
-            false,
         );
 
         // color_aa_all must capture the full array.
@@ -1218,9 +1137,6 @@ charset = "halfblock"
             Palette::Organic,
             Charset::HalfBlock,
             &rs,
-            false,
-            false,
-            false,
         );
         // Simulate a config saved before color_aa_all existed.
         overrides.color_aa_all = None;
@@ -1236,15 +1152,15 @@ charset = "halfblock"
     #[test]
     fn reverse_invert_food_persist_round_trip() {
         // Verify the 3 new apply/persistence-only levers round-trip.
-        let rs = create_test_runtime_state();
+        let mut rs = create_test_runtime_state();
+        rs.reverse_palette = true;
+        rs.invert_palette = true;
+        rs.food_persist_enabled = true;
         let overrides = capture_overrides(
             &SimConfig::default(),
             Palette::Organic,
             Charset::HalfBlock,
             &rs,
-            true, // reverse
-            true, // invert
-            true, // food_persist
         );
         assert_eq!(overrides.reverse_palette, Some(true));
         assert_eq!(overrides.invert_palette, Some(true));
@@ -1290,15 +1206,7 @@ charset = "halfblock"
         };
         let rs = create_test_runtime_state();
 
-        let overrides = capture_overrides(
-            &sim,
-            Palette::Organic,
-            Charset::HalfBlock,
-            &rs,
-            false,
-            false,
-            false,
-        );
+        let overrides = capture_overrides(&sim, Palette::Organic, Charset::HalfBlock, &rs);
 
         // The overrides should store the brightness as gain.
         let expected_gain = crate::config_defaults::trail::brightness_gain(50.0);
@@ -1313,6 +1221,90 @@ charset = "halfblock"
             (new_state.max_brightness - 50.0).abs() < 1e-3,
             "max_brightness must round-trip through gain (got {})",
             new_state.max_brightness
+        );
+    }
+    #[test]
+    fn capture_reads_live_reverse_flag() {
+        // Proves that capture_overrides reads rs.reverse_palette (live), not a frozen arg.
+        let mut rs = create_test_runtime_state();
+        rs.reverse_palette = true;
+        let overrides = capture_overrides(
+            &SimConfig::default(),
+            Palette::Organic,
+            Charset::HalfBlock,
+            &rs,
+        );
+        assert_eq!(
+            overrides.reverse_palette,
+            Some(true),
+            "capture must read live rs.reverse_palette, not a frozen startup arg"
+        );
+    }
+
+    #[test]
+    fn capture_reads_live_app_lever_warmup_frames() {
+        // Proves app lever round-trips: warmup_frames is captured from rs.app.
+        use crate::app_config::AppRuntimeConfig;
+        let mut rs = create_test_runtime_state();
+        rs.app = AppRuntimeConfig {
+            warmup_frames: 120,
+            ..AppRuntimeConfig::default()
+        };
+        let overrides = capture_overrides(
+            &SimConfig::default(),
+            Palette::Organic,
+            Charset::HalfBlock,
+            &rs,
+        );
+        assert_eq!(overrides.warmup_frames, Some(120));
+        // Resolve and verify it round-trips.
+        let profile = overrides.resolve().expect("resolve must succeed");
+        assert_eq!(profile.app.warmup_frames, 120);
+    }
+
+    #[test]
+    fn apply_color_aa_all_restores_all_slots() {
+        use crate::render::antialiasing::AaStrength;
+        use crate::render::charset::NUM_CHARSETS;
+
+        let mut rs = create_test_runtime_state();
+        // Build overrides with color_aa_all carrying distinct per-slot values.
+        let values: Vec<AaStrength> = (0..NUM_CHARSETS)
+            .map(|i| [AaStrength::Off, AaStrength::Subtle, AaStrength::Strong][i % 3])
+            .collect();
+        let ov = crate::profile_overrides::ProfileOverrides {
+            color_aa_all: Some(values.clone()),
+            ..crate::profile_overrides::ProfileOverrides::default()
+        };
+
+        rs.apply_color_aa_all(&ov);
+
+        for (i, expected) in values.iter().enumerate() {
+            assert_eq!(
+                rs.color_aa[i], *expected,
+                "slot {i} must be restored from color_aa_all"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_color_aa_all_falls_back_to_scalar_active_slot() {
+        use crate::render::antialiasing::AaStrength;
+
+        let mut rs = create_test_runtime_state();
+        rs.charset_index = 0;
+        let ov = crate::profile_overrides::ProfileOverrides {
+            color_aa_all: None,
+            color_aa: Some(AaStrength::Subtle),
+            ..crate::profile_overrides::ProfileOverrides::default()
+        };
+
+        rs.apply_color_aa_all(&ov);
+
+        assert_eq!(
+            rs.color_aa[0],
+            AaStrength::Subtle,
+            "scalar fallback must set the active charset slot"
         );
     }
 }

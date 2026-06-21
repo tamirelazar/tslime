@@ -1257,11 +1257,6 @@ pub fn run_simulation(
                                             runtime_state.live_palette.clone(),
                                             runtime_state.live_charset.clone(),
                                             &runtime_state,
-                                            // Live apply-only flags (a load may have changed them),
-                                            // not the launch CLI args.
-                                            runtime_state.reverse_palette,
-                                            runtime_state.invert_palette,
-                                            runtime_state.food_persist_enabled,
                                         ),
                                     };
 

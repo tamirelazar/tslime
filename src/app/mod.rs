@@ -314,16 +314,8 @@ pub(crate) fn apply_overrides(
     rs.reverse_palette = ov.reverse_palette.unwrap_or(false);
     rs.invert_palette = ov.invert_palette.unwrap_or(false);
     rs.food_persist_enabled = ov.food_persist.unwrap_or(false);
-    // Per-charset color-AA: full array if present, else the scalar on the resolved
-    // charset's slot, else leave defaults (mirrors capture semantics; Task 5 owns
-    // the dedicated apply_color_aa_all helper).
-    if let Some(ref all) = ov.color_aa_all {
-        for (slot, aa) in rs.color_aa.iter_mut().zip(all.iter()) {
-            *slot = *aa;
-        }
-    } else if let Some(aa) = ov.color_aa {
-        rs.color_aa[rs.charset_index] = aa;
-    }
+    // Per-charset color-AA: delegate to apply_color_aa_all (Task 5 helper).
+    rs.apply_color_aa_all(ov);
     renderer.set_color_aa(rs.current_color_aa());
 
     // 6. TOTAL renderer sync ([P1a]) — push EVERYTHING the renderer caches, using
