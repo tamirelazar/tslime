@@ -11,7 +11,7 @@
 use crate::cli::{Args, AttractorArg, ObstacleArg, SpeciesArg, WindArg};
 use crate::profile::Profile;
 use crate::render::antialiasing::AaStrength;
-use crate::render::charset::{Charset, GlyphConfig};
+use crate::render::charset::{Charset, GlyphSelection};
 use crate::render::palette::{IntensityMapping, Palette, PaletteCycle, RgbColor, TemporalMode};
 use crate::render_art_defaults::ResolvedRenderConfig;
 use crate::simulation::config::{
@@ -83,7 +83,10 @@ pub(crate) struct ProfileOverrides {
     pub hue_shift: Option<f32>,
     pub intensity_mapping: Option<IntensityMapping>,
     pub palette_cycle: Option<PaletteCycle>,
-    pub glyph: Option<GlyphConfig>,
+    /// `Some` only when `--glyph-selection` was explicitly provided on the CLI.
+    pub glyph_selection: Option<GlyphSelection>,
+    /// `Some` only when `--glyph-edge-threshold` was explicitly provided on the CLI.
+    pub glyph_edge_threshold: Option<f32>,
     pub temporal_color: Option<f32>,
     pub temporal_lag_frames: Option<f32>,
     pub temporal_mode: Option<TemporalMode>,
@@ -100,19 +103,22 @@ impl ProfileOverrides {
     /// mirrors the predicates from `Args::resolve_render_config` /
     /// `to_render_art_defaults` (`src/cli.rs:2064-2167`).
     pub(crate) fn from_args(args: &Args) -> Self {
-        // Render: resolve glyph from CLI if either glyph flag is set, as in
-        // to_render_art_defaults (src/cli.rs:2082-2084).
-        let glyph = if args.glyph_selection.is_some() || args.glyph_edge_threshold.is_some() {
-            // Parse the glyph config using the same function as the original.
-            // Use the default glyph as the base (same as to_render_art_defaults:
-            // art.glyph is the preset's glyph, but at from_args time we don't
-            // know the preset art yet — the merge happens in resolve_render).
-            // We store the CLI-authored glyph overrides here so resolve_render
-            // can apply them as the original does.
-            args.glyph_config_parsed(GlyphConfig::default()).ok()
-        } else {
-            None
-        };
+        // Render: glyph — store the raw CLI-flag values separately so resolve_render
+        // can apply them onto the PRESET's art.glyph exactly as glyph_config_parsed
+        // does (src/cli.rs:2006-2018). Pre-parsing against GlyphConfig::default() would
+        // make an explicit --glyph-edge-threshold 0.15 (== the default) indistinguishable
+        // from "not set", silently dropping the override on presets with a different
+        // default edge_threshold (e.g. Etching). Clamp edge_threshold here to mirror
+        // the clamp inside glyph_config_parsed.
+        //
+        // Note: glyph_selection parsing here via .ok() is safe — clap validates the
+        // string against the GlyphSelection enum before Args is constructed, so the
+        // error path is unreachable at runtime. (Finding 3: kept .ok() with comment.)
+        let glyph_selection = args
+            .glyph_selection
+            .as_ref()
+            .and_then(|s| s.parse::<GlyphSelection>().ok());
+        let glyph_edge_threshold = args.glyph_edge_threshold.map(|t| t.clamp(0.0, 2.0));
 
         // Render: temporal_mode parsed from string, mirroring to_render_art_defaults.
         let temporal_mode =
@@ -124,6 +130,8 @@ impl ProfileOverrides {
                 });
 
         // Render: temporal_accent parsed from hex string.
+        // .ok(): hex string is validated by clap; parse error is unreachable at runtime.
+        // (Finding 3: kept .ok() with comment rather than restructuring from_args.)
         let temporal_accent = args.temporal_accent.as_ref().and_then(|hex| {
             u32::from_str_radix(hex.trim_start_matches('#'), 16)
                 .ok()
@@ -131,6 +139,8 @@ impl ProfileOverrides {
         });
 
         // Render: palette — Some only when explicitly set on CLI.
+        // .ok(): palette string is validated by clap; parse error is unreachable at runtime.
+        // (Finding 3: kept .ok() with comment rather than restructuring from_args.)
         let palette = if args.palette_explicitly_set() {
             args.palette().ok()
         } else {
@@ -144,6 +154,8 @@ impl ProfileOverrides {
             if let Some(n) = args.palette_cycles {
                 pc.cycles = n;
             }
+            // .ok(): palette_cycle_mode string is clap-validated; error is unreachable.
+            // (Finding 3: kept .ok() with comment.)
             if let Some(mode) = args.palette_cycle_mode_parsed().ok().flatten() {
                 pc.mode = mode;
             }
@@ -153,6 +165,8 @@ impl ProfileOverrides {
         };
 
         // Render: intensity_mapping — Some when explicitly set on CLI.
+        // .ok(): intensity_mapping string is clap-validated; error is unreachable.
+        // (Finding 3: kept .ok() with comment.)
         let intensity_mapping = if args.intensity_mapping.is_some() {
             args.intensity_mapping().ok()
         } else {
@@ -221,7 +235,8 @@ impl ProfileOverrides {
             hue_shift: args.palette_shift,
             intensity_mapping,
             palette_cycle,
-            glyph,
+            glyph_selection,
+            glyph_edge_threshold,
             temporal_color: args.temporal_color,
             temporal_lag_frames: args.temporal_lag,
             temporal_mode,
@@ -505,17 +520,15 @@ impl ProfileOverrides {
         if let Some(ref pc) = self.palette_cycle {
             art.palette_cycle = *pc;
         }
-        if let Some(ref glyph) = self.glyph {
-            // Merge with preset glyph as base (same as glyph_config_parsed does).
-            if glyph.selection.is_some() {
-                art.glyph.selection = glyph.selection;
+        // Mirror glyph_config_parsed(art.glyph) exactly (src/cli.rs:2006-2018):
+        // only apply when at least one glyph CLI flag was explicitly provided.
+        if self.glyph_selection.is_some() || self.glyph_edge_threshold.is_some() {
+            if let Some(sel) = self.glyph_selection {
+                art.glyph.selection = Some(sel);
             }
-            if glyph.edge_threshold != GlyphConfig::default().edge_threshold
-                || self.glyph.as_ref().map(|g| g.edge_threshold)
-                    != Some(GlyphConfig::default().edge_threshold)
-            {
-                // Always propagate the parsed edge_threshold from CLI.
-                art.glyph.edge_threshold = glyph.edge_threshold;
+            if let Some(t) = self.glyph_edge_threshold {
+                // Already clamped in from_args; applied unconditionally like the oracle.
+                art.glyph.edge_threshold = t;
             }
         }
         if let Some(c) = self.temporal_color {
@@ -549,7 +562,23 @@ impl ProfileOverrides {
             // CLI explicitly set
             p.clone()
         } else {
-            art.palette.unwrap_or(crate::cli::Palette::Moss)
+            // Mirror the oracle's fallback: art.palette else the default-palette name.
+            // We parse DEFAULT_PALETTE_NAME rather than hard-coding Palette::Moss so
+            // this stays correct if the default is changed. (Finding 2.)
+            // Invariant: crate::config_defaults::palette::DEFAULT_PALETTE_NAME == "moss"
+            // → parse always succeeds; Palette::Moss is a safe fallback.
+            art.palette.unwrap_or_else(|| {
+                use crate::render::palette::PALETTES;
+                PALETTES
+                    .iter()
+                    .find(|spec| {
+                        spec.name.eq_ignore_ascii_case(
+                            crate::config_defaults::palette::DEFAULT_PALETTE_NAME,
+                        )
+                    })
+                    .map(|spec| spec.palette.clone())
+                    .unwrap_or(crate::cli::Palette::Moss)
+            })
         };
         let charset = self
             .charset
@@ -646,6 +675,13 @@ mod tests {
             &["--palette", "heat", "--braille"],
             &["--temporal-color", "0.6", "--temporal-mode", "accent"],
             &["--afterglow", "0.4", "--palette-shift", "8"],
+            // Finding 1 regression: --glyph-edge-threshold equal to GlyphConfig::default()
+            // must NOT be silently dropped when the preset has a different default.
+            // Oracle: etching base edge_threshold=0.08 → CLI 0.15 wins → 0.15.
+            // Old port bug: 0.15 == GlyphConfig::default().edge_threshold → kept 0.08.
+            &["--preset", "etching", "--glyph-edge-threshold", "0.15"],
+            // --glyph-selection override on a glyph-art preset (valid tokens: brightness, shape, hybrid).
+            &["--preset", "etching", "--glyph-selection", "brightness"],
         ];
         for c in cases {
             let a = args(c);
