@@ -594,7 +594,12 @@ pub fn run_simulation(
             runtime_state.temporal_accent,
         );
 
-        let current_config = sim.config().clone();
+        // Narrow live reads instead of cloning the whole SimConfig (which carries heap Vecs
+        // including obstacle masks). DiffusionKernel is Copy; species colors are the only Vec
+        // consumers, collected once here and reused at both render sites.
+        let current_diffusion_kernel = sim.config().diffusion_kernel;
+        let current_species_rgb: Vec<crate::render::palette::RgbColor> =
+            extract_species_rgb_colors(sim.config());
 
         adaptive_brightness.update(downsampled_frame.cells());
         let mut max_brightness = if current_auto_normalize {
@@ -1074,10 +1079,9 @@ pub fn run_simulation(
 
         if args.species_colors_enabled() && sim.config().separate_species_trails {
             let species_trail_maps = sim.trail_maps_for_species_colors();
-            let species_rgb_colors = extract_species_rgb_colors(&current_config);
             let combined: Vec<_> = species_trail_maps
                 .iter()
-                .zip(species_rgb_colors.iter())
+                .zip(current_species_rgb.iter())
                 .map(|(tm, color)| (*tm, *color))
                 .collect();
             renderer.render_multi_species_with_overlay(
@@ -2291,7 +2295,7 @@ pub fn run_simulation(
                 };
 
             // Build status line
-            let diffusion_kernel_name = match current_config.diffusion_kernel {
+            let diffusion_kernel_name = match current_diffusion_kernel {
                 DiffusionKernel::Mean3x3 => "Mean3x3",
                 DiffusionKernel::Gaussian => "Gaussian",
             };
@@ -2324,10 +2328,9 @@ pub fn run_simulation(
             // Re-render with updated pause state
             if args.species_colors_enabled() && sim.config().separate_species_trails {
                 let species_trail_maps = sim.trail_maps_for_species_colors();
-                let species_rgb_colors = extract_species_rgb_colors(&current_config);
                 let combined: Vec<_> = species_trail_maps
                     .iter()
-                    .zip(species_rgb_colors.iter())
+                    .zip(current_species_rgb.iter())
                     .map(|(tm, color)| (*tm, *color))
                     .collect();
                 renderer.render_multi_species_with_overlay(
