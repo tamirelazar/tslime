@@ -210,12 +210,14 @@ impl ConfigBuilder {
             }
         }
 
-        // Attractors and obstacles
-        config.attractors = self
-            .attractors
-            .iter()
-            .map(|a| Attractor::new(a.x, a.y, a.strength))
-            .collect();
+        // Attractors: CLI overrides; absent --attract, the preset's survive.
+        if !self.attractors.is_empty() {
+            config.attractors = self
+                .attractors
+                .iter()
+                .map(|a| Attractor::new(a.x, a.y, a.strength))
+                .collect();
+        }
 
         if let Some(strength) = self.attractor_strength {
             config.attractor_strength = strength;
@@ -226,8 +228,10 @@ impl ConfigBuilder {
         }
         let _ = config.load_obstacle_masks();
 
-        // Species configuration
-        config.separate_species_trails = self.separate_species_trails || self.species_colors;
+        // Separate trails: CLI/species-colors force-on; absent both, preset survives.
+        if self.separate_species_trails || self.species_colors {
+            config.separate_species_trails = true;
+        }
 
         if let Some(use_simd) = self.use_simd {
             config.use_simd = use_simd;
@@ -406,6 +410,51 @@ mod tests {
             .expect("assemble should succeed");
         assert_eq!(config.sensor_angle, agent::DEFAULT_SENSOR_ANGLE);
         assert_eq!(config.total_population(), population::DEFAULT_POPULATION);
+    }
+
+    #[test]
+    fn empty_cli_attractors_keep_preset_base_then_override_lands() {
+        // No --attract: the guard must not clobber the preset's attractors
+        // (Organic ships none, so they stay empty rather than being reassigned).
+        let cfg = ConfigBuilder::from_args(&Args::parse_from(["tslime", "--preset", "organic"]))
+            .assemble()
+            .expect("assemble");
+        assert!(cfg.attractors.is_empty());
+        // --attract lands via the override branch.
+        let cfg = ConfigBuilder::from_args(&Args::parse_from([
+            "tslime",
+            "--preset",
+            "organic",
+            "--attract",
+            "5,5,1.0",
+        ]))
+        .assemble()
+        .expect("assemble");
+        assert_eq!(cfg.attractors.len(), 1);
+    }
+
+    #[test]
+    fn no_trail_flags_keep_preset_separate_trails() {
+        // Absent both flags, the preset's separate_species_trails survives
+        // (Organic = false) — the guard never forces false.
+        let cfg = ConfigBuilder::from_args(&Args::parse_from(["tslime", "--preset", "organic"]))
+            .assemble()
+            .expect("assemble");
+        assert!(!cfg.separate_species_trails);
+    }
+
+    #[cfg(feature = "multi-species")]
+    #[test]
+    fn species_colors_forces_separate_trails_on() {
+        let cfg = ConfigBuilder::from_args(&Args::parse_from([
+            "tslime",
+            "--preset",
+            "organic",
+            "--species-colors",
+        ]))
+        .assemble()
+        .expect("assemble");
+        assert!(cfg.separate_species_trails);
     }
 
     #[test]
