@@ -1,4 +1,5 @@
 use crate::render::gradients;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -225,7 +226,7 @@ pub const PALETTES: &[PaletteSpec] = &[
     },
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// An RGB color value.
 pub struct RgbColor {
     /// Red component (0-255).
@@ -2747,7 +2748,8 @@ pub fn truecolor_ansi_bg(r: u8, g: u8, b: u8) -> String {
 }
 
 /// Color-modulation mode for temporal-difference coloring (lever 3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum TemporalMode {
     /// Rotate the base color's hue in OKLch by the (signed) temporal difference.
     Hue,
@@ -2757,7 +2759,8 @@ pub enum TemporalMode {
 
 /// Spatial palette-repeat mode (lever 6). Remaps the gradient index `t`
 /// pre-lookup so the palette tiles across the brightness range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum PaletteCycleMode {
     /// Sawtooth `fract(t·n)` — seam unless the palette endpoints match.
     Wrap,
@@ -2777,7 +2780,7 @@ impl std::fmt::Display for PaletteCycleMode {
 
 /// Palette-cycle configuration: how many times the palette repeats across the
 /// brightness range and the repeat mode. `cycles = 1` (the default) is identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PaletteCycle {
     /// Number of palette repeats across `[0,1]`. `1` = no repeat (identity).
     pub cycles: u32,

@@ -18,11 +18,13 @@ use crate::simulation::config::{
     Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, Preset, SimConfig,
     TerminalSizeThreshold, WindowFrame, WindowPadding,
 };
+use serde::{Deserialize, Serialize};
 
 /// The single all-`Option` authored partial (sim ⊕ render ⊕ seed). Sim fields
 /// mirror the former `ConfigBuilder`; render fields mirror what
 /// `Args::resolve_render_config` reads.
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub(crate) struct ProfileOverrides {
     // ── provenance / base selector ──
     pub preset: Option<Preset>,
@@ -49,7 +51,9 @@ pub(crate) struct ProfileOverrides {
     pub attractor_strength: Option<f32>,
     pub obstacles: Vec<ObstacleArg>,
     pub species: Vec<SpeciesArg>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub separate_species_trails: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub species_colors: bool,
     pub use_simd: Option<bool>,
     pub wind: Option<WindArg>,
@@ -74,11 +78,26 @@ pub(crate) struct ProfileOverrides {
 
     // ── render levers (mirror src/cli.rs resolve_render_config + to_render_art_defaults) ──
     /// `Some` only when the CLI palette was explicitly set (see `palette_explicitly_set`).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_opt_palette"
+    )]
     pub palette: Option<Palette>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_opt_charset"
+    )]
     pub charset: Option<Charset>,
     pub color_aa: Option<AaStrength>,
     /// CLI `--palette-shift` (maps to hue_shift). `None` falls through to preset art.
     pub hue_shift: Option<f32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_opt_intensity_mapping"
+    )]
     pub intensity_mapping: Option<IntensityMapping>,
     pub palette_cycle: Option<PaletteCycle>,
     /// `Some` only when `--glyph-selection` was explicitly provided on the CLI.
@@ -88,6 +107,11 @@ pub(crate) struct ProfileOverrides {
     pub temporal_color: Option<f32>,
     pub temporal_lag_frames: Option<f32>,
     pub temporal_mode: Option<TemporalMode>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_opt_rgb_hex"
+    )]
     pub temporal_accent: Option<RgbColor>,
     pub afterglow: Option<f32>,
     pub afterglow_rate: Option<f32>,
@@ -660,6 +684,265 @@ pub(crate) fn dump_sim_config(config: &crate::simulation::config::SimConfig) -> 
     s
 }
 
+// ── serde helpers for fields needing custom (de)serialization ──
+
+/// Serde module for `Option<RgbColor>` serialized as a `"rrggbb"` hex string.
+mod serde_opt_rgb_hex {
+    use crate::render::palette::RgbColor;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(color: &Option<RgbColor>, s: S) -> Result<S::Ok, S::Error> {
+        match color {
+            Some(c) => format!("{:02x}{:02x}{:02x}", c.r, c.g, c.b).serialize(s),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<RgbColor>, D::Error> {
+        let hex = String::deserialize(d)?;
+        let hex = hex.trim_start_matches('#');
+        let v = u32::from_str_radix(hex, 16).map_err(serde::de::Error::custom)?;
+        Ok(Some(RgbColor::from_hex(v)))
+    }
+}
+
+/// Serde module for `Option<Palette>`.
+/// Built-in palettes serialize as their lowercase name (e.g. `"heat"`, `"moss"`).
+/// `Custom` serializes as `"custom:#rrggbb,#rrggbb,..."`.
+mod serde_opt_palette {
+    use crate::render::palette::{Palette, RgbColor, PALETTES};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(p: &Option<Palette>, s: S) -> Result<S::Ok, S::Error> {
+        match p {
+            None => s.serialize_none(),
+            Some(Palette::Custom(colors)) => {
+                let parts: Vec<String> = colors
+                    .iter()
+                    .map(|c| format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b))
+                    .collect();
+                format!("custom:{}", parts.join(",")).serialize(s)
+            }
+            Some(p) => {
+                let name = PALETTES
+                    .iter()
+                    .find(|spec| &spec.palette == p)
+                    .map(|spec| spec.name)
+                    .unwrap_or("organic");
+                name.to_lowercase().serialize(s)
+            }
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Palette>, D::Error> {
+        let s = String::deserialize(d)?;
+        if let Some(rest) = s.strip_prefix("custom:") {
+            // Parse comma-separated hex colors
+            if rest.is_empty() {
+                return Ok(Some(Palette::Custom(vec![])));
+            }
+            let colors: Result<Vec<RgbColor>, _> = rest
+                .split(',')
+                .map(|hex| {
+                    let hex = hex.trim_start_matches('#');
+                    u32::from_str_radix(hex, 16)
+                        .map(RgbColor::from_hex)
+                        .map_err(|e| serde::de::Error::custom(format!("invalid hex color: {e}")))
+                })
+                .collect();
+            return Ok(Some(Palette::Custom(colors?)));
+        }
+        PALETTES
+            .iter()
+            .find(|spec| spec.name.eq_ignore_ascii_case(&s))
+            .map(|spec| Some(spec.palette.clone()))
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown palette: {s}")))
+    }
+}
+
+/// Serde module for `Option<Charset>`.
+/// Named charsets serialize as lowercase tokens (`"halfblock"`, `"braille"`, etc.).
+/// `CustomAscii` serializes as `"custom:<chars>"`.
+mod serde_opt_charset {
+    use crate::render::charset::Charset;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(c: &Option<Charset>, s: S) -> Result<S::Ok, S::Error> {
+        match c {
+            None => s.serialize_none(),
+            Some(Charset::CustomAscii(chars)) => {
+                let encoded: String = chars.iter().collect();
+                format!("custom:{encoded}").serialize(s)
+            }
+            Some(c) => {
+                let name = match c {
+                    Charset::HalfBlock => "halfblock",
+                    Charset::HalfBlockDual => "halfblockdual",
+                    Charset::Ascii => "ascii",
+                    Charset::Braille => "braille",
+                    Charset::Quadrant => "quadrant",
+                    Charset::Shade => "shade",
+                    Charset::Points => "points",
+                    Charset::Sculpted => "sculpted",
+                    Charset::CustomAscii(_) => unreachable!(),
+                };
+                name.serialize(s)
+            }
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Charset>, D::Error> {
+        let s = String::deserialize(d)?;
+        if let Some(rest) = s.strip_prefix("custom:") {
+            return Ok(Some(Charset::from_custom_string(rest)));
+        }
+        let charset = match s.as_str() {
+            "halfblock" => Charset::HalfBlock,
+            "halfblockdual" => Charset::HalfBlockDual,
+            "ascii" => Charset::Ascii,
+            "braille" => Charset::Braille,
+            "quadrant" => Charset::Quadrant,
+            "shade" => Charset::Shade,
+            "points" => Charset::Points,
+            "sculpted" => Charset::Sculpted,
+            other => {
+                return Err(serde::de::Error::custom(format!(
+                    "unknown charset: {other}"
+                )))
+            }
+        };
+        Ok(Some(charset))
+    }
+}
+
+/// Serde module for `Option<IntensityMapping>`.
+///
+/// Serializes as a TOML inline table with `name`, and optional `base`, `gamma`, `levels`
+/// fields matching the `config_manager.rs` format. Perlin and split mappings are lossy
+/// (serialized as nothing = deserializes to `None`).
+mod serde_opt_intensity_mapping {
+    use crate::render::palette::{IntensityMapping, MappingFunction};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct Proxy {
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        base: Option<f32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        gamma: Option<f32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        levels: Option<u8>,
+    }
+
+    pub fn serialize<S: Serializer>(m: &Option<IntensityMapping>, s: S) -> Result<S::Ok, S::Error> {
+        let mapping = match m {
+            None => return s.serialize_none(),
+            Some(m) => m,
+        };
+        // Extract name + params from the single-segment case (multi-segment is lossy).
+        let proxy = if mapping.segments().len() == 1 {
+            match &mapping.segments()[0].function {
+                MappingFunction::Linear => Some(Proxy {
+                    name: "linear".to_string(),
+                    base: None,
+                    gamma: None,
+                    levels: None,
+                }),
+                MappingFunction::Logarithmic { base } => Some(Proxy {
+                    name: "logarithmic".to_string(),
+                    base: Some(*base),
+                    gamma: None,
+                    levels: None,
+                }),
+                MappingFunction::Exponential { base } => Some(Proxy {
+                    name: "exponential".to_string(),
+                    base: Some(*base),
+                    gamma: None,
+                    levels: None,
+                }),
+                MappingFunction::Power { gamma } => Some(Proxy {
+                    name: "power".to_string(),
+                    base: None,
+                    gamma: Some(*gamma),
+                    levels: None,
+                }),
+                MappingFunction::SquareRoot => Some(Proxy {
+                    name: "sqrt".to_string(),
+                    base: None,
+                    gamma: None,
+                    levels: None,
+                }),
+                MappingFunction::Square => Some(Proxy {
+                    name: "square".to_string(),
+                    base: None,
+                    gamma: None,
+                    levels: None,
+                }),
+                MappingFunction::Sigmoid { steepness } => Some(Proxy {
+                    name: "sigmoid".to_string(),
+                    base: Some(*steepness),
+                    gamma: None,
+                    levels: None,
+                }),
+                MappingFunction::Smoothstep => Some(Proxy {
+                    name: "smoothstep".to_string(),
+                    base: None,
+                    gamma: None,
+                    levels: None,
+                }),
+                MappingFunction::Quantize { levels } => Some(Proxy {
+                    name: "quantize".to_string(),
+                    base: None,
+                    gamma: None,
+                    levels: Some(*levels),
+                }),
+                // Perlin is lossy — cannot faithfully round-trip via this format.
+                MappingFunction::Perlin { .. } => None,
+            }
+        } else {
+            // Multi-segment (e.g. linear_log_split) is lossy.
+            None
+        };
+        match proxy {
+            Some(p) => p.serialize(s),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<Option<IntensityMapping>, D::Error> {
+        use crate::render::palette::{MappingFunction, MappingSegment};
+        let proxy = Proxy::deserialize(d)?;
+        let unit_seg = |function: MappingFunction| -> Option<IntensityMapping> {
+            IntensityMapping::new(vec![MappingSegment {
+                start: 0.0,
+                end: 1.0,
+                function,
+            }])
+            .ok()
+        };
+        let mapping = match proxy.name.as_str() {
+            "linear" => Some(IntensityMapping::linear()),
+            "logarithmic" | "log" => {
+                Some(IntensityMapping::logarithmic(proxy.base.unwrap_or(10.0)))
+            }
+            "exponential" | "exp" => {
+                Some(IntensityMapping::exponential(proxy.base.unwrap_or(10.0)))
+            }
+            "power" | "pow" => Some(IntensityMapping::power(proxy.gamma.unwrap_or(2.2))),
+            "sqrt" | "squareroot" => unit_seg(MappingFunction::SquareRoot),
+            "square" => unit_seg(MappingFunction::Square),
+            "sigmoid" => Some(IntensityMapping::sigmoid(proxy.base.unwrap_or(10.0))),
+            "smoothstep" => Some(IntensityMapping::smoothstep()),
+            "quantize" => Some(IntensityMapping::quantize(proxy.levels.unwrap_or(8))),
+            _ => None,
+        };
+        Ok(mapping)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -926,5 +1209,146 @@ mod tests {
             c.diffusion_sigma, 0.5,
             "--fps 60 Gaussian branch should set sigma to 0.5"
         );
+    }
+
+    // ── serde TOML round-trip tests ──
+
+    #[test]
+    fn overrides_toml_round_trip_scalars() {
+        let o = ProfileOverrides {
+            sensor_angle: Some(33.0),
+            decay_factor: Some(0.91),
+            diffusion_kernel: Some(DiffusionKernel::Gaussian),
+            palette: Some(Palette::Heat),
+            temporal_color: Some(0.6),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        assert_eq!(o, back);
+    }
+
+    #[test]
+    fn overrides_toml_omitted_fields_default_to_none() {
+        let back: ProfileOverrides = toml::from_str("sensor_angle = 12.0\n").expect("de");
+        assert_eq!(back.sensor_angle, Some(12.0));
+        assert_eq!(back.decay_factor, None);
+    }
+
+    #[test]
+    fn overrides_toml_intensity_mapping_round_trip() {
+        let o = ProfileOverrides {
+            intensity_mapping: Some(IntensityMapping::quantize(6)),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        assert_eq!(o.intensity_mapping, back.intensity_mapping);
+    }
+
+    #[test]
+    fn overrides_toml_attractor_vec_round_trip() {
+        use crate::cli::AttractorArg;
+        let o = ProfileOverrides {
+            attractors: vec![AttractorArg {
+                x: 100.0,
+                y: 200.0,
+                strength: 1.5,
+            }],
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        assert_eq!(o, back);
+    }
+
+    #[test]
+    fn overrides_toml_wind_round_trip() {
+        use crate::cli::WindArg;
+        let o = ProfileOverrides {
+            wind: Some(WindArg { dx: 0.5, dy: -0.3 }),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        assert_eq!(o, back);
+    }
+
+    #[test]
+    fn overrides_toml_temporal_accent_hex_round_trip() {
+        let o = ProfileOverrides {
+            temporal_accent: Some(RgbColor::new(0xff, 0xb3, 0x47)),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        assert_eq!(o.temporal_accent, back.temporal_accent);
+        // verify it's stored as hex string
+        assert!(s.contains("ffb347"), "expected hex 'ffb347' in: {s}");
+    }
+
+    #[test]
+    fn overrides_toml_glyph_selection_round_trip() {
+        use crate::render::charset::GlyphSelection;
+        let o = ProfileOverrides {
+            glyph_selection: Some(GlyphSelection::Hybrid),
+            glyph_edge_threshold: Some(0.25),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        assert_eq!(o, back);
+    }
+
+    #[test]
+    fn overrides_toml_palette_cycle_round_trip() {
+        use crate::render::palette::{PaletteCycle, PaletteCycleMode};
+        let o = ProfileOverrides {
+            palette_cycle: Some(PaletteCycle {
+                cycles: 3,
+                mode: PaletteCycleMode::Wrap,
+            }),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        assert_eq!(o, back);
+    }
+
+    #[test]
+    fn overrides_toml_lossless_full_struct_round_trip() {
+        // Round-trip with many losslessly-representable fields set.
+        // Excludes IntensityMapping Perlin/Split (lossy).
+        use crate::render::palette::TemporalMode;
+        use crate::simulation::config::DepositCurve;
+        let o = ProfileOverrides {
+            preset: Some(Preset::Organic),
+            seed: Some(42),
+            sensor_angle: Some(22.5),
+            decay_factor: Some(0.85),
+            diffusion_kernel: Some(DiffusionKernel::Gaussian),
+            palette: Some(Palette::Ocean),
+            temporal_color: Some(0.5),
+            temporal_mode: Some(TemporalMode::Accent),
+            afterglow: Some(0.3),
+            deposit_curve: Some(DepositCurve::Sqrt),
+            intensity_mapping: Some(IntensityMapping::quantize(4)),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        assert_eq!(o, back);
+    }
+
+    #[test]
+    fn overrides_toml_intensity_mapping_perlin_is_lossy() {
+        let o = ProfileOverrides {
+            intensity_mapping: Some(IntensityMapping::perlin(0.15, 4.0, 42)),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        // Perlin is lossy — serializes as None (no recognized name)
+        assert_eq!(back.intensity_mapping, None);
     }
 }

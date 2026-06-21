@@ -4,6 +4,7 @@
 //! including presets, diffusion kernels, initialization modes, and environmental effects.
 
 use image::io::Reader as ImageReader;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::path::Path;
 
@@ -15,7 +16,8 @@ use crate::config_defaults::{
 use crate::render::palette::RgbColor;
 
 /// Algorithm used for pheromone diffusion (spreading).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DiffusionKernel {
     /// Simple 3×3 box blur averaging. Fast with sharp patterns.
     Mean3x3,
@@ -26,7 +28,8 @@ pub enum DiffusionKernel {
 /// Nonlinear curve applied to per-frame accumulated deposit before folding
 /// into the trail. `Linear` (with scale 1, cap 0) is byte-identical to the
 /// historical per-agent deposit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DepositCurve {
     /// Identity: `x`. Default; preserves historical behavior.
     #[default]
@@ -56,7 +59,8 @@ impl DepositCurve {
 /// Named parameter presets for different visual styles.
 ///
 /// Each preset combines multiple parameters optimized for a specific aesthetic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Preset {
     /// Dense, interconnected networks with rapid branching.
     Network,
@@ -71,12 +75,14 @@ pub enum Preset {
     /// Flowing, water-like patterns.
     River,
     /// Petri dish simulation: starts center, slow growth, persistent trails.
+    #[serde(rename = "petridish")]
     PetriDish,
     /// Spinning vortex patterns (rotation_angle > sensor_angle).
     Vortex,
     /// Fast dendritic branching like lightning.
     Lightning,
     /// Edge-of-chaos sensitive patterns (sensor_angle ≈ rotation_angle).
+    #[serde(rename = "chaosedge")]
     ChaosEdge,
     /// Aggregating blob clusters.
     Blob,
@@ -87,8 +93,10 @@ pub enum Preset {
     /// Concentric ripple patterns.
     Ripple,
     /// Enhanced vortex with trail modulation.
+    #[serde(rename = "vortex36")]
     Vortex36,
     /// Dynamic tendrils with trail-based sensor modulation.
+    #[serde(rename = "dynamictendrils")]
     DynamicTendrils,
     /// Bleuje-style front-lit veins: temporal-accent recolor of growing fronts.
     Lumen,
@@ -605,7 +613,7 @@ impl ObstacleMask {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Geometric shape or image obstacle definition.
 pub enum Obstacle {
     /// Circular obstacle.
@@ -731,7 +739,8 @@ impl Obstacle {
 }
 
 /// Boundary handling mode for agent movement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum BoundaryMode {
     /// Agents bounce/reflect at boundaries (default).
     #[default]
@@ -741,7 +750,8 @@ pub enum BoundaryMode {
 }
 
 /// Window frame display mode for terminal visualization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum WindowFrame {
     /// No frame - full terminal used for simulation.
     None,
@@ -801,7 +811,8 @@ impl std::str::FromStr for WindowFrame {
 }
 
 /// Chrome display level for window mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ChromeStyle {
     /// Frame only, no title or footer (default).
     #[default]
@@ -828,7 +839,8 @@ impl std::str::FromStr for ChromeStyle {
 }
 
 /// Visual aspect ratio for the simulation window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct Aspect {
     /// Horizontal units of the aspect ratio.
     pub width: u32,
@@ -916,7 +928,8 @@ impl std::str::FromStr for Aspect {
 }
 
 /// Window outer padding — auto (5% of min terminal dimension, ≥ 2) or fixed cells.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub enum WindowPadding {
     /// Automatically compute padding (5% of smallest terminal dimension, minimum 2 cells).
     #[default]
@@ -939,7 +952,8 @@ impl std::str::FromStr for WindowPadding {
 }
 
 /// Minimum terminal size threshold for fallback logic (WxH format).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct TerminalSizeThreshold {
     /// Minimum terminal width in columns.
     pub width: usize,
@@ -1603,6 +1617,50 @@ impl From<Preset> for SimConfig {
         let mut config = Self::default();
         crate::preset_sim_defaults::PresetSimDefaults::from(preset).apply_to(&mut config);
         config
+    }
+}
+
+// ── serde string conversion impls (used by #[serde(try_from = "String", into = "String")]) ──
+
+impl From<Aspect> for String {
+    fn from(a: Aspect) -> Self {
+        format!("{}:{}", a.width, a.height)
+    }
+}
+
+impl TryFrom<String> for Aspect {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl From<WindowPadding> for String {
+    fn from(p: WindowPadding) -> Self {
+        match p {
+            WindowPadding::Auto => "auto".to_string(),
+            WindowPadding::Fixed(n) => n.to_string(),
+        }
+    }
+}
+
+impl TryFrom<String> for WindowPadding {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl From<TerminalSizeThreshold> for String {
+    fn from(t: TerminalSizeThreshold) -> Self {
+        format!("{}x{}", t.width, t.height)
+    }
+}
+
+impl TryFrom<String> for TerminalSizeThreshold {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
     }
 }
 
