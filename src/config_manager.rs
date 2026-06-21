@@ -153,9 +153,11 @@ pub fn capture_overrides(
         // Full per-charset AA array — mirrors old from_runtime which stored the whole array.
         color_aa_all: Some(rs.color_aa.to_vec()),
 
-        // app-runtime levers — Task 3 will wire these from rs.app (the live source).
-        // For now, source from defaults; no observable change since runner doesn't read rs.app yet.
-        // TODO(task-3): replace AppRuntimeConfig::default() with rs.app.* field reads.
+        // app-runtime levers — the live source `rs.app` now exists (Task 3 wired the
+        // runner to read it). Capturing these from `rs.app` into saved configs is
+        // formally Task 5's scope (capture-from-live); left None here so save output
+        // and the serde/snapshot round-trip tests stay stable until then.
+        // TODO(task-5): capture from rs.app.* (warmup/auto_reset/grid/food_persist).
         init_mode: None,
         warmup_frames: None,
         skip_warmup: None,

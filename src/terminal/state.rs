@@ -180,6 +180,34 @@ impl WindDirection {
         }
     }
 
+    /// Derive the nearest coarse direction label from a precise wind vector.
+    ///
+    /// Display-only: snaps the (dx, dy) vector to one of the eight compass
+    /// directions for the dashboard label. The precise vector itself lives in
+    /// `RuntimeState::wind` and is never reconstructed from this label.
+    pub fn from_wind(wind: Option<Wind>) -> Self {
+        let Some(w) = wind else {
+            return WindDirection::None;
+        };
+        if w.dx == 0.0 && w.dy == 0.0 {
+            return WindDirection::None;
+        }
+        // Angle measured with +x = East, +y = South (screen coords).
+        let angle = w.dy.atan2(w.dx).to_degrees();
+        // Normalize to [0, 360): 0=E, 90=S, 180=W, 270=N.
+        let norm = ((angle % 360.0) + 360.0) % 360.0;
+        match (norm / 45.0).round() as i32 % 8 {
+            0 => WindDirection::East,
+            1 => WindDirection::Southeast,
+            2 => WindDirection::South,
+            3 => WindDirection::Southwest,
+            4 => WindDirection::West,
+            5 => WindDirection::Northwest,
+            6 => WindDirection::North,
+            _ => WindDirection::Northeast,
+        }
+    }
+
     /// Returns the display name of the direction.
     pub fn name(&self) -> &'static str {
         match self {
@@ -584,6 +612,20 @@ pub struct RuntimeState {
     pub default_values: DefaultValues,
     /// CLI overrides for custom parameters (stored when launched with CLI args).
     pub cli_overrides: Option<SimConfig>,
+    /// Application-runtime config (warmup / auto-reset / grid / food-persist).
+    /// The single live source of truth for restart-only levers the runner reads.
+    pub(crate) app: crate::app_config::AppRuntimeConfig,
+    /// Precise wind vector mirrored from the sim config. LOSSLESS — preserves
+    /// diagonals and magnitude that the coarse `wind_direction` label drops.
+    pub wind: Option<Wind>,
+    /// Exact active palette (incl. `Custom`/`CustomAscii`). Drives the renderer so
+    /// custom palettes survive a load instead of falling back to the index palette.
+    pub live_palette: Palette,
+    /// Exact active charset (incl. `Custom`/`CustomAscii`).
+    pub live_charset: Charset,
+    /// The authored overrides describing the currently-active profile. Committed
+    /// only after a successful apply so failed loads never leave stale provenance.
+    pub(crate) active_overrides: crate::profile_overrides::ProfileOverrides,
     /// Render config snapshot captured at launch and after every baseline change;
     /// restored by `apply_render_config` in the `ResetToDefaults` handler.
     pub(crate) baseline_render: crate::render_art_defaults::ResolvedRenderConfig,
@@ -762,6 +804,11 @@ impl RuntimeState {
             config_save_name_input: String::new(),
             default_values,
             cli_overrides: Some(cli_config.clone()),
+            app: crate::app_config::AppRuntimeConfig::default(),
+            wind: cli_config.wind,
+            live_palette: Palette::Organic,
+            live_charset: Charset::HalfBlock,
+            active_overrides: crate::profile_overrides::ProfileOverrides::default(),
             baseline_render: crate::render_art_defaults::ResolvedRenderConfig::default(),
             initial_window_frame: cli_config.window_frame,
             undo_stack: std::collections::VecDeque::with_capacity(50),
@@ -810,6 +857,48 @@ impl RuntimeState {
         r: crate::render_art_defaults::ResolvedRenderConfig,
     ) {
         self.baseline_render = r;
+    }
+
+    /// Mirror the sim-side levers from a `SimConfig` into runtime state.
+    ///
+    /// This is the single source of truth for "what RuntimeState reflects from the
+    /// sim config" — used by `apply_overrides` so a load/swap pushes every sim lever
+    /// into the live-adjustable mirror. It writes ONLY sim-mirror fields.
+    ///
+    /// Wind is preserved LOSSLESSLY: `self.wind = sim.wind` verbatim (the coarse
+    /// `wind_direction` label is derived for display only and never round-trips the
+    /// precise vector). `cli_overrides` is refreshed so reset re-bases on the new config.
+    pub(crate) fn sync_sim_levers(&mut self, sim: &SimConfig) {
+        self.sensor_angle = sim.sensor_angle;
+        self.sensor_distance = sim.sensor_distance;
+        self.rotation_angle = sim.rotation_angle;
+        self.step_size = sim.step_size;
+        self.decay_factor = sim.decay_factor;
+        self.deposit_amount = sim.deposit_amount;
+        self.diffusion_kernel = sim.diffusion_kernel;
+        self.diffusion_sigma = sim.diffusion_sigma;
+        self.attractor_strength = sim.attractor_strength;
+        self.terrain_type = sim.terrain;
+        self.terrain_strength = sim.terrain_strength;
+        self.max_brightness = sim.max_brightness;
+        self.decay_gamma = sim.decay_gamma;
+        self.diffuse_weight = sim.diffuse_weight;
+        self.deposit_curve = sim.deposit_curve;
+        self.deposit_scale = sim.deposit_scale;
+        self.deposit_gamma = sim.deposit_gamma;
+        self.deposit_cap = sim.deposit_cap;
+        self.time_scale = sim.time_scale;
+        self.window_frame = sim.window_frame;
+        self.chrome_style = sim.chrome_style;
+        self.aspect = sim.aspect;
+        self.window_padding = sim.window_padding;
+        self.show_status_bar = sim.show_status_bar;
+        self.min_sim_size = sim.min_sim_size;
+        self.min_frame_size = sim.min_frame_size;
+        // LOSSLESS wind: store the precise vector; derive the coarse label for display.
+        self.wind = sim.wind;
+        self.wind_direction = WindDirection::from_wind(sim.wind);
+        self.cli_overrides = Some(sim.clone());
     }
 
     /// Captures the current state of parameters for undo.
@@ -862,6 +951,8 @@ impl RuntimeState {
         self.motion_blur_frames = state.motion_blur_frames;
         self.window_frame = state.window_frame;
         self.color_aa = state.color_aa;
+        // Keep the exact live palette/charset in step with the restored indices.
+        self.sync_live_from_index();
     }
 
     /// Creates an undo checkpoint if enough time has passed.
@@ -1074,10 +1165,20 @@ impl RuntimeState {
         Self::INTENSITY_MAPPINGS[self.intensity_mapping_index].0
     }
 
+    /// Sync the exact `live_palette`/`live_charset` from the current indices.
+    ///
+    /// Cycling moves to a built-in palette/charset, so the live value tracks the
+    /// index. Custom values are only ever set by the apply path, never by cycling.
+    fn sync_live_from_index(&mut self) {
+        self.live_palette = ALL_PALETTES[self.palette_index].clone();
+        self.live_charset = ALL_CHARSETS[self.charset_index].clone();
+    }
+
     /// Cycles to the next color palette.
     pub fn cycle_palette(&mut self, num_palettes: usize) {
         self.force_checkpoint();
         self.palette_index = (self.palette_index + 1) % num_palettes;
+        self.sync_live_from_index();
     }
 
     /// Cycles to the previous color palette.
@@ -1088,12 +1189,14 @@ impl RuntimeState {
         } else {
             self.palette_index -= 1;
         }
+        self.sync_live_from_index();
     }
 
     /// Cycles to the next charset.
     pub fn cycle_charset(&mut self) {
         self.force_checkpoint();
         self.charset_index = (self.charset_index + 1) % ALL_CHARSETS.len();
+        self.sync_live_from_index();
     }
 
     /// Cycles to the previous charset.
@@ -1104,6 +1207,7 @@ impl RuntimeState {
         } else {
             self.charset_index -= 1;
         }
+        self.sync_live_from_index();
     }
 
     /// Cycles to the next window frame mode.
@@ -1649,6 +1753,7 @@ impl RuntimeState {
         self.terrain_strength = rng.gen_range(0.5..3.0);
 
         self.palette_index = rng.gen_range(0..ALL_PALETTES.len());
+        self.live_palette = ALL_PALETTES[self.palette_index].clone();
         self.max_brightness = rng.gen_range(10.0..40.0);
     }
 

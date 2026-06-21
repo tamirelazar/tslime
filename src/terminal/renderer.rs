@@ -314,6 +314,36 @@ impl TerminalRenderer {
         self.color_aa = aa;
     }
 
+    /// Returns the resolved color-AA strength for the current charset.
+    pub fn color_aa(&self) -> crate::render::antialiasing::AaStrength {
+        self.color_aa
+    }
+
+    /// Update the background color (the color drawn behind empty cells).
+    pub fn set_background_color(&mut self, bg: Option<RgbColor>) {
+        self.background_color = bg;
+    }
+
+    /// Returns the active background color, if any.
+    pub fn background_color(&self) -> Option<RgbColor> {
+        self.background_color
+    }
+
+    /// Returns the active palette.
+    pub fn palette(&self) -> &Palette {
+        &self.palette
+    }
+
+    /// Returns whether the palette is reversed.
+    pub fn reverse_palette(&self) -> bool {
+        self.reverse_palette
+    }
+
+    /// Returns whether the palette is inverted.
+    pub fn invert_palette(&self) -> bool {
+        self.invert_palette
+    }
+
     /// Set specific colors for multi-species rendering.
     pub fn set_species_colors(&mut self, enabled: bool, colors: Vec<RgbColor>) {
         self.species_colors_enabled = enabled;
