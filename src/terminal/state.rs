@@ -482,6 +482,8 @@ pub struct RuntimeState {
     pub time_scale: f32,
     /// Currently active preset.
     pub current_preset: Preset,
+    /// Provenance of the currently-applied profile (preset / saved config / CLI).
+    pub(crate) active_source: crate::profile::ProfileSource,
     /// Index of current palette.
     pub palette_index: usize,
     /// Index of current charset.
@@ -686,6 +688,7 @@ impl RuntimeState {
             controls_category_idx: 0,
             time_scale: cli_config.time_scale,
             current_preset: initial_preset,
+            active_source: crate::profile::ProfileSource::StartupCli,
             palette_index: 0,
             charset_index: 0,
             color_aa: crate::config_defaults::DEFAULT_COLOR_AA,
@@ -2392,5 +2395,13 @@ mod tests {
 
         // After reset the non-active Braille slot must be restored to its default.
         assert_eq!(rs.color_aa[3], braille_default);
+    }
+
+    #[test]
+    fn runtime_state_defaults_active_source_to_startup_cli() {
+        // RuntimeState::new always initialises active_source to StartupCli;
+        // runner.rs overrides it when args.preset is Some(_).
+        let rs = create_test_runtime_state();
+        assert_eq!(rs.active_source, crate::profile::ProfileSource::StartupCli);
     }
 }

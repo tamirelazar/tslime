@@ -22,13 +22,13 @@ pub(crate) struct Profile {
 
 /// Where the active `Profile` came from.
 #[derive(Clone, Debug, PartialEq)]
-#[allow(dead_code)]
 pub(crate) enum ProfileSource {
     /// The profile authored by the launch CLI invocation.
     StartupCli,
     /// A built-in preset selected at runtime.
     Preset(Preset),
     /// A named saved config loaded from disk.
+    #[allow(dead_code)]
     SavedConfig(String),
 }
 
@@ -36,7 +36,6 @@ impl Profile {
     /// Resolve the launch profile from CLI args: preset base ⊕ CLI overrides for
     /// sim, preset render defaults ⊕ CLI overrides for render, plus the explicit
     /// seed if one was passed.
-    #[allow(dead_code)]
     pub(crate) fn resolve_from_args(args: &Args) -> Result<Self, String> {
         let sim = crate::config_builder::ConfigBuilder::from_args(args)
             .assemble()

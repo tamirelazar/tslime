@@ -168,9 +168,9 @@ pub fn run_simulation(
 
     let color_mode = capabilities.auto_select_color_mode(args.color_mode().ok());
 
-    let config = args
-        .to_sim_config()
+    let startup_profile = crate::profile::Profile::resolve_from_args(args)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let config = startup_profile.sim.clone();
     let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
 
     let init_mode = args
@@ -233,9 +233,7 @@ pub fn run_simulation(
 
     let initial_preset = args.preset.unwrap_or(Preset::Organic);
 
-    let resolved = args
-        .resolve_render_config()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let resolved = startup_profile.render.clone();
 
     let mut runtime_state = RuntimeState::new(
         seed,
@@ -248,6 +246,10 @@ pub fn run_simulation(
         args.pause_logo,
         args.pause_pulse_draw_mode,
     );
+    runtime_state.active_source = match args.preset {
+        Some(p) => crate::profile::ProfileSource::Preset(p),
+        None => crate::profile::ProfileSource::StartupCli,
+    };
     runtime_state.preload_pause_logo(term_width as usize, term_height as usize);
     runtime_state.dither_mode = dither_mode;
     runtime_state.trail_age_enabled = args.trail_age;
