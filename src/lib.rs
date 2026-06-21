@@ -68,6 +68,8 @@ pub mod overlay;
 /// Saved palette management.
 #[cfg(feature = "terminal")]
 pub mod palette_manager;
+/// Per-preset optional sim-layer overrides.
+pub(crate) mod preset_sim_defaults;
 /// Rendering logic (ASCII/Unicode, color palettes, dithering).
 pub mod render;
 /// Per-preset render/art-layer defaults.

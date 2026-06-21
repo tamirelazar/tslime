@@ -6,6 +6,7 @@
 
 use crate::cli::{Args, AttractorArg, ObstacleArg, SpeciesArg, WindArg};
 use crate::config_defaults::population;
+use crate::preset_sim_defaults::PresetSimDefaults;
 use crate::simulation::config::{
     Aspect, Attractor, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, Preset, SimConfig,
     SpeciesConfig, TerminalSizeThreshold, TerrainType, Wind, WindowFrame, WindowPadding,
@@ -304,7 +305,14 @@ impl ConfigBuilder {
         // Background color
         config.background_color = self.background_color;
 
-        // Boundary mode
+        // Boundary mode: preset suggests (via PresetSimDefaults), CLI overrides,
+        // default fills. The preset layer goes first so an explicit --boundary-mode
+        // still wins below.
+        if let Some(preset) = self.preset {
+            if let Some(bm) = PresetSimDefaults::from(preset).boundary_mode {
+                config.boundary_mode = bm;
+            }
+        }
         if let Some(mode) = self.boundary_mode {
             config.boundary_mode = mode;
         }
@@ -421,6 +429,42 @@ mod tests {
             .expect("assemble should succeed");
         assert_eq!(config.decay_gamma, 0.3);
         assert_eq!(config.diffuse_weight, 0.5);
+    }
+
+    #[test]
+    fn test_boundary_mode_defaults_to_bounce_without_preset_or_flag() {
+        let args = Args::parse_from(["tslime"]);
+        let config = ConfigBuilder::from_args(&args)
+            .assemble()
+            .expect("assemble should succeed");
+        assert_eq!(config.boundary_mode, BoundaryMode::Bounce);
+    }
+
+    #[test]
+    fn test_cli_boundary_mode_flag_wins() {
+        let args = Args::parse_from(["tslime", "--boundary-mode", "wrap"]);
+        let config = ConfigBuilder::from_args(&args)
+            .assemble()
+            .expect("assemble should succeed");
+        assert_eq!(config.boundary_mode, BoundaryMode::Wrap);
+    }
+
+    #[test]
+    fn test_no_preset_declares_boundary_mode_yet() {
+        // Commit A is behaviour-preserving: every preset still resolves to the
+        // global default boundary mode through the new PresetSimDefaults seam.
+        use crate::simulation::config::PRESETS;
+        for spec in PRESETS {
+            let mut builder = ConfigBuilder::from_args(&Args::parse_from(["tslime"]));
+            builder.preset = Some(spec.preset);
+            let assembled = builder.assemble().expect("assemble should succeed");
+            assert_eq!(
+                assembled.boundary_mode,
+                BoundaryMode::Bounce,
+                "{} boundary_mode changed unexpectedly",
+                spec.name
+            );
+        }
     }
 
     #[test]
