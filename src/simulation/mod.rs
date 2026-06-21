@@ -1206,14 +1206,25 @@ impl Simulation {
     }
 
     /// Enable temporal-difference computation (lever 3). `alpha` is the EMA rate
-    /// per frame (smaller ⇒ longer lag). Allocates buffers on first enable.
+    /// per frame (smaller ⇒ longer lag). Allocates buffers on first enable;
+    /// passing `false` clears (deallocates) the buffers so the toggle is live.
     pub fn set_compute_temporal(&mut self, enabled: bool, alpha: f32) {
         self.temporal_alpha = alpha.clamp(0.0, 1.0);
-        if enabled && self.temporal_diff.is_none() {
-            let size = self.width() * self.height();
-            self.temporal_lag = Some(vec![0.0; size]);
-            self.temporal_diff = Some(vec![0.0; size]);
+        if enabled {
+            if self.temporal_diff.is_none() {
+                let size = self.width() * self.height();
+                self.temporal_lag = Some(vec![0.0; size]);
+                self.temporal_diff = Some(vec![0.0; size]);
+            }
+        } else {
+            self.temporal_lag = None;
+            self.temporal_diff = None;
         }
+    }
+
+    /// Whether temporal-color computation is active (buffer allocated).
+    pub fn compute_temporal(&self) -> bool {
+        self.temporal_diff.is_some()
     }
 
     /// Raw signed temporal difference (`trail - lag`), per cell. Not normalized.
@@ -1222,14 +1233,23 @@ impl Simulation {
     }
 
     /// Enable afterglow EMA computation (lever 7). `alpha` is the EMA rate per frame
-    /// (smaller ⇒ longer-lived glow). Allocates the buffer on first enable; gated on
-    /// its OWN consumer (afterglow > 0), independent of the temporal buffer.
+    /// (smaller ⇒ longer-lived glow). Allocates the buffer on first enable;
+    /// passing `false` clears (deallocates) the buffer so the toggle is live.
     pub fn set_compute_afterglow(&mut self, enabled: bool, alpha: f32) {
         self.afterglow_alpha = alpha.clamp(0.0, 1.0);
-        if enabled && self.afterglow_lag.is_none() {
-            let size = self.width() * self.height();
-            self.afterglow_lag = Some(vec![0.0; size]);
+        if enabled {
+            if self.afterglow_lag.is_none() {
+                let size = self.width() * self.height();
+                self.afterglow_lag = Some(vec![0.0; size]);
+            }
+        } else {
+            self.afterglow_lag = None;
         }
+    }
+
+    /// Whether afterglow computation is active (buffer allocated).
+    pub fn compute_afterglow(&self) -> bool {
+        self.afterglow_lag.is_some()
     }
 
     /// EMA afterglow lag buffer (per cell). `None` until afterglow is enabled.
@@ -2083,5 +2103,23 @@ mod tests {
             curved.trail_maps[0].current(),
             "sqrt curve must alter the trail"
         );
+    }
+
+    #[test]
+    fn temporal_toggle_clears_buffer() {
+        let mut sim = Simulation::new(40, 20, SimConfig::default(), 42, InitMode::Random, 0);
+        sim.set_compute_temporal(true, 0.2);
+        assert!(sim.compute_temporal());
+        sim.set_compute_temporal(false, 0.2);
+        assert!(!sim.compute_temporal());
+    }
+
+    #[test]
+    fn afterglow_toggle_clears_buffer() {
+        let mut sim = Simulation::new(40, 20, SimConfig::default(), 42, InitMode::Random, 0);
+        sim.set_compute_afterglow(true, 0.05);
+        assert!(sim.compute_afterglow());
+        sim.set_compute_afterglow(false, 0.05);
+        assert!(!sim.compute_afterglow());
     }
 }
