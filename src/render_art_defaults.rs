@@ -85,6 +85,20 @@ pub(crate) struct ResolvedRenderConfig {
     pub afterglow_rate: f32,
 }
 
+impl ResolvedRenderConfig {
+    /// Converts `temporal_lag_frames` to the EMA alpha consumed by
+    /// `Simulation::set_compute_temporal`. Mirrors the startup formula in
+    /// `runner.rs` verbatim: `1.0 / lag.max(1.0)` when lag > 0, else 1.0.
+    pub(crate) fn temporal_lag_alpha(&self) -> f32 {
+        let lag = self.temporal_lag_frames;
+        if lag > 0.0 {
+            1.0 / lag.max(1.0)
+        } else {
+            1.0
+        }
+    }
+}
+
 impl From<Preset> for RenderArtDefaults {
     /// Per-preset render defaults. The showcase presets (the original four plus
     /// the completion-pass set) carry art-on payloads; the 30 original presets

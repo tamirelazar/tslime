@@ -1047,7 +1047,7 @@ impl RuntimeState {
 
     /// Finds the index of a given intensity mapping by comparing with presets.
     /// Returns 0 if no match found (falls back to Linear).
-    fn find_intensity_mapping_index(mapping: &IntensityMapping) -> usize {
+    pub(crate) fn find_intensity_mapping_index(mapping: &IntensityMapping) -> usize {
         for (i, (_, factory)) in Self::INTENSITY_MAPPINGS.iter().enumerate() {
             if &factory() == mapping {
                 return i;

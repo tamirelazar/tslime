@@ -2499,6 +2499,59 @@ pub fn run_simulation(
     Ok(())
 }
 
+/// Apply a fully-resolved render config to the live renderer, runtime state, and
+/// sim compute buffers. Shared by startup, live preset-switch, and reset so the
+/// three paths can't diverge. Wired in Task 14.
+#[allow(dead_code)] // wired in Task 14
+fn apply_render_config(
+    r: &crate::render_art_defaults::ResolvedRenderConfig,
+    rs: &mut RuntimeState,
+    renderer: &mut TerminalRenderer,
+    sim: &mut Simulation,
+) {
+    // Palette + charset indices (RuntimeState drives index; renderer drives value).
+    if let Some(i) = ALL_PALETTES.iter().position(|p| *p == r.palette) {
+        rs.palette_index = i;
+    } else if let cli::Palette::Custom(_) = r.palette {
+        rs.palette_index = 4; // Forest fallback for custom palettes (mirror startup)
+    }
+    if let Some(i) = ALL_CHARSETS.iter().position(|c| *c == r.charset) {
+        rs.charset_index = i;
+    }
+    rs.color_aa[rs.charset_index] = r.color_aa;
+    renderer.set_color_aa(rs.current_color_aa());
+
+    renderer.set_intensity_mapping(Some(r.intensity_mapping.clone()));
+    rs.intensity_mapping = r.intensity_mapping.clone();
+    rs.intensity_mapping_index = RuntimeState::find_intensity_mapping_index(&r.intensity_mapping);
+    renderer.set_palette_cycle(r.palette_cycle);
+    rs.palette_cycle = r.palette_cycle;
+    renderer.set_glyph(r.glyph);
+    rs.glyph = r.glyph;
+
+    // Hue shift: degrees/sec → nearest discrete speed (moved from startup).
+    // Only activates when hue_shift > 0.0; identity = Off (matches startup).
+    rs.palette_shift_speed = if r.hue_shift <= 0.0 {
+        crate::terminal::state::PaletteShiftSpeed::Off
+    } else if r.hue_shift <= 10.0 {
+        crate::terminal::state::PaletteShiftSpeed::Slow
+    } else if r.hue_shift <= 30.0 {
+        crate::terminal::state::PaletteShiftSpeed::Medium
+    } else {
+        crate::terminal::state::PaletteShiftSpeed::Fast
+    };
+
+    // Temporal + afterglow runtime state and sim compute toggles.
+    rs.temporal_color = r.temporal_color;
+    rs.temporal_lag_frames = r.temporal_lag_frames;
+    rs.temporal_mode = r.temporal_mode;
+    rs.temporal_accent = r.temporal_accent;
+    rs.afterglow = r.afterglow;
+    rs.afterglow_rate = r.afterglow_rate;
+    sim.set_compute_temporal(r.temporal_color > 0.0, r.temporal_lag_alpha());
+    sim.set_compute_afterglow(r.afterglow > 0.0, r.afterglow_rate);
+}
+
 /// Gets terminal size from environment variables or crossterm.
 pub fn get_terminal_size() -> (usize, usize) {
     let width = std::env::var("COLUMNS")
