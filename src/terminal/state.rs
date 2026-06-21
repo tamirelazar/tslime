@@ -2809,4 +2809,39 @@ mod tests {
             "a freshly-applied PetriDish preset (with obstacles) must not read dirty"
         );
     }
+
+    /// FALSE-POSITIVE GATE: bare-preset sessions for trail-modulated presets (Pulse,
+    /// DynamicTendrils) must NOT read dirty immediately after applying.
+    ///
+    /// Before the project() normalization fix these presets produced a false-positive
+    /// because `SpeciesArg` cannot carry `trail_modulation`, so capture_overrides
+    /// always emitted `None` while the active side resolved to `Some(_)` — causing
+    /// every unedited Pulse/Flocking/Ripple/Vortex36/DynamicTendrils session to be
+    /// incorrectly flagged dirty.
+    #[test]
+    fn clean_preset_swap_with_trail_modulation_is_not_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+
+        // Pulse carries trail_modulation: Some(_) in PresetSimDefaults (line 359).
+        let ov_pulse = ProfileOverrides {
+            preset: Some(Preset::Pulse),
+            ..Default::default()
+        };
+        let (rs, sim) = clean_session(ov_pulse);
+        assert!(
+            !rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "a freshly-applied Pulse preset (trail_modulation: Some) must not read dirty"
+        );
+
+        // DynamicTendrils also carries trail_modulation: Some(_) (line 493).
+        let ov_dt = ProfileOverrides {
+            preset: Some(Preset::DynamicTendrils),
+            ..Default::default()
+        };
+        let (rs2, sim2) = clean_session(ov_dt);
+        assert!(
+            !rs2.is_dirty(&sim2, rs2.live_palette.clone(), rs2.live_charset.clone()),
+            "a freshly-applied DynamicTendrils preset (trail_modulation: Some) must not read dirty"
+        );
+    }
 }

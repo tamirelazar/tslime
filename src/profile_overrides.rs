@@ -834,6 +834,19 @@ pub(crate) fn project(ov: &ProfileOverrides) -> Result<Canonical, String> {
     let mut render = p.render.clone();
     render.hue_shift = 0.0;
 
+    // `trail_modulation` is set by the preset layer (SpeciesConfig) but is NOT
+    // representable in the capture schema (`SpeciesArg` has no trail_modulation
+    // field), so capture_overrides always emits `None` for it.  Comparing it in
+    // the dirty guard can ONLY produce false-positives for Pulse/Flocking/Ripple/
+    // Vortex36/DynamicTendrils (all carry `trail_modulation: Some(_)` from their
+    // PresetSimDefaults).  It is also not runtime-editable (no keybind mutates a
+    // species' trail_modulation).  Normalise it to None on BOTH sides before the
+    // comparison so the guard stays blind to this unresolvable field.
+    let mut sim = p.sim;
+    for sc in sim.species_configs.iter_mut() {
+        sc.trail_modulation = None; // un-capturable + not runtime-editable
+    }
+
     // Reproduce apply_color_aa_all priority EXACTLY ([P1]):
     //   1. full per-charset array if color_aa_all present,
     //   2. else the scalar color_aa on the RESOLVED charset's slot over defaults,
@@ -858,7 +871,7 @@ pub(crate) fn project(ov: &ProfileOverrides) -> Result<Canonical, String> {
     };
 
     Ok(Canonical {
-        sim: p.sim,
+        sim,
         render,
         app: p.app,
         reverse: ov.reverse_palette.unwrap_or(false),
