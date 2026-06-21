@@ -1243,10 +1243,6 @@ pub struct SimConfig {
     pub diffusion_kernel: DiffusionKernel,
     /// Sigma for Gaussian diffusion.
     pub diffusion_sigma: f32,
-    /// Afterglow strength (glow_mix): `render = trail + afterglow·afterglow_lag`. 0.0 = OFF.
-    pub afterglow: f32,
-    /// Afterglow EMA rate (α per frame; smaller = longer-lived glow).
-    pub afterglow_rate: f32,
     /// Diffusion blend weight (Lague): `new = old·(1−w) + blur·w`. 1.0 = full blur (today).
     pub diffuse_weight: f32,
     /// Nonlinear decay exponent γ. 1.0 = current multiplicative decay; γ<1 lengthens faint tails.
@@ -1400,8 +1396,6 @@ impl Default for SimConfig {
             deposit_amount: agent_consts::DEFAULT_DEPOSIT_AMOUNT,
             diffusion_kernel: DiffusionKernel::Gaussian,
             diffusion_sigma: trail_consts::DEFAULT_DIFFUSION_SIGMA,
-            afterglow: trail_consts::DEFAULT_AFTERGLOW,
-            afterglow_rate: trail_consts::DEFAULT_AFTERGLOW_RATE,
             diffuse_weight: trail_consts::DEFAULT_DIFFUSE_WEIGHT,
             decay_gamma: trail_consts::DEFAULT_DECAY_GAMMA,
             deposit_curve: DepositCurve::default(),
@@ -1483,8 +1477,6 @@ impl Validatable for SimConfig {
         rules::MAX_BRIGHTNESS.validate_f32(self.max_brightness)?;
         rules::DIFFUSION_SIGMA.validate_f32(self.diffusion_sigma)?;
         rules::DECAY_GAMMA.validate_f32(self.decay_gamma)?;
-        rules::AFTERGLOW.validate_f32(self.afterglow)?;
-        rules::AFTERGLOW_RATE.validate_f32(self.afterglow_rate)?;
         rules::DIFFUSE_WEIGHT.validate_f32(self.diffuse_weight)?;
         rules::DEPOSIT_SCALE.validate_f32(self.deposit_scale)?;
         rules::DEPOSIT_GAMMA.validate_f32(self.deposit_gamma)?;
@@ -2230,8 +2222,6 @@ mod tests {
     #[test]
     fn art_knob_defaults_are_backcompat_neutral() {
         let c = SimConfig::default();
-        assert_eq!(c.afterglow, 0.0, "afterglow must default OFF");
-        assert_eq!(c.afterglow_rate, 0.05);
         assert_eq!(
             c.diffuse_weight, 1.0,
             "diffuse_weight=1 == full blur == today"

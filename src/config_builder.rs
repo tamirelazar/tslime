@@ -51,8 +51,6 @@ pub(crate) struct ConfigBuilder {
     min_sim_size: Option<TerminalSizeThreshold>,
     min_frame_size: Option<TerminalSizeThreshold>,
     respawn_interval: Option<u32>,
-    afterglow: Option<f32>,
-    afterglow_rate: Option<f32>,
     decay_gamma: Option<f32>,
     diffuse_weight: Option<f32>,
     deposit_curve: Option<DepositCurve>,
@@ -109,8 +107,6 @@ impl ConfigBuilder {
             min_sim_size: args.min_sim_size,
             min_frame_size: args.min_frame_size,
             respawn_interval: args.respawn_interval,
-            afterglow: args.afterglow,
-            afterglow_rate: args.afterglow_rate,
             decay_gamma: args.decay_gamma,
             diffuse_weight: args.diffuse_weight,
             deposit_curve: args.deposit_curve,
@@ -175,14 +171,6 @@ impl ConfigBuilder {
         }
         if let Some(sigma) = self.diffusion_sigma {
             config.diffusion_sigma = sigma;
-        }
-
-        // Afterglow settings (override only when explicitly set; else keep preset/default)
-        if let Some(a) = self.afterglow {
-            config.afterglow = a;
-        }
-        if let Some(r) = self.afterglow_rate {
-            config.afterglow_rate = r;
         }
 
         // Decay gamma (override only when explicitly set; else keep preset/default)

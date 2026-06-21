@@ -298,8 +298,8 @@ pub fn run_simulation(
     runtime_state.temporal_lag_frames = art_defaults.temporal_lag_frames;
     runtime_state.temporal_mode = art_defaults.temporal_mode;
     runtime_state.temporal_accent = art_defaults.temporal_accent;
-    runtime_state.afterglow = args.afterglow.unwrap_or(0.0);
-    runtime_state.afterglow_rate = args.afterglow_rate.unwrap_or(0.05);
+    runtime_state.afterglow = art_defaults.afterglow;
+    runtime_state.afterglow_rate = art_defaults.afterglow_rate;
     // decay_gamma / diffuse_weight come from the assembled config via
     // RuntimeState::new — do not re-clobber them from raw CLI args here.
     if args.stats {

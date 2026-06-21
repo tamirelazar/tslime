@@ -1320,6 +1320,84 @@ fn test_visual_regression_etching_preset() {
     }
 }
 
+#[test]
+fn test_visual_regression_drift_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "drift"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("drift_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("drift_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: drift preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("drift_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_forge_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "forge"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("forge_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("forge_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: forge preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("forge_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_gossamer_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "gossamer"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("gossamer_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("gossamer_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: gossamer preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("gossamer_preset", &normalized).unwrap();
+        }
+    }
+}
+
 // ============== TEMPORAL COLOR TESTS ==============
 
 #[test]

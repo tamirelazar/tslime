@@ -495,8 +495,8 @@ pub fn print_mode(
             sim.update(1.0);
         }
     }
-    let afterglow_val = args.afterglow.unwrap_or(0.0);
-    let afterglow_rate_val = args.afterglow_rate.unwrap_or(0.05);
+    let afterglow_val = art_defaults_print.afterglow;
+    let afterglow_rate_val = art_defaults_print.afterglow_rate;
     if afterglow_val > 0.0 {
         sim.set_compute_afterglow(true, afterglow_rate_val);
     }
@@ -719,8 +719,8 @@ pub fn capture_frames_mode(
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
-    let afterglow_val = args.afterglow.unwrap_or(0.0);
-    let afterglow_rate_val = args.afterglow_rate.unwrap_or(0.05);
+    let afterglow_val = art_defaults_capture.afterglow;
+    let afterglow_rate_val = art_defaults_capture.afterglow_rate;
     if afterglow_val > 0.0 {
         sim.set_compute_afterglow(true, afterglow_rate_val);
     }
@@ -968,8 +968,8 @@ pub fn export_gif_mode(
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
-    let afterglow_val = args.afterglow.unwrap_or(0.0);
-    let afterglow_rate_val = args.afterglow_rate.unwrap_or(0.05);
+    let afterglow_val = art_defaults_gif.afterglow;
+    let afterglow_rate_val = art_defaults_gif.afterglow_rate;
     if afterglow_val > 0.0 {
         sim.set_compute_afterglow(true, afterglow_rate_val);
     }
@@ -1151,8 +1151,8 @@ pub fn export_webm_mode(
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
-    let afterglow_val = args.afterglow.unwrap_or(0.0);
-    let afterglow_rate_val = args.afterglow_rate.unwrap_or(0.05);
+    let afterglow_val = art_defaults_webm.afterglow;
+    let afterglow_rate_val = art_defaults_webm.afterglow_rate;
     if afterglow_val > 0.0 {
         sim.set_compute_afterglow(true, afterglow_rate_val);
     }

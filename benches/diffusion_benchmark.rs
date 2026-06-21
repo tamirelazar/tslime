@@ -234,8 +234,6 @@ fn bench_afterglow_ema_pass(c: &mut Criterion) {
     use tslime::Simulation;
 
     let config = SimConfig {
-        afterglow: 0.4,
-        afterglow_rate: 0.05,
         species_configs: vec![SpeciesConfig {
             count: 100,
             ..Default::default()
