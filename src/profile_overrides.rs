@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 /// `Args::resolve_render_config` reads.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
-pub(crate) struct ProfileOverrides {
+pub struct ProfileOverrides {
     // ── provenance / base selector ──
     pub preset: Option<Preset>,
     pub seed: Option<u64>,
@@ -118,6 +118,20 @@ pub(crate) struct ProfileOverrides {
     pub temporal_accent: Option<RgbColor>,
     pub afterglow: Option<f32>,
     pub afterglow_rate: Option<f32>,
+
+    // ── apply/persistence-only levers (NOT consumed by resolve_sim/resolve_render) ──
+    /// Saved palette-reverse flag. Only written by `apply_to_runtime_state`; ignored by
+    /// `resolve()`. `from_args` leaves this `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reverse_palette: Option<bool>,
+    /// Saved palette-invert flag. Only written by `apply_to_runtime_state`; ignored by
+    /// `resolve()`. `from_args` leaves this `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invert_palette: Option<bool>,
+    /// Saved food-persist flag. Only written by `apply_to_runtime_state`; ignored by
+    /// `resolve()`. `from_args` leaves this `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub food_persist: Option<bool>,
 }
 
 impl ProfileOverrides {
@@ -268,6 +282,12 @@ impl ProfileOverrides {
             temporal_accent,
             afterglow: args.afterglow,
             afterglow_rate: args.afterglow_rate,
+
+            // apply/persistence-only levers — from_args leaves these None (they are
+            // not CLI-resolution levers; only capture_overrides / TOML serde sets them).
+            reverse_palette: None,
+            invert_palette: None,
+            food_persist: None,
         })
     }
 

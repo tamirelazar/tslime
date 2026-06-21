@@ -512,7 +512,7 @@ impl ConfigBrowserOverlay {
 
     /// Builds the configuration list overlay.
     pub fn build_overlay(
-        configs: &[crate::config_manager::SavedConfig],
+        configs: &[crate::config_manager::NamedProfile],
         selected_index: usize,
     ) -> RenderedOverlay {
         use TextAlignment::Left;
@@ -552,8 +552,13 @@ impl ConfigBrowserOverlay {
                 let num = i + 1;
                 let selected_marker = if i == selected_index { "›" } else { " " };
                 let name = &config.name;
-                let palette = &config.palette;
-                let pop = config.population / 1000;
+                let palette = config
+                    .overrides
+                    .palette
+                    .as_ref()
+                    .map(|p| p.name())
+                    .unwrap_or("?");
+                let pop = config.overrides.population.unwrap_or(0) / 1000;
                 let line = format!(
                     "{}{} {} - {} - {}k agents",
                     selected_marker, num, name, palette, pop,
@@ -1852,123 +1857,31 @@ mod status_line_tests {
         assert!(content_lines[0].contains('⚙'));
     }
 
+    fn make_named_profile(name: &str) -> crate::config_manager::NamedProfile {
+        use crate::profile_overrides::ProfileOverrides;
+        use crate::render::palette::Palette;
+        crate::config_manager::NamedProfile {
+            name: name.to_string(),
+            description: None,
+            overrides: ProfileOverrides {
+                population: Some(10000),
+                palette: Some(Palette::Forest),
+                ..Default::default()
+            },
+        }
+    }
+
     #[test]
     fn test_config_browser_overlay_items() {
-        let configs = vec![crate::config_manager::SavedConfig {
-            name: "Test Config".to_string(),
-            description: None,
-            population: 10000,
-            sensor_angle: 0.0,
-            sensor_distance: 0.0,
-            rotation_angle: 0.0,
-            step_size: 0.0,
-            decay_factor: 0.0,
-            deposit_amount: 0.0,
-            max_brightness: 0.0,
-            diffusion_kernel: "mean3x3".to_string(),
-            diffusion_sigma: 0.0,
-            palette: "Forest".to_string(),
-            charset: "ascii".to_string(),
-            reverse_palette: false,
-            invert_palette: false,
-            warmup_frames: 0,
-            food_persist: false,
-            auto_reset: false,
-            grid: false,
-            grid_style: None,
-            init_mode: "random".to_string(),
-            food_path: None,
-            background_color: None,
-            intensity_mapping: None,
-            intensity_mapping_base: None,
-            intensity_mapping_gamma: None,
-            intensity_mapping_levels: None,
-            window_frame: "frame".to_string(),
-            chrome_style: "minimal".to_string(),
-            aspect: "3:2".to_string(),
-            window_padding: "auto".to_string(),
-            show_status_bar: false,
-            min_sim_size: "20x10".to_string(),
-            min_frame_size: "12x6".to_string(),
-            temporal_color: None,
-            temporal_lag: None,
-            temporal_mode: None,
-            afterglow: None,
-            afterglow_rate: None,
-            decay_gamma: None,
-            diffuse_weight: None,
-            deposit_curve: None,
-            deposit_scale: None,
-            deposit_gamma: None,
-            deposit_cap: None,
-            palette_cycles: None,
-            palette_cycle_mode: None,
-            glyph_selection: None,
-            glyph_edge_threshold: None,
-            temporal_accent: None,
-            color_aa: None,
-        }];
+        let configs = vec![make_named_profile("Test Config")];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
         assert!(lines.lines.iter().any(|l| l.contains("Test Config")));
         assert!(lines.lines.iter().any(|l| l.contains("10k agents")));
     }
 
-    fn make_saved_config(name: &str) -> crate::config_manager::SavedConfig {
-        crate::config_manager::SavedConfig {
-            name: name.to_string(),
-            description: None,
-            population: 10000,
-            sensor_angle: 0.0,
-            sensor_distance: 0.0,
-            rotation_angle: 0.0,
-            step_size: 0.0,
-            decay_factor: 0.0,
-            deposit_amount: 0.0,
-            max_brightness: 0.0,
-            diffusion_kernel: "mean3x3".to_string(),
-            diffusion_sigma: 0.0,
-            palette: "Forest".to_string(),
-            charset: "ascii".to_string(),
-            reverse_palette: false,
-            invert_palette: false,
-            warmup_frames: 0,
-            food_persist: false,
-            auto_reset: false,
-            grid: false,
-            grid_style: None,
-            init_mode: "random".to_string(),
-            food_path: None,
-            background_color: None,
-            intensity_mapping: None,
-            intensity_mapping_base: None,
-            intensity_mapping_gamma: None,
-            intensity_mapping_levels: None,
-            window_frame: "frame".to_string(),
-            chrome_style: "minimal".to_string(),
-            aspect: "3:2".to_string(),
-            window_padding: "auto".to_string(),
-            show_status_bar: false,
-            min_sim_size: "20x10".to_string(),
-            min_frame_size: "12x6".to_string(),
-            temporal_color: None,
-            temporal_lag: None,
-            temporal_mode: None,
-            afterglow: None,
-            afterglow_rate: None,
-            decay_gamma: None,
-            diffuse_weight: None,
-            deposit_curve: None,
-            deposit_scale: None,
-            deposit_gamma: None,
-            deposit_cap: None,
-            palette_cycles: None,
-            palette_cycle_mode: None,
-            glyph_selection: None,
-            glyph_edge_threshold: None,
-            temporal_accent: None,
-            color_aa: None,
-        }
+    fn make_saved_config(name: &str) -> crate::config_manager::NamedProfile {
+        make_named_profile(name)
     }
 
     #[test]

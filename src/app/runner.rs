@@ -1243,47 +1243,21 @@ pub fn run_simulation(
                             }
                             KeyCode::Enter => {
                                 if !runtime_state.config_save_name_input.is_empty() {
-                                    let saved_config = config_manager::SavedConfig::from_runtime(
-                                        runtime_state.config_save_name_input.clone(),
-                                        sim.config(),
-                                        runtime_state.current_palette(&ALL_PALETTES),
-                                        charset.clone(),
-                                        args.reverse_palette,
-                                        args.invert_palette,
-                                        args.warmup_frames,
-                                        args.food_persist,
-                                        args.auto_reset,
-                                        args.grid,
-                                        if args.grid {
-                                            Some(args.grid_style.clone())
-                                        } else {
-                                            None
-                                        },
-                                        init_mode,
-                                        if init_mode == InitMode::Food {
-                                            Some(args.food.clone())
-                                        } else {
-                                            None
-                                        },
-                                        Some(&runtime_state.intensity_mapping),
-                                        runtime_state.temporal_color,
-                                        runtime_state.temporal_lag_frames,
-                                        runtime_state.temporal_mode,
-                                        runtime_state.afterglow,
-                                        runtime_state.afterglow_rate,
-                                        runtime_state.decay_gamma,
-                                        runtime_state.diffuse_weight,
-                                        runtime_state.deposit_curve,
-                                        runtime_state.deposit_scale,
-                                        runtime_state.deposit_gamma,
-                                        runtime_state.deposit_cap,
-                                        runtime_state.palette_cycle,
-                                        runtime_state.glyph,
-                                        runtime_state.temporal_accent,
-                                        runtime_state.color_aa,
-                                    );
+                                    let named_profile = config_manager::NamedProfile {
+                                        name: runtime_state.config_save_name_input.clone(),
+                                        description: None,
+                                        overrides: config_manager::capture_overrides(
+                                            sim.config(),
+                                            runtime_state.current_palette(&ALL_PALETTES),
+                                            charset.clone(),
+                                            &runtime_state,
+                                            args.reverse_palette,
+                                            args.invert_palette,
+                                            args.food_persist,
+                                        ),
+                                    };
 
-                                    match config_manager::save_config(saved_config) {
+                                    match config_manager::save_config(named_profile) {
                                         Ok(_) => {
                                             runtime_state.show_notification(format!(
                                                 "Config '{}' saved successfully",
@@ -1361,7 +1335,10 @@ pub fn run_simulation(
                                     if let Some(config) =
                                         configs.get(runtime_state.config_browser_selected_index)
                                     {
-                                        match config.apply_to_runtime_state(&mut runtime_state) {
+                                        match config_manager::apply_to_runtime_state(
+                                            &config.overrides,
+                                            &mut runtime_state,
+                                        ) {
                                             Ok(_) => {
                                                 // Apply every live param (sim + renderer caches)
                                                 // through the shared path so charset, intensity
