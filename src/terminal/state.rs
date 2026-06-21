@@ -1609,6 +1609,9 @@ impl RuntimeState {
         self.fast_mode_enabled = false;
         self.invert_palette = false;
         self.reverse_palette = false;
+        // Restore all per-charset color-AA slots to their defaults; the caller's
+        // apply_render_config then re-overwrites the active charset with the baseline.
+        self.color_aa = crate::config_defaults::DEFAULT_COLOR_AA;
     }
 
     /// Randomizes simulation parameters.
@@ -2361,5 +2364,27 @@ mod tests {
         let north = WindDirection::North.to_wind().unwrap();
         assert_eq!(north.dx, 0.0);
         assert_eq!(north.dy, -1.0);
+    }
+
+    #[test]
+    fn reset_to_defaults_restores_all_per_charset_color_aa_slots() {
+        use crate::render::antialiasing::AaStrength;
+        // charset_index 0 = HalfBlock (active); index 3 = Braille (non-active).
+        let mut rs = create_test_runtime_state();
+        rs.charset_index = 0;
+        // Corrupt a non-active charset slot (Braille, index 3) to a non-default value.
+        let braille_default = crate::config_defaults::DEFAULT_COLOR_AA[3];
+        let non_default = if braille_default == AaStrength::Strong {
+            AaStrength::Off
+        } else {
+            AaStrength::Strong
+        };
+        rs.color_aa[3] = non_default;
+        assert_eq!(rs.color_aa[3], non_default);
+
+        rs.reset_to_defaults();
+
+        // After reset the non-active Braille slot must be restored to its default.
+        assert_eq!(rs.color_aa[3], braille_default);
     }
 }
