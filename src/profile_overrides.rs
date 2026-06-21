@@ -47,9 +47,12 @@ pub(crate) struct ProfileOverrides {
     pub food_image_path: Option<String>,
     pub food_image_invert: Option<bool>,
     pub food_image_scale: Option<f32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attractors: Vec<AttractorArg>,
     pub attractor_strength: Option<f32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub obstacles: Vec<ObstacleArg>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub species: Vec<SpeciesArg>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub separate_species_trails: bool,
@@ -728,7 +731,9 @@ mod serde_opt_palette {
                     .iter()
                     .find(|spec| &spec.palette == p)
                     .map(|spec| spec.name)
-                    .unwrap_or("organic");
+                    .ok_or_else(|| {
+                        serde::ser::Error::custom(format!("palette not in PALETTES: {:?}", p))
+                    })?;
                 name.to_lowercase().serialize(s)
             }
         }
@@ -1350,5 +1355,129 @@ mod tests {
         let back: ProfileOverrides = toml::from_str(&s).expect("de");
         // Perlin is lossy — serializes as None (no recognized name)
         assert_eq!(back.intensity_mapping, None);
+    }
+
+    // ── Important 1: Vec fields must not emit empty arrays in minimal TOML ──
+
+    #[test]
+    fn overrides_toml_empty_vecs_not_emitted() {
+        // A near-empty ProfileOverrides should NOT contain "attractors", "obstacles",
+        // or "species" keys in the serialized TOML.
+        let o = ProfileOverrides {
+            sensor_angle: Some(30.0),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        assert!(
+            !s.contains("attractors"),
+            "empty attractors must not be emitted; got: {s}"
+        );
+        assert!(
+            !s.contains("obstacles"),
+            "empty obstacles must not be emitted; got: {s}"
+        );
+        assert!(
+            !s.contains("species"),
+            "empty species must not be emitted; got: {s}"
+        );
+    }
+
+    // ── Important 2: serde_opt_charset named + CustomAscii round-trips ──
+
+    #[test]
+    fn overrides_toml_charset_braille_round_trip() {
+        use crate::render::charset::Charset;
+        let o = ProfileOverrides {
+            charset: Some(Charset::Braille),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        // Must serialize as lowercase "braille"
+        assert!(s.contains("braille"), "expected 'braille' token in: {s}");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        assert_eq!(back.charset, Some(Charset::Braille));
+    }
+
+    #[test]
+    fn overrides_toml_charset_custom_ascii_round_trip() {
+        use crate::render::charset::Charset;
+        // Build a CustomAscii via from_custom_string so ordering is canonical.
+        let original = Charset::from_custom_string("@#.!");
+        let o = ProfileOverrides {
+            charset: Some(original.clone()),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        // Token must start with "custom:"
+        assert!(s.contains("custom:"), "expected 'custom:' prefix in: {s}");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        assert_eq!(back.charset, Some(original));
+    }
+
+    // ── Important 2: serde_opt_palette Custom round-trip ──
+
+    #[test]
+    fn overrides_toml_palette_custom_round_trip() {
+        use crate::render::palette::{Palette, RgbColor};
+        let colors = vec![
+            RgbColor::new(0xff, 0x00, 0x00),
+            RgbColor::new(0x00, 0xff, 0x00),
+            RgbColor::new(0x00, 0x00, 0xff),
+        ];
+        let o = ProfileOverrides {
+            palette: Some(Palette::Custom(colors.clone())),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        // Token must start with "custom:"
+        assert!(s.contains("custom:"), "expected 'custom:' prefix in: {s}");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        assert_eq!(back.palette, Some(Palette::Custom(colors)));
+    }
+
+    // ── Important 3: linear_log_split lossy test ──
+
+    #[test]
+    fn overrides_toml_intensity_mapping_linear_log_split_is_lossy() {
+        // linear_log_split is multi-segment — serializes as None (lossy, same as Perlin).
+        let o = ProfileOverrides {
+            intensity_mapping: Some(IntensityMapping::linear_log_split(10.0)),
+            ..ProfileOverrides::default()
+        };
+        let s = toml::to_string(&o).expect("ser");
+        let back: ProfileOverrides = toml::from_str(&s).expect("de");
+        // Multi-segment is lossy — must come back as None
+        assert_eq!(
+            back.intensity_mapping, None,
+            "linear_log_split must be lossy; serialized TOML: {s}"
+        );
+    }
+
+    // ── Minor 5: AaStrength uses lowercase serde tokens ──
+
+    #[test]
+    fn overrides_toml_color_aa_lowercase_token_and_round_trip() {
+        use crate::render::antialiasing::AaStrength;
+        for (variant, expected_token) in [
+            (AaStrength::Off, "off"),
+            (AaStrength::Subtle, "subtle"),
+            (AaStrength::Strong, "strong"),
+        ] {
+            let o = ProfileOverrides {
+                color_aa: Some(variant),
+                ..ProfileOverrides::default()
+            };
+            let s = toml::to_string(&o).expect("ser");
+            assert!(
+                s.contains(expected_token),
+                "AaStrength::{variant:?} should serialize as '{expected_token}'; got: {s}"
+            );
+            let back: ProfileOverrides = toml::from_str(&s).expect("de");
+            assert_eq!(
+                back.color_aa,
+                Some(variant),
+                "AaStrength::{variant:?} must round-trip"
+            );
+        }
     }
 }
