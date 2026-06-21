@@ -381,10 +381,13 @@ pub fn run() -> io::Result<()> {
     }
 
     if args.dump_config {
-        let config = crate::config_builder::ConfigBuilder::from_args(&args)
-            .assemble()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-        print!("{}", crate::config_builder::dump_sim_config(&config));
+        let profile = crate::profile_overrides::ProfileOverrides::from_args(&args)
+            .and_then(|o| o.resolve())
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        print!(
+            "{}",
+            crate::profile_overrides::dump_sim_config(&profile.sim)
+        );
         return Ok(());
     }
 

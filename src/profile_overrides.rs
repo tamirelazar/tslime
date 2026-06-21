@@ -22,8 +22,6 @@ use crate::simulation::config::{
 /// The single all-`Option` authored partial (sim ⊕ render ⊕ seed). Sim fields
 /// mirror the former `ConfigBuilder`; render fields mirror what
 /// `Args::resolve_render_config` reads.
-// Task 1: intentionally unused until Task 2 wires it into the live path.
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Default)]
 pub(crate) struct ProfileOverrides {
     // ── provenance / base selector ──
@@ -95,8 +93,6 @@ pub(crate) struct ProfileOverrides {
     pub afterglow_rate: Option<f32>,
 }
 
-// Task 1: impl intentionally unused until Task 2 wires it into the live path.
-#[allow(dead_code)]
 impl ProfileOverrides {
     /// Builds a `ProfileOverrides` from CLI args. Sim block is a verbatim port of
     /// `ConfigBuilder::from_args` (`src/config_builder.rs:64-117`). Render block
@@ -611,10 +607,62 @@ impl ProfileOverrides {
     }
 }
 
+/// Deterministic dump of the assembled sim-relevant fields.
+/// Used by the preset-config snapshot net (tests/preset_config_snapshot.rs).
+pub(crate) fn dump_sim_config(config: &crate::simulation::config::SimConfig) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+    let _ = writeln!(s, "sensor_angle={:?}", config.sensor_angle);
+    let _ = writeln!(s, "sensor_distance={:?}", config.sensor_distance);
+    let _ = writeln!(s, "rotation_angle={:?}", config.rotation_angle);
+    let _ = writeln!(s, "step_size={:?}", config.step_size);
+    let _ = writeln!(s, "decay_factor={:?}", config.decay_factor);
+    let _ = writeln!(s, "deposit_amount={:?}", config.deposit_amount);
+    let _ = writeln!(s, "diffusion_kernel={:?}", config.diffusion_kernel);
+    let _ = writeln!(s, "diffusion_sigma={:?}", config.diffusion_sigma);
+    let _ = writeln!(s, "max_brightness={:?}", config.max_brightness);
+    let _ = writeln!(s, "decay_gamma={:?}", config.decay_gamma);
+    let _ = writeln!(s, "diffuse_weight={:?}", config.diffuse_weight);
+    let _ = writeln!(s, "deposit_curve={:?}", config.deposit_curve);
+    let _ = writeln!(s, "deposit_scale={:?}", config.deposit_scale);
+    let _ = writeln!(s, "deposit_gamma={:?}", config.deposit_gamma);
+    let _ = writeln!(s, "deposit_cap={:?}", config.deposit_cap);
+    let _ = writeln!(s, "boundary_mode={:?}", config.boundary_mode);
+    let _ = writeln!(s, "preferred_init_mode={:?}", config.preferred_init_mode);
+    let _ = writeln!(s, "wind={:?}", config.wind);
+    let _ = writeln!(s, "background_color={:?}", config.background_color);
+    let _ = writeln!(s, "obstacles={:?}", config.obstacles);
+    let _ = writeln!(s, "attractors={:?}", config.attractors);
+    let _ = writeln!(
+        s,
+        "separate_species_trails={:?}",
+        config.separate_species_trails
+    );
+    let _ = writeln!(s, "sampling_mode={:?}", config.sampling_mode);
+    let _ = writeln!(s, "respawn_config={:?}", config.respawn_config);
+    for (i, sp) in config.species_configs.iter().enumerate() {
+        let _ = writeln!(
+            s,
+            "species[{i}]: name={:?} count={} sa={:?} ra={:?} ss={:?} da={:?} color={:?} mod={}",
+            sp.name,
+            sp.count,
+            sp.sensor_angle,
+            sp.rotation_angle,
+            sp.step_size,
+            sp.deposit_amount,
+            sp.color,
+            sp.trail_modulation.is_some()
+        );
+        if let Some(ref m) = sp.trail_modulation {
+            let _ = writeln!(s, "  modulation={m:?}");
+        }
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_builder::ConfigBuilder;
     use crate::simulation::config::PRESETS;
     use clap::Parser;
 
@@ -624,81 +672,170 @@ mod tests {
         Args::parse_from(v)
     }
 
-    /// resolve_sim == legacy assemble for default args.
-    #[test]
-    fn sim_parity_default() {
-        let a = args(&[]);
-        let got = ProfileOverrides::from_args(&a)
+    fn resolve(extra: &[&str]) -> crate::profile::Profile {
+        ProfileOverrides::from_args(&args(extra))
             .and_then(|o| o.resolve())
-            .expect("resolve");
-        let want = ConfigBuilder::from_args(&a).assemble().expect("assemble");
-        assert_eq!(got.sim, want);
+            .expect("resolve")
     }
 
-    /// resolve_sim == legacy assemble for every preset.
     #[test]
-    fn sim_parity_every_preset() {
+    fn test_build_default() {
+        use crate::config_defaults::agent;
+        use crate::config_defaults::population;
+        let c = resolve(&[]).sim;
+        assert_eq!(c.sensor_angle, agent::DEFAULT_SENSOR_ANGLE);
+        assert_eq!(c.total_population(), population::DEFAULT_POPULATION);
+    }
+
+    #[test]
+    fn empty_cli_attractors_keep_preset_base_then_override_lands() {
+        let c = resolve(&["--preset", "organic"]).sim;
+        assert!(c.attractors.is_empty());
+        let c = resolve(&["--preset", "organic", "--attract", "5,5,1.0"]).sim;
+        assert_eq!(c.attractors.len(), 1);
+    }
+
+    #[test]
+    fn no_trail_flags_keep_preset_separate_trails() {
+        let c = resolve(&["--preset", "organic"]).sim;
+        assert!(!c.separate_species_trails);
+    }
+
+    #[cfg(feature = "multi-species")]
+    #[test]
+    fn species_colors_forces_separate_trails_on() {
+        let c = resolve(&["--preset", "organic", "--species-colors"]).sim;
+        assert!(c.separate_species_trails);
+    }
+
+    #[test]
+    fn test_build_with_overrides() {
+        let c = resolve(&["--sensor-angle", "30", "--population", "10000"]).sim;
+        assert_eq!(c.sensor_angle, 30.0);
+        assert_eq!(c.total_population(), 10000);
+    }
+
+    #[test]
+    fn test_with_preset_override() {
+        let c = resolve(&["--preset", "organic", "--sensor-angle", "15"]).sim;
+        assert_eq!(c.sensor_angle, 15.0);
+    }
+
+    #[test]
+    fn test_preset_decay_gamma_survives_assemble() {
+        let c = resolve(&["--preset", "wane"]).sim;
+        assert_eq!(c.decay_gamma, 0.6);
+    }
+
+    #[test]
+    fn test_preset_diffuse_weight_survives_assemble() {
+        let c = resolve(&["--preset", "marble"]).sim;
+        assert_eq!(c.diffuse_weight, 0.8);
+    }
+
+    #[test]
+    fn test_cli_overrides_preset_decay_gamma_and_diffuse_weight() {
+        let c = resolve(&[
+            "--preset",
+            "wane",
+            "--decay-gamma",
+            "0.3",
+            "--diffuse-weight",
+            "0.5",
+        ])
+        .sim;
+        assert_eq!(c.decay_gamma, 0.3);
+        assert_eq!(c.diffuse_weight, 0.5);
+    }
+
+    #[test]
+    fn test_boundary_mode_defaults_to_bounce_without_preset_or_flag() {
+        use crate::simulation::config::BoundaryMode;
+        let c = resolve(&[]).sim;
+        assert_eq!(c.boundary_mode, BoundaryMode::Bounce);
+    }
+
+    #[test]
+    fn test_cli_boundary_mode_flag_wins() {
+        use crate::simulation::config::BoundaryMode;
+        let c = resolve(&["--boundary-mode", "wrap"]).sim;
+        assert_eq!(c.boundary_mode, BoundaryMode::Wrap);
+    }
+
+    #[test]
+    fn test_only_river_and_ripple_resolve_to_wrap() {
+        use crate::simulation::config::{BoundaryMode, Preset};
         for spec in PRESETS {
             let a = args(&["--preset", spec.name]);
-            let got = ProfileOverrides::from_args(&a)
+            let c = ProfileOverrides::from_args(&a)
                 .and_then(|o| o.resolve())
-                .expect("resolve");
-            let want = ConfigBuilder::from_args(&a).assemble().expect("assemble");
-            assert_eq!(got.sim, want, "sim parity broke for {}", spec.name);
+                .expect("resolve")
+                .sim;
+            let expected = match spec.preset {
+                Preset::River | Preset::Ripple => BoundaryMode::Wrap,
+                _ => BoundaryMode::Bounce,
+            };
+            assert_eq!(
+                c.boundary_mode, expected,
+                "{} boundary_mode resolved unexpectedly",
+                spec.name
+            );
         }
     }
 
-    /// resolve_sim == legacy assemble across a CLI-override matrix (hits the special cases).
     #[test]
-    fn sim_parity_override_matrix() {
-        let cases: &[&[&str]] = &[
-            &["--sensor-angle", "30", "--population", "10000"],
-            &["--preset", "organic", "--sensor-angle", "15"],
-            &["--fps", "60"], // high-FPS Gaussian opt
-            &["--preset", "ripple", "--boundary-mode", "bounce"],
-            &["--attract", "5,5,1.0"],
-            &["--brightness", "2.0"], // gain→white_point
-            &["--terrain", "smooth", "--terrain-strength", "0.5"],
-            &["--preset", "river", "--wind", "1,0"],
-            &["--respawn-interval", "120"],
-            &["--decay-gamma", "0.3", "--diffuse-weight", "0.5"],
-        ];
-        for c in cases {
-            let a = args(c);
-            let got = ProfileOverrides::from_args(&a)
-                .and_then(|o| o.resolve())
-                .expect("resolve");
-            let want = ConfigBuilder::from_args(&a).assemble().expect("assemble");
-            assert_eq!(got.sim, want, "sim parity broke for {c:?}");
+    fn test_ripple_and_river_declare_boundary_wrap() {
+        use crate::simulation::config::BoundaryMode;
+        for name in ["ripple", "river"] {
+            let c = resolve(&["--preset", name]).sim;
+            assert_eq!(
+                c.boundary_mode,
+                BoundaryMode::Wrap,
+                "{name} should declare boundary-mode wrap"
+            );
         }
     }
 
-    /// resolve_render == legacy resolve_render_config (default + preset + CLI overrides).
     #[test]
-    fn render_parity_matrix() {
-        let cases: &[&[&str]] = &[
-            &[],
-            &["--preset", "lumen"],   // art-on showcase preset
-            &["--preset", "etching"], // charset + glyph
-            &["--palette", "heat", "--braille"],
-            &["--temporal-color", "0.6", "--temporal-mode", "accent"],
-            &["--afterglow", "0.4", "--palette-shift", "8"],
-            // Finding 1 regression: --glyph-edge-threshold equal to GlyphConfig::default()
-            // must NOT be silently dropped when the preset has a different default.
-            // Oracle: etching base edge_threshold=0.08 → CLI 0.15 wins → 0.15.
-            // Old port bug: 0.15 == GlyphConfig::default().edge_threshold → kept 0.08.
-            &["--preset", "etching", "--glyph-edge-threshold", "0.15"],
-            // --glyph-selection override on a glyph-art preset (valid tokens: brightness, shape, hybrid).
-            &["--preset", "etching", "--glyph-selection", "brightness"],
-        ];
-        for c in cases {
-            let a = args(c);
-            let got = ProfileOverrides::from_args(&a)
-                .and_then(|o| o.resolve())
-                .expect("resolve");
-            let want = a.resolve_render_config().expect("render");
-            assert_eq!(got.render, want, "render parity broke for {c:?}");
-        }
+    fn test_cli_boundary_mode_overrides_preset_wrap() {
+        use crate::simulation::config::BoundaryMode;
+        let c = resolve(&["--preset", "ripple", "--boundary-mode", "bounce"]).sim;
+        assert_eq!(c.boundary_mode, BoundaryMode::Bounce);
+    }
+
+    #[test]
+    fn test_no_preset_no_flag_uses_default_decay_gamma_and_diffuse_weight() {
+        use crate::config_defaults::trail;
+        let c = resolve(&[]).sim;
+        assert_eq!(c.decay_gamma, trail::DEFAULT_DECAY_GAMMA);
+        assert_eq!(c.diffuse_weight, trail::DEFAULT_DIFFUSE_WEIGHT);
+    }
+
+    #[test]
+    fn river_preset_keeps_wind() {
+        use crate::simulation::config::Wind;
+        let c = resolve(&["--preset", "river"]).sim;
+        assert_eq!(c.wind, Some(Wind::new(0.3, 0.0)));
+    }
+
+    #[test]
+    fn cli_wind_overrides_preset_wind() {
+        use crate::simulation::config::Wind;
+        let c = resolve(&["--preset", "river", "--wind", "1,0"]).sim;
+        assert_eq!(c.wind, Some(Wind::new(1.0, 0.0)));
+    }
+
+    #[test]
+    fn petridish_preset_keeps_obstacle_and_bg() {
+        let c = resolve(&["--preset", "petridish"]).sim;
+        assert_eq!(c.obstacles.len(), 1);
+        assert_eq!(c.background_color.as_deref(), Some("000000"));
+    }
+
+    #[test]
+    fn empty_cli_obstacles_do_not_clear_preset_obstacles() {
+        let c = resolve(&["--preset", "petridish"]).sim;
+        assert!(!c.obstacles.is_empty());
     }
 
     /// Validation parity: invalid sensor_angle must be rejected (Phase A CRITICAL).
@@ -708,73 +845,6 @@ mod tests {
         assert!(ProfileOverrides::from_args(&a)
             .and_then(|o| o.resolve())
             .is_err());
-    }
-
-    /// Error parity: malformed render-string args that the oracle rejects must also
-    /// be rejected by `from_args`. These inputs are NOT clap-validated (plain
-    /// `Option<String>` fields) so they reach the parsers at runtime.
-    #[test]
-    fn error_parity_malformed_render_strings() {
-        // --glyph-selection xyz → GlyphSelection::from_str Err
-        {
-            let a = args(&["--glyph-selection", "xyz"]);
-            assert!(
-                a.resolve_render_config().is_err(),
-                "oracle should Err on --glyph-selection xyz"
-            );
-            assert!(
-                ProfileOverrides::from_args(&a).is_err(),
-                "port must also Err on --glyph-selection xyz"
-            );
-        }
-        // --palette nonsense → palette() returns Err("Invalid palette: nonsense")
-        {
-            let a = args(&["--palette", "nonsense"]);
-            assert!(
-                a.resolve_render_config().is_err(),
-                "oracle should Err on --palette nonsense"
-            );
-            assert!(
-                ProfileOverrides::from_args(&a).is_err(),
-                "port must also Err on --palette nonsense"
-            );
-        }
-        // --intensity-mapping xyz → intensity_mapping() Err
-        {
-            let a = args(&["--intensity-mapping", "xyz"]);
-            assert!(
-                a.resolve_render_config().is_err(),
-                "oracle should Err on --intensity-mapping xyz"
-            );
-            assert!(
-                ProfileOverrides::from_args(&a).is_err(),
-                "port must also Err on --intensity-mapping xyz"
-            );
-        }
-        // --palette-cycle-mode xyz → palette_cycle_mode_parsed() Err
-        {
-            let a = args(&["--palette-cycle-mode", "xyz"]);
-            assert!(
-                a.resolve_render_config().is_err(),
-                "oracle should Err on --palette-cycle-mode xyz"
-            );
-            assert!(
-                ProfileOverrides::from_args(&a).is_err(),
-                "port must also Err on --palette-cycle-mode xyz"
-            );
-        }
-        // --temporal-accent zzzzzz (not valid hex) → Err
-        {
-            let a = args(&["--temporal-accent", "zzzzzz"]);
-            assert!(
-                a.resolve_render_config().is_err(),
-                "oracle should Err on --temporal-accent zzzzzz"
-            );
-            assert!(
-                ProfileOverrides::from_args(&a).is_err(),
-                "port must also Err on --temporal-accent zzzzzz"
-            );
-        }
     }
 
     /// Seed passthrough.

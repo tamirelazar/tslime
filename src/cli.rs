@@ -2126,6 +2126,7 @@ impl Args {
     /// - `color_aa`: `--color-aa` if set; else preset default; else the per-charset default (`DEFAULT_COLOR_AA`).
     /// - `hue_shift`: `--palette-shift` if set; else preset default; else `0.0`.
     /// - All other levers: taken from `to_render_art_defaults()` (already merged).
+    #[allow(dead_code)]
     pub(crate) fn resolve_render_config(
         &self,
     ) -> Result<crate::render_art_defaults::ResolvedRenderConfig, String> {
@@ -3274,9 +3275,10 @@ mod tests {
     fn model_b_cli_sensor_angle_persists() {
         let mut a = Args::parse_from(["tslime", "--sensor-angle", "30", "--preset", "network"]);
         a.preset = Some(crate::simulation::config::Preset::Lumen);
-        let c = crate::config_builder::ConfigBuilder::from_args(&a)
-            .assemble()
-            .unwrap();
+        let c = crate::profile_overrides::ProfileOverrides::from_args(&a)
+            .and_then(|o| o.resolve())
+            .unwrap()
+            .sim;
         assert_eq!(
             c.sensor_angle, 30.0,
             "--sensor-angle 30 must survive a preset switch to Lumen"

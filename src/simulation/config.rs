@@ -1527,9 +1527,9 @@ impl TryFrom<&crate::cli::Args> for SimConfig {
     /// Returns [`ValidationError`] if assembly fails (e.g. invalid terrain string) or any
     /// merged parameter is out of range.
     fn try_from(args: &crate::cli::Args) -> Result<Self, Self::Error> {
-        let config = crate::config_builder::ConfigBuilder::from_args(args).assemble()?;
-        config.validate()?;
-        Ok(config)
+        let profile = crate::profile::Profile::resolve_from_args(args)
+            .map_err(crate::error::ValidationError::custom)?;
+        Ok(profile.sim)
     }
 }
 

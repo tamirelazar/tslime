@@ -37,16 +37,7 @@ impl Profile {
     /// sim, preset render defaults ⊕ CLI overrides for render, plus the explicit
     /// seed if one was passed.
     pub(crate) fn resolve_from_args(args: &Args) -> Result<Self, String> {
-        let sim = crate::config_builder::ConfigBuilder::from_args(args)
-            .assemble()
-            .map_err(|e| e.to_string())?;
-        crate::validation::Validatable::validate(&sim).map_err(|e| e.to_string())?;
-        let render = args.resolve_render_config()?;
-        Ok(Self {
-            sim,
-            render,
-            seed: args.seed,
-        })
+        crate::profile_overrides::ProfileOverrides::from_args(args).and_then(|o| o.resolve())
     }
 
     /// Resolve a profile for switching to `preset` at runtime, preserving the
@@ -62,26 +53,6 @@ impl Profile {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Profile.sim equals the standalone ConfigBuilder result for the same args.
-    #[test]
-    fn resolve_from_args_sim_matches_config_builder() {
-        let args = Args::default();
-        let profile = Profile::resolve_from_args(&args).expect("resolve");
-        let direct = crate::config_builder::ConfigBuilder::from_args(&args)
-            .assemble()
-            .expect("assemble");
-        assert_eq!(profile.sim, direct);
-    }
-
-    /// Profile.render equals the standalone resolve_render_config for the same args.
-    #[test]
-    fn resolve_from_args_render_matches_cli() {
-        let args = Args::default();
-        let profile = Profile::resolve_from_args(&args).expect("resolve");
-        let direct = args.resolve_render_config().expect("render");
-        assert_eq!(profile.render, direct);
-    }
 
     /// from_preset for the same preset twice is deterministic / equal (dirty basis).
     #[test]

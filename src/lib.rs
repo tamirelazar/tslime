@@ -47,8 +47,6 @@ pub mod app;
 pub mod audio;
 /// Command-line argument parsing and configuration.
 pub mod cli;
-/// Configuration builder for creating SimConfig instances.
-pub mod config_builder;
 /// Centralized configuration defaults.
 pub mod config_defaults;
 /// Configuration management (load/save/delete).
