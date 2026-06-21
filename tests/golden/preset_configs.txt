@@ -131,7 +131,7 @@ deposit_gamma=1.0
 deposit_cap=0.0
 boundary_mode=Wrap
 preferred_init_mode=Some(Food)
-wind=None
+wind=Some(Wind { dx: 0.3, dy: 0.0 })
 background_color=None
 obstacles=[]
 species[0]: name="default" count=45000 sa=25.0 ra=45.0 ss=1.2 da=5.0 color=RgbColor { r: 30, g: 144, b: 255 } mod=false
@@ -155,8 +155,8 @@ deposit_cap=0.0
 boundary_mode=Bounce
 preferred_init_mode=Some(Petri)
 wind=None
-background_color=None
-obstacles=[]
+background_color=Some("000000")
+obstacles=[Circle { x: 200.0, y: 100.0, radius: 90.0 }]
 species[0]: name="mold" count=20000 sa=45.0 ra=20.0 ss=0.05 da=0.2 color=RgbColor { r: 212, g: 255, b: 0 } mod=false
 
 === vortex ===

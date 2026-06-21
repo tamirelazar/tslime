@@ -229,7 +229,9 @@ impl ConfigBuilder {
             config.attractor_strength = strength;
         }
 
-        config.obstacles = self.obstacles.iter().map(|o| o.obstacle.clone()).collect();
+        if !self.obstacles.is_empty() {
+            config.obstacles = self.obstacles.iter().map(|o| o.obstacle.clone()).collect();
+        }
         let _ = config.load_obstacle_masks();
 
         // Species configuration
@@ -287,8 +289,10 @@ impl ConfigBuilder {
             }
         }
 
-        // Wind
-        config.wind = self.wind.map(|w| Wind::new(w.dx, w.dy));
+        // Wind: CLI overrides; absent the flag, the preset's wind survives.
+        if let Some(w) = self.wind {
+            config.wind = Some(Wind::new(w.dx, w.dy));
+        }
 
         // Terrain
         if let Some(terrain_str) = self.terrain {
@@ -302,8 +306,10 @@ impl ConfigBuilder {
             config.terrain_strength = strength;
         }
 
-        // Background color
-        config.background_color = self.background_color;
+        // Background color: CLI overrides; absent the flag, the preset's bg survives.
+        if let Some(bg) = self.background_color {
+            config.background_color = Some(bg);
+        }
 
         // Boundary mode: preset suggests (via PresetSimDefaults), CLI overrides.
         // The preset layer goes first so an explicit --boundary-mode still wins.
@@ -545,5 +551,34 @@ mod tests {
             .expect("assemble should succeed");
         assert_eq!(config.decay_gamma, trail::DEFAULT_DECAY_GAMMA);
         assert_eq!(config.diffuse_weight, trail::DEFAULT_DIFFUSE_WEIGHT);
+    }
+
+    #[test]
+    fn river_preset_keeps_wind() {
+        let args = Args::parse_from(["tslime", "--preset", "river"]);
+        let c = ConfigBuilder::from_args(&args).assemble().unwrap();
+        assert_eq!(c.wind, Some(Wind::new(0.3, 0.0)));
+    }
+
+    #[test]
+    fn cli_wind_overrides_preset_wind() {
+        let args = Args::parse_from(["tslime", "--preset", "river", "--wind", "1,0"]);
+        let c = ConfigBuilder::from_args(&args).assemble().unwrap();
+        assert_eq!(c.wind, Some(Wind::new(1.0, 0.0)));
+    }
+
+    #[test]
+    fn petridish_preset_keeps_obstacle_and_bg() {
+        let args = Args::parse_from(["tslime", "--preset", "petridish"]);
+        let c = ConfigBuilder::from_args(&args).assemble().unwrap();
+        assert_eq!(c.obstacles.len(), 1);
+        assert_eq!(c.background_color.as_deref(), Some("000000"));
+    }
+
+    #[test]
+    fn empty_cli_obstacles_do_not_clear_preset_obstacles() {
+        let args = Args::parse_from(["tslime", "--preset", "petridish"]);
+        let c = ConfigBuilder::from_args(&args).assemble().unwrap();
+        assert!(!c.obstacles.is_empty());
     }
 }
