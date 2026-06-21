@@ -1,7 +1,7 @@
 //! Byte-identity net for the apply()-collapse refactor: dumps every preset's
 //! *assembled* SimConfig (ConfigBuilder::assemble, no CLI flags) to a golden
 //! file. Excludes afterglow (builder clobbers it; it leaves SimConfig in
-//! commit 2). 28/30 presets must stay byte-identical through the collapse;
+//! commit 2). 27/29 presets must stay byte-identical through the collapse;
 //! River + PetriDish change deliberately (commit 1) and are reviewed in the diff.
 
 use std::process::{Command, Stdio};
@@ -47,8 +47,15 @@ fn dump_assembled(preset: &str) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_tslime"))
         .args(["--dump-config", "--preset", preset])
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .output()
         .expect("spawn tslime --dump-config");
+    assert!(
+        out.status.success(),
+        "tslime --dump-config --preset {preset} failed ({}): {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8(out.stdout).expect("utf8 dump")
 }
 
