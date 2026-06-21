@@ -594,9 +594,7 @@ pub fn run_simulation(
             runtime_state.temporal_accent,
         );
 
-        let current_config = args
-            .to_sim_config()
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        let current_config = sim.config().clone();
 
         adaptive_brightness.update(downsampled_frame.cells());
         let mut max_brightness = if current_auto_normalize {
