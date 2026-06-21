@@ -2126,7 +2126,6 @@ impl Args {
     /// - `color_aa`: `--color-aa` if set; else preset default; else the per-charset default (`DEFAULT_COLOR_AA`).
     /// - `hue_shift`: `--palette-shift` if set; else preset default; else `0.0`.
     /// - All other levers: taken from `to_render_art_defaults()` (already merged).
-    #[allow(dead_code)] // wired in Task 13
     pub(crate) fn resolve_render_config(
         &self,
     ) -> Result<crate::render_art_defaults::ResolvedRenderConfig, String> {

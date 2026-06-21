@@ -1553,6 +1553,12 @@ impl RuntimeState {
 
     /// Resets all parameters to default values.
     /// If CLI overrides are available, restores those; otherwise uses preset defaults.
+    ///
+    /// Note: the 13 render levers (palette, charset, hue-shift, temporal settings, etc.)
+    /// are NOT restored here. The caller must reapply them via
+    /// `apply_render_config(&self.baseline_render, ...)` after calling this method,
+    /// as the `ResetToDefaults` handler does. A second caller that omits that step
+    /// will leave render state stale.
     pub fn reset_to_defaults(&mut self) {
         self.force_checkpoint();
 

@@ -346,7 +346,7 @@ impl ConfigBuilder {
     }
 }
 
-/// Deterministic, afterglow-free dump of the sim-relevant assembled fields.
+/// Deterministic dump of the assembled sim-relevant fields.
 /// Used by the preset-config snapshot net (tests/preset_config_snapshot.rs).
 pub(crate) fn dump_sim_config(config: &SimConfig) -> String {
     use std::fmt::Write;
