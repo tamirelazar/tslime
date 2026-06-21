@@ -43,13 +43,15 @@ impl Profile {
         crate::profile_overrides::ProfileOverrides::from_args(args).and_then(|o| o.resolve())
     }
 
-    /// Resolve a profile for switching to `preset` at runtime, preserving the
-    /// launch CLI overlay (current startup semantics — Phase A keeps parity;
-    /// Phase C changes precedence to launch-only).
-    pub(crate) fn from_preset(preset: Preset, args: &Args) -> Result<Self, String> {
-        let mut a = args.clone();
-        a.preset = Some(preset);
-        Self::resolve_from_args(&a)
+    /// Resolve a bare preset profile (no CLI overlay). The authoritative definition
+    /// of "what this preset looks like" — used for preset-switch and for unit tests.
+    #[allow(dead_code)]
+    pub(crate) fn from_preset(preset: Preset) -> Result<Self, String> {
+        crate::profile_overrides::ProfileOverrides {
+            preset: Some(preset),
+            ..Default::default()
+        }
+        .resolve()
     }
 }
 
@@ -60,19 +62,30 @@ mod tests {
     /// from_preset for the same preset twice is deterministic / equal (dirty basis).
     #[test]
     fn from_preset_is_equal_for_same_preset() {
-        let args = Args::default();
-        let a = Profile::from_preset(Preset::Lumen, &args).expect("a");
-        let b = Profile::from_preset(Preset::Lumen, &args).expect("b");
+        let a = Profile::from_preset(Preset::Lumen).expect("a");
+        let b = Profile::from_preset(Preset::Lumen).expect("b");
         assert_eq!(a, b);
     }
 
     /// Different presets resolve to different profiles (sanity: PartialEq discriminates).
     #[test]
     fn from_preset_differs_across_presets() {
-        let args = Args::default();
-        let lumen = Profile::from_preset(Preset::Lumen, &args).expect("lumen");
-        let network = Profile::from_preset(Preset::Network, &args).expect("network");
+        let lumen = Profile::from_preset(Preset::Lumen).expect("lumen");
+        let network = Profile::from_preset(Preset::Network).expect("network");
         assert_ne!(lumen, network);
+    }
+
+    /// from_preset resolves to the BARE preset defaults (no CLI overlay).
+    #[test]
+    fn from_preset_is_preset_only() {
+        let organic = Profile::from_preset(Preset::Organic).expect("organic");
+        let expected = crate::profile_overrides::ProfileOverrides {
+            preset: Some(Preset::Organic),
+            ..Default::default()
+        }
+        .resolve()
+        .expect("expected");
+        assert_eq!(organic, expected);
     }
 
     /// Seed is None unless --seed was explicitly passed.

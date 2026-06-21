@@ -376,6 +376,25 @@ impl ProfileOverrides {
         })
     }
 
+    /// Classifies the overrides as a bare preset vs. a CLI-customised invocation.
+    ///
+    /// Returns `Some(preset)` when this `ProfileOverrides` carries only a preset
+    /// selector (no seed pin, no other field set beyond what `--preset <p>` alone
+    /// would produce). Returns `None` for any CLI that adds sim/render overrides or
+    /// pins a seed — those are `StartupCli`.
+    ///
+    /// `template` must be built from `ProfileOverrides::from_args(&Args { preset:
+    /// self.preset, ..Args::default() })` so the comparison is between "what `--preset
+    /// <p>` alone produces" vs "what the actual launch CLI produced".
+    pub(crate) fn bare_preset_against(&self, template: &ProfileOverrides) -> Option<Preset> {
+        let p = self.preset?;
+        if self.seed.is_none() && self == template {
+            Some(p)
+        } else {
+            None
+        }
+    }
+
     /// Resolve to a concrete `Profile`. Byte-identical to the legacy startup
     /// two-call path (`assemble` → `resolve_render_config`).
     pub(crate) fn resolve(&self) -> Result<Profile, String> {
@@ -1636,5 +1655,50 @@ mod tests {
         .resolve()
         .unwrap();
         assert_eq!(p.sim.preferred_init_mode, Some(InitMode::Random));
+    }
+
+    // ── Task 4: bare_preset_against / startup classification ──
+
+    /// `--preset organic` with no other overrides → `bare_preset_against` returns Some(Organic).
+    #[test]
+    fn bare_preset_classifies_preset_only() {
+        let a = args(&["--preset", "organic"]);
+        let ov = ProfileOverrides::from_args(&a).expect("from_args");
+        // Template: the bare `--preset organic` invocation (same CLI, only preset set).
+        let template =
+            ProfileOverrides::from_args(&args(&["--preset", "organic"])).expect("template");
+        assert_eq!(
+            ov.bare_preset_against(&template),
+            Some(Preset::Organic),
+            "bare preset CLI should classify as Preset(Organic)"
+        );
+    }
+
+    /// `--preset organic --sensor-angle 5` has a sim override → classifies as StartupCli.
+    #[test]
+    fn bare_preset_classifies_with_sim_override_as_none() {
+        let a = args(&["--preset", "organic", "--sensor-angle", "5"]);
+        let ov = ProfileOverrides::from_args(&a).expect("from_args");
+        let template =
+            ProfileOverrides::from_args(&args(&["--preset", "organic"])).expect("template");
+        assert_eq!(
+            ov.bare_preset_against(&template),
+            None,
+            "preset + sim override should classify as StartupCli (None)"
+        );
+    }
+
+    /// `--preset organic --seed 7` has a seed pin → classifies as StartupCli.
+    #[test]
+    fn bare_preset_classifies_with_seed_as_none() {
+        let a = args(&["--preset", "organic", "--seed", "7"]);
+        let ov = ProfileOverrides::from_args(&a).expect("from_args");
+        let template =
+            ProfileOverrides::from_args(&args(&["--preset", "organic"])).expect("template");
+        assert_eq!(
+            ov.bare_preset_against(&template),
+            None,
+            "preset + explicit seed should classify as StartupCli (None)"
+        );
     }
 }

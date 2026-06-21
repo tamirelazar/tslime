@@ -5,6 +5,8 @@
 
 use std::io::{self, Write};
 
+use clap::Parser as _;
+
 use crate::app::{
     apply_live_params, apply_random_config, extract_species_rgb_colors, REFERENCE_TIME_STEP,
 };
@@ -241,15 +243,28 @@ pub fn run_simulation(
         args.pause_logo,
         args.pause_pulse_draw_mode,
     );
-    runtime_state.active_source = match args.preset {
-        Some(p) => crate::profile::ProfileSource::Preset(p),
-        None => crate::profile::ProfileSource::StartupCli,
+    // Classify the startup invocation: bare `--preset <p>` (no other overrides, no seed pin)
+    // → Preset(p); anything more complex (extra flags, seed, no preset) → StartupCli.
+    let startup_ov = crate::profile_overrides::ProfileOverrides::from_args(args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    runtime_state.active_source = if let Some(p) = args.preset {
+        // Build a clap-parsed template for bare `--preset <name>` to get correct clap
+        // defaults (not Rust struct defaults which differ on fps, time_scale, etc.).
+        let preset_name = crate::terminal::control::preset_name(p);
+        let template_args = Args::parse_from(["tslime", "--preset", preset_name]);
+        let template = crate::profile_overrides::ProfileOverrides::from_args(&template_args)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        match startup_ov.bare_preset_against(&template) {
+            Some(preset) => crate::profile::ProfileSource::Preset(preset),
+            None => crate::profile::ProfileSource::StartupCli,
+        }
+    } else {
+        crate::profile::ProfileSource::StartupCli
     };
     // Seed the live app-runtime config + active overrides from the startup profile so
     // the runner reads warmup/auto-reset/grid/food from rs.app (the single live source).
     runtime_state.app = startup_profile.app.clone();
-    runtime_state.active_overrides = crate::profile_overrides::ProfileOverrides::from_args(args)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    runtime_state.active_overrides = startup_ov;
     runtime_state.preload_pause_logo(term_width as usize, term_height as usize);
     runtime_state.dither_mode = dither_mode;
     runtime_state.trail_age_enabled = args.trail_age;
@@ -1282,11 +1297,15 @@ pub fn run_simulation(
                             let preset = runtime_state.comparison_preset;
                             switch_preset(
                                 preset,
-                                args,
                                 &mut runtime_state,
                                 &mut renderer,
                                 sim,
                                 &mut timer,
+                                &mut grid_renderer,
+                                &mut window,
+                                &mut downsampled_frame,
+                                &mut aux_frame,
+                                (term_width as usize, term_height as usize),
                             )?;
                             runtime_state.show_notification(format!(
                                 "Applied preset: {}",
@@ -1492,11 +1511,15 @@ pub fn run_simulation(
                         ControlAction::SetPreset(preset) => {
                             switch_preset(
                                 preset,
-                                args,
                                 &mut runtime_state,
                                 &mut renderer,
                                 sim,
                                 &mut timer,
+                                &mut grid_renderer,
+                                &mut window,
+                                &mut downsampled_frame,
+                                &mut aux_frame,
+                                (term_width as usize, term_height as usize),
                             )?;
                         }
                         ControlAction::ComparePreset(preset) => {
@@ -1907,32 +1930,31 @@ pub fn run_simulation(
                             ));
                         }
                         ControlAction::ResetToDefaults => {
-                            runtime_state.reset_to_defaults();
-                            let baseline = runtime_state.baseline_render.clone();
-                            crate::app::apply_render_config(
-                                &baseline,
+                            let ov = runtime_state.active_overrides.clone();
+                            runtime_state.reset_transient();
+                            match crate::app::apply_overrides(
+                                &ov,
                                 &mut runtime_state,
                                 &mut renderer,
                                 sim,
-                            );
-                            // Rebuild the sim from the launch snapshot (initial run params,
-                            // including CLI flags), not the bare preset, then overlay the
-                            // restored runtime-state live fields and push renderer caches.
-                            let base = runtime_state
-                                .cli_overrides
-                                .clone()
-                                .unwrap_or_else(|| SimConfig::from(runtime_state.current_preset));
-                            sim.update_config(base);
-                            apply_live_params(&runtime_state, sim, &mut renderer);
-                            timer.set_time_scale(runtime_state.time_scale);
-                            hue_offset = 0.0;
-                            current_auto_normalize = runtime_state.auto_normalize;
-                            let notification = if runtime_state.cli_overrides.is_some() {
-                                "Reset to CLI parameters"
-                            } else {
-                                "Reset to defaults"
-                            };
-                            runtime_state.show_notification(notification.to_string());
+                                &mut timer,
+                                &mut grid_renderer,
+                                &mut window,
+                                &mut downsampled_frame,
+                                &mut aux_frame,
+                                (term_width as usize, term_height as usize),
+                                true,
+                            ) {
+                                Ok(()) => {
+                                    hue_offset = 0.0;
+                                    current_auto_normalize = runtime_state.auto_normalize;
+                                    runtime_state
+                                        .show_notification("Reset to defaults".to_string());
+                                }
+                                Err(e) => {
+                                    runtime_state.show_notification(format!("Reset failed: {e}"));
+                                }
+                            }
                         }
                         ControlAction::ToggleDashboard => {
                             runtime_state.toggle_dashboard();
@@ -2417,39 +2439,43 @@ pub fn run_simulation(
     Ok(())
 }
 
-/// Live preset-switch: re-resolve the full launch pipeline (sim ⊕ render) with
-/// `new_preset` and the original launch CLI (Model B), preserving the live
-/// environment (attractors/food/obstacles), then re-baseline reset targets.
+/// Live preset-switch: applies the bare preset through the ONE total apply seam,
+/// wiping the trail (restart: true). CLI args are NOT sticky after a swap.
+#[allow(clippy::too_many_arguments)]
 fn switch_preset(
     new_preset: Preset,
-    args: &Args,
     rs: &mut RuntimeState,
     renderer: &mut TerminalRenderer,
     sim: &mut Simulation,
     timer: &mut FrameTimer,
+    grid_renderer: &mut Option<crate::render::grid::GridRenderer>,
+    window: &mut crate::render::window::Window,
+    downsampled_frame: &mut crate::render::downsample::DownsampledFrame,
+    aux_frame: &mut crate::render::downsample::AuxFrame,
+    term_size: (usize, usize),
 ) -> io::Result<()> {
+    let ov = crate::profile_overrides::ProfileOverrides {
+        preset: Some(new_preset),
+        ..Default::default()
+    };
+    crate::app::apply_overrides(
+        &ov,
+        rs,
+        renderer,
+        sim,
+        timer,
+        grid_renderer,
+        window,
+        downsampled_frame,
+        aux_frame,
+        term_size,
+        true,
+    )
+    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    // Commit provenance ONLY after successful apply (transactional).
     rs.set_preset(new_preset);
     rs.active_source = crate::profile::ProfileSource::Preset(new_preset);
-    let profile = crate::profile::Profile::from_preset(new_preset, args)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let mut new_config = profile.sim.clone();
-    // Preserve the live environment (as the old switch did — Phase C removes this
-    // when restart-on-swap lands).
-    new_config.attractors = sim.config().attractors.clone();
-    new_config.attractor_strength = sim.config().attractor_strength;
-    new_config.food_image_path = sim.config().food_image_path.clone();
-    new_config.food_image_invert = sim.config().food_image_invert;
-    new_config.obstacles = sim.config().obstacles.clone();
-    new_config.obstacle_masks = sim.config().obstacle_masks.clone();
-
-    let resolved = profile.render.clone();
-    sim.update_config(new_config.clone());
-    crate::app::apply_render_config(&resolved, rs, renderer, sim);
-
-    // Re-baseline so "reset" = this preset ⊕ launch CLI (Model B).
-    rs.cli_overrides = Some(new_config);
-    rs.set_render_baseline(resolved);
-    timer.set_time_scale(rs.time_scale);
+    rs.active_overrides = ov;
     Ok(())
 }
 

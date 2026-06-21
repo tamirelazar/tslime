@@ -610,8 +610,6 @@ pub struct RuntimeState {
     pub config_save_name_input: String,
     /// Default values for reset.
     pub default_values: DefaultValues,
-    /// CLI overrides for custom parameters (stored when launched with CLI args).
-    pub cli_overrides: Option<SimConfig>,
     /// Application-runtime config (warmup / auto-reset / grid / food-persist).
     /// The single live source of truth for restart-only levers the runner reads.
     pub(crate) app: crate::app_config::AppRuntimeConfig,
@@ -629,7 +627,6 @@ pub struct RuntimeState {
     /// Render config snapshot captured at launch and after every baseline change;
     /// restored by `apply_render_config` in the `ResetToDefaults` handler.
     pub(crate) baseline_render: crate::render_art_defaults::ResolvedRenderConfig,
-    initial_window_frame: WindowFrame,
     /// Undo history stack.
     pub undo_stack: std::collections::VecDeque<ParameterState>,
     /// Redo history stack.
@@ -803,14 +800,12 @@ impl RuntimeState {
             config_browser_selected_index: 0,
             config_save_name_input: String::new(),
             default_values,
-            cli_overrides: Some(cli_config.clone()),
             app: crate::app_config::AppRuntimeConfig::default(),
             wind: cli_config.wind,
             live_palette: Palette::Organic,
             live_charset: Charset::HalfBlock,
             active_overrides: crate::profile_overrides::ProfileOverrides::default(),
             baseline_render: crate::render_art_defaults::ResolvedRenderConfig::default(),
-            initial_window_frame: cli_config.window_frame,
             undo_stack: std::collections::VecDeque::with_capacity(50),
             redo_stack: std::collections::VecDeque::with_capacity(50),
             last_checkpoint_time: std::time::Instant::now(),
@@ -867,7 +862,7 @@ impl RuntimeState {
     ///
     /// Wind is preserved LOSSLESSLY: `self.wind = sim.wind` verbatim (the coarse
     /// `wind_direction` label is derived for display only and never round-trips the
-    /// precise vector). `cli_overrides` is refreshed so reset re-bases on the new config.
+    /// precise vector).
     pub(crate) fn sync_sim_levers(&mut self, sim: &SimConfig) {
         self.sensor_angle = sim.sensor_angle;
         self.sensor_distance = sim.sensor_distance;
@@ -898,7 +893,6 @@ impl RuntimeState {
         // LOSSLESS wind: store the precise vector; derive the coarse label for display.
         self.wind = sim.wind;
         self.wind_direction = WindDirection::from_wind(sim.wind);
-        self.cli_overrides = Some(sim.clone());
     }
 
     /// Captures the current state of parameters for undo.
@@ -1658,73 +1652,14 @@ impl RuntimeState {
         }
     }
 
-    /// Resets all parameters to default values.
-    /// If CLI overrides are available, restores those; otherwise uses preset defaults.
-    ///
-    /// Note: the 13 render levers (palette, charset, hue-shift, temporal settings, etc.)
-    /// are NOT restored here. The caller must reapply them via
-    /// `apply_render_config(&self.baseline_render, ...)` after calling this method,
-    /// as the `ResetToDefaults` handler does. A second caller that omits that step
-    /// will leave render state stale.
-    pub fn reset_to_defaults(&mut self) {
+    /// Resets the non-lever transient flags that the `apply_overrides` seam does not touch.
+    /// The caller must call `apply_overrides(active_overrides, …, restart: true)` after this
+    /// to restore all sim/render/app levers and trigger a fresh trail restart.
+    pub fn reset_transient(&mut self) {
         self.force_checkpoint();
-
-        if let Some(ref cli) = self.cli_overrides {
-            self.sensor_angle = cli.sensor_angle;
-            self.sensor_distance = cli.sensor_distance;
-            self.rotation_angle = cli.rotation_angle;
-            self.step_size = cli.step_size;
-            self.decay_factor = cli.decay_factor;
-            self.deposit_amount = cli.deposit_amount;
-            self.diffusion_kernel = cli.diffusion_kernel;
-            self.diffusion_sigma = cli.diffusion_sigma;
-            self.attractor_strength = cli.attractor_strength;
-            self.wind_direction = match cli.wind {
-                None => WindDirection::None,
-                Some(w) => {
-                    if w.dx > 0.0 && w.dy == 0.0 {
-                        WindDirection::East
-                    } else if w.dx < 0.0 && w.dy == 0.0 {
-                        WindDirection::West
-                    } else if w.dx == 0.0 && w.dy < 0.0 {
-                        WindDirection::North
-                    } else if w.dx == 0.0 && w.dy > 0.0 {
-                        WindDirection::South
-                    } else {
-                        WindDirection::None
-                    }
-                }
-            };
-            self.terrain_type = cli.terrain;
-            self.terrain_strength = cli.terrain_strength;
-            self.max_brightness = cli.max_brightness;
-            self.time_scale = cli.time_scale;
-        } else {
-            let defaults = self.default_values;
-            self.sensor_angle = defaults.sensor_angle;
-            self.sensor_distance = defaults.sensor_distance;
-            self.rotation_angle = defaults.rotation_angle;
-            self.step_size = defaults.step_size;
-            self.decay_factor = defaults.decay_factor;
-            self.deposit_amount = defaults.deposit_amount;
-            self.diffusion_kernel = defaults.diffusion_kernel;
-            self.diffusion_sigma = defaults.diffusion_sigma;
-            self.attractor_strength = defaults.attractor_strength;
-            self.wind_direction = defaults.wind_direction;
-            self.terrain_type = defaults.terrain_type;
-            self.terrain_strength = defaults.terrain_strength;
-            self.max_brightness = defaults.max_brightness;
-        }
-        // Restore non-render state.
-        self.window_frame = self.initial_window_frame;
         self.auto_normalize = false;
         self.motion_blur_frames = 0;
         self.fast_mode_enabled = false;
-        self.invert_palette = false;
-        self.reverse_palette = false;
-        // Restore all per-charset color-AA slots to their defaults; the caller's
-        // apply_render_config then re-overwrites the active charset with the baseline.
-        self.color_aa = crate::config_defaults::DEFAULT_COLOR_AA;
     }
 
     /// Randomizes simulation parameters.
@@ -1881,13 +1816,15 @@ mod tests {
     }
 
     #[test]
-    fn reset_to_defaults_restores_window_frame() {
-        use crate::simulation::config::WindowFrame;
+    fn reset_transient_clears_transient_flags() {
         let mut rs = create_test_runtime_state();
-        let initial_frame = rs.window_frame;
-        rs.window_frame = WindowFrame::Negative;
-        rs.reset_to_defaults();
-        assert_eq!(rs.window_frame, initial_frame);
+        rs.auto_normalize = true;
+        rs.motion_blur_frames = 5;
+        rs.fast_mode_enabled = true;
+        rs.reset_transient();
+        assert!(!rs.auto_normalize);
+        assert_eq!(rs.motion_blur_frames, 0);
+        assert!(!rs.fast_mode_enabled);
     }
 
     #[test]
@@ -2481,12 +2418,12 @@ mod tests {
     }
 
     #[test]
-    fn reset_to_defaults_restores_all_per_charset_color_aa_slots() {
+    fn reset_transient_does_not_touch_color_aa_slots() {
         use crate::render::antialiasing::AaStrength;
-        // charset_index 0 = HalfBlock (active); index 3 = Braille (non-active).
+        // reset_transient is scoped to transient flags; color_aa is a lever restored
+        // by the apply_overrides seam, not by reset_transient itself.
         let mut rs = create_test_runtime_state();
         rs.charset_index = 0;
-        // Corrupt a non-active charset slot (Braille, index 3) to a non-default value.
         let braille_default = crate::config_defaults::DEFAULT_COLOR_AA[3];
         let non_default = if braille_default == AaStrength::Strong {
             AaStrength::Off
@@ -2496,10 +2433,13 @@ mod tests {
         rs.color_aa[3] = non_default;
         assert_eq!(rs.color_aa[3], non_default);
 
-        rs.reset_to_defaults();
+        rs.reset_transient();
 
-        // After reset the non-active Braille slot must be restored to its default.
-        assert_eq!(rs.color_aa[3], braille_default);
+        // reset_transient must NOT change color_aa — the seam owns that.
+        assert_eq!(
+            rs.color_aa[3], non_default,
+            "reset_transient must not restore color_aa; the seam does that"
+        );
     }
 
     #[test]
