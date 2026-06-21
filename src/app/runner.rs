@@ -2510,11 +2510,14 @@ fn apply_render_config(
     sim: &mut Simulation,
 ) {
     // Palette + charset indices (RuntimeState drives index; renderer drives value).
-    if let Some(i) = ALL_PALETTES.iter().position(|p| *p == r.palette) {
-        rs.palette_index = i;
-    } else if let cli::Palette::Custom(_) = r.palette {
-        rs.palette_index = 4; // Forest fallback for custom palettes (mirror startup)
-    }
+    rs.palette_index = if let cli::Palette::Custom(_) = r.palette {
+        4 // Forest fallback for custom palettes (mirror startup)
+    } else {
+        ALL_PALETTES
+            .iter()
+            .position(|p| *p == r.palette)
+            .unwrap_or(4)
+    };
     if let Some(i) = ALL_CHARSETS.iter().position(|c| *c == r.charset) {
         rs.charset_index = i;
     }
@@ -2529,8 +2532,9 @@ fn apply_render_config(
     renderer.set_glyph(r.glyph);
     rs.glyph = r.glyph;
 
-    // Hue shift: degrees/sec → nearest discrete speed (moved from startup).
-    // Only activates when hue_shift > 0.0; identity = Off (matches startup).
+    // Resolved hue-shift speed is authoritative: startup, live preset-switch, and
+    // reset all re-resolve it here, deliberately overriding runtime key-cycling.
+    // hue_shift <= 0 => Off (equivalent to startup, where RuntimeState::new inits Off).
     rs.palette_shift_speed = if r.hue_shift <= 0.0 {
         crate::terminal::state::PaletteShiftSpeed::Off
     } else if r.hue_shift <= 10.0 {
