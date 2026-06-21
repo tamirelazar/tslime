@@ -1267,20 +1267,18 @@ pub struct Args {
     #[arg(
         long = "afterglow",
         value_name = "VALUE",
-        default_value_t = 0.0,
         help = "Afterglow strength (0.0 = off). Luminous lingering tails."
     )]
     /// Afterglow strength (glow_mix), lever 7.
-    pub afterglow: f32,
+    pub afterglow: Option<f32>,
 
     #[arg(
         long = "afterglow-rate",
         value_name = "ALPHA",
-        default_value_t = 0.05,
         help = "Afterglow EMA rate (smaller = longer-lived glow)."
     )]
     /// Afterglow EMA rate (alpha per frame).
-    pub afterglow_rate: f32,
+    pub afterglow_rate: Option<f32>,
 
     #[arg(
         long = "decay-gamma",
@@ -2092,6 +2090,20 @@ impl Args {
                 .map_err(|_| format!("invalid --temporal-accent hex: {hex}"))?;
             art.temporal_accent = Some(crate::render::palette::RgbColor::from_hex(h));
         }
+        if let Some(a) = self.afterglow {
+            art.afterglow = a;
+        }
+        if let Some(r) = self.afterglow_rate {
+            art.afterglow_rate = r;
+        }
+        // Validation parity: SimConfig::validate enforced these ranges before
+        // afterglow left the sim config; enforce them on the resolved values now.
+        crate::validation::rules::AFTERGLOW
+            .validate_f32(art.afterglow)
+            .map_err(|e| e.to_string())?;
+        crate::validation::rules::AFTERGLOW_RATE
+            .validate_f32(art.afterglow_rate)
+            .map_err(|e| e.to_string())?;
         Ok(art)
     }
 
@@ -2334,8 +2346,8 @@ impl Default for Args {
             temporal_lag: None,
             temporal_mode: None,
             temporal_accent: None,
-            afterglow: 0.0,
-            afterglow_rate: 0.05,
+            afterglow: None,
+            afterglow_rate: None,
             decay_gamma: None,
             diffuse_weight: None,
             deposit_curve: None,
@@ -3088,5 +3100,23 @@ mod tests {
             args.resolved_color_aa(&Charset::Braille),
             AaStrength::Subtle
         );
+    }
+
+    #[test]
+    fn afterglow_unset_uses_preset() {
+        let a = Args::parse_from(["tslime", "--preset", "lumen"]);
+        assert_eq!(a.to_render_art_defaults().unwrap().afterglow, 0.3);
+    }
+
+    #[test]
+    fn afterglow_cli_overrides_preset() {
+        let a = Args::parse_from(["tslime", "--preset", "lumen", "--afterglow", "0"]);
+        assert_eq!(a.to_render_art_defaults().unwrap().afterglow, 0.0);
+    }
+
+    #[test]
+    fn afterglow_out_of_range_rejected() {
+        let a = Args::parse_from(["tslime", "--afterglow", "99"]);
+        assert!(a.to_render_art_defaults().is_err());
     }
 }

@@ -495,8 +495,10 @@ pub fn print_mode(
             sim.update(1.0);
         }
     }
-    if args.afterglow > 0.0 {
-        sim.set_compute_afterglow(true, args.afterglow_rate);
+    let afterglow_val = args.afterglow.unwrap_or(0.0);
+    let afterglow_rate_val = args.afterglow_rate.unwrap_or(0.05);
+    if afterglow_val > 0.0 {
+        sim.set_compute_afterglow(true, afterglow_rate_val);
     }
 
     sim.update(1.0);
@@ -507,7 +509,7 @@ pub fn print_mode(
     let sim_height = sim.height();
     let mut blended_trail = Vec::new();
     sim.trail_map_blended(&mut blended_trail);
-    fold_afterglow(&mut blended_trail, sim.afterglow_lag(), args.afterglow);
+    fold_afterglow(&mut blended_trail, sim.afterglow_lag(), afterglow_val);
     let mut downsampled = DownsampledFrame::new(term_width, term_height);
     downsample(
         &blended_trail,
@@ -717,8 +719,10 @@ pub fn capture_frames_mode(
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
-    if args.afterglow > 0.0 {
-        sim.set_compute_afterglow(true, args.afterglow_rate);
+    let afterglow_val = args.afterglow.unwrap_or(0.0);
+    let afterglow_rate_val = args.afterglow_rate.unwrap_or(0.05);
+    if afterglow_val > 0.0 {
+        sim.set_compute_afterglow(true, afterglow_rate_val);
     }
 
     // Reused across frames so trail_map_blended doesn't reallocate per frame.
@@ -738,7 +742,7 @@ pub fn capture_frames_mode(
         let sim_width = sim.width();
         let sim_height = sim.height();
         sim.trail_map_blended(&mut blended_trail);
-        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), args.afterglow);
+        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), afterglow_val);
         let mut downsampled = DownsampledFrame::new(term_width, term_height);
         downsample(
             &blended_trail,
@@ -964,8 +968,10 @@ pub fn export_gif_mode(
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
-    if args.afterglow > 0.0 {
-        sim.set_compute_afterglow(true, args.afterglow_rate);
+    let afterglow_val = args.afterglow.unwrap_or(0.0);
+    let afterglow_rate_val = args.afterglow_rate.unwrap_or(0.05);
+    if afterglow_val > 0.0 {
+        sim.set_compute_afterglow(true, afterglow_rate_val);
     }
 
     let frame_skip = args.frame_skip.max(1);
@@ -988,7 +994,7 @@ pub fn export_gif_mode(
         let term_width = width;
         let term_height = height;
         sim.trail_map_blended(&mut blended_trail);
-        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), args.afterglow);
+        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), afterglow_val);
         downsample(
             &blended_trail,
             sim_width,
@@ -1145,8 +1151,10 @@ pub fn export_webm_mode(
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
-    if args.afterglow > 0.0 {
-        sim.set_compute_afterglow(true, args.afterglow_rate);
+    let afterglow_val = args.afterglow.unwrap_or(0.0);
+    let afterglow_rate_val = args.afterglow_rate.unwrap_or(0.05);
+    if afterglow_val > 0.0 {
+        sim.set_compute_afterglow(true, afterglow_rate_val);
     }
 
     let frame_skip = args.frame_skip.max(1);
@@ -1169,7 +1177,7 @@ pub fn export_webm_mode(
         let term_width = width;
         let term_height = height;
         sim.trail_map_blended(&mut blended_trail);
-        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), args.afterglow);
+        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), afterglow_val);
         downsample(
             &blended_trail,
             sim_width,
