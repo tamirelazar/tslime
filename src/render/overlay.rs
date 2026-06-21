@@ -93,6 +93,16 @@ impl OverlayConfig {
         has_border: true,
     };
 
+    /// Dirty-state guard overlay configuration
+    pub const DIRTY_GUARD: OverlayConfig = OverlayConfig {
+        width: 48,
+        height_padding: 1,
+        width_padding: 1,
+        text_color_256: 15,
+        bg_color_256: 236,
+        has_border: true,
+    };
+
     /// Keyboard hints overlay configuration
     pub const KEYBOARD_HINTS: OverlayConfig = OverlayConfig {
         width: 88,
@@ -616,6 +626,38 @@ impl ConfigSaveOverlay {
     }
 
     /// Calculates center position for the save dialog.
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let x = (term_width.saturating_sub(Self::TOTAL_WIDTH)) / 2;
+        let y = (term_height.saturating_sub(5)) / 2;
+        (x, y)
+    }
+}
+
+/// Overlay for the dirty-state guard: confirms discarding live edits before a swap.
+pub struct DirtyGuardOverlay;
+
+impl DirtyGuardOverlay {
+    /// Total rendered width.
+    const TOTAL_WIDTH: usize = 48;
+    /// Content width (inner drawable area). 48 - 2(border) - 2*1(padding).
+    const CONTENT_WIDTH: usize = 44;
+
+    /// Builds the dirty-state guard dialog overlay.
+    pub fn build_overlay() -> RenderedOverlay {
+        use TextAlignment::Left;
+
+        PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(0, 0, 1, 1))
+            .with_title("UNSAVED CHANGES")
+            .with_title_box()
+            .add_empty()
+            .add_single("Discard live edits and switch?", Left)
+            .add_empty()
+            .add_single("Enter: Discard & switch    Esc: Cancel", Left)
+            .build_overlay()
+    }
+
+    /// Calculates center position for the guard dialog.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::TOTAL_WIDTH)) / 2;
         let y = (term_height.saturating_sub(5)) / 2;

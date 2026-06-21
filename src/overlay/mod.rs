@@ -31,6 +31,9 @@ pub enum OverlayType {
     ConfigBrowser,
     /// Config save dialog overlay.
     ConfigSave,
+    /// Dirty-state guard overlay: blocks a lossy preset/config/reset swap until the
+    /// user confirms (Enter → discard live edits & switch) or cancels (Esc).
+    DirtyGuard,
     /// Preset comparison overlay.
     PresetComparison,
     /// Keyboard hints overlay.
@@ -54,6 +57,7 @@ impl OverlayType {
                 | OverlayType::PaletteEditor
                 | OverlayType::ConfigBrowser
                 | OverlayType::ConfigSave
+                | OverlayType::DirtyGuard
         )
     }
 
@@ -76,6 +80,7 @@ impl OverlayType {
             OverlayType::KeyboardHints => 10,
             OverlayType::PresetComparison => 10,
             OverlayType::PaletteEditor => 10,
+            OverlayType::DirtyGuard => 10,
         }
     }
 

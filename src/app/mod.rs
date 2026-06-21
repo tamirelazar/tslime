@@ -166,16 +166,8 @@ pub(crate) fn apply_render_config(
 
     // Resolved hue-shift speed is authoritative: startup, live preset-switch, and
     // reset all re-resolve it here, deliberately overriding runtime key-cycling.
-    // hue_shift <= 0 => Off (equivalent to startup, where RuntimeState::new inits Off).
-    rs.palette_shift_speed = if r.hue_shift <= 0.0 {
-        crate::terminal::state::PaletteShiftSpeed::Off
-    } else if r.hue_shift <= 10.0 {
-        crate::terminal::state::PaletteShiftSpeed::Slow
-    } else if r.hue_shift <= 30.0 {
-        crate::terminal::state::PaletteShiftSpeed::Medium
-    } else {
-        crate::terminal::state::PaletteShiftSpeed::Fast
-    };
+    // Buckets via the single source of truth shared with the dirty projection.
+    rs.palette_shift_speed = crate::terminal::state::palette_shift_speed_of(r.hue_shift);
 
     // Temporal + afterglow runtime state and sim compute toggles.
     rs.temporal_color = r.temporal_color;

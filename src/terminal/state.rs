@@ -51,6 +51,20 @@ pub fn num_charsets() -> usize {
     ALL_CHARSETS.len()
 }
 
+/// A swap the user requested while live edits were dirty, parked behind the
+/// dirty-state guard overlay until confirmed or cancelled. Both the clean path and
+/// the post-confirm path route through the SAME `do_swap` in the runner so they can
+/// never diverge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PendingSwap {
+    /// Switch to a preset (via `switch_preset`).
+    Preset(Preset),
+    /// Load a named saved config (through the apply seam + transactional provenance).
+    Config(String),
+    /// Re-apply `active_overrides` (the reset path).
+    Reset,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Speed of automatic palette hue shifting.
 pub enum PaletteShiftSpeed {
@@ -73,6 +87,24 @@ impl PaletteShiftSpeed {
             PaletteShiftSpeed::Medium => 15.0,
             PaletteShiftSpeed::Fast => 45.0,
         }
+    }
+}
+
+/// Buckets a resolved `hue_shift` (deg/s) into the observable [`PaletteShiftSpeed`].
+///
+/// Single source of truth shared by `apply_render_config` (which sets the live
+/// `rs.palette_shift_speed`) and the dirty-state canonical projection. Both MUST
+/// use the same buckets so a clean swap never reads dirty: the runtime only ever
+/// exposes the bucket, so the raw `hue_shift` value must be compared via this map.
+pub fn palette_shift_speed_of(hue_shift: f32) -> PaletteShiftSpeed {
+    if hue_shift <= 0.0 {
+        PaletteShiftSpeed::Off
+    } else if hue_shift <= 10.0 {
+        PaletteShiftSpeed::Slow
+    } else if hue_shift <= 30.0 {
+        PaletteShiftSpeed::Medium
+    } else {
+        PaletteShiftSpeed::Fast
     }
 }
 
@@ -624,6 +656,10 @@ pub struct RuntimeState {
     /// The authored overrides describing the currently-active profile. Committed
     /// only after a successful apply so failed loads never leave stale provenance.
     pub(crate) active_overrides: crate::profile_overrides::ProfileOverrides,
+    /// A swap the user requested while live edits were dirty, parked until the
+    /// dirty-state guard overlay is confirmed (Enter → do the swap) or cancelled
+    /// (Esc → cleared). `None` whenever the guard is not pending.
+    pub(crate) pending_swap: Option<PendingSwap>,
     /// Render config snapshot captured at launch and after every baseline change;
     /// restored by `apply_render_config` in the `ResetToDefaults` handler.
     pub(crate) baseline_render: crate::render_art_defaults::ResolvedRenderConfig,
@@ -805,6 +841,7 @@ impl RuntimeState {
             live_palette: Palette::Organic,
             live_charset: Charset::HalfBlock,
             active_overrides: crate::profile_overrides::ProfileOverrides::default(),
+            pending_swap: None,
             baseline_render: crate::render_art_defaults::ResolvedRenderConfig::default(),
             undo_stack: std::collections::VecDeque::with_capacity(50),
             redo_stack: std::collections::VecDeque::with_capacity(50),
@@ -1280,6 +1317,26 @@ impl RuntimeState {
             self.color_aa[i] = aa;
         }
         // else: leave all slots at their current defaults
+    }
+
+    /// Returns true when the live session has diverged from `active_overrides`
+    /// in a way that would be lost by an unguarded swap (preset/config/reset).
+    ///
+    /// Dirty is a CANONICAL-PROJECTION compare ([P1]), NOT resolved-`Profile`
+    /// equality: the live state is captured into a [`ProfileOverrides`] and both it
+    /// and `active_overrides` are run through
+    /// [`project`](crate::profile_overrides::project), which folds in the apply-only
+    /// flags (reverse/invert/food_persist), reproduces the per-charset color-AA
+    /// array, and buckets `hue_shift`. A resolve error on EITHER side is treated as
+    /// dirty so a swap prompts rather than silently discarding edits.
+    pub(crate) fn is_dirty(&self, sim: &SimConfig, palette: Palette, charset: Charset) -> bool {
+        let live = crate::config_manager::capture_overrides(sim, palette, charset, self);
+        use crate::profile_overrides::project;
+        match (project(&live), project(&self.active_overrides)) {
+            (Ok(a), Ok(b)) => a != b,
+            // resolve error → prompt rather than silently discard
+            _ => true,
+        }
     }
 
     /// Cycle the active charset's color-AA strength. No-op (returns false) when
@@ -2508,6 +2565,229 @@ mod tests {
         assert_eq!(
             rs.active_overrides, bare_ov,
             "reset_transient must not modify active_overrides"
+        );
+    }
+
+    // ── Dirty-state guard ([P1] canonical projection) ──────────────────────────
+
+    /// Builds a CLEAN session for `active_overrides`: resolves the overrides and
+    /// writes every captured field into rs/sim exactly as startup would, then
+    /// commits `active_overrides`. The returned `(rs, sim_config)` is what a fresh,
+    /// UNEDITED session looks like — `is_dirty` MUST be false for it. Mirrors the
+    /// resolve half of the apply seam (no renderer needed).
+    fn clean_session(ov: crate::profile_overrides::ProfileOverrides) -> (RuntimeState, SimConfig) {
+        let profile = ov.resolve().expect("active_overrides must resolve");
+        let sim_config = profile.sim.clone();
+        let mut rs = create_test_runtime_state();
+
+        // Mirror the apply seam's RESOLVED writes (not apply_to_runtime_state(ov),
+        // which only reads ov's own Option fields and would leave preset-derived
+        // render/sim levers at hardcoded defaults). capture_overrides reads these rs
+        // fields, so a faithful clean session must carry the resolved values.
+
+        // Sim-side levers capture reads from rs (not from sim_config).
+        rs.decay_gamma = sim_config.decay_gamma;
+        rs.diffuse_weight = sim_config.diffuse_weight;
+        rs.deposit_curve = sim_config.deposit_curve;
+        rs.deposit_scale = sim_config.deposit_scale;
+        rs.deposit_gamma = sim_config.deposit_gamma;
+        rs.deposit_cap = sim_config.deposit_cap;
+
+        // Render fields the seam writes through apply_render_config.
+        let r = &profile.render;
+        rs.live_palette = r.palette.clone();
+        rs.live_charset = r.charset.clone();
+        rs.charset_index = ALL_CHARSETS
+            .iter()
+            .position(|c| *c == r.charset)
+            .unwrap_or(0);
+        // color_aa: the active charset's slot carries the resolved scalar over defaults.
+        rs.color_aa = crate::config_defaults::DEFAULT_COLOR_AA;
+        rs.color_aa[rs.charset_index] = r.color_aa;
+        rs.palette_shift_speed = palette_shift_speed_of(r.hue_shift);
+        rs.intensity_mapping = r.intensity_mapping.clone();
+        rs.palette_cycle = r.palette_cycle;
+        rs.glyph = r.glyph;
+        rs.temporal_color = r.temporal_color;
+        rs.temporal_lag_frames = r.temporal_lag_frames;
+        rs.temporal_mode = r.temporal_mode;
+        rs.temporal_accent = r.temporal_accent;
+        rs.afterglow = r.afterglow;
+        rs.afterglow_rate = r.afterglow_rate;
+
+        // App + wind (sourced from the resolved profile / sim).
+        rs.app = profile.app.clone();
+        rs.wind = sim_config.wind;
+
+        rs.active_overrides = ov;
+        (rs, sim_config)
+    }
+
+    /// FALSE-POSITIVE GATE (mandatory): a bare-preset session built by APPLYING
+    /// `active_overrides = {preset: Some(Lumen)}` must NOT read dirty. A failure
+    /// here means capture or projection is INCOMPLETE — fix capture/projection,
+    /// never this test.
+    #[test]
+    fn clean_preset_swap_is_not_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        let ov = ProfileOverrides {
+            preset: Some(Preset::Lumen),
+            ..Default::default()
+        };
+        let (rs, sim) = clean_session(ov);
+        assert!(
+            !rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "a freshly-applied bare preset must not read dirty (projection incomplete?)"
+        );
+    }
+
+    /// CLEAN `--color-aa subtle` session: the source carries a scalar `color_aa`,
+    /// live capture re-captures it, and project() must reproduce apply_color_aa_all
+    /// semantics (scalar on the RESOLVED charset slot over defaults) so the two
+    /// sides match — NOT treat the source's absent color_aa_all as defaults.
+    #[test]
+    fn clean_color_aa_scalar_session_is_not_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        use crate::render::antialiasing::AaStrength;
+        let ov = ProfileOverrides {
+            color_aa: Some(AaStrength::Subtle),
+            ..Default::default()
+        };
+        let (rs, sim) = clean_session(ov);
+        assert!(
+            !rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "a clean --color-aa subtle session must not read dirty"
+        );
+    }
+
+    /// Mutating a sim lever (sensor_angle) reads dirty.
+    #[test]
+    fn mutated_is_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        let ov = ProfileOverrides {
+            preset: Some(Preset::Lumen),
+            ..Default::default()
+        };
+        let (rs, mut sim) = clean_session(ov);
+        sim.sensor_angle += 7.0;
+        assert!(
+            rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "a bumped sensor_angle must read dirty"
+        );
+    }
+
+    /// Toggling an apply-only flag (reverse_palette) reads dirty — proves the
+    /// projection sees flags that resolved-Profile equality would drop.
+    #[test]
+    fn flag_edit_is_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        let ov = ProfileOverrides {
+            preset: Some(Preset::Lumen),
+            ..Default::default()
+        };
+        let (mut rs, sim) = clean_session(ov);
+        rs.reverse_palette = !rs.reverse_palette;
+        assert!(
+            rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "toggling reverse_palette must read dirty (apply-only flag)"
+        );
+    }
+
+    /// Changing the palette-shift SPEED reads dirty (it crosses a bucket boundary),
+    /// but a raw hue_shift difference WITHIN the same bucket does NOT, because both
+    /// sides flow through the `palette_shift_speed_of` bucket.
+    #[test]
+    fn shift_speed_edit_is_dirty_but_intra_bucket_is_not() {
+        use crate::profile_overrides::project;
+        use crate::profile_overrides::ProfileOverrides;
+        // Cross-bucket: Off (0) → Medium (20) reads dirty.
+        let off = ProfileOverrides {
+            hue_shift: Some(0.0),
+            ..Default::default()
+        };
+        let medium = ProfileOverrides {
+            hue_shift: Some(20.0),
+            ..Default::default()
+        };
+        assert_ne!(
+            project(&off).unwrap(),
+            project(&medium).unwrap(),
+            "Off vs Medium hue_shift must project unequal (cross-bucket)"
+        );
+        // Intra-bucket: 16 and 20 are both Medium (≤30, >10) → equal projection.
+        let medium_a = ProfileOverrides {
+            hue_shift: Some(16.0),
+            ..Default::default()
+        };
+        let medium_b = ProfileOverrides {
+            hue_shift: Some(20.0),
+            ..Default::default()
+        };
+        assert_eq!(
+            project(&medium_a).unwrap(),
+            project(&medium_b).unwrap(),
+            "two hue_shifts in the same bucket must project equal (raw value excluded)"
+        );
+    }
+
+    /// StartupCli baseline: with `active_overrides == from_args(--sensor-angle 33)`,
+    /// an UNEDITED session is NOT dirty; it becomes dirty only after an edit.
+    #[test]
+    fn startup_cli_with_overrides_unedited_is_not_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        use clap::Parser;
+        let args = crate::cli::Args::parse_from(["tslime", "--sensor-angle", "33"]);
+        let ov = ProfileOverrides::from_args(&args).expect("from_args");
+        let (rs, sim) = clean_session(ov);
+        assert!(
+            !rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "an unedited --sensor-angle 33 startup session must not read dirty"
+        );
+    }
+
+    /// `pending_swap` parks a requested swap and `take()` hands it back exactly
+    /// once (the confirm path consumes it), mirroring the runner's guard flow.
+    #[test]
+    fn pending_swap_parks_and_takes_once() {
+        let mut rs = create_test_runtime_state();
+        assert!(rs.pending_swap.is_none());
+        rs.pending_swap = Some(PendingSwap::Preset(Preset::Lumen));
+        rs.overlay_state.open(OverlayType::DirtyGuard);
+        assert!(rs.overlay_state.is_open(OverlayType::DirtyGuard));
+        assert_eq!(
+            rs.pending_swap.take(),
+            Some(PendingSwap::Preset(Preset::Lumen))
+        );
+        assert!(
+            rs.pending_swap.is_none(),
+            "take() must clear the parked swap"
+        );
+    }
+
+    /// The cancel (Escape) path clears `pending_swap` without performing the swap.
+    #[test]
+    fn pending_swap_cancel_clears_without_swapping() {
+        let mut rs = create_test_runtime_state();
+        rs.pending_swap = Some(PendingSwap::Config("demo".to_string()));
+        rs.overlay_state.open(OverlayType::DirtyGuard);
+        // Mirror the runner's CloseOverlay arm for DirtyGuard.
+        rs.overlay_state.close();
+        rs.pending_swap = None;
+        assert!(rs.pending_swap.is_none());
+        assert!(!rs.overlay_state.is_open(OverlayType::DirtyGuard));
+    }
+
+    #[test]
+    fn startup_cli_with_overrides_dirty_after_edit() {
+        use crate::profile_overrides::ProfileOverrides;
+        use clap::Parser;
+        let args = crate::cli::Args::parse_from(["tslime", "--sensor-angle", "33"]);
+        let ov = ProfileOverrides::from_args(&args).expect("from_args");
+        let (rs, mut sim) = clean_session(ov);
+        sim.sensor_angle = 40.0;
+        assert!(
+            rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "editing sensor_angle away from the startup value must read dirty"
         );
     }
 }

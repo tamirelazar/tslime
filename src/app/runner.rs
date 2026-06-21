@@ -26,7 +26,8 @@ use crate::render::grid::{GridRenderer, GridStyle};
 use crate::render::options_overlay::ControlsOverlay;
 use crate::render::overlay::{
     build_notification_panel, ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay,
-    KeyboardHintsOverlay, OverlayRenderer, PauseOverlay, PresetComparisonOverlay, RenderedOverlay,
+    DirtyGuardOverlay, KeyboardHintsOverlay, OverlayRenderer, PauseOverlay,
+    PresetComparisonOverlay, RenderedOverlay,
 };
 use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
 use crate::render::palette_editor::{
@@ -39,7 +40,7 @@ use crate::simulation::Simulation;
 use crate::terminal::control::num_palettes;
 use crate::terminal::control::{
     charset_name, handle_key_event, palette_name, preset_name, ControlAction, MouseInteractionMode,
-    PaletteShiftSpeed, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
+    PaletteShiftSpeed, PendingSwap, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
 };
 use crate::terminal::detection::{log_capabilities, TerminalCapabilities};
 use crate::terminal::frame_buffer::FrameBuffer;
@@ -380,6 +381,104 @@ pub fn run_simulation(
     } else {
         None
     };
+
+    // The SINGLE swap executor. Both the clean path (is_dirty == false → call
+    // immediately) and the post-confirm path (Enter on the dirty guard) route
+    // through this so they can never diverge. Transactional: each variant commits
+    // provenance (active_source/active_overrides) only after a successful apply.
+    #[allow(clippy::too_many_arguments)]
+    fn do_swap(
+        pending: PendingSwap,
+        rs: &mut RuntimeState,
+        renderer: &mut TerminalRenderer,
+        sim: &mut Simulation,
+        timer: &mut FrameTimer,
+        grid_renderer: &mut Option<crate::render::grid::GridRenderer>,
+        window: &mut crate::render::window::Window,
+        downsampled_frame: &mut crate::render::downsample::DownsampledFrame,
+        aux_frame: &mut crate::render::downsample::AuxFrame,
+        term_size: (usize, usize),
+    ) -> io::Result<()> {
+        match pending {
+            PendingSwap::Preset(preset) => {
+                switch_preset(
+                    preset,
+                    rs,
+                    renderer,
+                    sim,
+                    timer,
+                    grid_renderer,
+                    window,
+                    downsampled_frame,
+                    aux_frame,
+                    term_size,
+                )?;
+                rs.show_notification(format!(
+                    "Applied preset: {}",
+                    crate::terminal::control::preset_name(preset)
+                ));
+            }
+            PendingSwap::Config(name) => {
+                // Look up the named config and load it through the apply seam,
+                // committing provenance only on success (transactional).
+                let configs = config_manager::list_configs()
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                let Some(config) = configs.into_iter().find(|c| c.name == name) else {
+                    rs.show_notification(format!("Config '{name}' not found"));
+                    return Ok(());
+                };
+                match crate::app::apply_overrides(
+                    &config.overrides,
+                    rs,
+                    renderer,
+                    sim,
+                    timer,
+                    grid_renderer,
+                    window,
+                    downsampled_frame,
+                    aux_frame,
+                    term_size,
+                    true,
+                ) {
+                    Ok(()) => {
+                        rs.active_source =
+                            crate::profile::ProfileSource::SavedConfig(config.name.clone());
+                        rs.active_overrides = config.overrides.clone();
+                        rs.show_notification(format!("Config '{}' loaded", config.name));
+                    }
+                    Err(e) => {
+                        rs.show_notification(format!("Failed to load '{}': {}", config.name, e));
+                    }
+                }
+            }
+            PendingSwap::Reset => {
+                let ov = rs.active_overrides.clone();
+                rs.reset_transient();
+                match crate::app::apply_overrides(
+                    &ov,
+                    rs,
+                    renderer,
+                    sim,
+                    timer,
+                    grid_renderer,
+                    window,
+                    downsampled_frame,
+                    aux_frame,
+                    term_size,
+                    true,
+                ) {
+                    Ok(()) => {
+                        rs.show_notification("Reset to defaults".to_string());
+                    }
+                    Err(e) => {
+                        rs.show_notification(format!("Reset failed: {e}"));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     loop {
         if is_shutdown_requested() {
             break;
@@ -985,6 +1084,18 @@ pub fn run_simulation(
             (0, 0)
         };
 
+        let dirty_guard_overlay: Option<RenderedOverlay> =
+            if runtime_state.overlay_state.is_open(OverlayType::DirtyGuard) {
+                Some(DirtyGuardOverlay::build_overlay())
+            } else {
+                None
+            };
+        let (dirty_guard_x, dirty_guard_y) = if dirty_guard_overlay.is_some() {
+            DirtyGuardOverlay::calculate_position(term_width as usize, term_height as usize)
+        } else {
+            (0, 0)
+        };
+
         update_food_persistence(sim, &mut runtime_state);
         check_auto_reset(sim, &mut runtime_state, entropy);
 
@@ -1114,6 +1225,9 @@ pub fn run_simulation(
                 config_save_overlay
                     .as_ref()
                     .map(|v| (v, config_save_x, config_save_y)),
+                dirty_guard_overlay
+                    .as_ref()
+                    .map(|v| (v, dirty_guard_x, dirty_guard_y)),
                 keyboard_hints_lines
                     .as_ref()
                     .map(|v| (v, keyboard_hints_x, keyboard_hints_y)),
@@ -1154,6 +1268,9 @@ pub fn run_simulation(
                 config_save_overlay
                     .as_ref()
                     .map(|v| (v, config_save_x, config_save_y)),
+                dirty_guard_overlay
+                    .as_ref()
+                    .map(|v| (v, dirty_guard_x, dirty_guard_y)),
                 keyboard_hints_lines
                     .as_ref()
                     .map(|v| (v, keyboard_hints_x, keyboard_hints_y)),
@@ -1217,7 +1334,15 @@ pub fn run_simulation(
                         &key_event,
                     ) {
                         OverlayInputResult::CloseOverlay => {
+                            // Escape on the dirty guard cancels the parked swap.
+                            let was_dirty_guard = runtime_state.overlay_state.active()
+                                == Some(OverlayType::DirtyGuard);
                             runtime_state.overlay_state.close();
+                            if was_dirty_guard {
+                                runtime_state.pending_swap = None;
+                                runtime_state.on_modal_close();
+                                runtime_state.show_notification("Switch cancelled".to_string());
+                            }
                             continue;
                         }
                         OverlayInputResult::Consumed => {
@@ -1227,6 +1352,40 @@ pub fn run_simulation(
                         OverlayInputResult::NotHandled => {
                             // No overlay open, continue to normal processing
                         }
+                    }
+
+                    // Handle dirty-state guard input. Escape was already handled by
+                    // the centralized manager (→ CloseOverlay → cancels). Here we only
+                    // act on Enter (confirm); all other keys are swallowed so the modal
+                    // stays blocking. Both the confirm path and the clean path route
+                    // through the SAME `do_swap`, so they cannot diverge.
+                    if runtime_state.overlay_state.is_open(OverlayType::DirtyGuard) {
+                        use crossterm::event::KeyCode;
+                        if key_event.code == KeyCode::Enter {
+                            runtime_state.overlay_state.close();
+                            runtime_state.on_modal_close();
+                            if let Some(pending) = runtime_state.pending_swap.take() {
+                                let is_reset = matches!(pending, PendingSwap::Reset);
+                                do_swap(
+                                    pending,
+                                    &mut runtime_state,
+                                    &mut renderer,
+                                    sim,
+                                    &mut timer,
+                                    &mut grid_renderer,
+                                    &mut window,
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    (term_width as usize, term_height as usize),
+                                )?;
+                                if is_reset {
+                                    // Reset-specific loop-local side effects.
+                                    hue_offset = 0.0;
+                                    current_auto_normalize = runtime_state.auto_normalize;
+                                }
+                            }
+                        }
+                        continue;
                     }
 
                     // Handle config save dialog input
@@ -1290,23 +1449,31 @@ pub fn run_simulation(
                         use crossterm::event::KeyCode;
                         if key_event.code == KeyCode::Enter {
                             let preset = runtime_state.comparison_preset;
-                            switch_preset(
-                                preset,
-                                &mut runtime_state,
-                                &mut renderer,
-                                sim,
-                                &mut timer,
-                                &mut grid_renderer,
-                                &mut window,
-                                &mut downsampled_frame,
-                                &mut aux_frame,
-                                (term_width as usize, term_height as usize),
-                            )?;
-                            runtime_state.show_notification(format!(
-                                "Applied preset: {}",
-                                crate::terminal::control::preset_name(preset)
-                            ));
                             runtime_state.overlay_state.close();
+                            // Gate on dirty state like every other swap trigger.
+                            if runtime_state.is_dirty(
+                                sim.config(),
+                                runtime_state.live_palette.clone(),
+                                runtime_state.live_charset.clone(),
+                            ) {
+                                runtime_state.pending_swap = Some(PendingSwap::Preset(preset));
+                                runtime_state.close_all_overlays();
+                                runtime_state.overlay_state.open(OverlayType::DirtyGuard);
+                                runtime_state.on_modal_open();
+                            } else {
+                                do_swap(
+                                    PendingSwap::Preset(preset),
+                                    &mut runtime_state,
+                                    &mut renderer,
+                                    sim,
+                                    &mut timer,
+                                    &mut grid_renderer,
+                                    &mut window,
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    (term_width as usize, term_height as usize),
+                                )?;
+                            }
                             continue;
                         }
                         // Note: Other keys are blocked by centralized handler
@@ -1338,16 +1505,30 @@ pub fn run_simulation(
                                 continue;
                             }
                             KeyCode::Enter => {
-                                if let Ok(configs) = config_manager::list_configs() {
-                                    if let Some(config) =
-                                        configs.get(runtime_state.config_browser_selected_index)
-                                    {
-                                        // The ONE total apply seam: applies ALL levers
-                                        // (sim+render+app+flags), totally syncs the renderer,
-                                        // preserves precise wind, and restarts with the
-                                        // correct init + fresh/pinned seed.
-                                        match crate::app::apply_overrides(
-                                            &config.overrides,
+                                // Resolve the selected config name, close the browser,
+                                // then gate the load on dirty state: dirty → park behind
+                                // the guard; clean → load now via the single executor.
+                                let selected_name =
+                                    config_manager::list_configs().ok().and_then(|configs| {
+                                        configs
+                                            .get(runtime_state.config_browser_selected_index)
+                                            .map(|c| c.name.clone())
+                                    });
+                                runtime_state.overlay_state.close();
+                                if let Some(name) = selected_name {
+                                    if runtime_state.is_dirty(
+                                        sim.config(),
+                                        runtime_state.live_palette.clone(),
+                                        runtime_state.live_charset.clone(),
+                                    ) {
+                                        runtime_state.pending_swap =
+                                            Some(PendingSwap::Config(name));
+                                        runtime_state.close_all_overlays();
+                                        runtime_state.overlay_state.open(OverlayType::DirtyGuard);
+                                        runtime_state.on_modal_open();
+                                    } else {
+                                        do_swap(
+                                            PendingSwap::Config(name),
                                             &mut runtime_state,
                                             &mut renderer,
                                             sim,
@@ -1357,32 +1538,9 @@ pub fn run_simulation(
                                             &mut downsampled_frame,
                                             &mut aux_frame,
                                             (term_width as usize, term_height as usize),
-                                            true,
-                                        ) {
-                                            Ok(()) => {
-                                                // Commit provenance ONLY on success so a failed
-                                                // load never leaves stale active metadata.
-                                                runtime_state.active_source =
-                                                    crate::profile::ProfileSource::SavedConfig(
-                                                        config.name.clone(),
-                                                    );
-                                                runtime_state.active_overrides =
-                                                    config.overrides.clone();
-                                                runtime_state.show_notification(format!(
-                                                    "Config '{}' loaded",
-                                                    config.name
-                                                ));
-                                            }
-                                            Err(e) => {
-                                                runtime_state.show_notification(format!(
-                                                    "Failed to load '{}': {}",
-                                                    config.name, e
-                                                ));
-                                            }
-                                        }
+                                        )?;
                                     }
                                 }
-                                runtime_state.overlay_state.close();
                                 continue;
                             }
                             KeyCode::Delete => {
@@ -1504,18 +1662,31 @@ pub fn run_simulation(
                             );
                         }
                         ControlAction::SetPreset(preset) => {
-                            switch_preset(
-                                preset,
-                                &mut runtime_state,
-                                &mut renderer,
-                                sim,
-                                &mut timer,
-                                &mut grid_renderer,
-                                &mut window,
-                                &mut downsampled_frame,
-                                &mut aux_frame,
-                                (term_width as usize, term_height as usize),
-                            )?;
+                            // Dirty live edits → park the swap behind the guard;
+                            // clean → swap immediately via the single executor.
+                            if runtime_state.is_dirty(
+                                sim.config(),
+                                runtime_state.live_palette.clone(),
+                                runtime_state.live_charset.clone(),
+                            ) {
+                                runtime_state.pending_swap = Some(PendingSwap::Preset(preset));
+                                runtime_state.close_all_overlays();
+                                runtime_state.overlay_state.open(OverlayType::DirtyGuard);
+                                runtime_state.on_modal_open();
+                            } else {
+                                do_swap(
+                                    PendingSwap::Preset(preset),
+                                    &mut runtime_state,
+                                    &mut renderer,
+                                    sim,
+                                    &mut timer,
+                                    &mut grid_renderer,
+                                    &mut window,
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    (term_width as usize, term_height as usize),
+                                )?;
+                            }
                         }
                         ControlAction::ComparePreset(preset) => {
                             runtime_state.toggle_preset_comparison(preset);
@@ -1925,30 +2096,32 @@ pub fn run_simulation(
                             ));
                         }
                         ControlAction::ResetToDefaults => {
-                            let ov = runtime_state.active_overrides.clone();
-                            runtime_state.reset_transient();
-                            match crate::app::apply_overrides(
-                                &ov,
-                                &mut runtime_state,
-                                &mut renderer,
-                                sim,
-                                &mut timer,
-                                &mut grid_renderer,
-                                &mut window,
-                                &mut downsampled_frame,
-                                &mut aux_frame,
-                                (term_width as usize, term_height as usize),
-                                true,
+                            // Dirty live edits → park behind the guard; clean → reset now.
+                            if runtime_state.is_dirty(
+                                sim.config(),
+                                runtime_state.live_palette.clone(),
+                                runtime_state.live_charset.clone(),
                             ) {
-                                Ok(()) => {
-                                    hue_offset = 0.0;
-                                    current_auto_normalize = runtime_state.auto_normalize;
-                                    runtime_state
-                                        .show_notification("Reset to defaults".to_string());
-                                }
-                                Err(e) => {
-                                    runtime_state.show_notification(format!("Reset failed: {e}"));
-                                }
+                                runtime_state.pending_swap = Some(PendingSwap::Reset);
+                                runtime_state.close_all_overlays();
+                                runtime_state.overlay_state.open(OverlayType::DirtyGuard);
+                                runtime_state.on_modal_open();
+                            } else {
+                                do_swap(
+                                    PendingSwap::Reset,
+                                    &mut runtime_state,
+                                    &mut renderer,
+                                    sim,
+                                    &mut timer,
+                                    &mut grid_renderer,
+                                    &mut window,
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    (term_width as usize, term_height as usize),
+                                )?;
+                                // Reset-specific loop-local side effects.
+                                hue_offset = 0.0;
+                                current_auto_normalize = runtime_state.auto_normalize;
                             }
                         }
                         ControlAction::ToggleDashboard => {
@@ -2360,6 +2533,7 @@ pub fn run_simulation(
                     None,
                     None,
                     None,
+                    None,
                     Some(&runtime_state.panel_style),
                     runtime_state.overlay_state.active(),
                     runtime_state.pause_style,
@@ -2383,6 +2557,7 @@ pub fn run_simulation(
                     None,
                     None,
                     grid_renderer.as_ref(),
+                    None,
                     None,
                     None,
                     None,

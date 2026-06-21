@@ -799,6 +799,82 @@ impl ProfileOverrides {
     }
 }
 
+/// Canonical projection of a [`ProfileOverrides`] — exactly what is observable in
+/// a running session and persisted by a config save. Used for dirty-state detection
+/// ([P1]): `dirty = project(capture_live) != project(active_overrides)`.
+///
+/// Resolved [`Profile`] equality is the WRONG comparison: it omits
+/// `reverse/invert/food_persist`, collapses `color_aa` to a single scalar (dropping
+/// the per-charset array), and keeps a raw `hue_shift` that the runtime only ever
+/// exposes through a coarse [`PaletteShiftSpeed`] bucket. `Canonical` adds those
+/// apply-only flags back, reproduces `apply_color_aa_all` semantics as a resolved
+/// array, and replaces raw `hue_shift` with its observable bucket — so both sides
+/// compare on exactly the levers a session can change and save.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Canonical {
+    sim: SimConfig,
+    /// Resolved render config with raw `hue_shift` zeroed (the bucket carries it).
+    render: ResolvedRenderConfig,
+    app: AppRuntimeConfig,
+    reverse: bool,
+    invert: bool,
+    food_persist: bool,
+    /// Resolved per-charset AA array (reproduces `apply_color_aa_all` priority).
+    color_aa: [AaStrength; crate::render::charset::NUM_CHARSETS],
+    /// Bucketed observable form of `render.hue_shift`.
+    shift_speed: crate::terminal::state::PaletteShiftSpeed,
+}
+
+/// Projects a [`ProfileOverrides`] into its [`Canonical`] form (see [`Canonical`]).
+///
+/// Returns `Err` when the overrides fail to resolve — callers treat a resolve
+/// error as "prompt" rather than silently discarding live edits.
+pub(crate) fn project(ov: &ProfileOverrides) -> Result<Canonical, String> {
+    use crate::render::charset::ALL_CHARSETS;
+    use crate::terminal::state::palette_shift_speed_of;
+
+    let p = ov.resolve()?;
+    // Bucket the resolved hue_shift via the SAME map apply_render_config uses, then
+    // zero the raw value so only the bucket participates in the compare.
+    let shift_speed = palette_shift_speed_of(p.render.hue_shift);
+    let mut render = p.render.clone();
+    render.hue_shift = 0.0;
+
+    // Reproduce apply_color_aa_all priority EXACTLY ([P1]):
+    //   1. full per-charset array if color_aa_all present,
+    //   2. else the scalar color_aa on the RESOLVED charset's slot over defaults,
+    //   3. else defaults.
+    // Projecting absent-as-defaults would make a clean CLI `--color-aa subtle`
+    // session instantly dirty: live capture sets the scalar but the source's
+    // color_aa_all is None, so both must land on the same resolved array here.
+    let color_aa = {
+        let mut arr = crate::config_defaults::DEFAULT_COLOR_AA;
+        if let Some(ref all) = ov.color_aa_all {
+            for (slot, aa) in arr.iter_mut().zip(all.iter()) {
+                *slot = *aa;
+            }
+        } else if let Some(aa) = ov.color_aa {
+            let idx = ALL_CHARSETS
+                .iter()
+                .position(|c| *c == p.render.charset)
+                .unwrap_or(0);
+            arr[idx] = aa;
+        }
+        arr
+    };
+
+    Ok(Canonical {
+        sim: p.sim,
+        render,
+        app: p.app,
+        reverse: ov.reverse_palette.unwrap_or(false),
+        invert: ov.invert_palette.unwrap_or(false),
+        food_persist: ov.food_persist.unwrap_or(false),
+        color_aa,
+        shift_speed,
+    })
+}
+
 /// Deterministic dump of the assembled sim-relevant fields.
 /// Used by the preset-config snapshot net (tests/preset_config_snapshot.rs).
 pub(crate) fn dump_sim_config(config: &crate::simulation::config::SimConfig) -> String {

@@ -533,6 +533,7 @@ impl TerminalRenderer {
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
         config_browser_lines: Option<(&RenderedOverlay, usize, usize)>,
         config_save_lines: Option<(&RenderedOverlay, usize, usize)>,
+        dirty_guard_lines: Option<(&RenderedOverlay, usize, usize)>,
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
@@ -946,6 +947,11 @@ impl TerminalRenderer {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONFIG_SAVE);
         }
 
+        // Dirty-state guard overlay (modal, on top)
+        if let Some((overlay, x, y)) = dirty_guard_lines {
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::DIRTY_GUARD);
+        }
+
         // Keyboard hints overlay (modal, on top)
         if let Some((overlay, x, y)) = keyboard_hints_lines {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::KEYBOARD_HINTS);
@@ -990,6 +996,7 @@ impl TerminalRenderer {
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
         config_browser_lines: Option<(&RenderedOverlay, usize, usize)>,
         config_save_lines: Option<(&RenderedOverlay, usize, usize)>,
+        dirty_guard_lines: Option<(&RenderedOverlay, usize, usize)>,
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
@@ -1354,6 +1361,11 @@ impl TerminalRenderer {
             draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONFIG_SAVE);
         }
 
+        // Dirty-state guard overlay (modal, on top)
+        if let Some((overlay, x, y)) = dirty_guard_lines {
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::DIRTY_GUARD);
+        }
+
         // Keyboard hints overlay (modal, on top)
         if let Some((overlay, x, y)) = keyboard_hints_lines {
             draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::KEYBOARD_HINTS);
@@ -1450,6 +1462,7 @@ mod tests {
             10,
             10,
             1.0,
+            None,
             None,
             None,
             None,
