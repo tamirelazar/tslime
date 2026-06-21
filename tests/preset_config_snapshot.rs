@@ -1,7 +1,7 @@
 //! Byte-identity net for the apply()-collapse refactor: dumps every preset's
-//! *assembled* SimConfig (ConfigBuilder::assemble, no CLI flags) to a golden
-//! file. Excludes afterglow (builder clobbers it; it leaves SimConfig in
-//! commit 2). 27/29 presets must stay byte-identical through the collapse;
+//! resolved `SimConfig` (preset-only, no CLI overrides) to a golden file.
+//! Excludes afterglow (it leaves SimConfig unchanged after Phase B commit 2).
+//! 27/29 presets must stay byte-identical through the collapse;
 //! River + PetriDish change deliberately (commit 1) and are reviewed in the diff.
 
 use std::process::{Command, Stdio};

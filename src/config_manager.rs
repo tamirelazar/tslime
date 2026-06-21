@@ -157,9 +157,9 @@ pub fn capture_overrides(
 
 /// Apply a `ProfileOverrides` to `RuntimeState`.
 ///
-/// Port of the old `SavedConfig::apply_to_runtime_state` (lines 448-623).
+/// Port of the former `SavedConfig::apply_to_runtime_state` logic.
 /// Writes the SAME `RuntimeState` fields with the SAME `unwrap_or` defaults.
-/// The new typed `ProfileOverrides` fields replace old string-parse helpers:
+/// The typed `ProfileOverrides` fields replace old string-parse helpers:
 /// `Option<Palette>` → palette_index via PALETTES registry, `Option<Charset>`
 /// → charset_index via `ALL_CHARSETS`, `Option<DiffusionKernel>` direct.
 pub fn apply_to_runtime_state(

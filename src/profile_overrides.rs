@@ -30,7 +30,7 @@ pub struct ProfileOverrides {
     pub preset: Option<Preset>,
     pub seed: Option<u64>,
 
-    // ── sim levers (mirror src/config_builder.rs:17-60 ConfigBuilder) ──
+    // ── sim levers (the sim-side authored partial) ──
     pub sensor_angle: Option<f32>,
     pub sensor_distance: Option<f32>,
     pub rotation_angle: Option<f32>,
@@ -142,10 +142,10 @@ pub struct ProfileOverrides {
 }
 
 impl ProfileOverrides {
-    /// Builds a `ProfileOverrides` from CLI args. Sim block is a verbatim port of
-    /// `ConfigBuilder::from_args` (`src/config_builder.rs:64-117`). Render block
+    /// Builds a `ProfileOverrides` from CLI args. Sim block mirrors the sim-field
+    /// extraction that the former `ConfigBuilder::from_args` performed. Render block
     /// mirrors the predicates from `Args::resolve_render_config` /
-    /// `to_render_art_defaults` (`src/cli.rs:2064-2167`).
+    /// `to_render_art_defaults`.
     ///
     /// Returns `Err` on the same parse failures as the oracle's `resolve_render_config`:
     /// invalid `--glyph-selection`, `--palette`, `--intensity-mapping`,
@@ -220,7 +220,7 @@ impl ProfileOverrides {
         };
 
         Ok(Self {
-            // SIM block: verbatim from ConfigBuilder::from_args (src/config_builder.rs:64-117).
+            // SIM block: sim-field extraction (mirrors the former from_args sim block).
             preset: args.preset,
             seed: args.seed,
             sensor_angle: args.sensor_angle,
@@ -299,8 +299,8 @@ impl ProfileOverrides {
         })
     }
 
-    /// Resolve to a concrete `Profile`. Byte-identical to the legacy
-    /// `ConfigBuilder::assemble()` + `Args::resolve_render_config()`.
+    /// Resolve to a concrete `Profile`. Byte-identical to the legacy startup
+    /// two-call path (`assemble` → `resolve_render_config`).
     pub(crate) fn resolve(&self) -> Result<Profile, String> {
         let sim = self.resolve_sim().map_err(|e| e.to_string())?;
         // Validation parity: Profile::resolve_from_args calls validate() after assemble().
@@ -314,8 +314,9 @@ impl ProfileOverrides {
         })
     }
 
-    /// Verbatim port of `ConfigBuilder::assemble` (`src/config_builder.rs:121-350`).
-    /// Same order, same special cases. Only `self.<field>` access changes.
+    /// Resolves the sim-side `ProfileOverrides` fields into a `SimConfig`.
+    /// Same order and special cases as the former assemble path; only field
+    /// access source changed (`self.<field>` instead of builder fields).
     fn resolve_sim(&self) -> Result<SimConfig, crate::error::ValidationError> {
         use crate::config_defaults::population;
         use crate::preset_sim_defaults::PresetSimDefaults;

@@ -84,7 +84,7 @@ impl Default for PresetSimDefaults {
 
 impl PresetSimDefaults {
     /// Materialize this spec into `config`. The single source of truth used by
-    /// both `From<Preset> for SimConfig` (the shim) and `ConfigBuilder::assemble`.
+    /// both `From<Preset> for SimConfig` (the shim) and `ProfileOverrides::resolve_sim`.
     pub(crate) fn apply_to(&self, config: &mut SimConfig) {
         config.sensor_angle = self.sensor_angle;
         config.sensor_distance = self.sensor_distance;
