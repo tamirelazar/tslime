@@ -27,10 +27,16 @@ pub(crate) struct PresetSimDefaults {
 }
 
 impl From<Preset> for PresetSimDefaults {
-    fn from(_preset: Preset) -> Self {
-        // No preset declares a sim override yet; presets opt in here as the
-        // capability is adopted (e.g. boundary-mode wrap for River/Ripple).
-        Self::default()
+    fn from(preset: Preset) -> Self {
+        match preset {
+            // Wrap keeps flow continuous across edges — River would otherwise
+            // pile up on wall contact, and Ripple's rings need to re-enter.
+            Preset::River | Preset::Ripple => Self {
+                boundary_mode: Some(BoundaryMode::Wrap),
+            },
+            // Every other preset has no opinion; the base/default (Bounce) stands.
+            _ => Self::default(),
+        }
     }
 }
 
@@ -44,14 +50,17 @@ mod tests {
     }
 
     #[test]
-    fn every_preset_keeps_default_boundary_for_now() {
-        // Commit A is behaviour-preserving: no preset declares a boundary mode
-        // yet, so each resolves to None and inherits the global default.
+    fn only_river_and_ripple_declare_boundary_wrap() {
+        use crate::simulation::config::Preset;
         for spec in crate::simulation::config::PRESETS {
+            let expected = match spec.preset {
+                Preset::River | Preset::Ripple => Some(BoundaryMode::Wrap),
+                _ => None,
+            };
             assert_eq!(
                 PresetSimDefaults::from(spec.preset).boundary_mode,
-                None,
-                "{} should not declare a boundary mode yet",
+                expected,
+                "{} declared an unexpected boundary mode",
                 spec.name
             );
         }

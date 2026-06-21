@@ -450,21 +450,48 @@ mod tests {
     }
 
     #[test]
-    fn test_no_preset_declares_boundary_mode_yet() {
-        // Commit A is behaviour-preserving: every preset still resolves to the
-        // global default boundary mode through the new PresetSimDefaults seam.
-        use crate::simulation::config::PRESETS;
+    fn test_only_river_and_ripple_resolve_to_wrap() {
+        // Only River and Ripple declare boundary-mode wrap; every other preset
+        // resolves to the global default (Bounce) through the new seam.
+        use crate::simulation::config::{Preset, PRESETS};
         for spec in PRESETS {
             let mut builder = ConfigBuilder::from_args(&Args::parse_from(["tslime"]));
             builder.preset = Some(spec.preset);
             let assembled = builder.assemble().expect("assemble should succeed");
+            let expected = match spec.preset {
+                Preset::River | Preset::Ripple => BoundaryMode::Wrap,
+                _ => BoundaryMode::Bounce,
+            };
             assert_eq!(
-                assembled.boundary_mode,
-                BoundaryMode::Bounce,
-                "{} boundary_mode changed unexpectedly",
+                assembled.boundary_mode, expected,
+                "{} boundary_mode resolved unexpectedly",
                 spec.name
             );
         }
+    }
+
+    #[test]
+    fn test_ripple_and_river_declare_boundary_wrap() {
+        for name in ["ripple", "river"] {
+            let args = Args::parse_from(["tslime", "--preset", name]);
+            let config = ConfigBuilder::from_args(&args)
+                .assemble()
+                .expect("assemble should succeed");
+            assert_eq!(
+                config.boundary_mode,
+                BoundaryMode::Wrap,
+                "{name} should declare boundary-mode wrap"
+            );
+        }
+    }
+
+    #[test]
+    fn test_cli_boundary_mode_overrides_preset_wrap() {
+        let args = Args::parse_from(["tslime", "--preset", "ripple", "--boundary-mode", "bounce"]);
+        let config = ConfigBuilder::from_args(&args)
+            .assemble()
+            .expect("assemble should succeed");
+        assert_eq!(config.boundary_mode, BoundaryMode::Bounce);
     }
 
     #[test]

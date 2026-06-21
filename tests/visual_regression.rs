@@ -478,6 +478,32 @@ fn test_visual_regression_river_preset() {
     }
 }
 
+#[test]
+fn test_visual_regression_ripple_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "ripple"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("ripple_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("ripple_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: ripple preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("ripple_preset", &normalized).unwrap();
+        }
+    }
+}
+
 // ============== ADDITIONAL PALETTE TESTS ==============
 
 #[test]
