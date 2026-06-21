@@ -3222,4 +3222,65 @@ mod tests {
         let r = a.resolve_render_config().unwrap();
         assert_eq!(r.color_aa, AaStrength::Off);
     }
+
+    // --- switch/reset/Model-B/toggle resolution matrix (Task 17) ---
+
+    /// identity → art-on: Lumen carries temporal and afterglow levers.
+    #[test]
+    fn switch_identity_to_art_on_enables_temporal_and_afterglow() {
+        let a = Args::parse_from(["tslime", "--preset", "lumen"]);
+        let r = a.resolve_render_config().unwrap();
+        assert_eq!(r.palette, crate::cli::Palette::Slime);
+        assert!(r.temporal_color > 0.0, "lumen must have temporal_color > 0");
+        assert!(r.afterglow > 0.0, "lumen must have afterglow > 0");
+    }
+
+    /// art-on → identity: Network carries no art-on levers (temporal=0, afterglow=0).
+    /// Also verifies the sim toggle clears the buffer when set to false (Task 11).
+    #[test]
+    fn switch_art_on_to_identity_disables_levers() {
+        use crate::simulation::config::{InitMode, SimConfig};
+        use crate::simulation::Simulation;
+
+        let a = Args::parse_from(["tslime", "--preset", "network"]);
+        let r = a.resolve_render_config().unwrap();
+        assert_eq!(r.temporal_color, 0.0, "network must have temporal_color=0");
+        assert_eq!(r.afterglow, 0.0, "network must have afterglow=0");
+        // Verify sim toggle properly clears when turned off (Task 11 getter coverage).
+        let mut sim = Simulation::new(40, 20, SimConfig::default(), 42, InitMode::Random, 0);
+        sim.set_compute_temporal(true, 0.2);
+        sim.set_compute_temporal(r.temporal_color > 0.0, 0.2);
+        assert!(
+            !sim.compute_temporal(),
+            "compute_temporal must be false after set to network's resolved value"
+        );
+    }
+
+    /// Model B: explicit --palette ocean persists when preset is switched after parse.
+    /// Simulates a live preset-switch where the Args retain the original CLI flags.
+    #[test]
+    fn model_b_cli_palette_persists() {
+        let mut a = Args::parse_from(["tslime", "--palette", "ocean", "--preset", "network"]);
+        a.preset = Some(crate::simulation::config::Preset::Lumen);
+        assert_eq!(
+            a.resolve_render_config().unwrap().palette,
+            crate::cli::Palette::Ocean,
+            "--palette ocean must survive a preset switch to Lumen"
+        );
+    }
+
+    /// Model B: explicit --sensor-angle 30 persists in re-assembled SimConfig
+    /// when the preset is switched after parse.
+    #[test]
+    fn model_b_cli_sensor_angle_persists() {
+        let mut a = Args::parse_from(["tslime", "--sensor-angle", "30", "--preset", "network"]);
+        a.preset = Some(crate::simulation::config::Preset::Lumen);
+        let c = crate::config_builder::ConfigBuilder::from_args(&a)
+            .assemble()
+            .unwrap();
+        assert_eq!(
+            c.sensor_angle, 30.0,
+            "--sensor-angle 30 must survive a preset switch to Lumen"
+        );
+    }
 }
