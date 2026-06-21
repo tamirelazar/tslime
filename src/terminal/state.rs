@@ -2449,4 +2449,49 @@ mod tests {
         let rs = create_test_runtime_state();
         assert_eq!(rs.active_source, crate::profile::ProfileSource::StartupCli);
     }
+
+    /// `reset_transient` only touches the three transient flags; it does NOT clobber
+    /// `active_overrides`.  After a successful preset switch, the caller commits
+    /// the new `ProfileOverrides` to `rs.active_overrides` and then may call
+    /// `reset_transient()`.  The contract is that `active_overrides` survives so
+    /// the subsequent `apply_overrides` call can read it back.
+    #[test]
+    fn reset_reproduces_active_overrides() {
+        use crate::profile_overrides::ProfileOverrides;
+        use crate::simulation::config::Preset;
+
+        let mut rs = create_test_runtime_state();
+
+        // Commit a bare-preset override (as switch_preset does after apply).
+        let bare_ov = ProfileOverrides {
+            preset: Some(Preset::Organic),
+            ..Default::default()
+        };
+        rs.active_overrides = bare_ov.clone();
+
+        // Simulate transient state accumulated since last switch.
+        rs.auto_normalize = true;
+        rs.motion_blur_frames = 5;
+        rs.fast_mode_enabled = true;
+
+        // reset_transient clears transient flags but must not touch active_overrides.
+        rs.reset_transient();
+
+        assert!(
+            !rs.auto_normalize,
+            "reset_transient must clear auto_normalize"
+        );
+        assert_eq!(
+            rs.motion_blur_frames, 0,
+            "reset_transient must clear motion_blur_frames"
+        );
+        assert!(
+            !rs.fast_mode_enabled,
+            "reset_transient must clear fast_mode_enabled"
+        );
+        assert_eq!(
+            rs.active_overrides, bare_ov,
+            "reset_transient must not modify active_overrides"
+        );
+    }
 }

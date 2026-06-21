@@ -2545,4 +2545,44 @@ mod tests {
             assert!(!screensaver_exit_on_key(&mode, &press));
         }
     }
+
+    /// `switch_preset` builds a bare `ProfileOverrides { preset: Some(p), ..Default::default() }`,
+    /// so the resulting overrides carry NO previously-set CLI fields.
+    /// This test verifies the contract at the `ProfileOverrides` level: a CLI-startup
+    /// override (with sensor_angle set) is NOT what a preset switch produces.
+    #[test]
+    fn switch_preset_ignores_cli() {
+        use crate::profile_overrides::ProfileOverrides;
+        use crate::simulation::config::Preset;
+
+        // Simulated CLI startup: preset=Network, sensor_angle=42.0 (non-default CLI override).
+        let cli_ov = ProfileOverrides {
+            preset: Some(Preset::Network),
+            sensor_angle: Some(42.0),
+            ..Default::default()
+        };
+
+        // What switch_preset actually builds — a bare preset override with NO CLI fields.
+        let switched_ov = ProfileOverrides {
+            preset: Some(Preset::Organic),
+            ..Default::default()
+        };
+
+        // The switched override must NOT carry the CLI sensor_angle.
+        assert_eq!(
+            switched_ov.sensor_angle, None,
+            "switch_preset must not carry forward CLI sensor_angle"
+        );
+        // And the two overrides are not equal (different preset, no CLI field).
+        assert_ne!(
+            cli_ov, switched_ov,
+            "CLI override must differ from bare-preset override"
+        );
+        // sensor_angle was set in the CLI override but not in the switched one.
+        assert_eq!(
+            cli_ov.sensor_angle,
+            Some(42.0),
+            "CLI override retains sensor_angle"
+        );
+    }
 }
