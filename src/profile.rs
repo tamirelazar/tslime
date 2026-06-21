@@ -52,7 +52,6 @@ impl Profile {
     /// Resolve a profile for switching to `preset` at runtime, preserving the
     /// launch CLI overlay (current startup semantics — Phase A keeps parity;
     /// Phase C changes precedence to launch-only).
-    #[allow(dead_code)]
     pub(crate) fn from_preset(preset: Preset, args: &Args) -> Result<Self, String> {
         let mut a = args.clone();
         a.preset = Some(preset);

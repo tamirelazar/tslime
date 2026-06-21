@@ -2442,12 +2442,12 @@ fn switch_preset(
     timer: &mut FrameTimer,
 ) -> io::Result<()> {
     rs.set_preset(new_preset);
-    let mut a = args.clone();
-    a.preset = Some(new_preset);
-    let mut new_config = crate::config_builder::ConfigBuilder::from_args(&a)
-        .assemble()
+    rs.active_source = crate::profile::ProfileSource::Preset(new_preset);
+    let profile = crate::profile::Profile::from_preset(new_preset, args)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    // Preserve the live environment (as the old switch did).
+    let mut new_config = profile.sim.clone();
+    // Preserve the live environment (as the old switch did — Phase C removes this
+    // when restart-on-swap lands).
     new_config.attractors = sim.config().attractors.clone();
     new_config.attractor_strength = sim.config().attractor_strength;
     new_config.food_image_path = sim.config().food_image_path.clone();
@@ -2455,9 +2455,7 @@ fn switch_preset(
     new_config.obstacles = sim.config().obstacles.clone();
     new_config.obstacle_masks = sim.config().obstacle_masks.clone();
 
-    let resolved = a
-        .resolve_render_config()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let resolved = profile.render.clone();
     sim.update_config(new_config.clone());
     apply_render_config(&resolved, rs, renderer, sim);
 
