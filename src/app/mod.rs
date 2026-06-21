@@ -402,28 +402,11 @@ pub fn run() -> io::Result<()> {
     let config = args
         .to_sim_config()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let art_defaults = args.to_render_art_defaults().ok();
-    let palette = {
-        let cli_palette = args
-            .palette()
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-        if !args.palette_explicitly_set() {
-            art_defaults
-                .as_ref()
-                .and_then(|d| d.palette.clone())
-                .unwrap_or(cli_palette)
-        } else {
-            cli_palette
-        }
-    };
-    let charset = if args.charset_explicitly_set() {
-        Charset::from_args(&args)
-    } else {
-        art_defaults
-            .as_ref()
-            .and_then(|d| d.charset.clone())
-            .unwrap_or_else(|| Charset::from_args(&args))
-    };
+    let render = crate::profile::Profile::resolve_from_args(&args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .render;
+    let palette = render.palette;
+    let charset = render.charset;
 
     let seed = args.seed.unwrap_or_else(|| {
         std::time::SystemTime::now()
@@ -481,14 +464,14 @@ pub fn print_mode(
 
     // Enable temporal computation if requested, then warm up enough frames
     // to populate the EMA lag buffer before capturing the final frame.
-    let art_defaults_print = args
-        .to_render_art_defaults()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let temporal_strength = art_defaults_print.temporal_color;
-    let temporal_mode = art_defaults_print.temporal_mode;
-    let temporal_accent = art_defaults_print.temporal_accent;
+    let render = crate::profile::Profile::resolve_from_args(args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .render;
+    let temporal_strength = render.temporal_color;
+    let temporal_mode = render.temporal_mode;
+    let temporal_accent = render.temporal_accent;
     if temporal_strength > 0.0 {
-        let lag = art_defaults_print.temporal_lag_frames;
+        let lag = render.temporal_lag_frames;
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
         // Warm up enough frames so the EMA lag buffer is populated before we
@@ -498,8 +481,8 @@ pub fn print_mode(
             sim.update(1.0);
         }
     }
-    let afterglow_val = art_defaults_print.afterglow;
-    let afterglow_rate_val = art_defaults_print.afterglow_rate;
+    let afterglow_val = render.afterglow;
+    let afterglow_rate_val = render.afterglow_rate;
     if afterglow_val > 0.0 {
         sim.set_compute_afterglow(true, afterglow_rate_val);
     }
@@ -569,22 +552,9 @@ pub fn print_mode(
     let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
 
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
-    let intensity_mapping = args
-        .to_render_art_defaults()
-        .ok()
-        .map(|a| a.intensity_mapping);
-
-    let palette_cycle = args
-        .to_render_art_defaults()
-        .ok()
-        .map(|a| a.palette_cycle)
-        .unwrap_or_default();
-
-    let glyph = args
-        .to_render_art_defaults()
-        .ok()
-        .map(|a| a.glyph)
-        .unwrap_or_default();
+    let intensity_mapping = Some(render.intensity_mapping.clone());
+    let palette_cycle = render.palette_cycle;
+    let glyph = render.glyph;
 
     let mut buffer = FrameBuffer::from_downsampled(
         downsampled.cells(),
@@ -711,19 +681,19 @@ pub fn capture_frames_mode(
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
     // Temporal-color setup: enable EMA computation once before the loop.
-    let art_defaults_capture = args
-        .to_render_art_defaults()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let temporal_strength = art_defaults_capture.temporal_color;
-    let temporal_mode = art_defaults_capture.temporal_mode;
-    let temporal_accent = art_defaults_capture.temporal_accent;
+    let render = crate::profile::Profile::resolve_from_args(args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .render;
+    let temporal_strength = render.temporal_color;
+    let temporal_mode = render.temporal_mode;
+    let temporal_accent = render.temporal_accent;
     if temporal_strength > 0.0 {
-        let lag = art_defaults_capture.temporal_lag_frames;
+        let lag = render.temporal_lag_frames;
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
-    let afterglow_val = art_defaults_capture.afterglow;
-    let afterglow_rate_val = art_defaults_capture.afterglow_rate;
+    let afterglow_val = render.afterglow;
+    let afterglow_rate_val = render.afterglow_rate;
     if afterglow_val > 0.0 {
         sim.set_compute_afterglow(true, afterglow_rate_val);
     }
@@ -770,21 +740,9 @@ pub fn capture_frames_mode(
         };
 
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
-        let intensity_mapping = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.intensity_mapping);
-        let palette_cycle_inner = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.palette_cycle)
-            .unwrap_or_default();
-
-        let glyph_inner = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.glyph)
-            .unwrap_or_default();
+        let intensity_mapping = Some(render.intensity_mapping.clone());
+        let palette_cycle_inner = render.palette_cycle;
+        let glyph_inner = render.glyph;
 
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(
@@ -960,19 +918,19 @@ pub fn export_gif_mode(
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
     // Temporal-color setup: enable EMA computation once before the loop.
-    let art_defaults_gif = args
-        .to_render_art_defaults()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let temporal_strength = art_defaults_gif.temporal_color;
-    let temporal_mode = art_defaults_gif.temporal_mode;
-    let temporal_accent = art_defaults_gif.temporal_accent;
+    let render = crate::profile::Profile::resolve_from_args(args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .render;
+    let temporal_strength = render.temporal_color;
+    let temporal_mode = render.temporal_mode;
+    let temporal_accent = render.temporal_accent;
     if temporal_strength > 0.0 {
-        let lag = art_defaults_gif.temporal_lag_frames;
+        let lag = render.temporal_lag_frames;
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
-    let afterglow_val = art_defaults_gif.afterglow;
-    let afterglow_rate_val = art_defaults_gif.afterglow_rate;
+    let afterglow_val = render.afterglow;
+    let afterglow_rate_val = render.afterglow_rate;
     if afterglow_val > 0.0 {
         sim.set_compute_afterglow(true, afterglow_rate_val);
     }
@@ -1021,15 +979,8 @@ pub fn export_gif_mode(
         };
 
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
-        let intensity_mapping = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.intensity_mapping);
-        let palette_cycle_gif = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.palette_cycle)
-            .unwrap_or_default();
+        let intensity_mapping = Some(render.intensity_mapping.clone());
+        let palette_cycle_gif = render.palette_cycle;
 
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(
@@ -1143,19 +1094,19 @@ pub fn export_webm_mode(
         AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
 
     // Temporal-color setup: enable EMA computation once before the loop.
-    let art_defaults_webm = args
-        .to_render_art_defaults()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let temporal_strength = art_defaults_webm.temporal_color;
-    let temporal_mode = art_defaults_webm.temporal_mode;
-    let temporal_accent = art_defaults_webm.temporal_accent;
+    let render = crate::profile::Profile::resolve_from_args(args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .render;
+    let temporal_strength = render.temporal_color;
+    let temporal_mode = render.temporal_mode;
+    let temporal_accent = render.temporal_accent;
     if temporal_strength > 0.0 {
-        let lag = art_defaults_webm.temporal_lag_frames;
+        let lag = render.temporal_lag_frames;
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
-    let afterglow_val = art_defaults_webm.afterglow;
-    let afterglow_rate_val = art_defaults_webm.afterglow_rate;
+    let afterglow_val = render.afterglow;
+    let afterglow_rate_val = render.afterglow_rate;
     if afterglow_val > 0.0 {
         sim.set_compute_afterglow(true, afterglow_rate_val);
     }
@@ -1204,15 +1155,8 @@ pub fn export_webm_mode(
         };
 
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
-        let intensity_mapping = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.intensity_mapping);
-        let palette_cycle_webm = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.palette_cycle)
-            .unwrap_or_default();
+        let intensity_mapping = Some(render.intensity_mapping.clone());
+        let palette_cycle_webm = render.palette_cycle;
 
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(

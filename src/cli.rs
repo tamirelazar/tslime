@@ -2058,116 +2058,6 @@ impl Args {
         SimConfig::try_from(self)
     }
 
-    /// Resolves the render-layer art defaults: per-preset defaults overridden
-    /// by explicit intensity-mapping CLI flags. Render counterpart to
-    /// [`Args::to_sim_config`] (spec §5 — render params stay out of `SimConfig`).
-    /// When no preset is set, falls back to `RenderArtDefaults::default()` (log10).
-    pub(crate) fn to_render_art_defaults(
-        &self,
-    ) -> Result<crate::render_art_defaults::RenderArtDefaults, String> {
-        let mut art = match self.preset {
-            Some(preset) => crate::render_art_defaults::RenderArtDefaults::from(preset),
-            None => crate::render_art_defaults::RenderArtDefaults::default(),
-        };
-        if self.intensity_mapping.is_some() {
-            art.intensity_mapping = self.intensity_mapping()?;
-        }
-        if self.palette_cycles.is_some() || self.palette_cycle_mode.is_some() {
-            if let Some(n) = self.palette_cycles {
-                art.palette_cycle.cycles = n;
-            }
-            if let Some(mode) = self.palette_cycle_mode_parsed()? {
-                art.palette_cycle.mode = mode;
-            }
-        }
-        if self.glyph_selection.is_some() || self.glyph_edge_threshold.is_some() {
-            art.glyph = self.glyph_config_parsed(art.glyph)?;
-        }
-        if let Some(c) = self.temporal_color {
-            art.temporal_color = c;
-        }
-        if let Some(l) = self.temporal_lag {
-            art.temporal_lag_frames = l;
-        }
-        if let Some(ref m) = self.temporal_mode {
-            art.temporal_mode = match m.to_ascii_lowercase().as_str() {
-                "accent" => crate::render::palette::TemporalMode::Accent,
-                _ => crate::render::palette::TemporalMode::Hue,
-            };
-        }
-        if let Some(ref hex) = self.temporal_accent {
-            let h = u32::from_str_radix(hex.trim_start_matches('#'), 16)
-                .map_err(|_| format!("invalid --temporal-accent hex: {hex}"))?;
-            art.temporal_accent = Some(crate::render::palette::RgbColor::from_hex(h));
-        }
-        if let Some(a) = self.afterglow {
-            art.afterglow = a;
-        }
-        if let Some(r) = self.afterglow_rate {
-            art.afterglow_rate = r;
-        }
-        // Validation parity: SimConfig::validate enforced these ranges before
-        // afterglow left the sim config; enforce them on the resolved values now.
-        crate::validation::rules::AFTERGLOW
-            .validate_f32(art.afterglow)
-            .map_err(|e| e.to_string())?;
-        crate::validation::rules::AFTERGLOW_RATE
-            .validate_f32(art.afterglow_rate)
-            .map_err(|e| e.to_string())?;
-        Ok(art)
-    }
-
-    /// Performs the complete preset ⊕ CLI ⊕ default merge for all 13 render levers,
-    /// producing a fully-resolved [`crate::render_art_defaults::ResolvedRenderConfig`]
-    /// (no Option-means-unset) ready for startup, live preset-switch, and reset.
-    ///
-    /// Resolution order (Model B, CLI > preset > default):
-    /// - `palette`: CLI `--palette` wins; else preset default; else global default.
-    /// - `charset`: CLI `--charset` if set; else preset default; else `ALL_CHARSETS[0]`.
-    /// - `color_aa`: `--color-aa` if set; else preset default; else the per-charset default (`DEFAULT_COLOR_AA`).
-    /// - `hue_shift`: `--palette-shift` if set; else preset default; else `0.0`.
-    /// - All other levers: taken from `to_render_art_defaults()` (already merged).
-    #[allow(dead_code)]
-    pub(crate) fn resolve_render_config(
-        &self,
-    ) -> Result<crate::render_art_defaults::ResolvedRenderConfig, String> {
-        use crate::render::charset::ALL_CHARSETS;
-        use crate::render_art_defaults::ResolvedRenderConfig;
-        // art merges intensity/cycle/glyph/temporal/afterglow/palette/charset/hue_shift + preset
-        let art = self.to_render_art_defaults()?;
-        let palette = if self.palette_explicitly_set() {
-            self.palette().map_err(|e| e.to_string())?
-        } else {
-            art.palette
-                .unwrap_or_else(|| self.palette().unwrap_or(crate::cli::Palette::Moss))
-        };
-        let charset = self
-            .charset_parsed()? // CLI --charset if set
-            .or(art.charset)
-            .unwrap_or_else(|| ALL_CHARSETS[0].clone());
-        let charset_index = ALL_CHARSETS.iter().position(|c| c == &charset).unwrap_or(0);
-        let color_aa = self
-            .color_aa
-            .or(art.color_aa)
-            .unwrap_or(crate::config_defaults::DEFAULT_COLOR_AA[charset_index]);
-        let hue_shift = self.palette_shift.unwrap_or(art.hue_shift);
-        Ok(ResolvedRenderConfig {
-            palette,
-            charset,
-            color_aa,
-            hue_shift,
-            intensity_mapping: art.intensity_mapping,
-            palette_cycle: art.palette_cycle,
-            glyph: art.glyph,
-            temporal_color: art.temporal_color,
-            temporal_lag_frames: art.temporal_lag_frames,
-            temporal_mode: art.temporal_mode,
-            temporal_accent: art.temporal_accent,
-            afterglow: art.afterglow,
-            afterglow_rate: art.afterglow_rate,
-        })
-    }
-
     /// Validates arguments at the CLI boundary.
     ///
     /// Covers terminal/resolution/fps bounds and other CLI-specific options that
@@ -3001,11 +2891,15 @@ mod tests {
     fn temporal_resolves_from_preset_then_cli_override() {
         // Bare run, default preset → temporal off (back-compat).
         let a = Args::parse_from(["tslime"]);
-        let d = a.to_render_art_defaults().unwrap();
+        let d = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
         assert_eq!(d.temporal_color, 0.0);
         // Explicit CLI strength overrides.
         let a = Args::parse_from(["tslime", "--temporal-color", "0.5"]);
-        let d = a.to_render_art_defaults().unwrap();
+        let d = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
         assert_eq!(d.temporal_color, 0.5);
     }
 
@@ -3031,7 +2925,9 @@ mod tests {
             intensity_mapping: None,
             ..Default::default()
         };
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         // #32: every preset defaults to log10.
         assert_eq!(art.intensity_mapping, IntensityMapping::logarithmic(10.0));
     }
@@ -3044,7 +2940,9 @@ mod tests {
             intensity_mapping: Some("linear".to_string()),
             ..Default::default()
         };
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert_eq!(art.intensity_mapping, IntensityMapping::linear());
     }
 
@@ -3056,7 +2954,9 @@ mod tests {
             intensity_mapping: None,
             ..Default::default()
         };
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         // No preset + no flag → RenderArtDefaults::default() == log10.
         assert_eq!(art.intensity_mapping, IntensityMapping::logarithmic(10.0));
     }
@@ -3066,7 +2966,9 @@ mod tests {
         let mut args = Args::parse_from(["tslime"]);
         args.palette_cycles = Some(3);
         args.palette_cycle_mode = Some("wrap".into());
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert_eq!(art.palette_cycle.cycles, 3);
         assert_eq!(
             art.palette_cycle.mode,
@@ -3077,7 +2979,9 @@ mod tests {
     #[test]
     fn no_palette_cycle_flags_stay_identity() {
         let args = Args::parse_from(["tslime"]);
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert!(art.palette_cycle.is_identity());
     }
 
@@ -3086,7 +2990,9 @@ mod tests {
         let mut args = Args::parse_from(["tslime"]);
         args.glyph_selection = Some("hybrid".into());
         args.glyph_edge_threshold = Some(0.3);
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert_eq!(
             art.glyph.selection,
             Some(crate::render::charset::GlyphSelection::Hybrid)
@@ -3099,19 +3005,25 @@ mod tests {
         let mut args = Args::parse_from(["tslime"]);
         args.glyph_selection = Some("hybrid".into());
         args.glyph_edge_threshold = Some(5.0);
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert_eq!(art.glyph.edge_threshold, 2.0);
 
         let mut args = Args::parse_from(["tslime"]);
         args.glyph_edge_threshold = Some(-1.0);
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert_eq!(art.glyph.edge_threshold, 0.0);
     }
 
     #[test]
     fn no_glyph_flags_stay_identity() {
         let args = Args::parse_from(["tslime"]);
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert_eq!(art.glyph.selection, None);
     }
 
@@ -3119,7 +3031,7 @@ mod tests {
     fn glyph_selection_invalid_errors() {
         let mut args = Args::parse_from(["tslime"]);
         args.glyph_selection = Some("nope".into());
-        assert!(args.to_render_art_defaults().is_err());
+        assert!(crate::profile::Profile::resolve_from_args(&args).is_err());
     }
 
     #[test]
@@ -3166,45 +3078,73 @@ mod tests {
     #[test]
     fn afterglow_unset_uses_preset() {
         let a = Args::parse_from(["tslime", "--preset", "lumen"]);
-        assert_eq!(a.to_render_art_defaults().unwrap().afterglow, 0.3);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .afterglow,
+            0.3
+        );
     }
 
     #[test]
     fn afterglow_cli_overrides_preset() {
         let a = Args::parse_from(["tslime", "--preset", "lumen", "--afterglow", "0"]);
-        assert_eq!(a.to_render_art_defaults().unwrap().afterglow, 0.0);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .afterglow,
+            0.0
+        );
     }
 
     #[test]
     fn afterglow_out_of_range_rejected() {
         let a = Args::parse_from(["tslime", "--afterglow", "99"]);
-        assert!(a.to_render_art_defaults().is_err());
+        assert!(crate::profile::Profile::resolve_from_args(&a).is_err());
     }
 
     #[test]
     fn resolve_palette_cli_wins() {
         let a = Args::parse_from(["tslime", "--palette", "ocean", "--preset", "lumen"]);
-        let r = a.resolve_render_config().unwrap();
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
         assert_eq!(r.palette, crate::cli::Palette::Ocean);
     }
 
     #[test]
     fn resolve_palette_preset_default() {
         let a = Args::parse_from(["tslime", "--preset", "lumen"]);
-        let r = a.resolve_render_config().unwrap();
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
         assert_eq!(r.palette, crate::cli::Palette::Slime);
     }
 
     #[test]
     fn resolve_hue_cli_over_preset() {
         let a = Args::parse_from(["tslime", "--preset", "tide", "--palette-shift", "20"]);
-        assert_eq!(a.resolve_render_config().unwrap().hue_shift, 20.0);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .hue_shift,
+            20.0
+        );
     }
 
     #[test]
     fn resolve_hue_preset_when_no_flag() {
         let a = Args::parse_from(["tslime", "--preset", "tide"]);
-        assert_eq!(a.resolve_render_config().unwrap().hue_shift, 8.0);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .hue_shift,
+            8.0
+        );
     }
 
     #[test]
@@ -3212,7 +3152,9 @@ mod tests {
         // No --color-aa, no preset override: Braille must keep its per-charset Strong default.
         use crate::render::antialiasing::AaStrength;
         let a = Args::parse_from(["tslime", "--braille"]);
-        let r = a.resolve_render_config().unwrap();
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
         assert_eq!(r.color_aa, AaStrength::Strong);
     }
 
@@ -3220,7 +3162,9 @@ mod tests {
     fn resolve_color_aa_halfblock_default_is_off() {
         use crate::render::antialiasing::AaStrength;
         let a = Args::parse_from(["tslime"]);
-        let r = a.resolve_render_config().unwrap();
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
         assert_eq!(r.color_aa, AaStrength::Off);
     }
 
@@ -3230,7 +3174,9 @@ mod tests {
     #[test]
     fn switch_identity_to_art_on_enables_temporal_and_afterglow() {
         let a = Args::parse_from(["tslime", "--preset", "lumen"]);
-        let r = a.resolve_render_config().unwrap();
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
         assert_eq!(r.palette, crate::cli::Palette::Slime);
         assert!(r.temporal_color > 0.0, "lumen must have temporal_color > 0");
         assert!(r.afterglow > 0.0, "lumen must have afterglow > 0");
@@ -3244,7 +3190,9 @@ mod tests {
         use crate::simulation::Simulation;
 
         let a = Args::parse_from(["tslime", "--preset", "network"]);
-        let r = a.resolve_render_config().unwrap();
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
         assert_eq!(r.temporal_color, 0.0, "network must have temporal_color=0");
         assert_eq!(r.afterglow, 0.0, "network must have afterglow=0");
         // Verify sim toggle properly clears when turned off (Task 11 getter coverage).
@@ -3264,7 +3212,10 @@ mod tests {
         let mut a = Args::parse_from(["tslime", "--palette", "ocean", "--preset", "network"]);
         a.preset = Some(crate::simulation::config::Preset::Lumen);
         assert_eq!(
-            a.resolve_render_config().unwrap().palette,
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .palette,
             crate::cli::Palette::Ocean,
             "--palette ocean must survive a preset switch to Lumen"
         );
