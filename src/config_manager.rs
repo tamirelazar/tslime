@@ -12,7 +12,7 @@ const CONFIG_DIR: &str = ".config/tslime";
 const CONFIG_FILE: &str = "presets.toml";
 
 /// A named, persisted profile: human-readable identity + all-optional overrides.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NamedProfile {
     /// Name of the saved config.
     pub name: String,

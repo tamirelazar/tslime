@@ -55,12 +55,16 @@ pub fn num_charsets() -> usize {
 /// dirty-state guard overlay until confirmed or cancelled. Both the clean path and
 /// the post-confirm path route through the SAME `do_swap` in the runner so they can
 /// never diverge.
-#[derive(Debug, Clone, PartialEq, Eq)]
+// Not `Eq`: `NamedProfile` carries f32 overrides, which are `PartialEq` only.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum PendingSwap {
     /// Switch to a preset (via `switch_preset`).
     Preset(Preset),
-    /// Load a named saved config (through the apply seam + transactional provenance).
-    Config(String),
+    /// Load an already-resolved saved config (through the apply seam +
+    /// transactional provenance). Carrying the resolved [`NamedProfile`] avoids a
+    /// redundant disk re-read in `do_swap`; it survives the dirty guard intact.
+    /// Boxed to keep the enum small (the profile is far larger than other variants).
+    Config(Box<crate::config_manager::NamedProfile>),
     /// Re-apply `active_overrides` (the reset path).
     Reset,
 }
@@ -2768,7 +2772,13 @@ mod tests {
     #[test]
     fn pending_swap_cancel_clears_without_swapping() {
         let mut rs = create_test_runtime_state();
-        rs.pending_swap = Some(PendingSwap::Config("demo".to_string()));
+        rs.pending_swap = Some(PendingSwap::Config(Box::new(
+            crate::config_manager::NamedProfile {
+                name: "demo".to_string(),
+                description: None,
+                overrides: Default::default(),
+            },
+        )));
         rs.overlay_state.open(OverlayType::DirtyGuard);
         // Mirror the runner's CloseOverlay arm for DirtyGuard.
         rs.overlay_state.close();

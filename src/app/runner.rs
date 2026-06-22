@@ -418,15 +418,10 @@ pub fn run_simulation(
                     crate::terminal::control::preset_name(preset)
                 ));
             }
-            PendingSwap::Config(name) => {
-                // Look up the named config and load it through the apply seam,
-                // committing provenance only on success (transactional).
-                let configs = config_manager::list_configs()
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                let Some(config) = configs.into_iter().find(|c| c.name == name) else {
-                    rs.show_notification(format!("Config '{name}' not found"));
-                    return Ok(());
-                };
+            PendingSwap::Config(config) => {
+                // The config was already resolved at selection time and carried
+                // through the pending swap, so load it through the apply seam
+                // directly, committing provenance only on success (transactional).
                 match crate::app::apply_overrides(
                     &config.overrides,
                     rs,
@@ -497,16 +492,20 @@ pub fn run_simulation(
                 // to avoid calling compute_rects a second time.
                 let (new_render_w, new_render_h) = {
                     use crate::simulation::config::ChromeStyle;
-                    let new_layout = if matches!(config.chrome_style, ChromeStyle::Fullscreen) {
-                        None
-                    } else {
-                        let l = window.compute_rects(term_width as usize, term_height as usize);
-                        if matches!(l.fallback, crate::render::window::FallbackMode::Fullscreen) {
+                    // Read LIVE chrome (a loaded config may have changed it); the frozen
+                    // startup `config.chrome_style` would size buffers against stale chrome.
+                    let new_layout =
+                        if matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen) {
                             None
                         } else {
-                            Some(l)
-                        }
-                    };
+                            let l = window.compute_rects(term_width as usize, term_height as usize);
+                            if matches!(l.fallback, crate::render::window::FallbackMode::Fullscreen)
+                            {
+                                None
+                            } else {
+                                Some(l)
+                            }
+                        };
                     // Derive render dims from the computed layout before moving it into renderer
                     let dims = new_layout
                         .as_ref()
@@ -1515,30 +1514,31 @@ pub fn run_simulation(
                                 continue;
                             }
                             KeyCode::Enter => {
-                                // Resolve the selected config name, close the browser,
-                                // then gate the load on dirty state: dirty → park behind
-                                // the guard; clean → load now via the single executor.
-                                let selected_name =
-                                    config_manager::list_configs().ok().and_then(|configs| {
-                                        configs
-                                            .get(runtime_state.config_browser_selected_index)
-                                            .map(|c| c.name.clone())
+                                // Resolve the selected config (in full), close the
+                                // browser, then gate the load on dirty state: dirty →
+                                // park behind the guard; clean → load now via the single
+                                // executor. Carrying the resolved config avoids a
+                                // redundant disk re-read inside do_swap.
+                                let selected_config =
+                                    config_manager::list_configs().ok().and_then(|mut configs| {
+                                        let idx = runtime_state.config_browser_selected_index;
+                                        (idx < configs.len()).then(|| configs.swap_remove(idx))
                                     });
                                 runtime_state.overlay_state.close();
-                                if let Some(name) = selected_name {
+                                if let Some(config) = selected_config {
                                     if runtime_state.is_dirty(
                                         sim.config(),
                                         runtime_state.live_palette.clone(),
                                         runtime_state.live_charset.clone(),
                                     ) {
                                         runtime_state.pending_swap =
-                                            Some(PendingSwap::Config(name));
+                                            Some(PendingSwap::Config(Box::new(config)));
                                         runtime_state.close_all_overlays();
                                         runtime_state.overlay_state.open(OverlayType::DirtyGuard);
                                         runtime_state.on_modal_open();
                                     } else {
                                         do_swap(
-                                            PendingSwap::Config(name),
+                                            PendingSwap::Config(Box::new(config)),
                                             &mut runtime_state,
                                             &mut renderer,
                                             sim,
