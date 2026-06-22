@@ -123,18 +123,24 @@ lowercase increases and uppercase (Shift) decreases.
 
 <!-- ws6: preset/palette showcase gifs -->
 
-There are 29 named presets: network, exploratory, tendrils, organic, fire, river,
-petri, vortex, lightning, chaosedge, blob, pulse, flocking, ripple, vortex36,
-dynamictendrils, lumen, etching, drift, constellation, mosaic, marble, prism, vellum,
-forge, wane, gossamer, codex, and tide. Palettes and character sets are independent of
-the preset and can be cycled at runtime.
+There are 30 named presets: network, exploratory, tendrils, organic, fire, river,
+petri, vortex, lightning, chaosedge, blob, slime, vines, vinescii, smoke, vortex36,
+dynamictendrils, mold, etching, drift, constellation, mosaic, marble, prism, vellum,
+forge, wane, gossamer, codex, and tide. The old names pulse, flocking, ripple, and
+lumen are still accepted as CLI aliases. Palettes and character sets are independent of
+the preset and can be cycled at runtime. Preset parameters are defined in
+`src/simulation/config.rs` and `src/preset_sim_defaults.rs`.
 
 Showcase presets highlight specific visual levers:
 
-- **lumen** — Bleuje-style front-lit veins: temporal-accent recolor of growing fronts.
+- **slime** — Pulsing network with strong deposits and the slime palette; auto-normalizes brightness.
+- **vines** — Flocking-pattern filaments with a window frame accent.
+- **vinescii** — The vines pattern rendered in pure ASCII.
+- **smoke** — Diffuse drift with the slate palette; auto-normalizes brightness.
+- **mold** — Bleuje-style front-lit veins with the mold palette; auto-normalizes brightness.
 - **etching** — Directional filament linework via Sobel glyph selection (Braille, TUI-only).
 - **drift** — Color that shifts with motion direction (temporal Hue mode).
-- **constellation** — Sparse star-map scatter via the Points charset.
+- **constellation** — Sparse star-map scatter via the Points charset; re-rolls layout on reset.
 - **mosaic** — Posterized color bands: Quantize mapping + wrapped palette cycles.
 - **marble** — Veined stone via heavy Gaussian diffusion + Perlin intensity mapping.
 - **prism** — Maximum color resolution: HalfBlockDual charset + strong color anti-aliasing.

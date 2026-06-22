@@ -8,7 +8,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 First public release.
 
-- Physarum simulation (Jones 2010 model) with 29 presets and runtime parameter controls
+### Added
+- `vinescii` preset — the vines (flocking) pattern in pure ASCII.
+
+### Changed
+- Preset pass: renamed pulse→slime, flocking→vines, ripple→smoke, lumen→mold
+  (old names still accepted as CLI aliases); per-preset visual tuning applied
+  (braille/quadrant charsets, palette assignments, auto-normalize, window frames);
+  constellation re-rolls its init layout on reset and auto-resets on collapse.
+- Fixed the stale `--preset` help text (was listing removed presets).
+
+- Physarum simulation (Jones 2010 model) with 30 presets and runtime parameter controls
 - Terminal rendering: half-block, ASCII, braille, quadrant, shade, points, and sculpted charsets; 22 OKLch-based color palettes
 - Screensaver and interactive modes; pause, restart, preset/palette cycling at runtime
 - GIF, PNG, and WebM export
