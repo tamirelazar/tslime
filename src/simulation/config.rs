@@ -1238,8 +1238,17 @@ pub struct RespawnConfig {
     pub base_probability: f32,
     /// Whether respawn probability depends on trail value.
     pub trail_dependent: bool,
-    /// Maximum respawn probability multiplier when trail is high.
+    /// Maximum respawn probability multiplier, reached when the normalized trail
+    /// value saturates to 1.0. Effective probability is
+    /// `base_probability * (1 + x * (max_probability_multiplier - 1))`, where
+    /// `x = (trail * trail_rescale).clamp(0, 1)`.
     pub max_probability_multiplier: f32,
+    /// Scales the raw pheromone value into the normalized `[0, 1]` range before
+    /// the multiplier is applied (mirrors `PointConfig::trail_rescale`). Pick it
+    /// so healthy trail densities map well below 1.0 and only an abnormal
+    /// accumulation (the wall-collapse line) saturates — otherwise the
+    /// multiplier cap is meaningless because raw trail values are unbounded.
+    pub trail_rescale: f32,
 }
 
 impl Default for RespawnConfig {
@@ -1249,6 +1258,7 @@ impl Default for RespawnConfig {
             base_probability: 0.01,
             trail_dependent: false,
             max_probability_multiplier: 1.0,
+            trail_rescale: 1.0,
         }
     }
 }

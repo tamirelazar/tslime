@@ -951,7 +951,12 @@ impl Simulation {
                     agent.progress = agent.progress.wrapping_add(1);
                     let mut probability = respawn_config.base_probability;
                     if respawn_config.trail_dependent {
-                        let x = agent.sample_trail_at_position(trail, width, height);
+                        // Normalize the raw pheromone value into [0, 1] before
+                        // applying the multiplier, so `max_probability_multiplier`
+                        // is an actual cap (raw trail is unbounded). Mirrors
+                        // `PointConfig`'s trail_rescale-then-clamp.
+                        let raw = agent.sample_trail_at_position(trail, width, height);
+                        let x = (raw * respawn_config.trail_rescale).clamp(0.0, 1.0);
                         probability *= 1.0 + x * (respawn_config.max_probability_multiplier - 1.0);
                     }
                     if self.rng.gen::<f32>() < probability * dt {
