@@ -9,7 +9,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 First public release.
 
 ### Added
-- `vinescii` preset — the vines (flocking) pattern in pure ASCII.
+- Physarum simulation (Jones 2010 model) with 30 presets and runtime parameter controls
+- Terminal rendering: half-block, ASCII, braille, quadrant, shade, points, and sculpted charsets; 22 OKLch-based color palettes
+- Screensaver and interactive modes; pause, restart, preset/palette cycling at runtime
+- GIF, PNG, and WebM export
+- Window-frame display modes
+- `vinescii` preset — the vines (flocking) pattern in pure ASCII
+- Experimental: multi-species, choir audio, and GUI (feature-gated); WASM build (standalone crate)
 
 ### Changed
 - Preset pass: renamed pulse→slime, flocking→vines, ripple→smoke, lumen→mold
@@ -17,10 +23,3 @@ First public release.
   (braille/quadrant charsets, palette assignments, auto-normalize, window frames);
   constellation re-rolls its init layout on reset and auto-resets on collapse.
 - Fixed the stale `--preset` help text (was listing removed presets).
-
-- Physarum simulation (Jones 2010 model) with 30 presets and runtime parameter controls
-- Terminal rendering: half-block, ASCII, braille, quadrant, shade, points, and sculpted charsets; 22 OKLch-based color palettes
-- Screensaver and interactive modes; pause, restart, preset/palette cycling at runtime
-- GIF, PNG, and WebM export
-- Window-frame display modes
-- Experimental: multi-species, choir audio, and GUI (feature-gated); WASM build (standalone crate)

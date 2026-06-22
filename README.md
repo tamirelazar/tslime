@@ -46,7 +46,7 @@ Some starting points:
 
 ```bash
 tslime --preset lightning --palette heat      # fast dendritic branching, warm colors
-tslime --preset zen --palette ocean --fps 24  # slow and quiet
+tslime --preset drift --palette ocean --fps 24  # slow and quiet
 tslime --seed 42 --population 80000           # reproducible run, denser network
 tslime --braille --palette mono               # high-resolution monochrome
 tslime --palette-cycles 3 --palette-cycle-mode mirror  # banded contour coloring
