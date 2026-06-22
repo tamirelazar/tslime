@@ -238,6 +238,7 @@ fn stamp_gaussian(
 
 /// Seed `population` agents from `layout`: 35% Gaussian blobs at stars, 65%
 /// along edges (∝ length) with edge-tangent headings split both directions.
+/// Precondition: `agents` is empty on entry (the exact-count top-up assumes this).
 pub fn seed_agents(
     rng: &mut Rng,
     layout: &ConstellationLayout,
@@ -245,6 +246,7 @@ pub fn seed_agents(
     population: usize,
     species_id: u8,
 ) {
+    debug_assert!(agents.is_empty(), "seed_agents expects an empty agents Vec");
     let star_pop = population * 35 / 100;
     let edge_pop = population - star_pop;
 
