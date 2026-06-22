@@ -3129,7 +3129,7 @@ mod tests {
         let r = crate::profile::Profile::resolve_from_args(&a)
             .unwrap()
             .render;
-        assert_eq!(r.palette, crate::cli::Palette::Slime);
+        assert_eq!(r.palette, crate::cli::Palette::Mold);
     }
 
     #[test]
@@ -3186,7 +3186,7 @@ mod tests {
         let r = crate::profile::Profile::resolve_from_args(&a)
             .unwrap()
             .render;
-        assert_eq!(r.palette, crate::cli::Palette::Slime);
+        assert_eq!(r.palette, crate::cli::Palette::Mold);
         assert!(r.temporal_color > 0.0, "mold must have temporal_color > 0");
         assert!(r.afterglow > 0.0, "mold must have afterglow > 0");
     }

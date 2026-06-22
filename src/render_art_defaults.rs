@@ -145,9 +145,46 @@ impl From<Preset> for RenderArtDefaults {
                 temporal_color: 0.5,
                 temporal_lag_frames: 8.0,
                 temporal_mode: TemporalMode::Accent,
-                palette: Some(Palette::Slime),
+                palette: Some(Palette::Mold),
                 intensity_mapping: IntensityMapping::smoothstep(),
                 afterglow: 0.3,
+                auto_normalize: Some(true),
+                ..Self::default()
+            },
+            // Network (Task 6): Braille charset for fine network filaments.
+            Preset::Network => Self {
+                charset: Some(Charset::Braille),
+                ..Self::default()
+            },
+            // Exploratory (Task 7 step 1): Jade palette.
+            Preset::Exploratory => Self {
+                palette: Some(Palette::Jade),
+                ..Self::default()
+            },
+            // Organic (Task 8): Braille + Vibrant palette.
+            Preset::Organic => Self {
+                charset: Some(Charset::Braille),
+                palette: Some(Palette::Vibrant),
+                ..Self::default()
+            },
+            // Fire (Task 9): Quadrant charset + Subtle color-AA.
+            Preset::Fire => Self {
+                charset: Some(Charset::Quadrant),
+                color_aa: Some(AaStrength::Subtle),
+                ..Self::default()
+            },
+            // Slime (Task 10): Quadrant + Strong AA + Slime palette + auto-normalize.
+            Preset::Slime => Self {
+                charset: Some(Charset::Quadrant),
+                color_aa: Some(AaStrength::Strong),
+                palette: Some(Palette::Slime),
+                auto_normalize: Some(true),
+                ..Self::default()
+            },
+            // Smoke (Task 12): Slate palette + auto-normalize.
+            Preset::Smoke => Self {
+                palette: Some(Palette::Slate),
+                auto_normalize: Some(true),
                 ..Self::default()
             },
             Preset::Etching => Self {
@@ -261,21 +298,15 @@ mod tests {
     /// The surviving "plain" presets that carry no art-on defaults (identity).
     /// Showcase presets (Lumen/Etching + the completion-pass set) are excluded:
     /// they carry art-on payloads, not identity.
-    const EXISTING_PRESETS: [Preset; 16] = [
-        Preset::Network,
-        Preset::Exploratory,
+    const EXISTING_PRESETS: [Preset; 10] = [
         Preset::Tendrils,
-        Preset::Organic,
-        Preset::Fire,
         Preset::River,
         Preset::PetriDish,
         Preset::Vortex,
         Preset::Lightning,
         Preset::ChaosEdge,
         Preset::Blob,
-        Preset::Slime,
         Preset::Vines,
-        Preset::Smoke,
         Preset::Vortex36,
         Preset::DynamicTendrils,
     ];
@@ -291,7 +322,7 @@ mod tests {
         // Showcase presets blend toward their OWN palette's vivid stop, so the
         // accent is intentionally None (palette-derived, not a foreign hue).
         assert_eq!(mold.temporal_accent, None);
-        assert_eq!(mold.palette, Some(crate::render::palette::Palette::Slime));
+        assert_eq!(mold.palette, Some(crate::render::palette::Palette::Mold));
 
         // All showcase presets use palette-coherent Accent mode (no hue-mode
         // drift off the gradient).
@@ -320,12 +351,7 @@ mod tests {
         assert!(mosaic.palette_cycle.cycles >= 2);
 
         // Existing presets stay identity.
-        for p in [
-            Preset::Organic,
-            Preset::Network,
-            Preset::Fire,
-            Preset::Tendrils,
-        ] {
+        for p in [Preset::Tendrils, Preset::River, Preset::Blob] {
             let d = RenderArtDefaults::from(p);
             assert_eq!(d.temporal_color, 0.0);
             assert_eq!(d.palette, None);

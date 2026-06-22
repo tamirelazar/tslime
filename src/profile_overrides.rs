@@ -866,23 +866,23 @@ pub(crate) fn project(ov: &ProfileOverrides) -> Result<Canonical, String> {
 
     // Reproduce apply_color_aa_all priority EXACTLY ([P1]):
     //   1. full per-charset array if color_aa_all present,
-    //   2. else the scalar color_aa on the RESOLVED charset's slot over defaults,
-    //   3. else defaults.
-    // Projecting absent-as-defaults would make a clean CLI `--color-aa subtle`
-    // session instantly dirty: live capture sets the scalar but the source's
-    // color_aa_all is None, so both must land on the same resolved array here.
+    //   2. else the FULLY RESOLVED color_aa on the RESOLVED charset's slot over defaults.
+    // We use `p.render.color_aa` (not the raw `ov.color_aa` scalar) because resolve()
+    // already merged scalar ⊕ preset-art ⊕ charset-default. Using the raw scalar would
+    // make a clean preset-only swap dirty when the preset's art layer sets color_aa but
+    // no scalar override is captured (e.g. Slime: charset=Quadrant, art color_aa=Strong).
     let color_aa = {
         let mut arr = crate::config_defaults::DEFAULT_COLOR_AA;
         if let Some(ref all) = ov.color_aa_all {
             for (slot, aa) in arr.iter_mut().zip(all.iter()) {
                 *slot = *aa;
             }
-        } else if let Some(aa) = ov.color_aa {
+        } else {
             let idx = ALL_CHARSETS
                 .iter()
                 .position(|c| *c == p.render.charset)
                 .unwrap_or(0);
-            arr[idx] = aa;
+            arr[idx] = p.render.color_aa;
         }
         arr
     };

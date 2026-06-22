@@ -2619,6 +2619,9 @@ mod tests {
         rs.temporal_accent = r.temporal_accent;
         rs.afterglow = r.afterglow;
         rs.afterglow_rate = r.afterglow_rate;
+        // auto_normalize: the seam writes the resolved flag into rs (apply_render_config);
+        // capture_overrides reads rs.auto_normalize, so the clean mirror must carry it.
+        rs.auto_normalize = r.auto_normalize;
 
         // App + wind (sourced from the resolved profile / sim).
         rs.app = profile.app.clone();

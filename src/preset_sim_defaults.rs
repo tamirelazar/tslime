@@ -185,8 +185,9 @@ impl From<Preset> for PresetSimDefaults {
                 rotation_angle: 45.0,
                 step_size: 1.0,
                 decay_factor: 0.85,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
+                diffusion_kernel: DiffusionKernel::Gaussian,
                 max_brightness: 20.0,
+                window_frame: WindowFrame::Accented,
                 ..Self::default()
             },
             // Fast flame-like patterns (config.rs:446-462)
@@ -196,7 +197,8 @@ impl From<Preset> for PresetSimDefaults {
                 step_size: 1.5,
                 decay_factor: 0.85,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 20.0,
+                max_brightness: 5.0,
+                window_frame: WindowFrame::Accented,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 100_000,
@@ -351,6 +353,7 @@ impl From<Preset> for PresetSimDefaults {
                 deposit_amount: 4.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 max_brightness: 18.0,
+                window_frame: WindowFrame::Accented,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 35_000,
@@ -387,6 +390,7 @@ impl From<Preset> for PresetSimDefaults {
                 deposit_amount: 5.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 max_brightness: 20.0,
+                window_frame: WindowFrame::None,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 50_000,
@@ -423,6 +427,7 @@ impl From<Preset> for PresetSimDefaults {
                 deposit_amount: 3.5,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 max_brightness: 16.0,
+                window_frame: WindowFrame::Accented,
                 boundary_mode: BoundaryMode::Wrap,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
@@ -522,6 +527,7 @@ impl From<Preset> for PresetSimDefaults {
                 decay_factor: 0.85,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 max_brightness: 20.0,
+                window_frame: WindowFrame::Accented,
                 deposit_curve: DepositCurve::Sqrt,
                 deposit_scale: 1.5,
                 decay_gamma: 0.8,
