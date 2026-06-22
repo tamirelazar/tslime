@@ -62,6 +62,9 @@ pub mod exploration;
 /// Export functionality (GIF, WebM, PNG).
 #[cfg(feature = "terminal")]
 pub mod export;
+/// Keybind loader and validation.
+#[cfg(feature = "terminal")]
+pub mod keybind_manager;
 /// Overlay system (state management, rendering, input).
 #[cfg(feature = "terminal")]
 pub mod overlay;

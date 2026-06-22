@@ -18,8 +18,14 @@ First public release.
 - Experimental: multi-species, choir audio, and GUI (feature-gated); WASM build (standalone crate)
 
 ### Changed
+- Quick-keys `1`–`3` now switch the launch presets (Organic, Constellation, Vinescii).
 - Preset pass: renamed pulse→slime, flocking→vines, ripple→smoke, lumen→mold
   (old names still accepted as CLI aliases); per-preset visual tuning applied
   (braille/quadrant charsets, palette assignments, auto-normalize, window frames);
   constellation re-rolls its init layout on reset and auto-resets on collapse.
 - Fixed the stale `--preset` help text (was listing removed presets).
+
+### Added (Custom Keybinds)
+- Custom key bindings via `~/.config/tslime/keybinds.toml`: bind keys `1`–`7` to any preset or
+  saved config; user binds override the defaults. A/B compare (`Shift+1`–`7`) works for bound
+  presets and configs. The `?` overlay shows live bindings.

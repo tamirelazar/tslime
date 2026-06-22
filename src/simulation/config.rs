@@ -156,31 +156,31 @@ pub const PRESETS: &[PresetSpec] = &[
         preset: Preset::Network,
         name: "Network",
         aliases: &[],
-        quick_key: Some('1'),
+        quick_key: None,
     },
     PresetSpec {
         preset: Preset::Exploratory,
         name: "Exploratory",
         aliases: &[],
-        quick_key: Some('2'),
+        quick_key: None,
     },
     PresetSpec {
         preset: Preset::Tendrils,
         name: "Tendrils",
         aliases: &[],
-        quick_key: Some('3'),
+        quick_key: None,
     },
     PresetSpec {
         preset: Preset::Organic,
         name: "Organic",
         aliases: &[],
-        quick_key: Some('4'),
+        quick_key: Some('1'),
     },
     PresetSpec {
         preset: Preset::Fire,
         name: "Fire",
         aliases: &[],
-        quick_key: Some('5'),
+        quick_key: None,
     },
     PresetSpec {
         preset: Preset::River,
@@ -204,7 +204,7 @@ pub const PRESETS: &[PresetSpec] = &[
         preset: Preset::Lightning,
         name: "Lightning",
         aliases: &[],
-        quick_key: Some('6'),
+        quick_key: None,
     },
     PresetSpec {
         preset: Preset::ChaosEdge,
@@ -234,7 +234,7 @@ pub const PRESETS: &[PresetSpec] = &[
         preset: Preset::Vinescii,
         name: "Vinescii",
         aliases: &["vines-ascii"],
-        quick_key: None,
+        quick_key: Some('3'),
     },
     PresetSpec {
         preset: Preset::Smoke,
@@ -270,13 +270,13 @@ pub const PRESETS: &[PresetSpec] = &[
         preset: Preset::Drift,
         name: "Drift",
         aliases: &[],
-        quick_key: Some('7'),
+        quick_key: None,
     },
     PresetSpec {
         preset: Preset::Constellation,
         name: "Constellation",
         aliases: &[],
-        quick_key: None,
+        quick_key: Some('2'),
     },
     PresetSpec {
         preset: Preset::Mosaic,
@@ -369,6 +369,12 @@ pub fn preset_for_set_key(key: char) -> Option<Preset> {
 #[must_use]
 pub fn preset_for_compare_key(key: char) -> Option<Preset> {
     shifted_digit(key).and_then(preset_for_set_key)
+}
+
+/// Public mapping from a shifted number key (`!@#$%^&`) to its base digit (`1`-`7`).
+#[must_use]
+pub fn compare_key_digit(key: char) -> Option<char> {
+    shifted_digit(key)
 }
 
 /// Maps a shifted number key to its base digit (`!`→`1` … `&`→`7`).
@@ -2237,6 +2243,21 @@ mod tests {
                 assert_eq!(preset_for_compare_key(shifted), Some(spec.preset));
             }
         }
+    }
+
+    #[test]
+    fn launch_quick_keys_map_to_launch_presets() {
+        assert_eq!(preset_for_set_key('1'), Some(Preset::Organic));
+        assert_eq!(preset_for_set_key('2'), Some(Preset::Constellation));
+        assert_eq!(preset_for_set_key('3'), Some(Preset::Vinescii));
+        for c in ['4', '5', '6', '7'] {
+            assert_eq!(
+                preset_for_set_key(c),
+                None,
+                "key {c} must be unbound at launch"
+            );
+        }
+        assert_eq!(preset_for_compare_key('@'), Some(Preset::Constellation));
     }
 
     #[test]
