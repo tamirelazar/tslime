@@ -46,7 +46,7 @@ Some starting points:
 
 ```bash
 tslime --preset lightning --palette heat      # fast dendritic branching, warm colors
-tslime --preset zen --palette ocean --fps 24  # slow and quiet
+tslime --preset drift --palette ocean --fps 24  # slow and quiet
 tslime --seed 42 --population 80000           # reproducible run, denser network
 tslime --braille --palette mono               # high-resolution monochrome
 tslime --palette-cycles 3 --palette-cycle-mode mirror  # banded contour coloring
@@ -69,7 +69,9 @@ lowercase increases and uppercase (Shift) decreases.
 |---|---|
 | `Space` | Pause / resume |
 | `r` | Restart |
-| `1`–`7` | Select preset (`Shift+1`–`7` to compare against current) |
+| `1`–`3` | Switch preset (Organic / Constellation / Vinescii) |
+| `4`–`7` | Custom binds — set in `~/.config/tslime/keybinds.toml` |
+| `Shift+1`–`7` | Compare bound preset/config (A/B) |
 | `8` | Randomize parameters |
 | `0` | Reset to defaults |
 | `+` / `-` | Time scale |
@@ -119,23 +121,61 @@ lowercase increases and uppercase (Shift) decreases.
 | `q` | Quit |
 | `Esc` | Close open overlay |
 
+### Custom Keybinds
+
+Customize quick-keys `1`–`7` by creating a `~/.config/tslime/keybinds.toml` file with the following format:
+
+```toml
+[[keybind]]
+key = "4"
+preset = "fire"
+
+[[keybind]]
+key = "5"
+config = "my-night-config"
+```
+
+- **Keys**: Bind to any digit `1`–`7`. Keys `1`–`3` default to Organic, Constellation, and Vinescii; user entries override.
+- **Targets**: Bind to either a `preset` (any of the 30 named presets) or a `config` (any saved configuration from `Ctrl+S`).
+- **Comparison**: Press `Shift+1` through `Shift+7` to compare the bound preset or config against the current settings (A/B mode).
+- **Invalid entries**: Silently ignored; the app launches normally and skips unparseable lines.
+- **Live bindings**: The `?` overlay shows current key bindings and their targets.
+
 ## Gallery
 
 <!-- ws6: preset/palette showcase gifs -->
 
-There are 34 named presets: network, exploratory, tendrils, organic, minimal, moss,
-cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal,
-chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon,
-dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators, lumen, aurora,
-bloom, and etching. Palettes and character sets are independent of the preset and
-can be cycled at runtime.
+There are 30 named presets: network, exploratory, tendrils, organic, fire, river,
+petri, vortex, lightning, chaosedge, blob, slime, vines, vinescii, smoke, vortex36,
+dynamictendrils, mold, etching, drift, constellation, mosaic, marble, prism, vellum,
+forge, wane, gossamer, codex, and tide. The old names pulse, flocking, ripple, and
+lumen are still accepted as CLI aliases. Palettes and character sets are independent of
+the preset and can be cycled at runtime. Preset parameters are defined in
+`src/simulation/config.rs` and `src/preset_sim_defaults.rs`.
 
-Four showcase presets highlight specific visual levers:
+Showcase presets highlight specific visual levers:
 
-- **lumen** — Bleuje-style front-lit veins: temporal-accent recolor of growing fronts.
-- **aurora** — Luminous network glow: afterglow + soft diffusion + long faint tails.
-- **bloom** — Banded coral depth via mirrored palette cycles.
+- **slime** — Pulsing network with strong deposits and the slime palette; auto-normalizes brightness.
+- **vines** — Flocking-pattern filaments rendered without a window frame.
+- **vinescii** — The vines pattern rendered in pure ASCII.
+- **smoke** — Diffuse drift with the slate palette; auto-normalizes brightness.
+- **mold** — Bleuje-style front-lit veins with the mold palette; auto-normalizes brightness.
 - **etching** — Directional filament linework via Sobel glyph selection (Braille, TUI-only).
+- **drift** — Color that shifts with motion direction (temporal Hue mode).
+- **constellation** — Sparse star-map scatter via the Points charset; re-rolls layout on reset.
+- **mosaic** — Posterized color bands: Quantize mapping + wrapped palette cycles.
+- **marble** — Veined stone via heavy Gaussian diffusion + Perlin intensity mapping.
+- **prism** — Maximum color resolution: HalfBlockDual charset + strong color anti-aliasing.
+- **vellum** — Soft parchment density: Shade charset + logarithmic deposit curve.
+- **forge** — Grainy molten thermal: exponential intensity mapping + afterglow.
+- **wane** — Slow ghosting decay via low decay-gamma + power deposit curve.
+- **gossamer** — Delicate Braille threads with brightness glyphs + power mapping.
+- **codex** — Typographic engraving: custom ASCII charset + sigmoid contrast.
+- **tide** — Living water with animated hue-shift over time.
+
+Six new palettes accompany them: **jade** (mid-saturation green), **amber** (warm
+earth), **slate** (cool stone grey), **pastel** (high-key airy), **ink** (duotone
+ink-on-paper), and **copper** (oxidized rust-to-verdigris).
 
 ## How it works
 

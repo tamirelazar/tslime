@@ -76,10 +76,12 @@ pub fn extract_species_rgb_colors(config: &SimConfig) -> Vec<RgbColor> {
 /// runtime-state change" (load / undo / redo / randomize / reset). Keeping it in one place
 /// prevents the per-handler drift that left charset and intensity-mapping unapplied on load.
 pub fn sync_renderer_caches(runtime_state: &RuntimeState, renderer: &mut TerminalRenderer) {
-    renderer.set_palette(runtime_state.current_palette(&ALL_PALETTES));
+    // Push the EXACT live palette/charset (incl. Custom/CustomAscii), not the lossy
+    // index reconstruction — so a custom palette in a loaded config survives apply.
+    renderer.set_palette(runtime_state.live_palette.clone());
     renderer.set_invert_palette(runtime_state.invert_palette);
     renderer.set_reverse_palette(runtime_state.reverse_palette);
-    renderer.set_charset(runtime_state.current_charset());
+    renderer.set_charset(runtime_state.live_charset.clone());
     renderer.set_color_aa(runtime_state.current_color_aa());
     renderer.set_intensity_mapping(Some(runtime_state.intensity_mapping.clone()));
     renderer.set_palette_cycle(runtime_state.palette_cycle);
@@ -114,10 +116,241 @@ pub fn apply_live_params(
     new_config.terrain = runtime_state.terrain_type;
     new_config.terrain_strength = runtime_state.terrain_strength;
     new_config.attractor_strength = runtime_state.attractor_strength;
-    new_config.wind = runtime_state.wind_direction.to_wind();
+    // LOSSLESS wind: use the precise vector, not the coarse direction reconstruction
+    // (which would rewrite e.g. (0.3, 0.0) into (1.0, 0.0)) ([P1b]).
+    new_config.wind = runtime_state.wind;
     sim.update_config(new_config);
 
     sync_renderer_caches(runtime_state, renderer);
+}
+
+/// Apply a fully-resolved render config to the live renderer, runtime state, and
+/// sim compute buffers. Shared by startup, live preset-switch, reset, and the
+/// config-load apply seam so the paths can't diverge.
+///
+/// Sets `rs.live_palette`/`rs.live_charset` to the EXACT resolved values (incl.
+/// `Custom`/`CustomAscii`) in addition to the lossy indices, so a custom palette
+/// survives a load instead of falling back to the index palette ([P0] render-lossy).
+pub(crate) fn apply_render_config(
+    r: &crate::render_art_defaults::ResolvedRenderConfig,
+    rs: &mut RuntimeState,
+    renderer: &mut TerminalRenderer,
+    sim: &mut Simulation,
+) {
+    // Exact live values (drive the renderer; survive Custom palette/charset).
+    rs.live_palette = r.palette.clone();
+    rs.live_charset = r.charset.clone();
+
+    // Palette + charset indices (RuntimeState drives index; renderer drives value).
+    rs.palette_index = if let cli::Palette::Custom(_) = r.palette {
+        4 // Forest fallback index for custom palettes (mirror startup)
+    } else {
+        ALL_PALETTES
+            .iter()
+            .position(|p| *p == r.palette)
+            .unwrap_or(4)
+    };
+    if let Some(i) = ALL_CHARSETS.iter().position(|c| *c == r.charset) {
+        rs.charset_index = i;
+    }
+    rs.color_aa[rs.charset_index] = r.color_aa;
+    renderer.set_color_aa(rs.current_color_aa());
+
+    renderer.set_intensity_mapping(Some(r.intensity_mapping.clone()));
+    rs.intensity_mapping = r.intensity_mapping.clone();
+    rs.intensity_mapping_index = RuntimeState::find_intensity_mapping_index(&r.intensity_mapping);
+    renderer.set_palette_cycle(r.palette_cycle);
+    rs.palette_cycle = r.palette_cycle;
+    renderer.set_glyph(r.glyph);
+    rs.glyph = r.glyph;
+
+    // Resolved hue-shift speed is authoritative: startup, live preset-switch, and
+    // reset all re-resolve it here, deliberately overriding runtime key-cycling.
+    // Buckets via the single source of truth shared with the dirty projection.
+    rs.palette_shift_speed = crate::terminal::state::palette_shift_speed_of(r.hue_shift);
+
+    // Adaptive-brightness baseline (the runner rebuilds AdaptiveBrightness from this
+    // after a swap). A preset may default this ON.
+    rs.auto_normalize = r.auto_normalize;
+
+    // Temporal + afterglow runtime state and sim compute toggles.
+    rs.temporal_color = r.temporal_color;
+    rs.temporal_lag_frames = r.temporal_lag_frames;
+    rs.temporal_mode = r.temporal_mode;
+    rs.temporal_accent = r.temporal_accent;
+    rs.afterglow = r.afterglow;
+    rs.afterglow_rate = r.afterglow_rate;
+    sim.set_compute_temporal(r.temporal_color > 0.0, r.temporal_lag_alpha());
+    sim.set_compute_afterglow(r.afterglow > 0.0, r.afterglow_rate);
+}
+
+/// A fresh, per-call-unique seed for unpinned restarts.
+///
+/// MUST be per-call-unique ([P1]): seconds-resolution `SystemTime` would let two
+/// swaps in one second reuse a seed. `rand::random::<u64>()` is unique per call.
+pub(crate) fn fresh_seed() -> u64 {
+    rand::random::<u64>()
+}
+
+/// Build the background grid overlay from the app-runtime config.
+///
+/// Mirrors the startup grid-build (all five `GridRenderer::new` params + initialize).
+/// Returns `None` when the grid is disabled.
+pub(crate) fn build_grid_renderer(
+    app: &crate::app_config::AppRuntimeConfig,
+    term_size: (usize, usize),
+) -> Option<GridRenderer> {
+    if !app.grid {
+        return None;
+    }
+    let mut grid = GridRenderer::new(
+        app.grid_style,
+        app.grid_size,
+        app.grid_color,
+        app.grid_opacity,
+        app.grid_adaptive,
+    );
+    grid.initialize(term_size.0, term_size.1);
+    Some(grid)
+}
+
+/// Recompute the window layout + buffers for a new sim config, mirroring the
+/// RESIZE handler (not just startup): update the cached `window`, push dimensions
+/// and the recomputed layout into the renderer, and resize the runner's frame/aux
+/// buffers so they stay consistent with the (possibly changed) render dimensions.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn apply_window(
+    sim_config: &SimConfig,
+    window: &mut crate::render::window::Window,
+    renderer: &mut TerminalRenderer,
+    downsampled_frame: &mut DownsampledFrame,
+    aux_frame: &mut crate::render::downsample::AuxFrame,
+    term_size: (usize, usize),
+) {
+    use crate::simulation::config::ChromeStyle;
+    let (tw, th) = term_size;
+
+    // Update the cached window geometry from the new sim config.
+    window.aspect = sim_config.aspect;
+    window.padding = sim_config.window_padding;
+    window.min_sim_size = sim_config.min_sim_size;
+    window.min_frame_size = sim_config.min_frame_size;
+
+    renderer.set_dimensions(tw, th);
+
+    // Recompute layout + derive render dims from the SAME layout (resize-block parity).
+    let (render_w, render_h) = {
+        let layout = if matches!(sim_config.chrome_style, ChromeStyle::Fullscreen) {
+            None
+        } else {
+            let l = window.compute_rects(tw, th);
+            if matches!(l.fallback, crate::render::window::FallbackMode::Fullscreen) {
+                None
+            } else {
+                Some(l)
+            }
+        };
+        let dims = layout
+            .as_ref()
+            .map(|l| (l.sim_w, l.sim_h))
+            .unwrap_or((tw, th));
+        renderer.set_window_layout(layout);
+        dims
+    };
+
+    // Resize the runner's frame buffers; a stale buffer would mismatch render dims.
+    if downsampled_frame.width() != render_w || downsampled_frame.height() != render_h {
+        *downsampled_frame = DownsampledFrame::new(render_w, render_h);
+    }
+    if aux_frame.width != render_w || aux_frame.height != render_h {
+        aux_frame.width = render_w;
+        aux_frame.height = render_h;
+        aux_frame.cells = vec![crate::render::downsample::AuxCell::default(); render_w * render_h];
+    }
+}
+
+/// The ONE total apply seam: applies EVERY lever of a `ProfileOverrides` —
+/// sim, render, app-runtime, and apply-only flags — and totally syncs the
+/// renderer, window, grid, and (when `restart`) the simulation seed + init mode.
+///
+/// This is the spine of config-load: a load applies all levers, syncs the renderer
+/// completely (incl. Custom palette/charset via `live_*`), preserves PRECISE wind,
+/// and restarts with the correct init mode + seed (unpinned saved config → a fresh
+/// per-call-unique random seed; pinned `seed` honored verbatim).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn apply_overrides(
+    ov: &crate::profile_overrides::ProfileOverrides,
+    rs: &mut RuntimeState,
+    renderer: &mut TerminalRenderer,
+    sim: &mut Simulation,
+    timer: &mut FrameTimer,
+    grid_renderer: &mut Option<GridRenderer>,
+    window: &mut crate::render::window::Window,
+    downsampled_frame: &mut DownsampledFrame,
+    aux_frame: &mut crate::render::downsample::AuxFrame,
+    term_size: (usize, usize),
+    restart: bool,
+) -> Result<(), String> {
+    let profile = ov.resolve()?;
+
+    // 1. Full sim push (terrain, PRECISE wind, attractors, obstacles+masks, …).
+    sim.update_config(profile.sim.clone());
+
+    // 2. Mirror sim levers into RuntimeState — LOSSLESS wind ([P1b]).
+    rs.sync_sim_levers(&profile.sim);
+
+    // 3. App-runtime config ([P0a]) — the live source for warmup/auto-reset/grid/food.
+    rs.app = profile.app.clone();
+
+    // 4. Render side: indices + intensity/cycle/glyph/temporal/afterglow + sim toggles.
+    //    apply_render_config sets rs.live_palette/live_charset to EXACT values.
+    apply_render_config(&profile.render, rs, renderer, sim);
+
+    // 5. Apply-only flags the resolved Profile does NOT carry — straight from overrides.
+    rs.reverse_palette = ov.reverse_palette.unwrap_or(false);
+    rs.invert_palette = ov.invert_palette.unwrap_or(false);
+    rs.food_persist_enabled = ov.food_persist.unwrap_or(false);
+    // Per-charset color-AA: delegate to apply_color_aa_all (Task 5 helper).
+    rs.apply_color_aa_all(ov);
+    renderer.set_color_aa(rs.current_color_aa());
+
+    // 6. TOTAL renderer sync ([P1a]) — push EVERYTHING the renderer caches, using
+    //    the EXACT live palette/charset (not the lossy index reconstruction).
+    sync_renderer_caches(rs, renderer);
+    renderer.set_background_color(profile.sim.background_color.as_deref().and_then(hex_to_rgb));
+
+    // 7. Window: route through the same recompute the resize handler uses.
+    apply_window(
+        &profile.sim,
+        window,
+        renderer,
+        downsampled_frame,
+        aux_frame,
+        term_size,
+    );
+    rs.set_render_baseline(profile.render.clone());
+
+    // 8. Rebuild the grid overlay from the new (complete) app config ([P0a]).
+    *grid_renderer = build_grid_renderer(&rs.app, term_size);
+
+    // 9. Restart with CORRECT init + seed ([P0b]).
+    if restart {
+        let init = profile.sim.preferred_init_mode.unwrap_or(InitMode::Food);
+        let seed = profile.seed.unwrap_or_else(fresh_seed);
+        rs.original_seed = seed;
+        // Baseline stays the preset's preferred mode (non-mutating w.r.t. the
+        // reroll) so dirty-projection sees no permanent edit.
+        rs.original_init_mode = init;
+        // Constellation re-rolls a fresh layout on this (re-)seed. The preset being
+        // applied comes from the overrides; fall back to the live preset for config
+        // loads / resets that don't pin a preset.
+        let effective_preset = ov.preset.unwrap_or(rs.current_preset);
+        let effective_init = crate::app::runner::effective_init_mode(effective_preset, init);
+        sim.reset(seed, effective_init);
+    }
+
+    timer.set_time_scale(rs.time_scale);
+    Ok(())
 }
 
 /// Applies randomized configuration parameters to the simulation and runtime state.
@@ -380,6 +613,17 @@ pub fn run() -> io::Result<()> {
         return Ok(());
     }
 
+    if args.dump_config {
+        let profile = crate::profile_overrides::ProfileOverrides::from_args(&args)
+            .and_then(|o| o.resolve())
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        print!(
+            "{}",
+            crate::profile_overrides::dump_sim_config(&profile.sim)
+        );
+        return Ok(());
+    }
+
     if args.explore {
         run_exploration(&args)?;
         return Ok(());
@@ -391,28 +635,11 @@ pub fn run() -> io::Result<()> {
     let config = args
         .to_sim_config()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let art_defaults = args.to_render_art_defaults().ok();
-    let palette = {
-        let cli_palette = args
-            .palette()
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-        if !args.palette_explicitly_set() {
-            art_defaults
-                .as_ref()
-                .and_then(|d| d.palette.clone())
-                .unwrap_or(cli_palette)
-        } else {
-            cli_palette
-        }
-    };
-    let charset = if args.charset_explicitly_set() {
-        Charset::from_args(&args)
-    } else {
-        art_defaults
-            .as_ref()
-            .and_then(|d| d.charset.clone())
-            .unwrap_or_else(|| Charset::from_args(&args))
-    };
+    let render = crate::profile::Profile::resolve_from_args(&args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .render;
+    let palette = render.palette;
+    let charset = render.charset;
 
     let seed = args.seed.unwrap_or_else(|| {
         std::time::SystemTime::now()
@@ -470,14 +697,14 @@ pub fn print_mode(
 
     // Enable temporal computation if requested, then warm up enough frames
     // to populate the EMA lag buffer before capturing the final frame.
-    let art_defaults_print = args
-        .to_render_art_defaults()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let temporal_strength = art_defaults_print.temporal_color;
-    let temporal_mode = art_defaults_print.temporal_mode;
-    let temporal_accent = art_defaults_print.temporal_accent;
+    let render = crate::profile::Profile::resolve_from_args(args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .render;
+    let temporal_strength = render.temporal_color;
+    let temporal_mode = render.temporal_mode;
+    let temporal_accent = render.temporal_accent;
     if temporal_strength > 0.0 {
-        let lag = art_defaults_print.temporal_lag_frames;
+        let lag = render.temporal_lag_frames;
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
         // Warm up enough frames so the EMA lag buffer is populated before we
@@ -487,8 +714,10 @@ pub fn print_mode(
             sim.update(1.0);
         }
     }
-    if args.afterglow > 0.0 {
-        sim.set_compute_afterglow(true, args.afterglow_rate);
+    let afterglow_val = render.afterglow;
+    let afterglow_rate_val = render.afterglow_rate;
+    if afterglow_val > 0.0 {
+        sim.set_compute_afterglow(true, afterglow_rate_val);
     }
 
     sim.update(1.0);
@@ -499,7 +728,7 @@ pub fn print_mode(
     let sim_height = sim.height();
     let mut blended_trail = Vec::new();
     sim.trail_map_blended(&mut blended_trail);
-    fold_afterglow(&mut blended_trail, sim.afterglow_lag(), args.afterglow);
+    fold_afterglow(&mut blended_trail, sim.afterglow_lag(), afterglow_val);
     let mut downsampled = DownsampledFrame::new(term_width, term_height);
     downsample(
         &blended_trail,
@@ -538,10 +767,11 @@ pub fn print_mode(
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
+    // Read the RESOLVED auto-normalize so `--preset slime --print` honors the preset.
     let mut adaptive_brightness =
-        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+        AdaptiveBrightness::new(args.normalize_window, render.auto_normalize);
     adaptive_brightness.update(downsampled.cells());
-    let max_brightness = if args.auto_normalize {
+    let max_brightness = if render.auto_normalize {
         adaptive_brightness.get_max_brightness()
     } else {
         config.max_brightness
@@ -556,22 +786,9 @@ pub fn print_mode(
     let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
 
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
-    let intensity_mapping = args
-        .to_render_art_defaults()
-        .ok()
-        .map(|a| a.intensity_mapping);
-
-    let palette_cycle = args
-        .to_render_art_defaults()
-        .ok()
-        .map(|a| a.palette_cycle)
-        .unwrap_or_default();
-
-    let glyph = args
-        .to_render_art_defaults()
-        .ok()
-        .map(|a| a.glyph)
-        .unwrap_or_default();
+    let intensity_mapping = Some(render.intensity_mapping.clone());
+    let palette_cycle = render.palette_cycle;
+    let glyph = render.glyph;
 
     let mut buffer = FrameBuffer::from_downsampled(
         downsampled.cells(),
@@ -694,23 +911,28 @@ pub fn capture_frames_mode(
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
+    // Resolve the render config first so adaptive-brightness reads the RESOLVED
+    // auto-normalize (a preset may default it ON) rather than the raw CLI flag.
+    let render = crate::profile::Profile::resolve_from_args(args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .render;
+
     let mut adaptive_brightness =
-        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+        AdaptiveBrightness::new(args.normalize_window, render.auto_normalize);
 
     // Temporal-color setup: enable EMA computation once before the loop.
-    let art_defaults_capture = args
-        .to_render_art_defaults()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let temporal_strength = art_defaults_capture.temporal_color;
-    let temporal_mode = art_defaults_capture.temporal_mode;
-    let temporal_accent = art_defaults_capture.temporal_accent;
+    let temporal_strength = render.temporal_color;
+    let temporal_mode = render.temporal_mode;
+    let temporal_accent = render.temporal_accent;
     if temporal_strength > 0.0 {
-        let lag = art_defaults_capture.temporal_lag_frames;
+        let lag = render.temporal_lag_frames;
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
-    if args.afterglow > 0.0 {
-        sim.set_compute_afterglow(true, args.afterglow_rate);
+    let afterglow_val = render.afterglow;
+    let afterglow_rate_val = render.afterglow_rate;
+    if afterglow_val > 0.0 {
+        sim.set_compute_afterglow(true, afterglow_rate_val);
     }
 
     // Reused across frames so trail_map_blended doesn't reallocate per frame.
@@ -730,7 +952,7 @@ pub fn capture_frames_mode(
         let sim_width = sim.width();
         let sim_height = sim.height();
         sim.trail_map_blended(&mut blended_trail);
-        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), args.afterglow);
+        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), afterglow_val);
         let mut downsampled = DownsampledFrame::new(term_width, term_height);
         downsample(
             &blended_trail,
@@ -742,7 +964,7 @@ pub fn capture_frames_mode(
         );
 
         adaptive_brightness.update(downsampled.cells());
-        let max_brightness = if args.auto_normalize {
+        let max_brightness = if render.auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
             config.max_brightness
@@ -755,21 +977,9 @@ pub fn capture_frames_mode(
         };
 
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
-        let intensity_mapping = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.intensity_mapping);
-        let palette_cycle_inner = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.palette_cycle)
-            .unwrap_or_default();
-
-        let glyph_inner = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.glyph)
-            .unwrap_or_default();
+        let intensity_mapping = Some(render.intensity_mapping.clone());
+        let palette_cycle_inner = render.palette_cycle;
+        let glyph_inner = render.glyph;
 
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(
@@ -941,23 +1151,28 @@ pub fn export_gif_mode(
     let mut gif_exporter = GifExporter::new(width, height, output_path, args.export_fps)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
+    // Resolve the render config first so adaptive-brightness reads the RESOLVED
+    // auto-normalize (a preset may default it ON) rather than the raw CLI flag.
+    let render = crate::profile::Profile::resolve_from_args(args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .render;
+
     let mut adaptive_brightness =
-        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+        AdaptiveBrightness::new(args.normalize_window, render.auto_normalize);
 
     // Temporal-color setup: enable EMA computation once before the loop.
-    let art_defaults_gif = args
-        .to_render_art_defaults()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let temporal_strength = art_defaults_gif.temporal_color;
-    let temporal_mode = art_defaults_gif.temporal_mode;
-    let temporal_accent = art_defaults_gif.temporal_accent;
+    let temporal_strength = render.temporal_color;
+    let temporal_mode = render.temporal_mode;
+    let temporal_accent = render.temporal_accent;
     if temporal_strength > 0.0 {
-        let lag = art_defaults_gif.temporal_lag_frames;
+        let lag = render.temporal_lag_frames;
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
-    if args.afterglow > 0.0 {
-        sim.set_compute_afterglow(true, args.afterglow_rate);
+    let afterglow_val = render.afterglow;
+    let afterglow_rate_val = render.afterglow_rate;
+    if afterglow_val > 0.0 {
+        sim.set_compute_afterglow(true, afterglow_rate_val);
     }
 
     let frame_skip = args.frame_skip.max(1);
@@ -980,7 +1195,7 @@ pub fn export_gif_mode(
         let term_width = width;
         let term_height = height;
         sim.trail_map_blended(&mut blended_trail);
-        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), args.afterglow);
+        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), afterglow_val);
         downsample(
             &blended_trail,
             sim_width,
@@ -991,7 +1206,7 @@ pub fn export_gif_mode(
         );
 
         adaptive_brightness.update(downsampled_frame.cells());
-        let max_brightness = if args.auto_normalize {
+        let max_brightness = if render.auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
             config.max_brightness
@@ -1004,15 +1219,8 @@ pub fn export_gif_mode(
         };
 
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
-        let intensity_mapping = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.intensity_mapping);
-        let palette_cycle_gif = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.palette_cycle)
-            .unwrap_or_default();
+        let intensity_mapping = Some(render.intensity_mapping.clone());
+        let palette_cycle_gif = render.palette_cycle;
 
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(
@@ -1122,23 +1330,28 @@ pub fn export_webm_mode(
     let mut webm_exporter = WebmExporter::new(width, height, output_path, args.export_fps)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
+    // Resolve the render config first so adaptive-brightness reads the RESOLVED
+    // auto-normalize (a preset may default it ON) rather than the raw CLI flag.
+    let render = crate::profile::Profile::resolve_from_args(args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+        .render;
+
     let mut adaptive_brightness =
-        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+        AdaptiveBrightness::new(args.normalize_window, render.auto_normalize);
 
     // Temporal-color setup: enable EMA computation once before the loop.
-    let art_defaults_webm = args
-        .to_render_art_defaults()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let temporal_strength = art_defaults_webm.temporal_color;
-    let temporal_mode = art_defaults_webm.temporal_mode;
-    let temporal_accent = art_defaults_webm.temporal_accent;
+    let temporal_strength = render.temporal_color;
+    let temporal_mode = render.temporal_mode;
+    let temporal_accent = render.temporal_accent;
     if temporal_strength > 0.0 {
-        let lag = art_defaults_webm.temporal_lag_frames;
+        let lag = render.temporal_lag_frames;
         let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
         sim.set_compute_temporal(true, temporal_alpha);
     }
-    if args.afterglow > 0.0 {
-        sim.set_compute_afterglow(true, args.afterglow_rate);
+    let afterglow_val = render.afterglow;
+    let afterglow_rate_val = render.afterglow_rate;
+    if afterglow_val > 0.0 {
+        sim.set_compute_afterglow(true, afterglow_rate_val);
     }
 
     let frame_skip = args.frame_skip.max(1);
@@ -1161,7 +1374,7 @@ pub fn export_webm_mode(
         let term_width = width;
         let term_height = height;
         sim.trail_map_blended(&mut blended_trail);
-        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), args.afterglow);
+        fold_afterglow(&mut blended_trail, sim.afterglow_lag(), afterglow_val);
         downsample(
             &blended_trail,
             sim_width,
@@ -1172,7 +1385,7 @@ pub fn export_webm_mode(
         );
 
         adaptive_brightness.update(downsampled_frame.cells());
-        let max_brightness = if args.auto_normalize {
+        let max_brightness = if render.auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
             config.max_brightness
@@ -1185,15 +1398,8 @@ pub fn export_webm_mode(
         };
 
         let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
-        let intensity_mapping = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.intensity_mapping);
-        let palette_cycle_webm = args
-            .to_render_art_defaults()
-            .ok()
-            .map(|a| a.palette_cycle)
-            .unwrap_or_default();
+        let intensity_mapping = Some(render.intensity_mapping.clone());
+        let palette_cycle_webm = render.palette_cycle;
 
         let opt_aux_frame = if temporal_strength > 0.0 {
             crate::render::downsample::downsample_aux(
@@ -1289,11 +1495,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -1314,9 +1517,12 @@ mod tests {
             .position(|c| *c == Charset::Ascii)
             .unwrap();
         rs.charset_index = ascii_idx;
-        rs.window_frame = WindowFrame::Negative;
+        // Callers keep index and the EXACT live value in sync (Step 4b); sync_renderer_caches
+        // now pushes the exact live_charset so Custom/CustomAscii survive a load.
+        rs.live_charset = Charset::Ascii;
+        rs.window_frame = WindowFrame::Glow;
         sync_renderer_caches(&rs, &mut r);
-        assert_eq!(r.charset(), &rs.current_charset());
+        assert_eq!(r.charset(), &rs.live_charset);
         assert_eq!(r.window_frame(), rs.window_frame);
     }
 
@@ -1326,11 +1532,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -1362,11 +1565,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -1400,11 +1600,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -1644,5 +1841,245 @@ mod tests {
         sim.set_compute_afterglow(true, 0.05);
         sim.update(1.0);
         assert!(sim.afterglow_lag().is_some());
+    }
+
+    // ── apply_overrides seam (Phase C, Task 3) ──────────────────────────────────
+
+    /// Build the doubles `apply_overrides` operates on: a runtime state, renderer,
+    /// simulation, frame timer, optional grid, window, and frame/aux buffers.
+    #[allow(clippy::type_complexity)]
+    fn apply_doubles() -> (
+        RuntimeState,
+        TerminalRenderer,
+        Simulation,
+        FrameTimer,
+        Option<GridRenderer>,
+        crate::render::window::Window,
+        DownsampledFrame,
+        crate::render::downsample::AuxFrame,
+    ) {
+        let rs = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            MouseInteractionMode::Disabled,
+            3.0,
+            &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
+        );
+        let renderer = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            None,
+        );
+        let sim = Simulation::new(400, 400, SimConfig::default(), 42, InitMode::Random, 0);
+        let timer = FrameTimer::with_time_scale(60, 0.0, 1.0);
+        let window = crate::render::window::Window {
+            aspect: SimConfig::default().aspect,
+            padding: SimConfig::default().window_padding,
+            ring_cols: SimConfig::default().frame_matte_cols + 1,
+            ring_rows: SimConfig::default().frame_matte_rows + 1,
+            min_sim_size: SimConfig::default().min_sim_size,
+            min_frame_size: SimConfig::default().min_frame_size,
+        };
+        let downsampled = DownsampledFrame::new(80, 24);
+        let aux = crate::render::downsample::AuxFrame {
+            width: 80,
+            height: 24,
+            cells: vec![crate::render::downsample::AuxCell::default(); 80 * 24],
+        };
+        (rs, renderer, sim, timer, None, window, downsampled, aux)
+    }
+
+    #[test]
+    fn apply_overrides_syncs_renderer_palette_charset_flags() {
+        use crate::profile_overrides::ProfileOverrides;
+        let (mut rs, mut renderer, mut sim, mut timer, mut grid, mut window, mut ds, mut aux) =
+            apply_doubles();
+        let ov = ProfileOverrides {
+            palette: Some(Palette::Heat),
+            charset: Some(Charset::Braille),
+            reverse_palette: Some(true),
+            invert_palette: Some(true),
+            background_color: Some("000000".to_string()),
+            ..Default::default()
+        };
+        crate::app::apply_overrides(
+            &ov,
+            &mut rs,
+            &mut renderer,
+            &mut sim,
+            &mut timer,
+            &mut grid,
+            &mut window,
+            &mut ds,
+            &mut aux,
+            (80, 24),
+            false,
+        )
+        .expect("apply_overrides must succeed");
+
+        assert_eq!(renderer.palette(), &Palette::Heat, "renderer palette");
+        assert_eq!(renderer.charset(), &Charset::Braille, "renderer charset");
+        assert!(renderer.reverse_palette(), "renderer reverse");
+        assert!(renderer.invert_palette(), "renderer invert");
+        assert_eq!(
+            renderer.background_color(),
+            Some(RgbColor { r: 0, g: 0, b: 0 }),
+            "renderer background"
+        );
+        // Live exact values also set on runtime state.
+        assert_eq!(rs.live_palette, Palette::Heat);
+        assert_eq!(rs.live_charset, Charset::Braille);
+    }
+
+    #[test]
+    fn apply_overrides_pushes_restart_only_sim_levers_with_precise_wind() {
+        use crate::cli::WindArg;
+        use crate::profile_overrides::ProfileOverrides;
+        use crate::simulation::config::Wind;
+        let (mut rs, mut renderer, mut sim, mut timer, mut grid, mut window, mut ds, mut aux) =
+            apply_doubles();
+        let ov = ProfileOverrides {
+            terrain: Some("smooth".to_string()),
+            wind: Some(WindArg { dx: 0.3, dy: 0.0 }),
+            ..Default::default()
+        };
+        crate::app::apply_overrides(
+            &ov,
+            &mut rs,
+            &mut renderer,
+            &mut sim,
+            &mut timer,
+            &mut grid,
+            &mut window,
+            &mut ds,
+            &mut aux,
+            (80, 24),
+            false,
+        )
+        .expect("apply_overrides must succeed");
+
+        assert_eq!(
+            sim.config().terrain,
+            crate::simulation::config::TerrainType::Smooth,
+            "sim terrain"
+        );
+        // LOSSLESS wind — preserves (0.3, 0.0), NOT the coarse East/(1.0, 0.0).
+        assert_eq!(
+            sim.config().wind,
+            Some(Wind { dx: 0.3, dy: 0.0 }),
+            "sim wind"
+        );
+        assert_eq!(rs.wind, Some(Wind { dx: 0.3, dy: 0.0 }), "rs.wind lossless");
+    }
+
+    #[test]
+    fn apply_overrides_restart_uses_profile_init_and_fresh_seed_when_unpinned() {
+        use crate::profile_overrides::ProfileOverrides;
+        let (mut rs, mut renderer, mut sim, mut timer, mut grid, mut window, mut ds, mut aux) =
+            apply_doubles();
+        rs.original_seed = 42;
+        rs.original_init_mode = InitMode::Food;
+
+        // Unpinned: init_mode=Random, seed=None → fresh random seed, Random init.
+        let ov = ProfileOverrides {
+            init_mode: Some(InitMode::Random),
+            seed: None,
+            ..Default::default()
+        };
+        crate::app::apply_overrides(
+            &ov,
+            &mut rs,
+            &mut renderer,
+            &mut sim,
+            &mut timer,
+            &mut grid,
+            &mut window,
+            &mut ds,
+            &mut aux,
+            (80, 24),
+            true,
+        )
+        .expect("apply_overrides must succeed");
+        assert_eq!(
+            rs.original_init_mode,
+            InitMode::Random,
+            "restart sets init from profile"
+        );
+        assert_ne!(rs.original_seed, 42, "unpinned restart picks a fresh seed");
+
+        // Pinned: seed=Some(7) → original_seed honored verbatim.
+        let ov_pinned = ProfileOverrides {
+            init_mode: Some(InitMode::Random),
+            seed: Some(7),
+            ..Default::default()
+        };
+        crate::app::apply_overrides(
+            &ov_pinned,
+            &mut rs,
+            &mut renderer,
+            &mut sim,
+            &mut timer,
+            &mut grid,
+            &mut window,
+            &mut ds,
+            &mut aux,
+            (80, 24),
+            true,
+        )
+        .expect("apply_overrides must succeed");
+        assert_eq!(rs.original_seed, 7, "pinned seed honored");
+    }
+
+    #[test]
+    fn apply_overrides_custom_palette_survives_apply() {
+        use crate::profile_overrides::ProfileOverrides;
+        let (mut rs, mut renderer, mut sim, mut timer, mut grid, mut window, mut ds, mut aux) =
+            apply_doubles();
+        // A custom palette in a loaded config must survive apply — the renderer should
+        // show the custom palette, not the Forest index fallback.
+        let custom = Palette::Custom(vec![
+            RgbColor {
+                r: 10,
+                g: 20,
+                b: 30,
+            },
+            RgbColor {
+                r: 200,
+                g: 100,
+                b: 50,
+            },
+        ]);
+        let ov = ProfileOverrides {
+            palette: Some(custom.clone()),
+            ..Default::default()
+        };
+        crate::app::apply_overrides(
+            &ov,
+            &mut rs,
+            &mut renderer,
+            &mut sim,
+            &mut timer,
+            &mut grid,
+            &mut window,
+            &mut ds,
+            &mut aux,
+            (80, 24),
+            false,
+        )
+        .expect("apply_overrides must succeed");
+        assert!(
+            matches!(renderer.palette(), Palette::Custom(_)),
+            "renderer must show the custom palette, not the Forest fallback"
+        );
+        assert!(matches!(rs.live_palette, Palette::Custom(_)));
     }
 }

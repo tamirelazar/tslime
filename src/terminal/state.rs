@@ -51,6 +51,24 @@ pub fn num_charsets() -> usize {
     ALL_CHARSETS.len()
 }
 
+/// A swap the user requested while live edits were dirty, parked behind the
+/// dirty-state guard overlay until confirmed or cancelled. Both the clean path and
+/// the post-confirm path route through the SAME `do_swap` in the runner so they can
+/// never diverge.
+// Not `Eq`: `NamedProfile` carries f32 overrides, which are `PartialEq` only.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum PendingSwap {
+    /// Switch to a preset (via `switch_preset`).
+    Preset(Preset),
+    /// Load an already-resolved saved config (through the apply seam +
+    /// transactional provenance). Carrying the resolved [`NamedProfile`] avoids a
+    /// redundant disk re-read in `do_swap`; it survives the dirty guard intact.
+    /// Boxed to keep the enum small (the profile is far larger than other variants).
+    Config(Box<crate::config_manager::NamedProfile>),
+    /// Re-apply `active_overrides` (the reset path).
+    Reset,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Speed of automatic palette hue shifting.
 pub enum PaletteShiftSpeed {
@@ -73,6 +91,24 @@ impl PaletteShiftSpeed {
             PaletteShiftSpeed::Medium => 15.0,
             PaletteShiftSpeed::Fast => 45.0,
         }
+    }
+}
+
+/// Buckets a resolved `hue_shift` (deg/s) into the observable [`PaletteShiftSpeed`].
+///
+/// Single source of truth shared by `apply_render_config` (which sets the live
+/// `rs.palette_shift_speed`) and the dirty-state canonical projection. Both MUST
+/// use the same buckets so a clean swap never reads dirty: the runtime only ever
+/// exposes the bucket, so the raw `hue_shift` value must be compared via this map.
+pub fn palette_shift_speed_of(hue_shift: f32) -> PaletteShiftSpeed {
+    if hue_shift <= 0.0 {
+        PaletteShiftSpeed::Off
+    } else if hue_shift <= 10.0 {
+        PaletteShiftSpeed::Slow
+    } else if hue_shift <= 30.0 {
+        PaletteShiftSpeed::Medium
+    } else {
+        PaletteShiftSpeed::Fast
     }
 }
 
@@ -180,6 +216,34 @@ impl WindDirection {
         }
     }
 
+    /// Derive the nearest coarse direction label from a precise wind vector.
+    ///
+    /// Display-only: snaps the (dx, dy) vector to one of the eight compass
+    /// directions for the dashboard label. The precise vector itself lives in
+    /// `RuntimeState::wind` and is never reconstructed from this label.
+    pub fn from_wind(wind: Option<Wind>) -> Self {
+        let Some(w) = wind else {
+            return WindDirection::None;
+        };
+        if w.dx == 0.0 && w.dy == 0.0 {
+            return WindDirection::None;
+        }
+        // Angle measured with +x = East, +y = South (screen coords).
+        let angle = w.dy.atan2(w.dx).to_degrees();
+        // Normalize to [0, 360): 0=E, 90=S, 180=W, 270=N.
+        let norm = ((angle % 360.0) + 360.0) % 360.0;
+        match (norm / 45.0).round() as i32 % 8 {
+            0 => WindDirection::East,
+            1 => WindDirection::Southeast,
+            2 => WindDirection::South,
+            3 => WindDirection::Southwest,
+            4 => WindDirection::West,
+            5 => WindDirection::Northwest,
+            6 => WindDirection::North,
+            _ => WindDirection::Northeast,
+        }
+    }
+
     /// Returns the display name of the direction.
     pub fn name(&self) -> &'static str {
         match self {
@@ -217,10 +281,10 @@ pub enum ControlAction {
     TogglePause,
     /// Restart simulation with new seed.
     Restart,
-    /// Apply a preset configuration.
-    SetPreset(Preset),
-    /// Show preset comparison overlay.
-    ComparePreset(Preset),
+    /// Resolve a number-row quick-key (`1`-`7`) against the merged keybind map.
+    QuickKey(char),
+    /// Resolve a shifted number key for A/B comparison (carries the base digit).
+    CompareQuickKey(char),
     /// Adjust simulation speed.
     AdjustTimeScale(f32),
     /// Cycle to next color palette.
@@ -429,6 +493,22 @@ impl DefaultValues {
     /// Create default values from a preset.
     pub fn from_preset(preset: Preset) -> Self {
         let config = SimConfig::from(preset);
+        let auto_normalize = crate::render_art_defaults::RenderArtDefaults::from(preset)
+            .auto_normalize
+            .unwrap_or(false);
+        Self::from_sim_config(&config, auto_normalize)
+    }
+
+    /// Create default values from a saved config (resolves its overrides).
+    pub fn from_config(profile: &crate::config_manager::NamedProfile) -> Self {
+        match profile.overrides.resolve() {
+            Ok(p) => Self::from_sim_config(&p.sim, p.render.auto_normalize),
+            Err(_) => Self::from_preset(Preset::Organic),
+        }
+    }
+
+    /// Shared core: build display defaults from a resolved `SimConfig`.
+    pub(crate) fn from_sim_config(config: &SimConfig, auto_normalize: bool) -> Self {
         Self {
             sensor_angle: config.sensor_angle,
             sensor_distance: config.sensor_distance,
@@ -457,11 +537,20 @@ impl DefaultValues {
             },
             terrain_type: config.terrain,
             terrain_strength: config.terrain_strength,
-            auto_normalize: false,
+            auto_normalize,
             motion_blur_frames: 0,
             max_brightness: config.max_brightness,
         }
     }
+}
+
+/// What the A/B comparison overlay compares the live state against.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ComparisonTarget {
+    /// A built-in preset.
+    Preset(Preset),
+    /// A saved config (carries its resolved overrides + label).
+    Config(Box<crate::config_manager::NamedProfile>),
 }
 
 #[derive(Debug, Clone)]
@@ -474,14 +563,16 @@ pub struct RuntimeState {
     /// Centralized open/close state for all overlays (controls, hints,
     /// dashboard, config browser/save, preset comparison, palette editor).
     pub overlay_state: OverlayState,
-    /// Preset being compared against.
-    pub comparison_preset: Preset,
+    /// Target being compared against in the A/B overlay.
+    pub comparison_target: ComparisonTarget,
     /// Current category tab in controls overlay.
     pub controls_category_idx: usize,
     /// Time scale multiplier.
     pub time_scale: f32,
     /// Currently active preset.
     pub current_preset: Preset,
+    /// Provenance of the currently-applied profile (preset / saved config / CLI).
+    pub(crate) active_source: crate::profile::ProfileSource,
     /// Index of current palette.
     pub palette_index: usize,
     /// Index of current charset.
@@ -566,6 +657,12 @@ pub struct RuntimeState {
     pub notification: Option<(String, std::time::Instant, NotificationLevel)>,
     /// Frame counter for entropy collapse detection.
     pub collapse_frame_counter: usize,
+    /// Frame counter for stagnation collapse detection (a near-static pattern
+    /// that no longer changes, even when entropy is healthy).
+    pub stagnation_frame_counter: usize,
+    /// Sampled trail values from the previous frame, used to measure
+    /// frame-to-frame change for stagnation detection.
+    pub prev_trail_sample: Vec<f32>,
     /// Warmup frame counter.
     pub warmup_counter: usize,
     /// Food persistence counter.
@@ -580,16 +677,27 @@ pub struct RuntimeState {
     pub config_save_name_input: String,
     /// Default values for reset.
     pub default_values: DefaultValues,
-    /// CLI overrides for custom parameters (stored when launched with CLI args).
-    pub cli_overrides: Option<SimConfig>,
-    /// Render-layer parameters captured at launch, restored by `reset_to_defaults`.
-    /// (`cli_overrides: SimConfig` covers sim-layer params; these cover the render layer.)
-    initial_palette_index: usize,
-    initial_charset_index: usize,
-    initial_color_aa:
-        [crate::render::antialiasing::AaStrength; crate::render::charset::NUM_CHARSETS],
-    initial_intensity_mapping: IntensityMapping,
-    initial_window_frame: WindowFrame,
+    /// Application-runtime config (warmup / auto-reset / grid / food-persist).
+    /// The single live source of truth for restart-only levers the runner reads.
+    pub(crate) app: crate::app_config::AppRuntimeConfig,
+    /// Precise wind vector mirrored from the sim config. LOSSLESS — preserves
+    /// diagonals and magnitude that the coarse `wind_direction` label drops.
+    pub wind: Option<Wind>,
+    /// Exact active palette (incl. `Custom`/`CustomAscii`). Drives the renderer so
+    /// custom palettes survive a load instead of falling back to the index palette.
+    pub live_palette: Palette,
+    /// Exact active charset (incl. `Custom`/`CustomAscii`).
+    pub live_charset: Charset,
+    /// The authored overrides describing the currently-active profile. Committed
+    /// only after a successful apply so failed loads never leave stale provenance.
+    pub(crate) active_overrides: crate::profile_overrides::ProfileOverrides,
+    /// A swap the user requested while live edits were dirty, parked until the
+    /// dirty-state guard overlay is confirmed (Enter → do the swap) or cancelled
+    /// (Esc → cleared). `None` whenever the guard is not pending.
+    pub(crate) pending_swap: Option<PendingSwap>,
+    /// Render config snapshot captured at launch and after every baseline change;
+    /// restored by `apply_render_config` in the `ResetToDefaults` handler.
+    pub(crate) baseline_render: crate::render_art_defaults::ResolvedRenderConfig,
     /// Undo history stack.
     pub undo_stack: std::collections::VecDeque<ParameterState>,
     /// Redo history stack.
@@ -674,11 +782,8 @@ impl RuntimeState {
         seed: u64,
         init_mode: InitMode,
         initial_preset: Preset,
-        initial_palette_index: usize,
-        initial_charset_index: usize,
         mouse_mode: MouseInteractionMode,
         mouse_timeout: f32,
-        intensity_mapping: IntensityMapping,
         cli_config: &SimConfig,
         pause_style: PauseStyle,
         pause_logo_enabled: bool,
@@ -689,12 +794,13 @@ impl RuntimeState {
             is_paused: false,
             pause_just_toggled: false,
             overlay_state: OverlayState::default(),
-            comparison_preset: initial_preset,
+            comparison_target: ComparisonTarget::Preset(initial_preset),
             controls_category_idx: 0,
             time_scale: cli_config.time_scale,
             current_preset: initial_preset,
-            palette_index: initial_palette_index,
-            charset_index: initial_charset_index,
+            active_source: crate::profile::ProfileSource::StartupCli,
+            palette_index: 0,
+            charset_index: 0,
             color_aa: crate::config_defaults::DEFAULT_COLOR_AA,
             original_seed: seed,
             original_init_mode: init_mode,
@@ -753,11 +859,13 @@ impl RuntimeState {
             palette_shift_speed: PaletteShiftSpeed::Off,
             invert_palette: false,
             reverse_palette: false,
-            intensity_mapping: intensity_mapping.clone(),
-            intensity_mapping_index: Self::find_intensity_mapping_index(&intensity_mapping),
+            intensity_mapping: crate::render::palette::IntensityMapping::linear(),
+            intensity_mapping_index: 0,
             saved_palette_name: None,
             notification: None,
             collapse_frame_counter: 0,
+            stagnation_frame_counter: 0,
+            prev_trail_sample: Vec::new(),
             warmup_counter: 0,
             food_persist_counter: 0,
             food_persist_enabled: false,
@@ -765,12 +873,13 @@ impl RuntimeState {
             config_browser_selected_index: 0,
             config_save_name_input: String::new(),
             default_values,
-            cli_overrides: Some(cli_config.clone()),
-            initial_palette_index,
-            initial_charset_index,
-            initial_color_aa: crate::config_defaults::DEFAULT_COLOR_AA,
-            initial_intensity_mapping: intensity_mapping.clone(),
-            initial_window_frame: cli_config.window_frame,
+            app: crate::app_config::AppRuntimeConfig::default(),
+            wind: cli_config.wind,
+            live_palette: Palette::Organic,
+            live_charset: Charset::HalfBlock,
+            active_overrides: crate::profile_overrides::ProfileOverrides::default(),
+            pending_swap: None,
+            baseline_render: crate::render_art_defaults::ResolvedRenderConfig::default(),
             undo_stack: std::collections::VecDeque::with_capacity(50),
             redo_stack: std::collections::VecDeque::with_capacity(50),
             last_checkpoint_time: std::time::Instant::now(),
@@ -800,8 +909,8 @@ impl RuntimeState {
             temporal_accent: None,
             afterglow: 0.0,
             afterglow_rate: 0.05,
-            decay_gamma: 1.0,
-            diffuse_weight: 1.0,
+            decay_gamma: cli_config.decay_gamma,
+            diffuse_weight: cli_config.diffuse_weight,
             deposit_curve: cli_config.deposit_curve,
             deposit_scale: cli_config.deposit_scale,
             deposit_gamma: cli_config.deposit_gamma,
@@ -809,6 +918,55 @@ impl RuntimeState {
             palette_cycle: crate::render::palette::PaletteCycle::default(),
             glyph: crate::render::charset::GlyphConfig::default(),
         }
+    }
+
+    /// Stores the resolved render config as the baseline for reset.
+    pub(crate) fn set_render_baseline(
+        &mut self,
+        r: crate::render_art_defaults::ResolvedRenderConfig,
+    ) {
+        self.baseline_render = r;
+    }
+
+    /// Mirror the sim-side levers from a `SimConfig` into runtime state.
+    ///
+    /// This is the single source of truth for "what RuntimeState reflects from the
+    /// sim config" — used by `apply_overrides` so a load/swap pushes every sim lever
+    /// into the live-adjustable mirror. It writes ONLY sim-mirror fields.
+    ///
+    /// Wind is preserved LOSSLESSLY: `self.wind = sim.wind` verbatim (the coarse
+    /// `wind_direction` label is derived for display only and never round-trips the
+    /// precise vector).
+    pub(crate) fn sync_sim_levers(&mut self, sim: &SimConfig) {
+        self.sensor_angle = sim.sensor_angle;
+        self.sensor_distance = sim.sensor_distance;
+        self.rotation_angle = sim.rotation_angle;
+        self.step_size = sim.step_size;
+        self.decay_factor = sim.decay_factor;
+        self.deposit_amount = sim.deposit_amount;
+        self.diffusion_kernel = sim.diffusion_kernel;
+        self.diffusion_sigma = sim.diffusion_sigma;
+        self.attractor_strength = sim.attractor_strength;
+        self.terrain_type = sim.terrain;
+        self.terrain_strength = sim.terrain_strength;
+        self.max_brightness = sim.max_brightness;
+        self.decay_gamma = sim.decay_gamma;
+        self.diffuse_weight = sim.diffuse_weight;
+        self.deposit_curve = sim.deposit_curve;
+        self.deposit_scale = sim.deposit_scale;
+        self.deposit_gamma = sim.deposit_gamma;
+        self.deposit_cap = sim.deposit_cap;
+        self.time_scale = sim.time_scale;
+        self.window_frame = sim.window_frame;
+        self.chrome_style = sim.chrome_style;
+        self.aspect = sim.aspect;
+        self.window_padding = sim.window_padding;
+        self.show_status_bar = sim.show_status_bar;
+        self.min_sim_size = sim.min_sim_size;
+        self.min_frame_size = sim.min_frame_size;
+        // LOSSLESS wind: store the precise vector; derive the coarse label for display.
+        self.wind = sim.wind;
+        self.wind_direction = WindDirection::from_wind(sim.wind);
     }
 
     /// Captures the current state of parameters for undo.
@@ -861,6 +1019,8 @@ impl RuntimeState {
         self.motion_blur_frames = state.motion_blur_frames;
         self.window_frame = state.window_frame;
         self.color_aa = state.color_aa;
+        // Keep the exact live palette/charset in step with the restored indices.
+        self.sync_live_from_index();
     }
 
     /// Creates an undo checkpoint if enough time has passed.
@@ -961,15 +1121,15 @@ impl RuntimeState {
         self.overlay_state.toggle(OverlayType::KeyboardHints);
     }
 
-    /// Toggles the preset comparison overlay.
-    pub fn toggle_preset_comparison(&mut self, preset: Preset) {
+    /// Toggles the comparison overlay against the given target.
+    pub fn toggle_comparison(&mut self, target: ComparisonTarget) {
         if self.overlay_state.is_open(OverlayType::PresetComparison)
-            && self.comparison_preset == preset
+            && self.comparison_target == target
         {
             self.overlay_state.close();
         } else {
             self.overlay_state.open(OverlayType::PresetComparison);
-            self.comparison_preset = preset;
+            self.comparison_target = target;
         }
     }
 
@@ -1047,7 +1207,7 @@ impl RuntimeState {
 
     /// Finds the index of a given intensity mapping by comparing with presets.
     /// Returns 0 if no match found (falls back to Linear).
-    fn find_intensity_mapping_index(mapping: &IntensityMapping) -> usize {
+    pub(crate) fn find_intensity_mapping_index(mapping: &IntensityMapping) -> usize {
         for (i, (_, factory)) in Self::INTENSITY_MAPPINGS.iter().enumerate() {
             if &factory() == mapping {
                 return i;
@@ -1073,10 +1233,20 @@ impl RuntimeState {
         Self::INTENSITY_MAPPINGS[self.intensity_mapping_index].0
     }
 
+    /// Sync the exact `live_palette`/`live_charset` from the current indices.
+    ///
+    /// Cycling moves to a built-in palette/charset, so the live value tracks the
+    /// index. Custom values are only ever set by the apply path, never by cycling.
+    fn sync_live_from_index(&mut self) {
+        self.live_palette = ALL_PALETTES[self.palette_index].clone();
+        self.live_charset = ALL_CHARSETS[self.charset_index].clone();
+    }
+
     /// Cycles to the next color palette.
     pub fn cycle_palette(&mut self, num_palettes: usize) {
         self.force_checkpoint();
         self.palette_index = (self.palette_index + 1) % num_palettes;
+        self.sync_live_from_index();
     }
 
     /// Cycles to the previous color palette.
@@ -1087,12 +1257,14 @@ impl RuntimeState {
         } else {
             self.palette_index -= 1;
         }
+        self.sync_live_from_index();
     }
 
     /// Cycles to the next charset.
     pub fn cycle_charset(&mut self) {
         self.force_checkpoint();
         self.charset_index = (self.charset_index + 1) % ALL_CHARSETS.len();
+        self.sync_live_from_index();
     }
 
     /// Cycles to the previous charset.
@@ -1103,17 +1275,16 @@ impl RuntimeState {
         } else {
             self.charset_index -= 1;
         }
+        self.sync_live_from_index();
     }
 
     /// Cycles to the next window frame mode.
     pub fn cycle_window_frame(&mut self) {
         self.force_checkpoint();
         self.window_frame = match self.window_frame {
-            WindowFrame::None => WindowFrame::Negative,
-            WindowFrame::Negative => WindowFrame::Accented,
+            WindowFrame::None => WindowFrame::Accented,
             WindowFrame::Accented => WindowFrame::Glow,
-            WindowFrame::Glow => WindowFrame::Reactive,
-            WindowFrame::Reactive => WindowFrame::Frame,
+            WindowFrame::Glow => WindowFrame::Frame,
             WindowFrame::Frame => WindowFrame::None,
         };
     }
@@ -1123,11 +1294,9 @@ impl RuntimeState {
         self.force_checkpoint();
         self.window_frame = match self.window_frame {
             WindowFrame::None => WindowFrame::Frame,
-            WindowFrame::Negative => WindowFrame::None,
-            WindowFrame::Accented => WindowFrame::Negative,
+            WindowFrame::Accented => WindowFrame::None,
             WindowFrame::Glow => WindowFrame::Accented,
-            WindowFrame::Reactive => WindowFrame::Glow,
-            WindowFrame::Frame => WindowFrame::Reactive,
+            WindowFrame::Frame => WindowFrame::Glow,
         };
     }
 
@@ -1165,7 +1334,42 @@ impl RuntimeState {
     pub fn apply_cli_color_aa(&mut self, aa: crate::render::antialiasing::AaStrength) {
         let i = self.charset_index;
         self.color_aa[i] = aa;
-        self.initial_color_aa[i] = aa;
+    }
+
+    /// Restore per-charset color-AA from a `ProfileOverrides`.
+    ///
+    /// Priority: `color_aa_all` (full array) > `color_aa` (active-slot scalar) > leave defaults.
+    /// The caller must then push `rs.current_color_aa()` into the renderer.
+    pub fn apply_color_aa_all(&mut self, ov: &crate::profile_overrides::ProfileOverrides) {
+        if let Some(ref all) = ov.color_aa_all {
+            for (slot, aa) in self.color_aa.iter_mut().zip(all.iter()) {
+                *slot = *aa;
+            }
+        } else if let Some(aa) = ov.color_aa {
+            let i = self.charset_index % self.color_aa.len();
+            self.color_aa[i] = aa;
+        }
+        // else: leave all slots at their current defaults
+    }
+
+    /// Returns true when the live session has diverged from `active_overrides`
+    /// in a way that would be lost by an unguarded swap (preset/config/reset).
+    ///
+    /// Dirty is a CANONICAL-PROJECTION compare ([P1]), NOT resolved-`Profile`
+    /// equality: the live state is captured into a [`ProfileOverrides`] and both it
+    /// and `active_overrides` are run through
+    /// [`project`](crate::profile_overrides::project), which folds in the apply-only
+    /// flags (reverse/invert/food_persist), reproduces the per-charset color-AA
+    /// array, and buckets `hue_shift`. A resolve error on EITHER side is treated as
+    /// dirty so a swap prompts rather than silently discarding edits.
+    pub(crate) fn is_dirty(&self, sim: &SimConfig, palette: Palette, charset: Charset) -> bool {
+        let live = crate::config_manager::capture_overrides(sim, palette, charset, self);
+        use crate::profile_overrides::project;
+        match (project(&live), project(&self.active_overrides)) {
+            (Ok(a), Ok(b)) => a != b,
+            // resolve error → prompt rather than silently discard
+            _ => true,
+        }
     }
 
     /// Cycle the active charset's color-AA strength. No-op (returns false) when
@@ -1554,70 +1758,14 @@ impl RuntimeState {
         }
     }
 
-    /// Resets all parameters to default values.
-    /// If CLI overrides are available, restores those; otherwise uses preset defaults.
-    pub fn reset_to_defaults(&mut self) {
+    /// Resets the non-lever transient flags that the `apply_overrides` seam does not touch.
+    /// The caller must call `apply_overrides(active_overrides, …, restart: true)` after this
+    /// to restore all sim/render/app levers and trigger a fresh trail restart.
+    pub fn reset_transient(&mut self) {
         self.force_checkpoint();
-
-        if let Some(ref cli) = self.cli_overrides {
-            self.sensor_angle = cli.sensor_angle;
-            self.sensor_distance = cli.sensor_distance;
-            self.rotation_angle = cli.rotation_angle;
-            self.step_size = cli.step_size;
-            self.decay_factor = cli.decay_factor;
-            self.deposit_amount = cli.deposit_amount;
-            self.diffusion_kernel = cli.diffusion_kernel;
-            self.diffusion_sigma = cli.diffusion_sigma;
-            self.attractor_strength = cli.attractor_strength;
-            self.wind_direction = match cli.wind {
-                None => WindDirection::None,
-                Some(w) => {
-                    if w.dx > 0.0 && w.dy == 0.0 {
-                        WindDirection::East
-                    } else if w.dx < 0.0 && w.dy == 0.0 {
-                        WindDirection::West
-                    } else if w.dx == 0.0 && w.dy < 0.0 {
-                        WindDirection::North
-                    } else if w.dx == 0.0 && w.dy > 0.0 {
-                        WindDirection::South
-                    } else {
-                        WindDirection::None
-                    }
-                }
-            };
-            self.terrain_type = cli.terrain;
-            self.terrain_strength = cli.terrain_strength;
-            self.max_brightness = cli.max_brightness;
-            self.time_scale = cli.time_scale;
-        } else {
-            let defaults = self.default_values;
-            self.sensor_angle = defaults.sensor_angle;
-            self.sensor_distance = defaults.sensor_distance;
-            self.rotation_angle = defaults.rotation_angle;
-            self.step_size = defaults.step_size;
-            self.decay_factor = defaults.decay_factor;
-            self.deposit_amount = defaults.deposit_amount;
-            self.diffusion_kernel = defaults.diffusion_kernel;
-            self.diffusion_sigma = defaults.diffusion_sigma;
-            self.attractor_strength = defaults.attractor_strength;
-            self.wind_direction = defaults.wind_direction;
-            self.terrain_type = defaults.terrain_type;
-            self.terrain_strength = defaults.terrain_strength;
-            self.max_brightness = defaults.max_brightness;
-        }
-        // Restore render-layer params to their launch values.
-        self.palette_index = self.initial_palette_index;
-        self.charset_index = self.initial_charset_index;
-        self.color_aa = self.initial_color_aa;
-        self.intensity_mapping = self.initial_intensity_mapping.clone();
-        self.intensity_mapping_index = Self::find_intensity_mapping_index(&self.intensity_mapping);
-        self.window_frame = self.initial_window_frame;
         self.auto_normalize = false;
         self.motion_blur_frames = 0;
         self.fast_mode_enabled = false;
-        self.palette_shift_speed = PaletteShiftSpeed::Off;
-        self.invert_palette = false;
-        self.reverse_palette = false;
     }
 
     /// Randomizes simulation parameters.
@@ -1646,6 +1794,7 @@ impl RuntimeState {
         self.terrain_strength = rng.gen_range(0.5..3.0);
 
         self.palette_index = rng.gen_range(0..ALL_PALETTES.len());
+        self.live_palette = ALL_PALETTES[self.palette_index].clone();
         self.max_brightness = rng.gen_range(10.0..40.0);
     }
 
@@ -1717,9 +1866,16 @@ impl RuntimeState {
 
     /// Tracks entropy for collapse detection.
     ///
-    /// Returns true if collapse detected (entropy > threshold for duration).
+    /// Collapse = the trail's brightness-value entropy (see
+    /// `DashboardOverlay::calculate_entropy`, range 0..8) drops *below* `threshold`
+    /// and stays there for `duration_frames`. A healthy pattern sits high (~4-6); a
+    /// dead/uniform field falls toward 0. Returns true once collapse is sustained.
+    ///
+    /// NOTE: the comparison is `<` (low entropy = collapse). An earlier `>` fired on
+    /// every healthy frame (entropy ~4-6 always exceeds the 0.95 default), which made
+    /// auto-reset presets (Constellation) restart roughly every `duration_frames`.
     pub fn track_entropy(&mut self, entropy: f32, threshold: f32, duration_frames: usize) -> bool {
-        if entropy > threshold {
+        if entropy < threshold {
             self.collapse_frame_counter += 1;
             self.collapse_frame_counter >= duration_frames
         } else {
@@ -1728,9 +1884,55 @@ impl RuntimeState {
         }
     }
 
-    /// Resets the collapse frame counter.
+    /// Tracks pattern stagnation for collapse detection.
+    ///
+    /// A pattern can survive entropy-collapse detection while being visually
+    /// dead — e.g. a near-static diagonal line that no longer evolves. This
+    /// detector samples the trail map at a fixed stride and measures the mean
+    /// frame-to-frame change, normalized by the signal magnitude so the
+    /// threshold is scale-independent. When that relative change stays below
+    /// `epsilon` for `duration_frames`, the pattern is considered collapsed.
+    ///
+    /// Returns true once stagnation is sustained for the full duration.
+    pub fn track_stagnation(
+        &mut self,
+        blended: &[f32],
+        epsilon: f32,
+        duration_frames: usize,
+    ) -> bool {
+        const STRIDE: usize = 64;
+        let sample: Vec<f32> = blended.iter().step_by(STRIDE).copied().collect();
+
+        let stagnant = if !sample.is_empty() && self.prev_trail_sample.len() == sample.len() {
+            let mut sum_abs = 0.0f32;
+            let mut max_mag = 1e-6f32;
+            for (cur, prev) in sample.iter().zip(self.prev_trail_sample.iter()) {
+                sum_abs += (cur - prev).abs();
+                max_mag = max_mag.max(cur.abs());
+            }
+            let mean_change = sum_abs / sample.len() as f32;
+            (mean_change / max_mag) < epsilon
+        } else {
+            // First frame (or a resize changed the sample length): can't compare.
+            false
+        };
+
+        self.prev_trail_sample = sample;
+
+        if stagnant {
+            self.stagnation_frame_counter += 1;
+            self.stagnation_frame_counter >= duration_frames
+        } else {
+            self.stagnation_frame_counter = 0;
+            false
+        }
+    }
+
+    /// Resets the collapse frame counters (entropy + stagnation).
     pub fn reset_collapse_counter(&mut self) {
         self.collapse_frame_counter = 0;
+        self.stagnation_frame_counter = 0;
+        self.prev_trail_sample.clear();
     }
 
     /// Updates statistics history buffers.
@@ -1763,11 +1965,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Network,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             0.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -1776,17 +1975,15 @@ mod tests {
     }
 
     #[test]
-    fn reset_to_defaults_restores_initial_charset_and_window_frame() {
-        use crate::simulation::config::WindowFrame;
+    fn reset_transient_clears_transient_flags() {
         let mut rs = create_test_runtime_state();
-        let initial_charset = rs.charset_index;
-        let initial_frame = rs.window_frame; // Frame, from SimConfig::default()
-                                             // Simulate runtime changes:
-        rs.charset_index = (rs.charset_index + 1) % ALL_CHARSETS.len();
-        rs.window_frame = WindowFrame::Negative; // differs from the Frame launch default
-        rs.reset_to_defaults();
-        assert_eq!(rs.charset_index, initial_charset);
-        assert_eq!(rs.window_frame, initial_frame);
+        rs.auto_normalize = true;
+        rs.motion_blur_frames = 5;
+        rs.fast_mode_enabled = true;
+        rs.reset_transient();
+        assert!(!rs.auto_normalize);
+        assert_eq!(rs.motion_blur_frames, 0);
+        assert!(!rs.fast_mode_enabled);
     }
 
     #[test]
@@ -1937,11 +2134,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -1959,11 +2153,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -1988,11 +2179,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -2011,11 +2199,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -2035,20 +2220,37 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
             false,
         );
-        assert!(!state.track_entropy(5.0, 10.0, 5));
-        assert!(state.track_entropy(15.0, 10.0, 1));
+        // Collapse = entropy BELOW threshold. Above-threshold (healthy) never fires
+        // and resets the counter; sustained below-threshold fires.
+        assert!(!state.track_entropy(15.0, 10.0, 5)); // above threshold → healthy
+        assert!(state.track_entropy(5.0, 10.0, 1)); // below threshold → collapse
         state.reset_collapse_counter();
         assert_eq!(state.collapse_frame_counter, 0);
+    }
+
+    #[test]
+    fn test_runtime_state_stagnation_tracking() {
+        let mut state = create_test_runtime_state();
+        let static_frame = vec![0.5f32; 256];
+
+        // First call seeds the previous sample (can't compare yet).
+        assert!(!state.track_stagnation(&static_frame, 0.004, 3));
+        // Identical frames → zero change → stagnant; fires after duration.
+        assert!(!state.track_stagnation(&static_frame, 0.004, 3));
+        assert!(!state.track_stagnation(&static_frame, 0.004, 3));
+        assert!(state.track_stagnation(&static_frame, 0.004, 3));
+
+        // A frame that changes substantially resets the stagnation counter.
+        let moving_frame = vec![0.9f32; 256];
+        assert!(!state.track_stagnation(&moving_frame, 0.004, 3));
+        assert_eq!(state.stagnation_frame_counter, 0);
     }
 
     #[test]
@@ -2057,11 +2259,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -2081,11 +2280,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -2107,9 +2303,9 @@ mod tests {
         state.toggle_keyboard_hints();
         assert!(!state.overlay_state.is_open(OverlayType::KeyboardHints));
 
-        state.toggle_preset_comparison(Preset::Network);
+        state.toggle_comparison(ComparisonTarget::Preset(Preset::Network));
         assert!(state.overlay_state.is_open(OverlayType::PresetComparison));
-        state.toggle_preset_comparison(Preset::Network);
+        state.toggle_comparison(ComparisonTarget::Preset(Preset::Network));
         assert!(!state.overlay_state.is_open(OverlayType::PresetComparison));
 
         assert!(!state.any_overlay_open());
@@ -2162,11 +2358,8 @@ mod tests {
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             MouseInteractionMode::Disabled,
             3.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -2378,14 +2571,12 @@ mod tests {
     }
 
     #[test]
-    fn reset_restores_initial_color_aa() {
+    fn apply_cli_color_aa_sets_current_charset_aa() {
         use crate::render::antialiasing::AaStrength;
         let mut rs = create_test_runtime_state();
         rs.charset_index = 4;
-        rs.cycle_color_aa();
-        rs.reset_to_defaults();
-        assert_eq!(rs.color_aa[4], AaStrength::Off);
-        assert_eq!(rs.color_aa[3], AaStrength::Strong);
+        rs.apply_cli_color_aa(AaStrength::Subtle);
+        assert_eq!(rs.color_aa[4], AaStrength::Subtle);
     }
 
     #[test]
@@ -2403,5 +2594,398 @@ mod tests {
         let north = WindDirection::North.to_wind().unwrap();
         assert_eq!(north.dx, 0.0);
         assert_eq!(north.dy, -1.0);
+    }
+
+    #[test]
+    fn reset_transient_does_not_touch_color_aa_slots() {
+        use crate::render::antialiasing::AaStrength;
+        // reset_transient is scoped to transient flags; color_aa is a lever restored
+        // by the apply_overrides seam, not by reset_transient itself.
+        let mut rs = create_test_runtime_state();
+        rs.charset_index = 0;
+        let braille_default = crate::config_defaults::DEFAULT_COLOR_AA[3];
+        let non_default = if braille_default == AaStrength::Strong {
+            AaStrength::Off
+        } else {
+            AaStrength::Strong
+        };
+        rs.color_aa[3] = non_default;
+        assert_eq!(rs.color_aa[3], non_default);
+
+        rs.reset_transient();
+
+        // reset_transient must NOT change color_aa — the seam owns that.
+        assert_eq!(
+            rs.color_aa[3], non_default,
+            "reset_transient must not restore color_aa; the seam does that"
+        );
+    }
+
+    #[test]
+    fn runtime_state_defaults_active_source_to_startup_cli() {
+        // RuntimeState::new always initialises active_source to StartupCli;
+        // runner.rs overrides it when args.preset is Some(_).
+        let rs = create_test_runtime_state();
+        assert_eq!(rs.active_source, crate::profile::ProfileSource::StartupCli);
+    }
+
+    /// `reset_transient` only touches the three transient flags; it does NOT clobber
+    /// `active_overrides`.  After a successful preset switch, the caller commits
+    /// the new `ProfileOverrides` to `rs.active_overrides` and then may call
+    /// `reset_transient()`.  The contract is that `active_overrides` survives so
+    /// the subsequent `apply_overrides` call can read it back.
+    #[test]
+    fn reset_reproduces_active_overrides() {
+        use crate::profile_overrides::ProfileOverrides;
+        use crate::simulation::config::Preset;
+
+        let mut rs = create_test_runtime_state();
+
+        // Commit a bare-preset override (as switch_preset does after apply).
+        let bare_ov = ProfileOverrides {
+            preset: Some(Preset::Organic),
+            ..Default::default()
+        };
+        rs.active_overrides = bare_ov.clone();
+
+        // Simulate transient state accumulated since last switch.
+        rs.auto_normalize = true;
+        rs.motion_blur_frames = 5;
+        rs.fast_mode_enabled = true;
+
+        // reset_transient clears transient flags but must not touch active_overrides.
+        rs.reset_transient();
+
+        assert!(
+            !rs.auto_normalize,
+            "reset_transient must clear auto_normalize"
+        );
+        assert_eq!(
+            rs.motion_blur_frames, 0,
+            "reset_transient must clear motion_blur_frames"
+        );
+        assert!(
+            !rs.fast_mode_enabled,
+            "reset_transient must clear fast_mode_enabled"
+        );
+        assert_eq!(
+            rs.active_overrides, bare_ov,
+            "reset_transient must not modify active_overrides"
+        );
+    }
+
+    // ── Dirty-state guard ([P1] canonical projection) ──────────────────────────
+
+    /// Builds a CLEAN session for `active_overrides`: resolves the overrides and
+    /// writes every captured field into rs/sim exactly as startup would, then
+    /// commits `active_overrides`. The returned `(rs, sim_config)` is what a fresh,
+    /// UNEDITED session looks like — `is_dirty` MUST be false for it. Mirrors the
+    /// resolve half of the apply seam (no renderer needed).
+    fn clean_session(ov: crate::profile_overrides::ProfileOverrides) -> (RuntimeState, SimConfig) {
+        let profile = ov.resolve().expect("active_overrides must resolve");
+        let sim_config = profile.sim.clone();
+        let mut rs = create_test_runtime_state();
+
+        // Mirror the apply seam's RESOLVED writes: resolve() expands preset-derived
+        // render/sim levers, and capture_overrides reads these rs fields, so a
+        // faithful clean session must carry the resolved values.
+
+        // Sim-side levers capture reads from rs (not from sim_config).
+        rs.decay_gamma = sim_config.decay_gamma;
+        rs.diffuse_weight = sim_config.diffuse_weight;
+        rs.deposit_curve = sim_config.deposit_curve;
+        rs.deposit_scale = sim_config.deposit_scale;
+        rs.deposit_gamma = sim_config.deposit_gamma;
+        rs.deposit_cap = sim_config.deposit_cap;
+
+        // Render fields the seam writes through apply_render_config.
+        let r = &profile.render;
+        rs.live_palette = r.palette.clone();
+        rs.live_charset = r.charset.clone();
+        rs.charset_index = ALL_CHARSETS
+            .iter()
+            .position(|c| *c == r.charset)
+            .unwrap_or(0);
+        // color_aa: the active charset's slot carries the resolved scalar over defaults.
+        rs.color_aa = crate::config_defaults::DEFAULT_COLOR_AA;
+        rs.color_aa[rs.charset_index] = r.color_aa;
+        rs.palette_shift_speed = palette_shift_speed_of(r.hue_shift);
+        rs.intensity_mapping = r.intensity_mapping.clone();
+        rs.palette_cycle = r.palette_cycle;
+        rs.glyph = r.glyph;
+        rs.temporal_color = r.temporal_color;
+        rs.temporal_lag_frames = r.temporal_lag_frames;
+        rs.temporal_mode = r.temporal_mode;
+        rs.temporal_accent = r.temporal_accent;
+        rs.afterglow = r.afterglow;
+        rs.afterglow_rate = r.afterglow_rate;
+        // auto_normalize: the seam writes the resolved flag into rs (apply_render_config);
+        // capture_overrides reads rs.auto_normalize, so the clean mirror must carry it.
+        rs.auto_normalize = r.auto_normalize;
+
+        // App + wind (sourced from the resolved profile / sim).
+        rs.app = profile.app.clone();
+        rs.wind = sim_config.wind;
+
+        rs.active_overrides = ov;
+        (rs, sim_config)
+    }
+
+    /// FALSE-POSITIVE GATE (mandatory): a bare-preset session built by APPLYING
+    /// `active_overrides = {preset: Some(Lumen)}` must NOT read dirty. A failure
+    /// here means capture or projection is INCOMPLETE — fix capture/projection,
+    /// never this test.
+    #[test]
+    fn clean_preset_swap_is_not_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        let ov = ProfileOverrides {
+            preset: Some(Preset::Mold),
+            ..Default::default()
+        };
+        let (rs, sim) = clean_session(ov);
+        assert!(
+            !rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "a freshly-applied bare preset must not read dirty (projection incomplete?)"
+        );
+    }
+
+    /// CLEAN `--color-aa subtle` session: the source carries a scalar `color_aa`,
+    /// live capture re-captures it, and project() must reproduce apply_color_aa_all
+    /// semantics (scalar on the RESOLVED charset slot over defaults) so the two
+    /// sides match — NOT treat the source's absent color_aa_all as defaults.
+    #[test]
+    fn clean_color_aa_scalar_session_is_not_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        use crate::render::antialiasing::AaStrength;
+        let ov = ProfileOverrides {
+            color_aa: Some(AaStrength::Subtle),
+            ..Default::default()
+        };
+        let (rs, sim) = clean_session(ov);
+        assert!(
+            !rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "a clean --color-aa subtle session must not read dirty"
+        );
+    }
+
+    /// Mutating a sim lever (sensor_angle) reads dirty.
+    #[test]
+    fn mutated_is_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        let ov = ProfileOverrides {
+            preset: Some(Preset::Mold),
+            ..Default::default()
+        };
+        let (rs, mut sim) = clean_session(ov);
+        sim.sensor_angle += 7.0;
+        assert!(
+            rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "a bumped sensor_angle must read dirty"
+        );
+    }
+
+    /// Toggling an apply-only flag (reverse_palette) reads dirty — proves the
+    /// projection sees flags that resolved-Profile equality would drop.
+    #[test]
+    fn flag_edit_is_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        let ov = ProfileOverrides {
+            preset: Some(Preset::Mold),
+            ..Default::default()
+        };
+        let (mut rs, sim) = clean_session(ov);
+        rs.reverse_palette = !rs.reverse_palette;
+        assert!(
+            rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "toggling reverse_palette must read dirty (apply-only flag)"
+        );
+    }
+
+    /// Changing the palette-shift SPEED reads dirty (it crosses a bucket boundary),
+    /// but a raw hue_shift difference WITHIN the same bucket does NOT, because both
+    /// sides flow through the `palette_shift_speed_of` bucket.
+    #[test]
+    fn shift_speed_edit_is_dirty_but_intra_bucket_is_not() {
+        use crate::profile_overrides::project;
+        use crate::profile_overrides::ProfileOverrides;
+        // Cross-bucket: Off (0) → Medium (20) reads dirty.
+        let off = ProfileOverrides {
+            hue_shift: Some(0.0),
+            ..Default::default()
+        };
+        let medium = ProfileOverrides {
+            hue_shift: Some(20.0),
+            ..Default::default()
+        };
+        assert_ne!(
+            project(&off).unwrap(),
+            project(&medium).unwrap(),
+            "Off vs Medium hue_shift must project unequal (cross-bucket)"
+        );
+        // Intra-bucket: 16 and 20 are both Medium (≤30, >10) → equal projection.
+        let medium_a = ProfileOverrides {
+            hue_shift: Some(16.0),
+            ..Default::default()
+        };
+        let medium_b = ProfileOverrides {
+            hue_shift: Some(20.0),
+            ..Default::default()
+        };
+        assert_eq!(
+            project(&medium_a).unwrap(),
+            project(&medium_b).unwrap(),
+            "two hue_shifts in the same bucket must project equal (raw value excluded)"
+        );
+    }
+
+    /// StartupCli baseline: with `active_overrides == from_args(--sensor-angle 33)`,
+    /// an UNEDITED session is NOT dirty; it becomes dirty only after an edit.
+    #[test]
+    fn startup_cli_with_overrides_unedited_is_not_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        use clap::Parser;
+        let args = crate::cli::Args::parse_from(["tslime", "--sensor-angle", "33"]);
+        let ov = ProfileOverrides::from_args(&args).expect("from_args");
+        let (rs, sim) = clean_session(ov);
+        assert!(
+            !rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "an unedited --sensor-angle 33 startup session must not read dirty"
+        );
+    }
+
+    /// `pending_swap` parks a requested swap and `take()` hands it back exactly
+    /// once (the confirm path consumes it), mirroring the runner's guard flow.
+    #[test]
+    fn pending_swap_parks_and_takes_once() {
+        let mut rs = create_test_runtime_state();
+        assert!(rs.pending_swap.is_none());
+        rs.pending_swap = Some(PendingSwap::Preset(Preset::Mold));
+        rs.overlay_state.open(OverlayType::DirtyGuard);
+        assert!(rs.overlay_state.is_open(OverlayType::DirtyGuard));
+        assert_eq!(
+            rs.pending_swap.take(),
+            Some(PendingSwap::Preset(Preset::Mold))
+        );
+        assert!(
+            rs.pending_swap.is_none(),
+            "take() must clear the parked swap"
+        );
+    }
+
+    /// The cancel (Escape) path clears `pending_swap` without performing the swap.
+    #[test]
+    fn pending_swap_cancel_clears_without_swapping() {
+        let mut rs = create_test_runtime_state();
+        rs.pending_swap = Some(PendingSwap::Config(Box::new(
+            crate::config_manager::NamedProfile {
+                name: "demo".to_string(),
+                description: None,
+                overrides: Default::default(),
+            },
+        )));
+        rs.overlay_state.open(OverlayType::DirtyGuard);
+        // Mirror the runner's CloseOverlay arm for DirtyGuard.
+        rs.overlay_state.close();
+        rs.pending_swap = None;
+        assert!(rs.pending_swap.is_none());
+        assert!(!rs.overlay_state.is_open(OverlayType::DirtyGuard));
+    }
+
+    #[test]
+    fn startup_cli_with_overrides_dirty_after_edit() {
+        use crate::profile_overrides::ProfileOverrides;
+        use clap::Parser;
+        let args = crate::cli::Args::parse_from(["tslime", "--sensor-angle", "33"]);
+        let ov = ProfileOverrides::from_args(&args).expect("from_args");
+        let (rs, mut sim) = clean_session(ov);
+        sim.sensor_angle = 40.0;
+        assert!(
+            rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "editing sensor_angle away from the startup value must read dirty"
+        );
+    }
+
+    /// FALSE-POSITIVE GATE: a bare-preset session for PetriDish (which carries a
+    /// Circle obstacle in its sim defaults) must NOT read dirty immediately after
+    /// applying the preset.  Before the capture_overrides fix this returned true
+    /// because obstacles: Vec::new() was emitted, causing the live projection to
+    /// resolve to no obstacle while the active side resolved to the preset obstacle.
+    #[test]
+    fn clean_preset_swap_with_obstacles_is_not_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        let ov = ProfileOverrides {
+            preset: Some(Preset::PetriDish),
+            ..Default::default()
+        };
+        let (rs, sim) = clean_session(ov);
+        assert!(
+            !rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "a freshly-applied PetriDish preset (with obstacles) must not read dirty"
+        );
+    }
+
+    /// FALSE-POSITIVE GATE: bare-preset sessions for trail-modulated presets (Slime,
+    /// DynamicTendrils) must NOT read dirty immediately after applying.
+    ///
+    /// Before the project() normalization fix these presets produced a false-positive
+    /// because `SpeciesArg` cannot carry `trail_modulation`, so capture_overrides
+    /// always emitted `None` while the active side resolved to `Some(_)` — causing
+    /// every unedited Slime/Vines/Smoke/Vortex36/DynamicTendrils session to be
+    /// incorrectly flagged dirty.
+    #[test]
+    fn clean_preset_swap_with_trail_modulation_is_not_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+
+        // Slime carries trail_modulation: Some(_) in PresetSimDefaults (line 359).
+        let ov_slime = ProfileOverrides {
+            preset: Some(Preset::Slime),
+            ..Default::default()
+        };
+        let (rs, sim) = clean_session(ov_slime);
+        assert!(
+            !rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "a freshly-applied Slime preset (trail_modulation: Some) must not read dirty"
+        );
+
+        // DynamicTendrils also carries trail_modulation: Some(_) (line 493).
+        let ov_dt = ProfileOverrides {
+            preset: Some(Preset::DynamicTendrils),
+            ..Default::default()
+        };
+        let (rs2, sim2) = clean_session(ov_dt);
+        assert!(
+            !rs2.is_dirty(&sim2, rs2.live_palette.clone(), rs2.live_charset.clone()),
+            "a freshly-applied DynamicTendrils preset (trail_modulation: Some) must not read dirty"
+        );
+    }
+
+    #[test]
+    fn default_values_from_config_resolves_overrides() {
+        use crate::config_manager::NamedProfile;
+        use crate::profile_overrides::ProfileOverrides;
+        let ov = ProfileOverrides {
+            sensor_angle: Some(33.0),
+            ..Default::default()
+        };
+        let profile = NamedProfile {
+            name: "t".to_string(),
+            description: None,
+            overrides: ov,
+        };
+        let dv = DefaultValues::from_config(&profile);
+        assert!((dv.sensor_angle - 33.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn toggle_comparison_sets_target_and_toggles_off() {
+        let mut rs = create_test_runtime_state();
+        rs.toggle_comparison(ComparisonTarget::Preset(Preset::Network));
+        assert!(rs.overlay_state.is_open(OverlayType::PresetComparison));
+        assert_eq!(
+            rs.comparison_target,
+            ComparisonTarget::Preset(Preset::Network)
+        );
+        rs.toggle_comparison(ComparisonTarget::Preset(Preset::Network));
+        assert!(!rs.overlay_state.is_open(OverlayType::PresetComparison));
     }
 }

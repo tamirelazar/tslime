@@ -147,23 +147,26 @@ impl FrameBuffer {
     }
 
     #[cfg(test)]
-    fn get_cell(&self, x: usize, y: usize) -> &Cell {
+    pub(crate) fn get_cell(&self, x: usize, y: usize) -> &Cell {
         &self.cells[y * self.width + x]
     }
 
     /// Renders a window frame onto the frame buffer.
     ///
     /// Uses the provided window frame mode and accent color from the theme.
-    /// The activity parameter is used for reactive mode.
+    /// `background_color` fills the inner separator/negative ring.
     pub fn render_window_frame(
         &mut self,
         mode: crate::simulation::config::WindowFrame,
         accent_color: RgbColor,
-        activity: Option<&[f32]>,
+        background_color: Option<RgbColor>,
+        ring_cols: usize,
+        ring_rows: usize,
     ) {
         use crate::render::window_frame::WindowFrameRenderer;
-        let renderer = WindowFrameRenderer::new(mode, accent_color);
-        renderer.render(self, activity);
+        let renderer =
+            WindowFrameRenderer::new(mode, accent_color, background_color, ring_cols, ring_rows);
+        renderer.render(self);
     }
 
     /// Renders a window frame at an arbitrary position within the buffer.
@@ -180,13 +183,16 @@ impl FrameBuffer {
         y: usize,
         w: usize,
         h: usize,
-        activity: Option<&[f32]>,
+        background_color: Option<RgbColor>,
+        ring_cols: usize,
+        ring_rows: usize,
     ) {
         use crate::render::window_frame::WindowFrameRenderer;
         // Render into a sub-buffer, then blit non-blank cells into self at (x, y)
         let mut sub = Self::new(w, h, self.color_mode, None);
-        let renderer = WindowFrameRenderer::new(mode, accent_color);
-        renderer.render(&mut sub, activity);
+        let renderer =
+            WindowFrameRenderer::new(mode, accent_color, background_color, ring_cols, ring_rows);
+        renderer.render(&mut sub);
         for sy in 0..h {
             for sx in 0..w {
                 let src_cell = &sub.cells[sy * w + sx];
@@ -407,14 +413,14 @@ impl FrameBuffer {
 
         // Draw panel background first if specified
         if let (Some(bg), Some(ind), w) = (panel_bg_color, indicator_color, indicator_width) {
-            if w > 0 && start_y < self.height {
+            if w > 0 && start_y < self.height && start_x < self.width {
                 let panel_width = text_lines
                     .iter()
                     .map(|l| l.as_ref().chars().count())
                     .max()
                     .unwrap_or(0)
                     .saturating_add(start_x)
-                    .min(self.width - start_x);
+                    .min(self.width.saturating_sub(start_x));
 
                 let panel_height = text_lines.len().min(self.height.saturating_sub(start_y));
 
@@ -4480,5 +4486,39 @@ mod tests {
                 "AA-ineligible charset: Strong and Off must produce identical char"
             );
         }
+    }
+
+    /// draw_text_overlay_with_panel must not panic when start_x >= buffer width.
+    ///
+    /// Before the fix, `.min(self.width - start_x)` would underflow (usize subtraction
+    /// wraps) and the function would either panic or corrupt memory.
+    #[test]
+    fn draw_text_overlay_with_panel_start_x_gte_width_no_panic() {
+        let mut buf = FrameBuffer::new(10, 5, crate::cli::ColorMode::TrueColor, None);
+        let lines = ["hello", "world"];
+
+        // start_x exactly equal to width — must return without panic.
+        buf.draw_text_overlay_with_panel(
+            &lines,
+            10, // start_x == width
+            0,
+            231,
+            None,
+            Some(crate::render::palette::RgbColor { r: 0, g: 0, b: 0 }),
+            Some(crate::render::palette::RgbColor { r: 255, g: 0, b: 0 }),
+            1,
+        );
+
+        // start_x beyond width — must also return without panic.
+        buf.draw_text_overlay_with_panel(
+            &lines,
+            999, // start_x >> width
+            0,
+            231,
+            None,
+            Some(crate::render::palette::RgbColor { r: 0, g: 0, b: 0 }),
+            Some(crate::render::palette::RgbColor { r: 255, g: 0, b: 0 }),
+            1,
+        );
     }
 }

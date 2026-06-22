@@ -402,6 +402,13 @@ pub mod grid {
     pub const DEFAULT_GRID_OPACITY: f32 = 0.15;
     /// Default grid line style.
     pub const DEFAULT_GRID_STYLE: &str = "cross";
+    /// Default grid line color as a packed `0xRRGGBB` value (matches
+    /// [`super::palette::DEFAULT_GRID_COLOR`] = "ffffff").
+    pub const DEFAULT_GRID_COLOR_HEX: u32 = 0xffffff;
+    /// Whether the background grid is enabled by default.
+    pub const DEFAULT_GRID_ENABLED: bool = false;
+    /// Whether grid opacity adapts to trail density by default.
+    pub const DEFAULT_GRID_ADAPTIVE: bool = false;
 
     /// Minimum grid size.
     pub const MIN_GRID_SIZE: usize = 1;
@@ -576,6 +583,8 @@ pub mod warmup {
     pub const DEFAULT_WARMUP_FRAMES: usize = 60;
     /// Default brightness multiplier during warmup.
     pub const DEFAULT_BRIGHTNESS_MULTIPLIER: f32 = 2.5;
+    /// Whether the warmup phase is skipped by default.
+    pub const DEFAULT_SKIP_WARMUP: bool = false;
     /// Default decay factor during warmup.
     pub const DEFAULT_DECAY_FACTOR: f32 = 0.99;
     /// Speed multiplier during warmup (30% of normal speed).
@@ -596,10 +605,30 @@ pub mod food_persist {
 
 /// Auto-reset defaults.
 pub mod auto_reset {
+    /// Whether automatic reset on collapse is enabled by default.
+    pub const DEFAULT_AUTO_RESET: bool = false;
     /// Default entropy threshold for collapse detection.
     pub const DEFAULT_ENTROPY_THRESHOLD: f32 = 0.95;
     /// Default number of frames below threshold before reset.
     pub const DEFAULT_DURATION_FRAMES: usize = 90;
+    /// Relative frame-to-frame trail change below which a pattern is considered
+    /// stagnant (static). Normalized by signal magnitude, so this is a fraction:
+    /// 0.0025 ≈ a 0.25% mean change per frame. Kept low (strict) so only a
+    /// nearly-frozen pattern counts — a living sim with subtle motion does not.
+    pub const DEFAULT_STAGNATION_EPSILON: f32 = 0.0025;
+    /// Number of consecutively-stagnant frames before a stagnation reset fires.
+    /// At ~30 FPS this is roughly 60 seconds of a near-frozen pattern — long
+    /// enough to avoid false collapses on slow-but-alive presets.
+    pub const DEFAULT_STAGNATION_FRAMES: usize = 1800;
+}
+
+/// Window-frame background matte defaults (gap between border and simulation).
+pub mod frame_matte {
+    /// Default matte width in columns (left/right). Wider than rows to offset
+    /// the ~1:2 terminal cell aspect so the gap reads as visually even.
+    pub const DEFAULT_COLS: usize = 4;
+    /// Default matte height in rows (top/bottom).
+    pub const DEFAULT_ROWS: usize = 1;
 }
 
 /// Export defaults.

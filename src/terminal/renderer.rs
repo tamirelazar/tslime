@@ -314,6 +314,36 @@ impl TerminalRenderer {
         self.color_aa = aa;
     }
 
+    /// Returns the resolved color-AA strength for the current charset.
+    pub fn color_aa(&self) -> crate::render::antialiasing::AaStrength {
+        self.color_aa
+    }
+
+    /// Update the background color (the color drawn behind empty cells).
+    pub fn set_background_color(&mut self, bg: Option<RgbColor>) {
+        self.background_color = bg;
+    }
+
+    /// Returns the active background color, if any.
+    pub fn background_color(&self) -> Option<RgbColor> {
+        self.background_color
+    }
+
+    /// Returns the active palette.
+    pub fn palette(&self) -> &Palette {
+        &self.palette
+    }
+
+    /// Returns whether the palette is reversed.
+    pub fn reverse_palette(&self) -> bool {
+        self.reverse_palette
+    }
+
+    /// Returns whether the palette is inverted.
+    pub fn invert_palette(&self) -> bool {
+        self.invert_palette
+    }
+
     /// Set specific colors for multi-species rendering.
     pub fn set_species_colors(&mut self, enabled: bool, colors: Vec<RgbColor>) {
         self.species_colors_enabled = enabled;
@@ -475,7 +505,9 @@ impl TerminalRenderer {
                     layout.frame_y,
                     layout.frame_w,
                     layout.frame_h,
-                    None,
+                    self.background_color,
+                    layout.sim_x - layout.frame_x,
+                    layout.sim_y - layout.frame_y,
                 );
             }
         }
@@ -503,6 +535,7 @@ impl TerminalRenderer {
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
         config_browser_lines: Option<(&RenderedOverlay, usize, usize)>,
         config_save_lines: Option<(&RenderedOverlay, usize, usize)>,
+        dirty_guard_lines: Option<(&RenderedOverlay, usize, usize)>,
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
@@ -654,11 +687,19 @@ impl TerminalRenderer {
                         layout.frame_y,
                         layout.frame_w,
                         layout.frame_h,
-                        None,
+                        self.background_color,
+                        layout.sim_x - layout.frame_x,
+                        layout.sim_y - layout.frame_y,
                     );
                 }
             } else {
-                buffer.render_window_frame(self.window_frame, accent, None);
+                buffer.render_window_frame(
+                    self.window_frame,
+                    accent,
+                    self.background_color,
+                    crate::render::window::FRAME_RING_COLS,
+                    crate::render::window::FRAME_RING_ROWS,
+                );
             }
         }
 
@@ -916,6 +957,11 @@ impl TerminalRenderer {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONFIG_SAVE);
         }
 
+        // Dirty-state guard overlay (modal, on top)
+        if let Some((overlay, x, y)) = dirty_guard_lines {
+            draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::DIRTY_GUARD);
+        }
+
         // Keyboard hints overlay (modal, on top)
         if let Some((overlay, x, y)) = keyboard_hints_lines {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::KEYBOARD_HINTS);
@@ -960,6 +1006,7 @@ impl TerminalRenderer {
         grid_renderer: Option<&crate::render::grid::GridRenderer>,
         config_browser_lines: Option<(&RenderedOverlay, usize, usize)>,
         config_save_lines: Option<(&RenderedOverlay, usize, usize)>,
+        dirty_guard_lines: Option<(&RenderedOverlay, usize, usize)>,
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
@@ -1142,11 +1189,19 @@ impl TerminalRenderer {
                         layout.frame_y,
                         layout.frame_w,
                         layout.frame_h,
-                        None,
+                        self.background_color,
+                        layout.sim_x - layout.frame_x,
+                        layout.sim_y - layout.frame_y,
                     );
                 }
             } else {
-                buffer.render_window_frame(self.window_frame, accent, None);
+                buffer.render_window_frame(
+                    self.window_frame,
+                    accent,
+                    self.background_color,
+                    crate::render::window::FRAME_RING_COLS,
+                    crate::render::window::FRAME_RING_ROWS,
+                );
             }
         }
 
@@ -1324,6 +1379,11 @@ impl TerminalRenderer {
             draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::CONFIG_SAVE);
         }
 
+        // Dirty-state guard overlay (modal, on top)
+        if let Some((overlay, x, y)) = dirty_guard_lines {
+            draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::DIRTY_GUARD);
+        }
+
         // Keyboard hints overlay (modal, on top)
         if let Some((overlay, x, y)) = keyboard_hints_lines {
             draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::KEYBOARD_HINTS);
@@ -1390,8 +1450,8 @@ mod tests {
         );
         r.set_charset(Charset::Ascii);
         assert_eq!(r.charset(), &Charset::Ascii);
-        r.set_window_frame(WindowFrame::Negative);
-        assert_eq!(r.window_frame(), WindowFrame::Negative);
+        r.set_window_frame(WindowFrame::Glow);
+        assert_eq!(r.window_frame(), WindowFrame::Glow);
         r.set_intensity_mapping(None);
         assert!(r.intensity_mapping().is_none());
     }
@@ -1420,6 +1480,7 @@ mod tests {
             10,
             10,
             1.0,
+            None,
             None,
             None,
             None,

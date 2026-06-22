@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::num::ParseIntError;
 use std::str::FromStr;
 
@@ -12,8 +13,9 @@ use crate::config_defaults::{
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
-    Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode, Obstacle, Preset,
-    SimConfig, TerminalSizeThreshold, TerrainType, Wind, WindowFrame, WindowPadding,
+    Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode, Obstacle,
+    PointConfig, Preset, SimConfig, TerminalSizeThreshold, TerrainType, Wind, WindowFrame,
+    WindowPadding,
 };
 use crate::validation::Validatable;
 
@@ -105,7 +107,7 @@ impl std::str::FromStr for PauseStyle {
 }
 
 // Re-export palette types from render module for backward compatibility
-pub use crate::render::palette::{num_palettes, Palette, ALL_PALETTES, NUM_PALETTES};
+pub use crate::render::palette::{num_palettes, Palette, ALL_PALETTES, NUM_PALETTES, PALETTES};
 
 #[derive(Debug, Clone)]
 /// Simulation grid resolution.
@@ -116,7 +118,7 @@ pub struct Resolution {
     pub height: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Configuration for a specific agent species.
 pub struct SpeciesArg {
     /// Name of the species.
@@ -133,6 +135,12 @@ pub struct SpeciesArg {
     pub deposit_amount: f32,
     /// RGB color.
     pub color: RgbColor,
+    /// Trail-based parameter modulation (36 Points). Persistence-only: carried
+    /// through saved-config TOML so trail-modulated presets (Pulse, Flocking, …)
+    /// survive a save/reload round-trip. The CLI string form does not set it
+    /// (`FromStr` leaves it `None`); it is sourced from the live `SpeciesConfig`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trail_modulation: Option<PointConfig>,
 }
 
 impl std::str::FromStr for SpeciesArg {
@@ -207,6 +215,7 @@ impl std::str::FromStr for SpeciesArg {
                 step_size,
                 deposit_amount,
                 color,
+                trail_modulation: None,
             })
         } else {
             let parts: Vec<&str> = rest.rsplitn(2, ':').collect();
@@ -230,6 +239,7 @@ impl std::str::FromStr for SpeciesArg {
                 step_size,
                 deposit_amount,
                 color,
+                trail_modulation: None,
             })
         }
     }
@@ -290,46 +300,13 @@ impl FromStr for Preset {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "network" => Ok(Preset::Network),
-            "exploratory" => Ok(Preset::Exploratory),
-            "tendrils" => Ok(Preset::Tendrils),
-            "organic" => Ok(Preset::Organic),
-            "minimal" => Ok(Preset::Minimal),
-            "moss" => Ok(Preset::Moss),
-            "cosmic" => Ok(Preset::Cosmic),
-            "fire" => Ok(Preset::Fire),
-            "zen" => Ok(Preset::Zen),
-            "storm" => Ok(Preset::Storm),
-            "river" => Ok(Preset::River),
-            "ethereal" => Ok(Preset::Ethereal),
-            "petri" | "petridish" => Ok(Preset::PetriDish),
-            "vortex" => Ok(Preset::Vortex),
-            "lightning" => Ok(Preset::Lightning),
-            "crystal" => Ok(Preset::Crystal),
-            "chaosedge" | "chaos-edge" | "chaos_edge" => Ok(Preset::ChaosEdge),
-            "blob" => Ok(Preset::Blob),
-            "worm" => Ok(Preset::Worm),
-            "pulse" => Ok(Preset::Pulse),
-            "coral" => Ok(Preset::Coral),
-            "flocking" => Ok(Preset::Flocking),
-            "maze" => Ok(Preset::Maze),
-            "ripple" => Ok(Preset::Ripple),
-            "vortex36" | "vortex-36" | "vortex_36" => Ok(Preset::Vortex36),
-            "chameleon" => Ok(Preset::Chameleon),
-            "dynamictendrils" | "dynamic-tendrils" | "dynamic_tendrils" => Ok(Preset::DynamicTendrils),
-            "morphingcoral" | "morphing-coral" | "morphing_coral" => Ok(Preset::MorphingCoral),
-            "reactiveswarm" | "reactive-swarm" | "reactive_swarm" => Ok(Preset::ReactiveSwarm),
-            "duelingmodulators" | "dueling-modulators" | "dueling_modulators" => Ok(Preset::DuelingModulators),
-            "lumen" => Ok(Preset::Lumen),
-            "aurora" => Ok(Preset::Aurora),
-            "bloom" => Ok(Preset::Bloom),
-            "etching" => Ok(Preset::Etching),
-            _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon, dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators, lumen, aurora, bloom, etching",
-                s
-            )),
-        }
+        crate::simulation::config::preset_from_name(s).ok_or_else(|| {
+            format!(
+                "Invalid preset: {}. Must be one of: {}",
+                s,
+                crate::simulation::config::preset_name_list()
+            )
+        })
     }
 }
 
@@ -355,7 +332,7 @@ impl FromStr for InitMode {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Configuration for a point attractor/repeller.
 pub struct AttractorArg {
     /// X coordinate.
@@ -392,7 +369,7 @@ impl std::str::FromStr for AttractorArg {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Configuration for wind force.
 pub struct WindArg {
     /// Horizontal wind component.
@@ -423,7 +400,7 @@ impl std::str::FromStr for WindArg {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Configuration for a physical obstacle.
 pub struct ObstacleArg {
     /// The obstacle definition.
@@ -819,9 +796,12 @@ pub struct Args {
     #[arg(
         long = "preset",
         value_name = "NAME",
-        help = "Use named preset (network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon, dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators)"
+        default_value = "organic",
+        help = "Use named preset (see README); defaults to 'organic'. Names are case-insensitive"
     )]
-    /// Named parameter preset.
+    /// Named parameter preset. A bare launch (no `--preset`) defaults to Organic,
+    /// so the default launch and `--preset organic` resolve identically — there is
+    /// no separate hard-coded default config set.
     pub preset: Option<Preset>,
 
     #[arg(
@@ -835,7 +815,7 @@ pub struct Args {
     #[arg(
         long = "window-frame",
         value_name = "MODE",
-        help = "Window frame display mode (none, negative, accented, glow, reactive, frame)"
+        help = "Window frame display mode (none, accented, glow, frame)"
     )]
     /// Window frame display mode for terminal visualization.
     pub window_frame: Option<WindowFrame>,
@@ -871,6 +851,22 @@ pub struct Args {
     )]
     /// Outer padding between terminal edge and window frame.
     pub window_padding: Option<WindowPadding>,
+
+    #[arg(
+        long = "frame-matte-cols",
+        value_name = "COLS",
+        help = "Background gap (columns) between the frame border and the simulation (left/right)"
+    )]
+    /// Frame background matte width in columns (left/right).
+    pub frame_matte_cols: Option<usize>,
+
+    #[arg(
+        long = "frame-matte-rows",
+        value_name = "ROWS",
+        help = "Background gap (rows) between the frame border and the simulation (top/bottom)"
+    )]
+    /// Frame background matte height in rows (top/bottom).
+    pub frame_matte_rows: Option<usize>,
 
     #[arg(
         long = "show-status-bar",
@@ -1076,11 +1072,10 @@ pub struct Args {
     #[arg(
         long = "palette-shift",
         value_name = "DEG",
-        default_value = "0",
-        help = "Rotate palette hue over time (degrees per second, negative for reverse rotation)"
+        help = "Rotate palette hue over time (degrees/sec, negative reverses)"
     )]
-    /// Palette hue shift speed (degrees/sec).
-    pub palette_shift: f32,
+    /// Palette hue shift speed (degrees/sec). None = use per-preset default or 0.
+    pub palette_shift: Option<f32>,
 
     #[arg(
         long = "intensity-mapping",
@@ -1300,39 +1295,36 @@ pub struct Args {
     #[arg(
         long = "afterglow",
         value_name = "VALUE",
-        default_value_t = 0.0,
         help = "Afterglow strength (0.0 = off). Luminous lingering tails."
     )]
     /// Afterglow strength (glow_mix), lever 7.
-    pub afterglow: f32,
+    pub afterglow: Option<f32>,
 
     #[arg(
         long = "afterglow-rate",
         value_name = "ALPHA",
-        default_value_t = 0.05,
         help = "Afterglow EMA rate (smaller = longer-lived glow)."
     )]
     /// Afterglow EMA rate (alpha per frame).
-    pub afterglow_rate: f32,
+    pub afterglow_rate: Option<f32>,
 
     #[arg(
         long = "decay-gamma",
         value_name = "GAMMA",
-        default_value_t = 1.0,
-        help = "Decay gamma (1.0 = uniform decay; <1.0 = faint cells decay less, longer tails)."
+        help = "Decay gamma (default: 1.0 = uniform decay; <1.0 = faint cells decay less, \
+                longer tails). Unset lets the preset choose."
     )]
-    /// Value-dependent decay exponent.
-    pub decay_gamma: f32,
+    /// Value-dependent decay exponent (None = use preset/default).
+    pub decay_gamma: Option<f32>,
 
     #[arg(
         long = "diffuse-weight",
         value_name = "WEIGHT",
-        default_value_t = 1.0,
-        help = "Diffusion blend weight (1.0 = full blur; 0.0 = no diffusion; \
-                intermediate values blend old and blurred trail)."
+        help = "Diffusion blend weight (default: 1.0 = full blur; 0.0 = no diffusion; \
+                intermediate values blend old and blurred trail). Unset lets the preset choose."
     )]
-    /// Lague diffuse-weight blend factor (0.0–1.0).
-    pub diffuse_weight: f32,
+    /// Lague diffuse-weight blend factor 0.0–1.0 (None = use preset/default).
+    pub diffuse_weight: Option<f32>,
 
     #[arg(
         long = "auto-normalize",
@@ -1628,11 +1620,10 @@ pub struct Args {
     #[arg(
         long = "collapse-threshold",
         value_name = "FLOAT",
-        default_value_t = auto_reset::DEFAULT_ENTROPY_THRESHOLD,
-        help = "Entropy threshold to detect collapse (0.0-1.0, higher = more sensitive)"
+        help = "Collapse when brightness entropy falls below this (range 0..8; healthy ~4-6, dead → 0; higher = more sensitive). Unset uses the preset default (Constellation: 0 = entropy detector off)."
     )]
-    /// Entropy threshold for collapse detection.
-    pub collapse_entropy_threshold: f32,
+    /// Entropy threshold for collapse detection. `None` defers to the preset default.
+    pub collapse_entropy_threshold: Option<f32>,
 
     #[arg(
         long = "collapse-duration",
@@ -1762,6 +1753,10 @@ pub struct Args {
     /// Explain parameters and exit.
     pub explain: bool,
 
+    #[arg(long = "dump-config", hide = true)]
+    /// Dev-only: print the assembled SimConfig field dump and exit (snapshot test net).
+    pub dump_config: bool,
+
     #[arg(
         long = "completions",
         value_name = "SHELL",
@@ -1825,25 +1820,11 @@ impl Args {
         if self.palette.starts_with('#') || self.palette.contains(',') {
             return parse_custom_palette(&self.palette);
         }
-        match self.palette.as_str() {
-            "organic" => Ok(Palette::Organic),
-            "heat" => Ok(Palette::Heat),
-            "ocean" => Ok(Palette::Ocean),
-            "mono" => Ok(Palette::Mono),
-            "forest" => Ok(Palette::Forest),
-            "neon" => Ok(Palette::Neon),
-            "warm" => Ok(Palette::Warm),
-            "vibrant" => Ok(Palette::Vibrant),
-            "legiblemono" => Ok(Palette::LegibleMono),
-            "slime" => Ok(Palette::Slime),
-            "mold" => Ok(Palette::Mold),
-            "fungus" => Ok(Palette::Fungus),
-            "swamp" => Ok(Palette::Swamp),
-            "moss" => Ok(Palette::Moss),
-            "cosmic" => Ok(Palette::Cosmic),
-            "ethereal" => Ok(Palette::Ethereal),
-            _ => Err(format!("Invalid palette: {}", self.palette)),
-        }
+        PALETTES
+            .iter()
+            .find(|spec| spec.name.eq_ignore_ascii_case(&self.palette))
+            .map(|spec| spec.palette.clone())
+            .ok_or_else(|| format!("Invalid palette: {}", self.palette))
     }
 
     /// True when the user passed `--palette` (vs the clap default sentinel).
@@ -1861,6 +1842,16 @@ impl Args {
             || self.half_block_dual
             || self.ascii
             || self.ascii_chars.is_some()
+    }
+
+    /// Returns `Some(charset)` when the user passed a `--charset` flag, else `None`.
+    /// Used to distinguish "CLI set" from "use preset/default" during render resolution.
+    pub(crate) fn charset_parsed(&self) -> Result<Option<crate::render::charset::Charset>, String> {
+        if self.charset_explicitly_set() {
+            Ok(Some(crate::render::charset::Charset::from_args(self)))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Resolve color-AA strength for the launch charset. Explicit `--color-aa`
@@ -2094,51 +2085,6 @@ impl Args {
         SimConfig::try_from(self)
     }
 
-    /// Resolves the render-layer art defaults: per-preset defaults overridden
-    /// by explicit intensity-mapping CLI flags. Render counterpart to
-    /// [`Args::to_sim_config`] (spec §5 — render params stay out of `SimConfig`).
-    /// When no preset is set, falls back to `RenderArtDefaults::default()` (log10).
-    pub(crate) fn to_render_art_defaults(
-        &self,
-    ) -> Result<crate::render_art_defaults::RenderArtDefaults, String> {
-        let mut art = match self.preset {
-            Some(preset) => crate::render_art_defaults::RenderArtDefaults::from(preset),
-            None => crate::render_art_defaults::RenderArtDefaults::default(),
-        };
-        if self.intensity_mapping.is_some() {
-            art.intensity_mapping = self.intensity_mapping()?;
-        }
-        if self.palette_cycles.is_some() || self.palette_cycle_mode.is_some() {
-            if let Some(n) = self.palette_cycles {
-                art.palette_cycle.cycles = n;
-            }
-            if let Some(mode) = self.palette_cycle_mode_parsed()? {
-                art.palette_cycle.mode = mode;
-            }
-        }
-        if self.glyph_selection.is_some() || self.glyph_edge_threshold.is_some() {
-            art.glyph = self.glyph_config_parsed(art.glyph)?;
-        }
-        if let Some(c) = self.temporal_color {
-            art.temporal_color = c;
-        }
-        if let Some(l) = self.temporal_lag {
-            art.temporal_lag_frames = l;
-        }
-        if let Some(ref m) = self.temporal_mode {
-            art.temporal_mode = match m.to_ascii_lowercase().as_str() {
-                "accent" => crate::render::palette::TemporalMode::Accent,
-                _ => crate::render::palette::TemporalMode::Hue,
-            };
-        }
-        if let Some(ref hex) = self.temporal_accent {
-            let h = u32::from_str_radix(hex.trim_start_matches('#'), 16)
-                .map_err(|_| format!("invalid --temporal-accent hex: {hex}"))?;
-            art.temporal_accent = Some(crate::render::palette::RgbColor::from_hex(h));
-        }
-        Ok(art)
-    }
-
     /// Validates arguments at the CLI boundary.
     ///
     /// Covers terminal/resolution/fps bounds and other CLI-specific options that
@@ -2285,7 +2231,7 @@ impl Default for Args {
             verbose: false,
             reverse_palette: false,
             invert_palette: false,
-            palette_shift: 0.0,
+            palette_shift: None,
             intensity_mapping: None,
             intensity_mapping_base: intensity::DEFAULT_LOG_BASE,
             intensity_mapping_gamma: 2.2,
@@ -2341,7 +2287,7 @@ impl Default for Args {
             food_persist_radius: 50.0,
             food_persist_duration: 300,
             auto_reset: false,
-            collapse_entropy_threshold: 0.95,
+            collapse_entropy_threshold: None,
             collapse_duration_frames: 90,
             grid: false,
             grid_size: 10,
@@ -2353,6 +2299,7 @@ impl Default for Args {
             ascii_contrast: ascii::DEFAULT_CONTRAST,
             random: false,
             explain: false,
+            dump_config: false,
             completions: None,
             #[cfg(feature = "audio")]
             choir: false,
@@ -2377,10 +2324,10 @@ impl Default for Args {
             temporal_lag: None,
             temporal_mode: None,
             temporal_accent: None,
-            afterglow: 0.0,
-            afterglow_rate: 0.05,
-            decay_gamma: 1.0,
-            diffuse_weight: 1.0,
+            afterglow: None,
+            afterglow_rate: None,
+            decay_gamma: None,
+            diffuse_weight: None,
             deposit_curve: None,
             deposit_scale: None,
             deposit_gamma: None,
@@ -2391,6 +2338,8 @@ impl Default for Args {
             chrome_style: None,
             aspect: None,
             window_padding: None,
+            frame_matte_cols: None,
+            frame_matte_rows: None,
             show_status_bar: false,
             min_sim_size: None,
             min_frame_size: None,
@@ -2971,11 +2920,15 @@ mod tests {
     fn temporal_resolves_from_preset_then_cli_override() {
         // Bare run, default preset → temporal off (back-compat).
         let a = Args::parse_from(["tslime"]);
-        let d = a.to_render_art_defaults().unwrap();
+        let d = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
         assert_eq!(d.temporal_color, 0.0);
         // Explicit CLI strength overrides.
         let a = Args::parse_from(["tslime", "--temporal-color", "0.5"]);
-        let d = a.to_render_art_defaults().unwrap();
+        let d = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
         assert_eq!(d.temporal_color, 0.5);
     }
 
@@ -3001,7 +2954,9 @@ mod tests {
             intensity_mapping: None,
             ..Default::default()
         };
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         // #32: every preset defaults to log10.
         assert_eq!(art.intensity_mapping, IntensityMapping::logarithmic(10.0));
     }
@@ -3014,7 +2969,9 @@ mod tests {
             intensity_mapping: Some("linear".to_string()),
             ..Default::default()
         };
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert_eq!(art.intensity_mapping, IntensityMapping::linear());
     }
 
@@ -3026,7 +2983,9 @@ mod tests {
             intensity_mapping: None,
             ..Default::default()
         };
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         // No preset + no flag → RenderArtDefaults::default() == log10.
         assert_eq!(art.intensity_mapping, IntensityMapping::logarithmic(10.0));
     }
@@ -3036,7 +2995,9 @@ mod tests {
         let mut args = Args::parse_from(["tslime"]);
         args.palette_cycles = Some(3);
         args.palette_cycle_mode = Some("wrap".into());
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert_eq!(art.palette_cycle.cycles, 3);
         assert_eq!(
             art.palette_cycle.mode,
@@ -3047,7 +3008,9 @@ mod tests {
     #[test]
     fn no_palette_cycle_flags_stay_identity() {
         let args = Args::parse_from(["tslime"]);
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert!(art.palette_cycle.is_identity());
     }
 
@@ -3056,7 +3019,9 @@ mod tests {
         let mut args = Args::parse_from(["tslime"]);
         args.glyph_selection = Some("hybrid".into());
         args.glyph_edge_threshold = Some(0.3);
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert_eq!(
             art.glyph.selection,
             Some(crate::render::charset::GlyphSelection::Hybrid)
@@ -3069,19 +3034,25 @@ mod tests {
         let mut args = Args::parse_from(["tslime"]);
         args.glyph_selection = Some("hybrid".into());
         args.glyph_edge_threshold = Some(5.0);
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert_eq!(art.glyph.edge_threshold, 2.0);
 
         let mut args = Args::parse_from(["tslime"]);
         args.glyph_edge_threshold = Some(-1.0);
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert_eq!(art.glyph.edge_threshold, 0.0);
     }
 
     #[test]
     fn no_glyph_flags_stay_identity() {
         let args = Args::parse_from(["tslime"]);
-        let art = args.to_render_art_defaults().unwrap();
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
         assert_eq!(art.glyph.selection, None);
     }
 
@@ -3089,7 +3060,7 @@ mod tests {
     fn glyph_selection_invalid_errors() {
         let mut args = Args::parse_from(["tslime"]);
         args.glyph_selection = Some("nope".into());
-        assert!(args.to_render_art_defaults().is_err());
+        assert!(crate::profile::Profile::resolve_from_args(&args).is_err());
     }
 
     #[test]
@@ -3130,6 +3101,174 @@ mod tests {
         assert_eq!(
             args.resolved_color_aa(&Charset::Braille),
             AaStrength::Subtle
+        );
+    }
+
+    #[test]
+    fn afterglow_unset_uses_preset() {
+        let a = Args::parse_from(["tslime", "--preset", "mold"]);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .afterglow,
+            0.3
+        );
+    }
+
+    #[test]
+    fn afterglow_cli_overrides_preset() {
+        let a = Args::parse_from(["tslime", "--preset", "mold", "--afterglow", "0"]);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .afterglow,
+            0.0
+        );
+    }
+
+    #[test]
+    fn afterglow_out_of_range_rejected() {
+        let a = Args::parse_from(["tslime", "--afterglow", "99"]);
+        assert!(crate::profile::Profile::resolve_from_args(&a).is_err());
+    }
+
+    #[test]
+    fn resolve_palette_cli_wins() {
+        let a = Args::parse_from(["tslime", "--palette", "ocean", "--preset", "mold"]);
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(r.palette, crate::cli::Palette::Ocean);
+    }
+
+    #[test]
+    fn resolve_palette_preset_default() {
+        let a = Args::parse_from(["tslime", "--preset", "mold"]);
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(r.palette, crate::cli::Palette::Mold);
+    }
+
+    #[test]
+    fn resolve_hue_cli_over_preset() {
+        let a = Args::parse_from(["tslime", "--preset", "tide", "--palette-shift", "20"]);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .hue_shift,
+            20.0
+        );
+    }
+
+    #[test]
+    fn resolve_hue_preset_when_no_flag() {
+        let a = Args::parse_from(["tslime", "--preset", "tide"]);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .hue_shift,
+            8.0
+        );
+    }
+
+    #[test]
+    fn resolve_color_aa_braille_default_is_strong() {
+        // No --color-aa, no preset override: Braille must keep its per-charset Strong default.
+        use crate::render::antialiasing::AaStrength;
+        let a = Args::parse_from(["tslime", "--braille"]);
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(r.color_aa, AaStrength::Strong);
+    }
+
+    #[test]
+    fn resolve_color_aa_halfblock_default_is_off() {
+        use crate::render::antialiasing::AaStrength;
+        // HalfBlock is the default substrate charset. A clap-parsed bare launch is now
+        // Organic (charset Braille), so reach the halfblock path via struct-default
+        // Args (preset None bypasses the clap default and resolves the bare substrate).
+        let a = Args {
+            preset: None,
+            ..Default::default()
+        };
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(r.color_aa, AaStrength::Off);
+    }
+
+    // --- switch/reset/Model-B/toggle resolution matrix (Task 17) ---
+
+    /// identity → art-on: Mold carries temporal and afterglow levers.
+    #[test]
+    fn switch_identity_to_art_on_enables_temporal_and_afterglow() {
+        let a = Args::parse_from(["tslime", "--preset", "mold"]);
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(r.palette, crate::cli::Palette::Mold);
+        assert!(r.temporal_color > 0.0, "mold must have temporal_color > 0");
+        assert!(r.afterglow > 0.0, "mold must have afterglow > 0");
+    }
+
+    /// art-on → identity: Network carries no art-on levers (temporal=0, afterglow=0).
+    /// Also verifies the sim toggle clears the buffer when set to false (Task 11).
+    #[test]
+    fn switch_art_on_to_identity_disables_levers() {
+        use crate::simulation::config::{InitMode, SimConfig};
+        use crate::simulation::Simulation;
+
+        let a = Args::parse_from(["tslime", "--preset", "network"]);
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(r.temporal_color, 0.0, "network must have temporal_color=0");
+        assert_eq!(r.afterglow, 0.0, "network must have afterglow=0");
+        // Verify sim toggle properly clears when turned off (Task 11 getter coverage).
+        let mut sim = Simulation::new(40, 20, SimConfig::default(), 42, InitMode::Random, 0);
+        sim.set_compute_temporal(true, 0.2);
+        sim.set_compute_temporal(r.temporal_color > 0.0, 0.2);
+        assert!(
+            !sim.compute_temporal(),
+            "compute_temporal must be false after set to network's resolved value"
+        );
+    }
+
+    /// Model B: explicit --palette ocean persists when preset is switched after parse.
+    /// Simulates a live preset-switch where the Args retain the original CLI flags.
+    #[test]
+    fn model_b_cli_palette_persists() {
+        let mut a = Args::parse_from(["tslime", "--palette", "ocean", "--preset", "network"]);
+        a.preset = Some(crate::simulation::config::Preset::Mold);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .palette,
+            crate::cli::Palette::Ocean,
+            "--palette ocean must survive a preset switch to Mold"
+        );
+    }
+
+    /// Model B: explicit --sensor-angle 30 persists in re-assembled SimConfig
+    /// when the preset is switched after parse.
+    #[test]
+    fn model_b_cli_sensor_angle_persists() {
+        let mut a = Args::parse_from(["tslime", "--sensor-angle", "30", "--preset", "network"]);
+        a.preset = Some(crate::simulation::config::Preset::Mold);
+        let c = crate::profile_overrides::ProfileOverrides::from_args(&a)
+            .and_then(|o| o.resolve())
+            .unwrap()
+            .sim;
+        assert_eq!(
+            c.sensor_angle, 30.0,
+            "--sensor-angle 30 must survive a preset switch to Mold"
         );
     }
 }

@@ -34,6 +34,17 @@ pub(crate) struct RenderArtDefaults {
     pub palette: Option<Palette>,
     /// Per-preset default charset. None = use the global/CLI charset.
     pub charset: Option<Charset>,
+    /// Per-preset color anti-aliasing strength. None = use the global/CLI/auto value.
+    pub color_aa: Option<crate::render::antialiasing::AaStrength>,
+    /// Per-preset animated hue-shift in degrees/second. Identity = 0.0 (off).
+    pub hue_shift: f32,
+    /// Adaptive-brightness auto-normalization. None = inherit (default off); a
+    /// preset may default it ON without dirtying a clean session.
+    pub auto_normalize: Option<bool>,
+    /// Afterglow strength (lever 7). Identity = 0.0 (off).
+    pub afterglow: f32,
+    /// Afterglow EMA rate. Identity = 0.05.
+    pub afterglow_rate: f32,
 }
 
 impl Default for RenderArtDefaults {
@@ -48,15 +59,78 @@ impl Default for RenderArtDefaults {
             temporal_accent: None,
             palette: None,
             charset: None,
+            color_aa: None,
+            hue_shift: 0.0,
+            auto_normalize: None,
+            afterglow: 0.0,
+            afterglow_rate: 0.05,
+        }
+    }
+}
+
+/// Every render lever fully resolved to a concrete value (CLI ⊕ preset ⊕ default).
+/// `RenderArtDefaults` is the per-preset Option spec; this is the merged result
+/// used by startup, live preset-switch, and reset identically.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ResolvedRenderConfig {
+    pub palette: crate::cli::Palette,
+    pub charset: crate::render::charset::Charset,
+    pub color_aa: crate::render::antialiasing::AaStrength,
+    pub hue_shift: f32,
+    pub auto_normalize: bool,
+    pub intensity_mapping: crate::render::palette::IntensityMapping,
+    pub palette_cycle: crate::render::palette::PaletteCycle,
+    pub glyph: crate::render::charset::GlyphConfig,
+    pub temporal_color: f32,
+    pub temporal_lag_frames: f32,
+    pub temporal_mode: crate::render::palette::TemporalMode,
+    pub temporal_accent: Option<crate::render::palette::RgbColor>,
+    pub afterglow: f32,
+    pub afterglow_rate: f32,
+}
+
+impl ResolvedRenderConfig {
+    /// Converts `temporal_lag_frames` to the EMA alpha consumed by
+    /// `Simulation::set_compute_temporal`. Mirrors the startup formula in
+    /// `runner.rs` verbatim: `1.0 / lag.max(1.0)` when lag > 0, else 1.0.
+    pub(crate) fn temporal_lag_alpha(&self) -> f32 {
+        let lag = self.temporal_lag_frames;
+        if lag > 0.0 {
+            1.0 / lag.max(1.0)
+        } else {
+            1.0
+        }
+    }
+}
+
+impl Default for ResolvedRenderConfig {
+    fn default() -> Self {
+        use crate::render::charset::ALL_CHARSETS;
+        Self {
+            palette: crate::cli::Palette::Moss,
+            charset: ALL_CHARSETS[0].clone(),
+            color_aa: crate::config_defaults::DEFAULT_COLOR_AA[0],
+            hue_shift: 0.0,
+            auto_normalize: false,
+            intensity_mapping: crate::render::palette::IntensityMapping::logarithmic(10.0),
+            palette_cycle: crate::render::palette::PaletteCycle::default(),
+            glyph: crate::render::charset::GlyphConfig::default(),
+            temporal_color: 0.0,
+            temporal_lag_frames: 8.0,
+            temporal_mode: crate::render::palette::TemporalMode::Hue,
+            temporal_accent: None,
+            afterglow: 0.0,
+            afterglow_rate: 0.05,
         }
     }
 }
 
 impl From<Preset> for RenderArtDefaults {
-    /// Per-preset render defaults. The four showcase presets (#36) carry
-    /// art-on payloads; all 30 existing presets fall through to `Self::default()`
-    /// for byte-identical output.
+    /// Per-preset render defaults. The showcase presets (the original four plus
+    /// the completion-pass set) carry art-on payloads; the 30 original presets
+    /// fall through to `Self::default()` for byte-identical output.
     fn from(preset: Preset) -> Self {
+        use crate::render::antialiasing::AaStrength;
         use crate::render::charset::{Charset, GlyphConfig, GlyphSelection};
         use crate::render::palette::{
             IntensityMapping, Palette, PaletteCycle, PaletteCycleMode, TemporalMode,
@@ -67,30 +141,50 @@ impl From<Preset> for RenderArtDefaults {
         // color on the palette gradient (no foreign hand-picked hues, no
         // off-palette hue rotation).
         match preset {
-            Preset::Lumen => Self {
+            Preset::Mold => Self {
                 temporal_color: 0.5,
                 temporal_lag_frames: 8.0,
                 temporal_mode: TemporalMode::Accent,
+                palette: Some(Palette::Mold),
+                intensity_mapping: IntensityMapping::smoothstep(),
+                afterglow: 0.3,
+                auto_normalize: Some(true),
+                ..Self::default()
+            },
+            // Network (Task 6): Braille charset for fine network filaments.
+            Preset::Network => Self {
+                charset: Some(Charset::Braille),
+                ..Self::default()
+            },
+            // Exploratory (Task 7 step 1): Jade palette.
+            Preset::Exploratory => Self {
+                palette: Some(Palette::Jade),
+                ..Self::default()
+            },
+            // Organic (Task 8): Braille + Vibrant palette.
+            Preset::Organic => Self {
+                charset: Some(Charset::Braille),
+                palette: Some(Palette::Vibrant),
+                ..Self::default()
+            },
+            // Fire (Task 9): Quadrant charset + Subtle color-AA.
+            Preset::Fire => Self {
+                charset: Some(Charset::Quadrant),
+                color_aa: Some(AaStrength::Subtle),
+                ..Self::default()
+            },
+            // Slime (Task 10): Quadrant + Strong AA + Slime palette + auto-normalize.
+            Preset::Slime => Self {
+                charset: Some(Charset::Quadrant),
+                color_aa: Some(AaStrength::Strong),
                 palette: Some(Palette::Slime),
-                intensity_mapping: IntensityMapping::smoothstep(),
+                auto_normalize: Some(true),
                 ..Self::default()
             },
-            Preset::Aurora => Self {
-                temporal_color: 0.4,
-                temporal_lag_frames: 12.0,
-                temporal_mode: TemporalMode::Accent,
-                palette: Some(Palette::Ocean),
-                intensity_mapping: IntensityMapping::smoothstep(),
-                ..Self::default()
-            },
-            Preset::Bloom => Self {
-                palette: Some(Palette::Warm),
-                palette_cycle: PaletteCycle {
-                    cycles: 2,
-                    mode: PaletteCycleMode::Mirror,
-                },
-                temporal_color: 0.2,
-                temporal_mode: TemporalMode::Accent,
+            // Smoke (Task 12): Slate palette + auto-normalize.
+            Preset::Smoke => Self {
+                palette: Some(Palette::Slate),
+                auto_normalize: Some(true),
                 ..Self::default()
             },
             Preset::Etching => Self {
@@ -102,6 +196,109 @@ impl From<Preset> for RenderArtDefaults {
                     selection: Some(GlyphSelection::Hybrid),
                     edge_threshold: 0.08,
                 },
+                afterglow: 0.2,
+                ..Self::default()
+            },
+            // Temporal Hue mode: front recolors by motion direction (not Accent).
+            Preset::Drift => Self {
+                temporal_color: 0.45,
+                temporal_lag_frames: 10.0,
+                temporal_mode: TemporalMode::Hue,
+                palette: Some(Palette::Vibrant),
+                afterglow: 0.1,
+                ..Self::default()
+            },
+            // Points charset: sparse particle star-map.
+            Preset::Constellation => Self {
+                charset: Some(Charset::Points),
+                palette: Some(Palette::Cosmic),
+                ..Self::default()
+            },
+            // Quantize mapping + Wrap palette cycling: posterized bands.
+            Preset::Mosaic => Self {
+                intensity_mapping: IntensityMapping::quantize(6),
+                palette_cycle: PaletteCycle {
+                    cycles: 3,
+                    mode: PaletteCycleMode::Wrap,
+                },
+                palette: Some(Palette::Amber),
+                ..Self::default()
+            },
+            // Perlin mapping: organic noise-veined stone.
+            Preset::Marble => Self {
+                intensity_mapping: IntensityMapping::perlin(0.5, 3.0, 1),
+                palette: Some(Palette::Slate),
+                ..Self::default()
+            },
+            // HalfBlockDual charset + sqrt curve + Strong color-AA: max color resolution.
+            Preset::Prism => Self {
+                charset: Some(Charset::HalfBlockDual),
+                intensity_mapping: IntensityMapping::power(0.5),
+                palette: Some(Palette::Pastel),
+                color_aa: Some(AaStrength::Strong),
+                ..Self::default()
+            },
+            // Shade charset: smooth parchment density.
+            Preset::Vellum => Self {
+                charset: Some(Charset::Shade),
+                palette: Some(Palette::Ink),
+                ..Self::default()
+            },
+            // Exponential mapping: lifts darks for molten body.
+            Preset::Forge => Self {
+                intensity_mapping: IntensityMapping::exponential(4.0),
+                palette: Some(Palette::Heat),
+                afterglow: 0.3,
+                ..Self::default()
+            },
+            // Sim-driven (decay-gamma + Pow deposit); Copper palette for oxidized fade.
+            Preset::Wane => Self {
+                palette: Some(Palette::Copper),
+                ..Self::default()
+            },
+            // Braille + brightness glyphs + Power mapping + Subtle color-AA: delicate threads.
+            Preset::Gossamer => Self {
+                charset: Some(Charset::Braille),
+                glyph: GlyphConfig {
+                    selection: Some(GlyphSelection::Brightness),
+                    ..GlyphConfig::default()
+                },
+                intensity_mapping: IntensityMapping::power(1.6),
+                palette: Some(Palette::Ethereal),
+                color_aa: Some(AaStrength::Subtle),
+                afterglow: 0.2,
+                ..Self::default()
+            },
+            // Custom ASCII charset + Sigmoid contrast: typographic engraving.
+            Preset::Codex => Self {
+                charset: Some(Charset::CustomAscii(vec![
+                    '.', ':', '-', '=', '+', '*', '#', '%', '@',
+                ])),
+                intensity_mapping: IntensityMapping::sigmoid(8.0),
+                palette: Some(Palette::Ink),
+                ..Self::default()
+            },
+            // Animated hue-shift over time: living water.
+            Preset::Tide => Self {
+                palette: Some(Palette::Ocean),
+                hue_shift: 8.0,
+                ..Self::default()
+            },
+            // ASCII-rendered vines: same sim as Vines, pure ASCII charset.
+            Preset::Vinescii => Self {
+                charset: Some(Charset::Ascii),
+                auto_normalize: Some(true),
+                ..Self::default()
+            },
+            // Vines: auto-normalize keeps the slow climbing growth legible.
+            Preset::Vines => Self {
+                auto_normalize: Some(true),
+                ..Self::default()
+            },
+            // River: ocean water look with a Braille charset (accent frame is set sim-side).
+            Preset::River => Self {
+                charset: Some(Charset::Braille),
+                palette: Some(Palette::Ocean),
                 ..Self::default()
             },
             _ => Self::default(),
@@ -115,62 +312,38 @@ mod tests {
     use crate::render::palette::IntensityMapping;
     use crate::simulation::config::Preset;
 
-    /// The 30 original presets. The 4 showcase presets (Lumen/Aurora/Bloom/Etching)
-    /// are intentionally excluded: they carry art-on defaults, not identity.
-    const EXISTING_PRESETS: [Preset; 30] = [
-        Preset::Network,
-        Preset::Exploratory,
+    /// The surviving "plain" presets that carry no art-on defaults (identity).
+    /// Showcase presets (Lumen/Etching + the completion-pass set) are excluded:
+    /// they carry art-on payloads, not identity.
+    // Presets with NO render-art overrides (back-compat identity set). River and
+    // Vines were given render mods (ocean/braille; auto-normalize) and so left this set.
+    const EXISTING_PRESETS: [Preset; 8] = [
         Preset::Tendrils,
-        Preset::Organic,
-        Preset::Minimal,
-        Preset::Moss,
-        Preset::Cosmic,
-        Preset::Fire,
-        Preset::Zen,
-        Preset::Storm,
-        Preset::River,
-        Preset::Ethereal,
         Preset::PetriDish,
         Preset::Vortex,
         Preset::Lightning,
-        Preset::Crystal,
         Preset::ChaosEdge,
         Preset::Blob,
-        Preset::Worm,
-        Preset::Pulse,
-        Preset::Coral,
-        Preset::Flocking,
-        Preset::Maze,
-        Preset::Ripple,
         Preset::Vortex36,
-        Preset::Chameleon,
         Preset::DynamicTendrils,
-        Preset::MorphingCoral,
-        Preset::ReactiveSwarm,
-        Preset::DuelingModulators,
     ];
 
     #[test]
     fn showcase_presets_have_art_on() {
-        let lumen = RenderArtDefaults::from(Preset::Lumen);
-        assert!(lumen.temporal_color > 0.0);
+        let mold = RenderArtDefaults::from(Preset::Mold);
+        assert!(mold.temporal_color > 0.0);
         assert_eq!(
-            lumen.temporal_mode,
+            mold.temporal_mode,
             crate::render::palette::TemporalMode::Accent
         );
         // Showcase presets blend toward their OWN palette's vivid stop, so the
         // accent is intentionally None (palette-derived, not a foreign hue).
-        assert_eq!(lumen.temporal_accent, None);
-        assert_eq!(lumen.palette, Some(crate::render::palette::Palette::Slime));
+        assert_eq!(mold.temporal_accent, None);
+        assert_eq!(mold.palette, Some(crate::render::palette::Palette::Mold));
 
         // All showcase presets use palette-coherent Accent mode (no hue-mode
         // drift off the gradient).
-        for p in [
-            Preset::Lumen,
-            Preset::Aurora,
-            Preset::Bloom,
-            Preset::Etching,
-        ] {
+        for p in [Preset::Mold, Preset::Etching] {
             let d = RenderArtDefaults::from(p);
             assert_eq!(
                 d.temporal_mode,
@@ -190,16 +363,12 @@ mod tests {
         );
         assert!(etching.glyph.selection.is_some());
 
-        let bloom = RenderArtDefaults::from(Preset::Bloom);
-        assert!(bloom.palette_cycle.cycles >= 2);
+        // Mosaic showcases palette cycling.
+        let mosaic = RenderArtDefaults::from(Preset::Mosaic);
+        assert!(mosaic.palette_cycle.cycles >= 2);
 
-        // Existing presets stay identity.
-        for p in [
-            Preset::Organic,
-            Preset::Network,
-            Preset::Coral,
-            Preset::Tendrils,
-        ] {
+        // Existing (unmodded) presets stay identity.
+        for p in [Preset::Tendrils, Preset::PetriDish, Preset::Blob] {
             let d = RenderArtDefaults::from(p);
             assert_eq!(d.temporal_color, 0.0);
             assert_eq!(d.palette, None);
@@ -227,13 +396,13 @@ mod tests {
 
     #[test]
     fn every_preset_palette_cycle_is_identity() {
-        // Back-compat: the 30 original presets are all identity (#33).
-        // (Bloom uses cycles=2; it is not in this list.)
+        // Back-compat: plain presets are all identity (#33).
+        // (Mosaic uses cycles=3; it is not in this list.)
         for preset in [
             Preset::Network,
             Preset::Organic,
-            Preset::Coral,
-            Preset::Maze,
+            Preset::Fire,
+            Preset::Smoke,
         ] {
             assert!(RenderArtDefaults::from(preset).palette_cycle.is_identity());
         }
@@ -296,5 +465,40 @@ mod tests {
             assert_eq!(d.palette, None, "{preset:?} palette must be identity");
             assert_eq!(d.charset, None, "{preset:?} charset must be identity");
         }
+    }
+
+    #[test]
+    fn auto_normalize_default_off_and_overridable() {
+        assert_eq!(RenderArtDefaults::default().auto_normalize, None);
+        assert!(!ResolvedRenderConfig::default().auto_normalize);
+    }
+
+    #[test]
+    fn afterglow_default_is_off() {
+        let d = RenderArtDefaults::default();
+        assert_eq!(d.afterglow, 0.0);
+        assert_eq!(d.afterglow_rate, 0.05);
+    }
+
+    #[test]
+    fn afterglow_presets_glow() {
+        assert_eq!(RenderArtDefaults::from(Preset::Mold).afterglow, 0.3);
+        assert_eq!(RenderArtDefaults::from(Preset::Etching).afterglow, 0.2);
+        assert_eq!(RenderArtDefaults::from(Preset::Drift).afterglow, 0.1);
+        assert_eq!(RenderArtDefaults::from(Preset::Forge).afterglow, 0.3);
+        assert_eq!(RenderArtDefaults::from(Preset::Gossamer).afterglow, 0.2);
+    }
+
+    #[test]
+    fn vinescii_is_ascii_vines() {
+        use crate::preset_sim_defaults::PresetSimDefaults;
+        assert_eq!(
+            PresetSimDefaults::from(Preset::Vinescii).species_configs,
+            PresetSimDefaults::from(Preset::Vines).species_configs
+        );
+        assert_eq!(
+            RenderArtDefaults::from(Preset::Vinescii).charset,
+            Some(crate::render::charset::Charset::Ascii)
+        );
     }
 }

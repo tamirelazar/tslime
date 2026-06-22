@@ -1,4 +1,5 @@
 use crate::cli::Args;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Character set for rendering simulation trails.
@@ -69,7 +70,8 @@ impl Charset {
 
 /// Character-selection strategy for the glyph-by-shape lever (#34, lever 10).
 /// `None` (via [`GlyphConfig`]) preserves each charset's native behavior.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum GlyphSelection {
     /// Force the tonal brightness ramp (`map_brightness`) on shape-capable charsets.
     Brightness,

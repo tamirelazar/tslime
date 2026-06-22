@@ -5,7 +5,7 @@
 
 use crate::cli::Palette;
 use crate::render::charset::Charset;
-use crate::simulation::config::Preset;
+use crate::simulation::config::{compare_key_digit, Preset};
 use crate::terminal::state::ControlAction;
 pub use crate::terminal::state::MousePosition;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, MouseEventKind};
@@ -134,20 +134,10 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char(' ') => ControlAction::TogglePause,
         KeyCode::Char('p') | KeyCode::Char('P') => ControlAction::ShowPaletteEditor,
         KeyCode::Char('r') | KeyCode::Char('R') => ControlAction::Restart,
-        KeyCode::Char('1') => ControlAction::SetPreset(Preset::Network),
-        KeyCode::Char('2') => ControlAction::SetPreset(Preset::Exploratory),
-        KeyCode::Char('3') => ControlAction::SetPreset(Preset::Tendrils),
-        KeyCode::Char('4') => ControlAction::SetPreset(Preset::Organic),
-        KeyCode::Char('5') => ControlAction::SetPreset(Preset::Minimal),
-        KeyCode::Char('6') => ControlAction::SetPreset(Preset::Moss),
-        KeyCode::Char('7') => ControlAction::SetPreset(Preset::Zen),
-        KeyCode::Char('!') => ControlAction::ComparePreset(Preset::Network),
-        KeyCode::Char('@') => ControlAction::ComparePreset(Preset::Exploratory),
-        KeyCode::Char('#') => ControlAction::ComparePreset(Preset::Tendrils),
-        KeyCode::Char('$') => ControlAction::ComparePreset(Preset::Organic),
-        KeyCode::Char('%') => ControlAction::ComparePreset(Preset::Minimal),
-        KeyCode::Char('^') => ControlAction::ComparePreset(Preset::Moss),
-        KeyCode::Char('&') => ControlAction::ComparePreset(Preset::Zen),
+        KeyCode::Char(c) if ('1'..='7').contains(&c) => ControlAction::QuickKey(c),
+        KeyCode::Char(c) if compare_key_digit(c).is_some() => {
+            ControlAction::CompareQuickKey(compare_key_digit(c).expect("guard ensures Some"))
+        }
         KeyCode::Char('8') => ControlAction::RandomizeParams,
         KeyCode::Char('9') => ControlAction::CycleTheme,
         KeyCode::Char('*') => ControlAction::CycleThemeReverse,
@@ -277,65 +267,12 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
 
 /// Returns the display name of a preset.
 pub fn preset_name(preset: Preset) -> &'static str {
-    match preset {
-        Preset::Network => "Network",
-        Preset::Exploratory => "Exploratory",
-        Preset::Tendrils => "Tendrils",
-        Preset::Organic => "Organic",
-        Preset::Minimal => "Minimal",
-        Preset::Moss => "Moss",
-        Preset::Cosmic => "Cosmic",
-        Preset::Fire => "Fire",
-        Preset::Zen => "Zen",
-        Preset::Storm => "Storm",
-        Preset::River => "River",
-        Preset::Ethereal => "Ethereal",
-        Preset::PetriDish => "PetriDish",
-        Preset::Vortex => "Vortex",
-        Preset::Lightning => "Lightning",
-        Preset::Crystal => "Crystal",
-        Preset::ChaosEdge => "ChaosEdge",
-        Preset::Blob => "Blob",
-        Preset::Worm => "Worm",
-        Preset::Pulse => "Pulse",
-        Preset::Coral => "Coral",
-        Preset::Flocking => "Flocking",
-        Preset::Maze => "Maze",
-        Preset::Ripple => "Ripple",
-        Preset::Vortex36 => "Vortex36",
-        Preset::Chameleon => "Chameleon",
-        Preset::DynamicTendrils => "DynamicTendrils",
-        Preset::MorphingCoral => "MorphingCoral",
-        Preset::ReactiveSwarm => "ReactiveSwarm",
-        Preset::DuelingModulators => "DuelingModulators",
-        Preset::Lumen => "Lumen",
-        Preset::Aurora => "Aurora",
-        Preset::Bloom => "Bloom",
-        Preset::Etching => "Etching",
-    }
+    preset.name()
 }
 
 /// Returns the display name of a palette.
 pub fn palette_name(palette: Palette) -> &'static str {
-    match palette {
-        Palette::Organic => "Organic",
-        Palette::Heat => "Heat",
-        Palette::Ocean => "Ocean",
-        Palette::Mono => "Mono",
-        Palette::Forest => "Forest",
-        Palette::Neon => "Neon",
-        Palette::Warm => "Warm",
-        Palette::Vibrant => "Vibrant",
-        Palette::LegibleMono => "LegibleMono",
-        Palette::Slime => "Slime",
-        Palette::Mold => "Mold",
-        Palette::Fungus => "Fungus",
-        Palette::Swamp => "Swamp",
-        Palette::Moss => "Moss",
-        Palette::Cosmic => "Cosmic",
-        Palette::Ethereal => "Ethereal",
-        Palette::Custom(_) => "Custom",
-    }
+    palette.name()
 }
 
 /// Returns the display name of a charset.
@@ -464,7 +401,7 @@ mod tests {
     fn test_preset_name() {
         assert_eq!(preset_name(Preset::Network), "Network");
         assert_eq!(preset_name(Preset::Organic), "Organic");
-        assert_eq!(preset_name(Preset::Zen), "Zen");
+        assert_eq!(preset_name(Preset::Drift), "Drift");
     }
 
     #[test]
@@ -554,5 +491,25 @@ mod tests {
             state: KeyEventState::empty(),
         };
         assert_eq!(handle_key_event(&ev), ControlAction::CycleColorAa);
+    }
+
+    #[test]
+    fn number_row_emits_quick_key_actions() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let ev = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE);
+        assert!(matches!(
+            handle_key_event(&ev),
+            ControlAction::QuickKey('1')
+        ));
+        let ev = KeyEvent::new(KeyCode::Char('!'), KeyModifiers::SHIFT);
+        assert!(matches!(
+            handle_key_event(&ev),
+            ControlAction::CompareQuickKey('1')
+        ));
+        let ev = KeyEvent::new(KeyCode::Char('4'), KeyModifiers::NONE);
+        assert!(matches!(
+            handle_key_event(&ev),
+            ControlAction::QuickKey('4')
+        ));
     }
 }

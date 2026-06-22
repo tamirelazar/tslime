@@ -1,4 +1,5 @@
 use crate::render::gradients;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -8,31 +9,11 @@ fn get_gradient_stops_cache() -> &'static HashMap<Palette, Vec<GradientStop>> {
     static CACHE: OnceLock<HashMap<Palette, Vec<GradientStop>>> = OnceLock::new();
     CACHE.get_or_init(|| {
         let mut cache = HashMap::new();
-        let built_in_palettes = [
-            Palette::Organic,
-            Palette::Heat,
-            Palette::Ocean,
-            Palette::Mono,
-            Palette::Forest,
-            Palette::Neon,
-            Palette::Warm,
-            Palette::Vibrant,
-            Palette::LegibleMono,
-            Palette::Slime,
-            Palette::Mold,
-            Palette::Fungus,
-            Palette::Swamp,
-            Palette::Moss,
-            Palette::Cosmic,
-            Palette::Ethereal,
-        ];
-
-        for palette in built_in_palettes {
-            let oklch_stops = gradients::get_oklch_gradient(palette.clone());
+        for spec in PALETTES {
+            let oklch_stops = gradients::get_oklch_gradient(spec.palette.clone());
             let stops = oklch_stops_to_gradient(oklch_stops, 64);
-            cache.insert(palette, stops);
+            cache.insert(spec.palette.clone(), stops);
         }
-
         cache
     })
 }
@@ -72,38 +53,35 @@ pub enum Palette {
     Cosmic,
     /// Ghostly pale colors.
     Ethereal,
+    /// Mid-saturation jade green.
+    Jade,
+    /// Rich warm amber and honey tones.
+    Amber,
+    /// Cool stone grey, very low chroma.
+    Slate,
+    /// High-key airy pastel multi-hue.
+    Pastel,
+    /// Duotone ink-on-paper.
+    Ink,
+    /// Oxidized copper rust to verdigris teal.
+    Copper,
     /// Custom user-defined palette.
     Custom(Vec<RgbColor>),
 }
 
 impl Palette {
     /// Returns the string representation of the palette name.
-    pub fn name(&self) -> &str {
-        match self {
-            Palette::Organic => "Organic",
-            Palette::Heat => "Heat",
-            Palette::Ocean => "Ocean",
-            Palette::Mono => "Mono",
-            Palette::Forest => "Forest",
-            Palette::Neon => "Neon",
-            Palette::Warm => "Warm",
-            Palette::Vibrant => "Vibrant",
-            Palette::LegibleMono => "LegibleMono",
-            Palette::Slime => "Slime",
-            Palette::Mold => "Mold",
-            Palette::Fungus => "Fungus",
-            Palette::Swamp => "Swamp",
-            Palette::Moss => "Moss",
-            Palette::Cosmic => "Cosmic",
-            Palette::Ethereal => "Ethereal",
-            Palette::Custom(_) => "Custom",
-        }
+    pub fn name(&self) -> &'static str {
+        PALETTES
+            .iter()
+            .find(|spec| &spec.palette == self)
+            .map_or("Custom", |spec| spec.name)
     }
 }
 
 /// List of all available color palettes for cycling.
 /// This is the single source of truth for palette enumeration.
-pub const ALL_PALETTES: [Palette; 16] = [
+pub const ALL_PALETTES: [Palette; 22] = [
     Palette::Organic,
     Palette::Heat,
     Palette::Ocean,
@@ -120,6 +98,12 @@ pub const ALL_PALETTES: [Palette; 16] = [
     Palette::Moss,
     Palette::Cosmic,
     Palette::Ethereal,
+    Palette::Jade,
+    Palette::Amber,
+    Palette::Slate,
+    Palette::Pastel,
+    Palette::Ink,
+    Palette::Copper,
 ];
 
 /// The number of palettes in ALL_PALETTES.
@@ -130,7 +114,119 @@ pub fn num_palettes() -> usize {
     NUM_PALETTES
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// Static identity of one built-in palette: the enum variant and its
+/// human-facing display name (which doubles as the case-insensitive name
+/// accepted on the CLI).
+///
+/// [`PALETTES`] is the single source of truth for built-in palette *identity*:
+/// display names, CLI parsing, the saved-config palette index, and the gradient
+/// cache seed all derive from it. Gradient colour data itself still lives in
+/// [`crate::render::gradients`].
+pub struct PaletteSpec {
+    /// The palette this entry describes.
+    pub palette: Palette,
+    /// Display name; also the case-insensitive name accepted on the CLI.
+    pub name: &'static str,
+}
+
+/// Identity table for every built-in palette.
+///
+/// Must stay in the same order as [`ALL_PALETTES`] — `palettes_match_all_palettes`
+/// enforces this, because the saved-config palette index is the position in this
+/// list. Adding a palette means adding one row here (plus the [`Palette`] variant
+/// and its gradient `const` arrays in [`crate::render::gradients`]).
+pub const PALETTES: &[PaletteSpec] = &[
+    PaletteSpec {
+        palette: Palette::Organic,
+        name: "Organic",
+    },
+    PaletteSpec {
+        palette: Palette::Heat,
+        name: "Heat",
+    },
+    PaletteSpec {
+        palette: Palette::Ocean,
+        name: "Ocean",
+    },
+    PaletteSpec {
+        palette: Palette::Mono,
+        name: "Mono",
+    },
+    PaletteSpec {
+        palette: Palette::Forest,
+        name: "Forest",
+    },
+    PaletteSpec {
+        palette: Palette::Neon,
+        name: "Neon",
+    },
+    PaletteSpec {
+        palette: Palette::Warm,
+        name: "Warm",
+    },
+    PaletteSpec {
+        palette: Palette::Vibrant,
+        name: "Vibrant",
+    },
+    PaletteSpec {
+        palette: Palette::LegibleMono,
+        name: "LegibleMono",
+    },
+    PaletteSpec {
+        palette: Palette::Slime,
+        name: "Slime",
+    },
+    PaletteSpec {
+        palette: Palette::Mold,
+        name: "Mold",
+    },
+    PaletteSpec {
+        palette: Palette::Fungus,
+        name: "Fungus",
+    },
+    PaletteSpec {
+        palette: Palette::Swamp,
+        name: "Swamp",
+    },
+    PaletteSpec {
+        palette: Palette::Moss,
+        name: "Moss",
+    },
+    PaletteSpec {
+        palette: Palette::Cosmic,
+        name: "Cosmic",
+    },
+    PaletteSpec {
+        palette: Palette::Ethereal,
+        name: "Ethereal",
+    },
+    PaletteSpec {
+        palette: Palette::Jade,
+        name: "Jade",
+    },
+    PaletteSpec {
+        palette: Palette::Amber,
+        name: "Amber",
+    },
+    PaletteSpec {
+        palette: Palette::Slate,
+        name: "Slate",
+    },
+    PaletteSpec {
+        palette: Palette::Pastel,
+        name: "Pastel",
+    },
+    PaletteSpec {
+        palette: Palette::Ink,
+        name: "Ink",
+    },
+    PaletteSpec {
+        palette: Palette::Copper,
+        name: "Copper",
+    },
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// An RGB color value.
 pub struct RgbColor {
     /// Red component (0-255).
@@ -919,6 +1015,18 @@ impl IntensityMapping {
                 start: 0.0,
                 end: 1.0,
                 function: MappingFunction::Quantize { levels },
+            }],
+        }
+    }
+
+    /// Sigmoid (S-curve) mapping for punchy contrast. Higher `steepness`
+    /// sharpens the mid-tone transition.
+    pub fn sigmoid(steepness: f32) -> Self {
+        Self {
+            segments: vec![MappingSegment {
+                start: 0.0,
+                end: 1.0,
+                function: MappingFunction::Sigmoid { steepness },
             }],
         }
     }
@@ -2640,7 +2748,8 @@ pub fn truecolor_ansi_bg(r: u8, g: u8, b: u8) -> String {
 }
 
 /// Color-modulation mode for temporal-difference coloring (lever 3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum TemporalMode {
     /// Rotate the base color's hue in OKLch by the (signed) temporal difference.
     Hue,
@@ -2650,7 +2759,8 @@ pub enum TemporalMode {
 
 /// Spatial palette-repeat mode (lever 6). Remaps the gradient index `t`
 /// pre-lookup so the palette tiles across the brightness range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum PaletteCycleMode {
     /// Sawtooth `fract(t·n)` — seam unless the palette endpoints match.
     Wrap,
@@ -2670,7 +2780,7 @@ impl std::fmt::Display for PaletteCycleMode {
 
 /// Palette-cycle configuration: how many times the palette repeats across the
 /// brightness range and the repeat mode. `cycles = 1` (the default) is identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PaletteCycle {
     /// Number of palette repeats across `[0,1]`. `1` = no repeat (identity).
     pub cycles: u32,
@@ -2844,6 +2954,44 @@ fn mix_oklch(a: RgbColor, b: RgbColor, t: f32) -> RgbColor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn palettes_match_all_palettes() {
+        // PALETTES is the identity table; ALL_PALETTES is what `palette_index`
+        // (and saved configs) index into. parse_palette_index derives the index
+        // from PALETTES position, so the two lists MUST stay in the same order.
+        assert_eq!(
+            PALETTES.len(),
+            ALL_PALETTES.len(),
+            "PALETTES and ALL_PALETTES differ in length"
+        );
+        for (i, (spec, palette)) in PALETTES.iter().zip(ALL_PALETTES.iter()).enumerate() {
+            assert_eq!(
+                &spec.palette, palette,
+                "PALETTES[{i}] ({:?}) != ALL_PALETTES[{i}] ({:?})",
+                spec.palette, palette
+            );
+        }
+    }
+
+    #[test]
+    fn palette_names_round_trip() {
+        // Every built-in palette's display name must parse back to itself
+        // (case-insensitively) and resolve to its own index.
+        for (i, spec) in PALETTES.iter().enumerate() {
+            assert_eq!(spec.palette.name(), spec.name);
+            let parsed = PALETTES
+                .iter()
+                .position(|s| s.name.eq_ignore_ascii_case(spec.name));
+            assert_eq!(parsed, Some(i), "name {} did not round-trip", spec.name);
+            assert_ne!(spec.name, "Custom", "built-in palette named Custom");
+        }
+    }
+
+    #[test]
+    fn custom_palette_name_is_custom() {
+        assert_eq!(Palette::Custom(vec![]).name(), "Custom");
+    }
 
     #[test]
     fn mix_oklch_achromatic_endpoint_preserves_chromatic_hue() {

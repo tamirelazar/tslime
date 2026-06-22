@@ -93,6 +93,16 @@ impl OverlayConfig {
         has_border: true,
     };
 
+    /// Dirty-state guard overlay configuration
+    pub const DIRTY_GUARD: OverlayConfig = OverlayConfig {
+        width: 48,
+        height_padding: 1,
+        width_padding: 1,
+        text_color_256: 15,
+        bg_color_256: 236,
+        has_border: true,
+    };
+
     /// Keyboard hints overlay configuration
     pub const KEYBOARD_HINTS: OverlayConfig = OverlayConfig {
         width: 88,
@@ -176,8 +186,39 @@ impl KeyboardHintsOverlay {
     const CONTENT_WIDTH: usize = 74; // 88 - 2(border) - 6(pad-L) - 6(pad-R)
 
     /// Builds the keyboard hints overlay content.
-    pub fn build_overlay(accent: RgbColor) -> RenderedOverlay {
+    pub fn build_overlay(
+        accent: RgbColor,
+        user_binds: &std::collections::HashMap<char, crate::keybind_manager::BindTarget>,
+    ) -> RenderedOverlay {
+        use crate::keybind_manager::BindTarget;
         use TextAlignment::Left;
+
+        let label_for = |c: char| -> String {
+            match user_binds.get(&c) {
+                Some(BindTarget::Preset(p)) => p.name().to_string(),
+                Some(BindTarget::Config(name)) => {
+                    let truncated: String = name.chars().take(10).collect();
+                    format!("cfg:{truncated}")
+                }
+                None => match crate::simulation::config::preset_for_set_key(c) {
+                    Some(p) => p.name().to_string(),
+                    None => "unbound".to_string(),
+                },
+            }
+        };
+        let keys_line1 = format!(
+            "1:{} 2:{} 3:{}",
+            label_for('1'),
+            label_for('2'),
+            label_for('3')
+        );
+        let keys_line2 = format!(
+            "4:{} 5:{} 6:{} 7:{}",
+            label_for('4'),
+            label_for('5'),
+            label_for('6'),
+            label_for('7')
+        );
 
         let thin_sep = "─".repeat(Self::CONTENT_WIDTH);
 
@@ -194,18 +235,10 @@ impl KeyboardHintsOverlay {
                 Left,
             )
             .add_two_col("r          Restart", "Ctrl+L     Load config", Left, Left)
-            .add_two_col(
-                "1 \u{2013} 7      Select preset",
-                "Ctrl+Z     Undo",
-                Left,
-                Left,
-            )
-            .add_two_col(
-                "Shift+1\u{2013}7  Compare preset",
-                "Ctrl+Y     Redo",
-                Left,
-                Left,
-            )
+            .add_two_col("Ctrl+Z     Undo", "Ctrl+Y     Redo", Left, Left)
+            .add_single(keys_line1, Left)
+            .add_single(keys_line2, Left)
+            .add_single("Shift+1-7  Compare bound key", Left)
             .add_two_col(
                 "p          Palette editor",
                 "q / Esc    Quit / close",
@@ -378,19 +411,46 @@ impl PresetComparisonOverlay {
     /// Builds the comparison overlay showing modified parameters.
     pub fn build_overlay(
         current: &crate::terminal::control::RuntimeState,
-        preset: Preset,
+        target: &crate::terminal::state::ComparisonTarget,
     ) -> RenderedOverlay {
+        use crate::terminal::state::ComparisonTarget;
         use TextAlignment::Left;
 
-        let defaults = crate::terminal::control::DefaultValues::from_preset(preset);
-        let pname = preset_name(preset);
+        let (label, defaults, col_header) = match target {
+            ComparisonTarget::Preset(p) => (
+                preset_name(*p).to_string(),
+                crate::terminal::control::DefaultValues::from_preset(*p),
+                "Preset Default",
+            ),
+            ComparisonTarget::Config(np) => {
+                let (lbl, dv) = match np.overrides.resolve() {
+                    Ok(p) => (
+                        np.name.clone(),
+                        crate::terminal::control::DefaultValues::from_sim_config(
+                            &p.sim,
+                            p.render.auto_normalize,
+                        ),
+                    ),
+                    Err(_) => (
+                        format!("{} (unresolved)", np.name),
+                        crate::terminal::control::DefaultValues::from_preset(
+                            crate::simulation::config::Preset::Organic,
+                        ),
+                    ),
+                };
+                (lbl, dv, "Config Default")
+            }
+        };
 
         let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
             .with_padding(Padding::new(1, 1, 2, 2))
-            .with_title(format!("PRESET COMPARISON: {}", pname))
+            .with_title(format!("COMPARISON: {}", label))
             .with_title_box()
             .add_empty()
-            .add_single("Parameter        │ Current      │ Preset Default", Left)
+            .add_single(
+                format!("Parameter        │ Current      │ {}", col_header),
+                Left,
+            )
             .add_single(
                 "──────────────────┼──────────────┼──────────────────────",
                 Left,
@@ -512,7 +572,7 @@ impl ConfigBrowserOverlay {
 
     /// Builds the configuration list overlay.
     pub fn build_overlay(
-        configs: &[crate::config_manager::SavedConfig],
+        configs: &[crate::config_manager::NamedProfile],
         selected_index: usize,
     ) -> RenderedOverlay {
         use TextAlignment::Left;
@@ -552,8 +612,13 @@ impl ConfigBrowserOverlay {
                 let num = i + 1;
                 let selected_marker = if i == selected_index { "›" } else { " " };
                 let name = &config.name;
-                let palette = &config.palette;
-                let pop = config.population / 1000;
+                let palette = config
+                    .overrides
+                    .palette
+                    .as_ref()
+                    .map(|p| p.name())
+                    .unwrap_or("?");
+                let pop = config.overrides.population.unwrap_or(0) / 1000;
                 let line = format!(
                     "{}{} {} - {} - {}k agents",
                     selected_marker, num, name, palette, pop,
@@ -614,6 +679,42 @@ impl ConfigSaveOverlay {
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::TOTAL_WIDTH)) / 2;
         let y = (term_height.saturating_sub(5)) / 2;
+        (x, y)
+    }
+}
+
+/// Overlay for the dirty-state guard: confirms discarding live edits before a swap.
+pub struct DirtyGuardOverlay;
+
+impl DirtyGuardOverlay {
+    /// Total rendered width.
+    const TOTAL_WIDTH: usize = 48;
+    /// Content width (inner drawable area). 48 - 2(border) - 2*1(padding).
+    const CONTENT_WIDTH: usize = 44;
+
+    /// Builds the dirty-state guard dialog overlay.
+    pub fn build_overlay() -> RenderedOverlay {
+        use TextAlignment::Left;
+
+        PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(0, 0, 1, 1))
+            .with_title("UNSAVED CHANGES")
+            .with_title_box()
+            .add_empty()
+            .add_single("Discard live edits and switch?", Left)
+            .add_empty()
+            .add_single("Enter: Discard & switch    Esc: Cancel", Left)
+            .build_overlay()
+    }
+
+    /// Calculates center position for the guard dialog.
+    ///
+    /// The overlay is 7 visible rows tall: 6 main-panel lines (top border + 4 content
+    /// rows + bottom border) plus 1 title-box line drawn one row above. Subtracting 7
+    /// keeps the dialog vertically centred.
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let x = (term_width.saturating_sub(Self::TOTAL_WIDTH)) / 2;
+        let y = (term_height.saturating_sub(7)) / 2;
         (x, y)
     }
 }
@@ -1778,9 +1879,46 @@ mod status_line_tests {
         assert!(status.contains("1.0×"));
     }
 
+    fn overlay_to_string(overlay: &RenderedOverlay) -> String {
+        overlay.lines.join("\n")
+    }
+
+    #[test]
+    fn keyboard_hints_show_live_binds() {
+        use crate::keybind_manager::BindTarget;
+        use crate::simulation::config::Preset;
+        use std::collections::HashMap;
+        let mut binds = HashMap::new();
+        binds.insert('4', BindTarget::Preset(Preset::Fire));
+        let overlay = KeyboardHintsOverlay::build_overlay(RgbColor::new(255, 255, 255), &binds);
+        let text = overlay_to_string(&overlay);
+        assert!(text.contains("Fire"), "user bind name shown");
+        assert!(
+            text.contains("unbound"),
+            "an empty 4-7 slot shows 'unbound'"
+        );
+    }
+
+    #[test]
+    fn keyboard_hints_utf8_config_truncation() {
+        use crate::keybind_manager::BindTarget;
+        use std::collections::HashMap;
+        let mut binds = HashMap::new();
+        // Multi-byte UTF-8 name longer than 10 bytes; byte index 10 falls
+        // inside a 3-byte UTF-8 char, triggering panic if byte-sliced
+        binds.insert('4', BindTarget::Config("abc日本語設定テスト".to_string()));
+        // Should not panic on multi-byte UTF-8 char boundary
+        let overlay = KeyboardHintsOverlay::build_overlay(RgbColor::new(255, 255, 255), &binds);
+        let text = overlay_to_string(&overlay);
+        assert!(text.contains("cfg:"), "config label present");
+    }
+
     #[test]
     fn test_keyboard_hints_lists_frame_and_chrome() {
-        let overlay = KeyboardHintsOverlay::build_overlay(RgbColor::new(255, 255, 255));
+        let overlay = KeyboardHintsOverlay::build_overlay(
+            RgbColor::new(255, 255, 255),
+            &std::collections::HashMap::new(),
+        );
         let joined = overlay.lines.join("\n");
         assert!(joined.contains("Window frame"), "missing window-frame hint");
         assert!(joined.contains("( / )"), "missing window-frame keybind");
@@ -1790,11 +1928,14 @@ mod status_line_tests {
 
     #[test]
     fn test_keyboard_hints_overlay_format() {
-        let hints_lines = KeyboardHintsOverlay::build_overlay(RgbColor {
-            r: 180,
-            g: 220,
-            b: 100,
-        });
+        let hints_lines = KeyboardHintsOverlay::build_overlay(
+            RgbColor {
+                r: 180,
+                g: 220,
+                b: 100,
+            },
+            &std::collections::HashMap::new(),
+        );
 
         // Solid-block borders
         for line in &hints_lines.lines {
@@ -1825,18 +1966,14 @@ mod status_line_tests {
     #[test]
     fn test_preset_comparison_overlay() {
         use crate::cli::PauseStyle;
-        use crate::render::palette::IntensityMapping;
         use crate::simulation::config::{InitMode, SimConfig};
 
         let mut state = crate::terminal::control::RuntimeState::new(
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             crate::terminal::control::MouseInteractionMode::Disabled,
             0.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -1844,7 +1981,10 @@ mod status_line_tests {
         );
         state.sensor_angle = 90.0; // Changed from default
 
-        let lines = PresetComparisonOverlay::build_overlay(&state, Preset::Organic);
+        let lines = PresetComparisonOverlay::build_overlay(
+            &state,
+            &crate::terminal::state::ComparisonTarget::Preset(Preset::Organic),
+        );
         assert!(!lines.lines.is_empty());
         let content_lines = lines
             .lines
@@ -1856,123 +1996,31 @@ mod status_line_tests {
         assert!(content_lines[0].contains('⚙'));
     }
 
+    fn make_named_profile(name: &str) -> crate::config_manager::NamedProfile {
+        use crate::profile_overrides::ProfileOverrides;
+        use crate::render::palette::Palette;
+        crate::config_manager::NamedProfile {
+            name: name.to_string(),
+            description: None,
+            overrides: ProfileOverrides {
+                population: Some(10000),
+                palette: Some(Palette::Forest),
+                ..Default::default()
+            },
+        }
+    }
+
     #[test]
     fn test_config_browser_overlay_items() {
-        let configs = vec![crate::config_manager::SavedConfig {
-            name: "Test Config".to_string(),
-            description: None,
-            population: 10000,
-            sensor_angle: 0.0,
-            sensor_distance: 0.0,
-            rotation_angle: 0.0,
-            step_size: 0.0,
-            decay_factor: 0.0,
-            deposit_amount: 0.0,
-            max_brightness: 0.0,
-            diffusion_kernel: "mean3x3".to_string(),
-            diffusion_sigma: 0.0,
-            palette: "Forest".to_string(),
-            charset: "ascii".to_string(),
-            reverse_palette: false,
-            invert_palette: false,
-            warmup_frames: 0,
-            food_persist: false,
-            auto_reset: false,
-            grid: false,
-            grid_style: None,
-            init_mode: "random".to_string(),
-            food_path: None,
-            background_color: None,
-            intensity_mapping: None,
-            intensity_mapping_base: None,
-            intensity_mapping_gamma: None,
-            intensity_mapping_levels: None,
-            window_frame: "frame".to_string(),
-            chrome_style: "minimal".to_string(),
-            aspect: "3:2".to_string(),
-            window_padding: "auto".to_string(),
-            show_status_bar: false,
-            min_sim_size: "20x10".to_string(),
-            min_frame_size: "12x6".to_string(),
-            temporal_color: None,
-            temporal_lag: None,
-            temporal_mode: None,
-            afterglow: None,
-            afterglow_rate: None,
-            decay_gamma: None,
-            diffuse_weight: None,
-            deposit_curve: None,
-            deposit_scale: None,
-            deposit_gamma: None,
-            deposit_cap: None,
-            palette_cycles: None,
-            palette_cycle_mode: None,
-            glyph_selection: None,
-            glyph_edge_threshold: None,
-            temporal_accent: None,
-            color_aa: None,
-        }];
+        let configs = vec![make_named_profile("Test Config")];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
         assert!(lines.lines.iter().any(|l| l.contains("Test Config")));
         assert!(lines.lines.iter().any(|l| l.contains("10k agents")));
     }
 
-    fn make_saved_config(name: &str) -> crate::config_manager::SavedConfig {
-        crate::config_manager::SavedConfig {
-            name: name.to_string(),
-            description: None,
-            population: 10000,
-            sensor_angle: 0.0,
-            sensor_distance: 0.0,
-            rotation_angle: 0.0,
-            step_size: 0.0,
-            decay_factor: 0.0,
-            deposit_amount: 0.0,
-            max_brightness: 0.0,
-            diffusion_kernel: "mean3x3".to_string(),
-            diffusion_sigma: 0.0,
-            palette: "Forest".to_string(),
-            charset: "ascii".to_string(),
-            reverse_palette: false,
-            invert_palette: false,
-            warmup_frames: 0,
-            food_persist: false,
-            auto_reset: false,
-            grid: false,
-            grid_style: None,
-            init_mode: "random".to_string(),
-            food_path: None,
-            background_color: None,
-            intensity_mapping: None,
-            intensity_mapping_base: None,
-            intensity_mapping_gamma: None,
-            intensity_mapping_levels: None,
-            window_frame: "frame".to_string(),
-            chrome_style: "minimal".to_string(),
-            aspect: "3:2".to_string(),
-            window_padding: "auto".to_string(),
-            show_status_bar: false,
-            min_sim_size: "20x10".to_string(),
-            min_frame_size: "12x6".to_string(),
-            temporal_color: None,
-            temporal_lag: None,
-            temporal_mode: None,
-            afterglow: None,
-            afterglow_rate: None,
-            decay_gamma: None,
-            diffuse_weight: None,
-            deposit_curve: None,
-            deposit_scale: None,
-            deposit_gamma: None,
-            deposit_cap: None,
-            palette_cycles: None,
-            palette_cycle_mode: None,
-            glyph_selection: None,
-            glyph_edge_threshold: None,
-            temporal_accent: None,
-            color_aa: None,
-        }
+    fn make_saved_config(name: &str) -> crate::config_manager::NamedProfile {
+        make_named_profile(name)
     }
 
     #[test]

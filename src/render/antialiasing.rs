@@ -11,6 +11,7 @@ use crate::render::charset::Charset;
 
 /// Per-charset color anti-aliasing strength.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum AaStrength {
     /// No color blur — raw per-cell color (today's behavior).
     #[default]

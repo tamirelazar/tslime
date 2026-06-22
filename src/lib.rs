@@ -41,14 +41,14 @@
 /// Application entry point and high-level logic.
 #[cfg(feature = "terminal")]
 pub mod app;
+/// Restart-only application-level runtime configuration (warmup, auto-reset, grid, food-persist).
+pub(crate) mod app_config;
 /// Choir-mode audio, after Miranda, Adamatzky & Jones (2011), "Sounds
 /// Synthesis with Slime Mould of Physarum Polycephalum".
 #[cfg(feature = "audio")]
 pub mod audio;
 /// Command-line argument parsing and configuration.
 pub mod cli;
-/// Configuration builder for creating SimConfig instances.
-pub mod config_builder;
 /// Centralized configuration defaults.
 pub mod config_defaults;
 /// Configuration management (load/save/delete).
@@ -62,12 +62,23 @@ pub mod exploration;
 /// Export functionality (GIF, WebM, PNG).
 #[cfg(feature = "terminal")]
 pub mod export;
+/// Keybind loader and validation.
+#[cfg(feature = "terminal")]
+pub mod keybind_manager;
 /// Overlay system (state management, rendering, input).
 #[cfg(feature = "terminal")]
 pub mod overlay;
 /// Saved palette management.
 #[cfg(feature = "terminal")]
 pub mod palette_manager;
+/// Per-preset app-runtime defaults.
+pub(crate) mod preset_app_defaults;
+/// Per-preset optional sim-layer overrides.
+pub(crate) mod preset_sim_defaults;
+/// Shared resolved lever set for presets and saved configs.
+pub(crate) mod profile;
+/// Single all-Option authored partial (sim ⊕ render ⊕ seed).
+pub(crate) mod profile_overrides;
 /// Rendering logic (ASCII/Unicode, color palettes, dithering).
 pub mod render;
 /// Per-preset render/art-layer defaults.

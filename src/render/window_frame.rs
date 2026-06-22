@@ -1,7 +1,15 @@
 //! Window frame rendering for terminal display.
 //!
-//! This module provides window frame visualization effects around the simulation area,
-//! supporting multiple styles from simple accent frames to reactive glow effects.
+//! This module draws the chrome ring around the simulation viewport. The
+//! windowed layout ([`crate::render::window`]) reserves an **aspect-aware ring**
+//! (`ring_cols` columns left/right, `ring_rows` rows top/bottom, configurable via
+//! `SimConfig::frame_matte_cols`/`frame_matte_rows`) and insets the simulation by
+//! that ring, so the simulation never renders under the border. The horizontal
+//! ring is wider than the vertical one so the border + inner matte read as
+//! visually even on terminals whose cells are roughly 1:2 (width:height). The
+//! renderer fills the ring with an outer accent band plus an inner
+//! background-colored matte, which also keeps trail content from bleeding past
+//! the frame in the blit path (`render_window_frame_at`, which skips blank cells).
 
 use crate::render::palette::RgbColor;
 use crate::simulation::config::WindowFrame;
@@ -11,190 +19,175 @@ use crate::terminal::frame_buffer::{Cell, FrameBuffer};
 pub struct WindowFrameRenderer {
     mode: WindowFrame,
     accent_color: RgbColor,
+    /// Background color for the inner separator ring (and negative space).
+    /// `None` leaves those cells blank (transparent in the blit path).
+    background_color: Option<RgbColor>,
+    /// Frame ring thickness in columns per side (border + matte).
+    ring_cols: usize,
+    /// Frame ring thickness in rows per side (border + matte).
+    ring_rows: usize,
 }
 
 impl WindowFrameRenderer {
-    /// Creates a new window frame renderer with the specified mode and accent color.
-    pub fn new(mode: WindowFrame, accent_color: RgbColor) -> Self {
-        Self { mode, accent_color }
+    /// Creates a new window frame renderer with the specified mode, accent
+    /// color, optional background color, and per-side frame ring thickness
+    /// (`ring_cols`/`ring_rows` = border + background matte).
+    pub fn new(
+        mode: WindowFrame,
+        accent_color: RgbColor,
+        background_color: Option<RgbColor>,
+        ring_cols: usize,
+        ring_rows: usize,
+    ) -> Self {
+        Self {
+            mode,
+            accent_color,
+            background_color,
+            ring_cols: ring_cols.max(1),
+            ring_rows: ring_rows.max(1),
+        }
+    }
+
+    /// A background-fill cell: a space carrying the configured background color
+    /// so it counts as non-blank (and thus blits over simulation content). When
+    /// no background is configured, a plain blank space is used.
+    fn bg_cell(&self) -> Cell {
+        match self.background_color {
+            Some(c) => Cell::new(' ').with_bg(c),
+            None => Cell::new(' '),
+        }
     }
 
     /// Renders the window frame onto the frame buffer.
-    ///
-    /// The `activity` parameter is used for reactive mode and should contain
-    /// activity levels (0.0-1.0) for each simulation cell.
-    pub fn render(&self, buffer: &mut FrameBuffer, activity: Option<&[f32]>) {
+    pub fn render(&self, buffer: &mut FrameBuffer) {
         match self.mode {
             WindowFrame::None => {}
-            WindowFrame::Negative => self.render_negative(buffer),
             WindowFrame::Accented => self.render_accented(buffer),
             WindowFrame::Glow => self.render_glow(buffer),
-            WindowFrame::Reactive => {
-                if let Some(act) = activity {
-                    self.render_reactive(buffer, act);
-                } else {
-                    self.render_accented(buffer);
-                }
-            }
             WindowFrame::Frame => self.render_frame(buffer),
         }
     }
 
-    /// Renders a solid accent-colored border.
+    /// Minimum buffer width to draw a ring (two rings + at least 2 sim cols).
+    fn min_width(&self) -> usize {
+        self.ring_cols * 2 + 2
+    }
+
+    /// Minimum buffer height to draw a ring (two rings + at least 2 sim rows).
+    fn min_height(&self) -> usize {
+        self.ring_rows * 2 + 2
+    }
+
+    /// True when `(x, y)` falls inside the frame ring (not the sim interior).
+    fn in_ring(&self, x: usize, y: usize, width: usize, height: usize) -> bool {
+        x < self.ring_cols
+            || x >= width - self.ring_cols
+            || y < self.ring_rows
+            || y >= height - self.ring_rows
+    }
+
+    /// Renders a solid accent border with a background separator just inside it.
+    /// The ring splits into an outer accent band (half the ring thickness on
+    /// each axis) and an inner background separator filling the rest.
     fn render_accented(&self, buffer: &mut FrameBuffer) {
         let width = buffer.width();
         let height = buffer.height();
+        if width < self.min_width() || height < self.min_height() {
+            return;
+        }
         let color = self.accent_color;
-
-        // Top and bottom borders
-        for x in 0..width {
-            buffer.set_cell(x, 0, Cell::new('█').with_fg(color));
-            buffer.set_cell(x, height - 1, Cell::new('█').with_fg(color));
-        }
-
-        // Left and right borders
-        for y in 1..height - 1 {
-            buffer.set_cell(0, y, Cell::new('█').with_fg(color));
-            buffer.set_cell(width - 1, y, Cell::new('█').with_fg(color));
-        }
-    }
-
-    /// Renders a gradient border fading from accent color inward.
-    fn render_glow(&self, buffer: &mut FrameBuffer) {
-        let width = buffer.width();
-        let height = buffer.height();
-
-        for i in 0..3 {
-            let alpha = 1.0 - (i as f32 * 0.3);
-            let color = self.accent_color.with_alpha(alpha);
-            let block_char = match i {
-                0 => '█',
-                1 => '▓',
-                _ => '▒',
-            };
-
-            // Draw gradient layers
-            for x in i..width - i {
-                buffer.set_cell(x, i, Cell::new(block_char).with_fg(color));
-                buffer.set_cell(x, height - 1 - i, Cell::new(block_char).with_fg(color));
-            }
-            for y in i..height - i {
-                buffer.set_cell(i, y, Cell::new(block_char).with_fg(color));
-                buffer.set_cell(width - 1 - i, y, Cell::new(block_char).with_fg(color));
-            }
-        }
-    }
-
-    /// Renders a border that responds to nearby agent activity.
-    fn render_reactive(&self, buffer: &mut FrameBuffer, activity: &[f32]) {
-        let width = buffer.width();
-        let height = buffer.height();
+        let bg = self.bg_cell();
+        // Outer accent band thickness (the remaining ring is separator).
+        let acc_c = (self.ring_cols / 2).max(1);
+        let acc_r = (self.ring_rows / 2).max(1);
 
         for y in 0..height {
             for x in 0..width {
-                // Check if this is a border cell (2-cell thickness)
-                let is_border = x < 2 || x >= width - 2 || y < 2 || y >= height - 2;
-                if !is_border {
+                if !self.in_ring(x, y, width, height) {
                     continue;
                 }
-
-                // Get activity from nearest simulation cell
-                let sim_x = x.saturating_sub(2).min(width.saturating_sub(5));
-                let sim_y = y.saturating_sub(2).min(height.saturating_sub(5));
-
-                // Calculate activity index (simulation area is smaller due to border)
-                let sim_width = width.saturating_sub(4);
-                if sim_width == 0 {
-                    continue;
-                }
-                let idx = sim_y * sim_width + sim_x;
-                let activity_level = activity.get(idx).copied().unwrap_or(0.0).clamp(0.0, 1.0);
-
-                if activity_level > 0.01 {
-                    // Blend accent color with brightness based on activity
-                    let brightness = (activity_level * 255.0) as u8;
-                    let base = RgbColor::new(brightness, brightness, brightness);
-                    let color = base.blend(&self.accent_color, activity_level);
+                let is_accent = x < acc_c || x >= width - acc_c || y < acc_r || y >= height - acc_r;
+                if is_accent {
                     buffer.set_cell(x, y, Cell::new('█').with_fg(color));
                 } else {
-                    // Dim border when no activity
-                    let dim_color = self.accent_color.with_alpha(0.1);
-                    buffer.set_cell(x, y, Cell::new('░').with_fg(dim_color));
+                    buffer.set_cell(x, y, bg);
                 }
             }
         }
     }
 
-    /// Clears the border area (negative space - no simulation rendered there).
-    /// Uses 1 row on top/bottom and 2 columns on left/right.
-    fn render_negative(&self, buffer: &mut FrameBuffer) {
+    /// Renders a gradient border fading from accent color inward, filling the
+    /// ring from the outer edge toward the simulation.
+    fn render_glow(&self, buffer: &mut FrameBuffer) {
         let width = buffer.width();
         let height = buffer.height();
-
-        if width < 5 || height < 3 {
+        if width < self.min_width() || height < self.min_height() {
             return;
         }
 
-        // Clear top and bottom rows (1 row each)
-        for x in 0..width {
-            buffer.set_cell(x, 0, Cell::new(' '));
-            buffer.set_cell(x, height - 1, Cell::new(' '));
-        }
-
-        // Clear left and right 2 columns
-        for y in 1..height - 1 {
-            buffer.set_cell(0, y, Cell::new(' '));
-            buffer.set_cell(1, y, Cell::new(' '));
-            buffer.set_cell(width - 2, y, Cell::new(' '));
-            buffer.set_cell(width - 1, y, Cell::new(' '));
+        for y in 0..height {
+            for x in 0..width {
+                if !self.in_ring(x, y, width, height) {
+                    continue;
+                }
+                // Normalized depth from the outer edge along each axis; the
+                // shallower axis wins so corners read as the outer (bright) band.
+                let dc = x.min(width - 1 - x) as f32 / self.ring_cols as f32;
+                let dr = y.min(height - 1 - y) as f32 / self.ring_rows as f32;
+                let depth = dc.min(dr).clamp(0.0, 1.0);
+                let alpha = 1.0 - depth * 0.7;
+                let ch = if depth < 0.34 {
+                    '█'
+                } else if depth < 0.67 {
+                    '▓'
+                } else {
+                    '▒'
+                };
+                buffer.set_cell(
+                    x,
+                    y,
+                    Cell::new(ch).with_fg(self.accent_color.with_alpha(alpha)),
+                );
+            }
         }
     }
 
-    /// Renders a frame around the visible simulation area.
-    /// This combines negative space with a visible border around the simulation.
-    /// Uses 1 row on top/bottom and 2 columns on left/right.
-    /// The frame hugs the simulation cells at row 1 and columns 2/width-3.
+    /// Renders a thin-line box at the outer ring edge, with a background **matte**
+    /// between the box and the simulation. The matte (the rest of the ring) gives
+    /// a visible gap so trail content does not touch the border. The matte is
+    /// wider in columns than rows so it reads as visually even (see the
+    /// `ring_cols`/`ring_rows` fields).
     fn render_frame(&self, buffer: &mut FrameBuffer) {
         let width = buffer.width();
         let height = buffer.height();
         let color = self.accent_color;
-
-        if width < 6 || height < 3 {
+        if width < self.min_width() || height < self.min_height() {
             return;
         }
 
-        // First clear the outer border (negative space)
-        // Clear top and bottom rows (1 row each)
-        for x in 0..width {
-            buffer.set_cell(x, 0, Cell::new(' '));
-            buffer.set_cell(x, height - 1, Cell::new(' '));
+        let bg = self.bg_cell();
+        // Fill the whole ring with the background matte first.
+        for y in 0..height {
+            for x in 0..width {
+                if self.in_ring(x, y, width, height) {
+                    buffer.set_cell(x, y, bg);
+                }
+            }
         }
 
-        // Clear left and right 2 columns
+        // Box at the outer ring edge (the matte sits between it and the sim).
+        buffer.set_cell(0, 0, Cell::new('┌').with_fg(color));
+        buffer.set_cell(width - 1, 0, Cell::new('┐').with_fg(color));
+        buffer.set_cell(0, height - 1, Cell::new('└').with_fg(color));
+        buffer.set_cell(width - 1, height - 1, Cell::new('┘').with_fg(color));
+
+        for x in 1..width - 1 {
+            buffer.set_cell(x, 0, Cell::new('─').with_fg(color));
+            buffer.set_cell(x, height - 1, Cell::new('─').with_fg(color));
+        }
         for y in 1..height - 1 {
-            buffer.set_cell(0, y, Cell::new(' '));
-            buffer.set_cell(1, y, Cell::new(' '));
-            buffer.set_cell(width - 2, y, Cell::new(' '));
-            buffer.set_cell(width - 1, y, Cell::new(' '));
-        }
-
-        // Then draw the frame hugging the simulation area: row 1 (just below
-        // the cleared top row) and columns 2 to width-3 (inside the side borders)
-        buffer.set_cell(2, 1, Cell::new('┌').with_fg(color));
-        buffer.set_cell(width - 3, 1, Cell::new('┐').with_fg(color));
-        buffer.set_cell(2, height - 2, Cell::new('└').with_fg(color));
-        buffer.set_cell(width - 3, height - 2, Cell::new('┘').with_fg(color));
-
-        // Top and bottom edges
-        for x in 3..width - 3 {
-            buffer.set_cell(x, 1, Cell::new('─').with_fg(color));
-            buffer.set_cell(x, height - 2, Cell::new('─').with_fg(color));
-        }
-
-        // Left and right edges
-        for y in 2..height - 2 {
-            buffer.set_cell(2, y, Cell::new('│').with_fg(color));
-            buffer.set_cell(width - 3, y, Cell::new('│').with_fg(color));
+            buffer.set_cell(0, y, Cell::new('│').with_fg(color));
+            buffer.set_cell(width - 1, y, Cell::new('│').with_fg(color));
         }
     }
 
@@ -213,28 +206,82 @@ impl WindowFrameRenderer {
 mod tests {
     use super::*;
 
+    use crate::cli::ColorMode;
+
+    const RING_C: usize = 5;
+    const RING_R: usize = 2;
+
     #[test]
     fn test_window_frame_renderer_creation() {
         let color = RgbColor::new(255, 0, 0);
-        let renderer = WindowFrameRenderer::new(WindowFrame::Accented, color);
+        let renderer = WindowFrameRenderer::new(WindowFrame::Accented, color, None, RING_C, RING_R);
         assert_eq!(renderer.mode, WindowFrame::Accented);
         assert_eq!(renderer.thickness(), 1);
         assert!(!renderer.reduces_display_area());
     }
 
     #[test]
-    fn test_negative_space_reduces_area() {
+    fn test_frame_thickness() {
         let color = RgbColor::new(255, 0, 0);
-        let renderer = WindowFrameRenderer::new(WindowFrame::Negative, color);
-        assert!(renderer.reduces_display_area());
+        let renderer = WindowFrameRenderer::new(WindowFrame::Frame, color, None, RING_C, RING_R);
         assert_eq!(renderer.thickness(), 2);
+        assert!(!renderer.reduces_display_area());
     }
 
     #[test]
     fn test_glow_thickness() {
         let color = RgbColor::new(255, 0, 0);
-        let renderer = WindowFrameRenderer::new(WindowFrame::Glow, color);
+        let renderer = WindowFrameRenderer::new(WindowFrame::Glow, color, None, RING_C, RING_R);
         assert_eq!(renderer.thickness(), 3);
         assert!(!renderer.reduces_display_area());
+    }
+
+    /// The simulation interior (inset by the frame ring on every side) must
+    /// never be touched by the Frame border. This is the regression guard for
+    /// the frame-escape bug: the box sits at the outer ring edge with a matte
+    /// between it and the sim.
+    #[test]
+    fn test_frame_does_not_draw_into_sim_interior() {
+        let accent = RgbColor::new(255, 0, 0);
+        let (w, h) = (24usize, 14usize);
+        let mut buffer = FrameBuffer::new(w, h, ColorMode::TrueColor, None);
+        // Seed the whole buffer with a sentinel glyph so any frame write shows.
+        for y in 0..h {
+            for x in 0..w {
+                buffer.set_cell(x, y, Cell::new('S'));
+            }
+        }
+        let renderer = WindowFrameRenderer::new(WindowFrame::Frame, accent, None, RING_C, RING_R);
+        renderer.render(&mut buffer);
+
+        // Interior = inset by the ring on every side; must remain the sentinel.
+        for y in RING_R..h - RING_R {
+            for x in RING_C..w - RING_C {
+                assert_eq!(
+                    buffer.get_cell(x, y).char,
+                    'S',
+                    "frame wrote into sim interior at ({x},{y})"
+                );
+            }
+        }
+        // The box sits at the outer ring edge (top-left corner); a matte
+        // separates it from the sim interior.
+        assert_eq!(buffer.get_cell(0, 0).char, '┌');
+    }
+
+    /// With a background color set, the inner matte is filled with a non-blank
+    /// background cell (so it covers trail content in the blit path).
+    #[test]
+    fn test_accented_separator_uses_background_color() {
+        let accent = RgbColor::new(255, 0, 0);
+        let bg = RgbColor::new(10, 20, 30);
+        let mut buffer = FrameBuffer::new(24, 14, ColorMode::TrueColor, None);
+        let renderer =
+            WindowFrameRenderer::new(WindowFrame::Accented, accent, Some(bg), RING_C, RING_R);
+        renderer.render(&mut buffer);
+        // A matte cell (inside the accent band) carries the background color.
+        let acc_c = (RING_C / 2).max(1);
+        let sep = buffer.get_cell(acc_c, RING_R - 1);
+        assert_eq!(sep.bg_color_rgb, Some(bg), "matte should carry bg color");
     }
 }

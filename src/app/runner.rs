@@ -5,6 +5,8 @@
 
 use std::io::{self, Write};
 
+use clap::Parser as _;
+
 use crate::app::{
     apply_live_params, apply_random_config, extract_species_rgb_colors, REFERENCE_TIME_STEP,
 };
@@ -24,7 +26,8 @@ use crate::render::grid::{GridRenderer, GridStyle};
 use crate::render::options_overlay::ControlsOverlay;
 use crate::render::overlay::{
     build_notification_panel, ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay,
-    KeyboardHintsOverlay, OverlayRenderer, PauseOverlay, PresetComparisonOverlay, RenderedOverlay,
+    DirtyGuardOverlay, KeyboardHintsOverlay, OverlayRenderer, PauseOverlay,
+    PresetComparisonOverlay, RenderedOverlay,
 };
 use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
 use crate::render::palette_editor::{
@@ -37,7 +40,7 @@ use crate::simulation::Simulation;
 use crate::terminal::control::num_palettes;
 use crate::terminal::control::{
     charset_name, handle_key_event, palette_name, preset_name, ControlAction, MouseInteractionMode,
-    PaletteShiftSpeed, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
+    PaletteShiftSpeed, PendingSwap, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
 };
 use crate::terminal::detection::{log_capabilities, TerminalCapabilities};
 use crate::terminal::frame_buffer::FrameBuffer;
@@ -56,19 +59,16 @@ const TARGET_FRAME_TIME_MS: f32 = 33.333;
 ///
 /// Gradually reduces the strength of food attractors over time using
 /// quadratic easing for a smooth fade-out effect.
-fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeState, args: &Args) {
-    if !runtime_state.food_persist_enabled
-        || runtime_state.is_paused
-        || args.food_persist_duration == 0
-    {
+fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeState) {
+    let duration = runtime_state.app.food_persist_duration;
+    if !runtime_state.food_persist_enabled || runtime_state.is_paused || duration == 0 {
         return;
     }
 
     runtime_state.food_persist_counter += 1;
 
-    if runtime_state.food_persist_counter <= args.food_persist_duration {
-        let progress =
-            runtime_state.food_persist_counter as f32 / args.food_persist_duration as f32;
+    if runtime_state.food_persist_counter <= duration {
+        let progress = runtime_state.food_persist_counter as f32 / duration as f32;
         let fade_factor: f32 = (1.0 - progress).powi(2); // Quadratic fade-out
 
         // Update attractor strengths without cloning entire config
@@ -78,9 +78,20 @@ fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeStat
             .map(|a| Attractor::new(a.x, a.y, a.strength * fade_factor))
             .collect();
         sim.update_attractors(attractors);
-    } else if runtime_state.food_persist_counter == args.food_persist_duration + 1 {
+    } else if runtime_state.food_persist_counter == duration + 1 {
         // Remove all food attractors when duration expires
         sim.update_attractors(Vec::new());
+    }
+}
+
+/// The init mode to actually seed with. Constellation re-rolls a fresh random
+/// mode each reset; every other preset uses its stable baseline. Does NOT mutate
+/// config or `original_init_mode`, so dirty-projection stays clean.
+pub(crate) fn effective_init_mode(preset: Preset, base: InitMode) -> InitMode {
+    if matches!(preset, Preset::Constellation) {
+        InitMode::random(&mut rand::thread_rng())
+    } else {
+        base
     }
 }
 
@@ -91,19 +102,27 @@ fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeStat
 fn check_auto_reset(
     sim: &mut Simulation,
     runtime_state: &mut RuntimeState,
-    args: &Args,
     entropy: f32,
-    init_mode: InitMode,
+    blended_trail: &[f32],
 ) {
-    if !args.auto_reset || runtime_state.is_paused {
+    if !runtime_state.app.auto_reset || runtime_state.is_paused {
         return;
     }
 
-    let should_reset = runtime_state.track_entropy(
+    // Collapse fires on either signal: entropy falling away (the field dies out)
+    // or the pattern stagnating (a near-static shape that stops evolving even
+    // while entropy stays healthy, e.g. a frozen diagonal line).
+    let entropy_collapse = runtime_state.track_entropy(
         entropy,
-        args.collapse_entropy_threshold,
-        args.collapse_duration_frames,
+        runtime_state.app.auto_reset_entropy_threshold,
+        runtime_state.app.auto_reset_duration_frames,
     );
+    let stagnation_collapse = runtime_state.track_stagnation(
+        blended_trail,
+        crate::config_defaults::auto_reset::DEFAULT_STAGNATION_EPSILON,
+        crate::config_defaults::auto_reset::DEFAULT_STAGNATION_FRAMES,
+    );
+    let should_reset = entropy_collapse || stagnation_collapse;
 
     if should_reset {
         let new_seed = std::time::SystemTime::now()
@@ -111,6 +130,13 @@ fn check_auto_reset(
             .unwrap_or_default()
             .as_secs();
 
+        // Use the live original init mode (the apply seam updates it on restart),
+        // NOT the startup `init_mode` local which is stale after a config load.
+        // Constellation re-rolls a fresh layout each reset (non-mutating).
+        let init_mode = effective_init_mode(
+            runtime_state.current_preset,
+            runtime_state.original_init_mode,
+        );
         sim.reset(new_seed, init_mode);
         runtime_state.reset_collapse_counter();
         runtime_state.reset_warmup();
@@ -129,6 +155,21 @@ fn check_auto_reset(
 /// e.g. Windows) are ignored so a single keystroke does not double-fire.
 fn screensaver_exit_on_key(mode: &Mode, key_event: &crossterm::event::KeyEvent) -> bool {
     *mode == Mode::Screensaver && key_event.kind == crossterm::event::KeyEventKind::Press
+}
+
+/// Resolves a quick-key press to a bind target.
+///
+/// User binds (from `~/.config/tslime/keybinds.toml`) take precedence over
+/// built-in preset defaults. Returns `None` when the key has no binding.
+fn resolve_bind(
+    c: char,
+    user_binds: &std::collections::HashMap<char, crate::keybind_manager::BindTarget>,
+) -> Option<crate::keybind_manager::BindTarget> {
+    use crate::keybind_manager::BindTarget;
+    if let Some(t) = user_binds.get(&c) {
+        return Some(t.clone());
+    }
+    crate::simulation::config::preset_for_set_key(c).map(BindTarget::Preset)
 }
 
 /// Runs the interactive simulation loop (Live or Screensaver mode).
@@ -168,9 +209,9 @@ pub fn run_simulation(
 
     let color_mode = capabilities.auto_select_color_mode(args.color_mode().ok());
 
-    let config = args
-        .to_sim_config()
+    let startup_profile = crate::profile::Profile::resolve_from_args(args)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let config = startup_profile.sim.clone();
     let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
 
     let init_mode = args
@@ -202,10 +243,13 @@ pub fn run_simulation(
     let (mut term_width, mut term_height) = screen.get_size()?;
     renderer.set_dimensions(term_width as usize, term_height as usize);
 
-    // Compute initial window layout for windowed (non-fullscreen) chrome styles
-    let window = crate::render::window::Window {
+    // Compute initial window layout for windowed (non-fullscreen) chrome styles.
+    // `mut` because the config-load apply seam recomputes it on load.
+    let mut window = crate::render::window::Window {
         aspect: config.aspect,
         padding: config.window_padding,
+        ring_cols: config.frame_matte_cols + 1,
+        ring_rows: config.frame_matte_rows + 1,
         min_sim_size: config.min_sim_size,
         min_frame_size: config.min_frame_size,
     };
@@ -233,54 +277,42 @@ pub fn run_simulation(
 
     let initial_preset = args.preset.unwrap_or(Preset::Organic);
 
-    let art_defaults = args
-        .to_render_art_defaults()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-
-    let initial_palette = if args.palette_explicitly_set() {
-        args.palette().unwrap_or(cli::Palette::Moss)
-    } else {
-        art_defaults
-            .palette
-            .unwrap_or_else(|| args.palette().unwrap_or(cli::Palette::Moss))
-    };
-    let initial_palette_index = if let cli::Palette::Custom(_) = initial_palette {
-        4 // Default to Forest for custom palettes
-    } else {
-        ALL_PALETTES
-            .iter()
-            .position(|p| *p == initial_palette)
-            .unwrap_or(4)
-    };
-
-    let initial_intensity_mapping = art_defaults.intensity_mapping.clone();
-    renderer.set_intensity_mapping(Some(initial_intensity_mapping.clone()));
-
-    let initial_palette_cycle = art_defaults.palette_cycle;
-    renderer.set_palette_cycle(initial_palette_cycle);
-
-    let initial_glyph = art_defaults.glyph;
-    renderer.set_glyph(initial_glyph);
-
-    let initial_charset_index = ALL_CHARSETS.iter().position(|c| c == &charset).unwrap_or(0);
+    let resolved = startup_profile.render.clone();
 
     let mut runtime_state = RuntimeState::new(
         seed,
         init_mode,
         initial_preset,
-        initial_palette_index,
-        initial_charset_index,
         mouse_mode,
         args.mouse_timeout,
-        initial_intensity_mapping,
         &config,
         args.pause_style,
         args.pause_logo,
         args.pause_pulse_draw_mode,
     );
+    // Classify the startup invocation: bare `--preset <p>` (no other overrides, no seed pin)
+    // → Preset(p); anything more complex (extra flags, seed, no preset) → StartupCli.
+    let startup_ov = crate::profile_overrides::ProfileOverrides::from_args(args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    runtime_state.active_source = if let Some(p) = args.preset {
+        // Build a clap-parsed template for bare `--preset <name>` to get correct clap
+        // defaults (not Rust struct defaults which differ on fps, time_scale, etc.).
+        let preset_name = crate::terminal::control::preset_name(p);
+        let template_args = Args::parse_from(["tslime", "--preset", preset_name]);
+        let template = crate::profile_overrides::ProfileOverrides::from_args(&template_args)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        match startup_ov.bare_preset_against(&template) {
+            Some(preset) => crate::profile::ProfileSource::Preset(preset),
+            None => crate::profile::ProfileSource::StartupCli,
+        }
+    } else {
+        crate::profile::ProfileSource::StartupCli
+    };
+    // Seed the live app-runtime config + active overrides from the startup profile so
+    // the runner reads warmup/auto-reset/grid/food from rs.app (the single live source).
+    runtime_state.app = startup_profile.app.clone();
+    runtime_state.active_overrides = startup_ov;
     runtime_state.preload_pause_logo(term_width as usize, term_height as usize);
-    runtime_state.palette_cycle = initial_palette_cycle;
-    runtime_state.glyph = initial_glyph;
     runtime_state.dither_mode = dither_mode;
     runtime_state.trail_age_enabled = args.trail_age;
     runtime_state.trail_delta_enabled = args.trail_delta;
@@ -294,13 +326,8 @@ pub fn run_simulation(
     };
     runtime_state.trail_age_reverse = args.trail_age_reverse;
     runtime_state.trail_delta_strength = args.trail_delta_strength;
-    runtime_state.temporal_color = art_defaults.temporal_color;
-    runtime_state.temporal_lag_frames = art_defaults.temporal_lag_frames;
-    runtime_state.temporal_mode = art_defaults.temporal_mode;
-    runtime_state.temporal_accent = art_defaults.temporal_accent;
-    runtime_state.afterglow = args.afterglow;
-    runtime_state.afterglow_rate = args.afterglow_rate;
-    runtime_state.diffuse_weight = args.diffuse_weight;
+    // decay_gamma / diffuse_weight come from the assembled config via
+    // RuntimeState::new — do not re-clobber them from raw CLI args here.
     if args.stats {
         runtime_state.overlay_state.open(OverlayType::Dashboard);
     }
@@ -313,23 +340,8 @@ pub fn run_simulation(
     if args.gradient_magnitude {
         sim.set_compute_gradient_magnitude(true);
     }
-    if art_defaults.temporal_color > 0.0 {
-        let lag = art_defaults.temporal_lag_frames;
-        let temporal_alpha = if lag > 0.0 { 1.0 / lag.max(1.0) } else { 1.0 };
-        sim.set_compute_temporal(true, temporal_alpha);
-    }
-    if args.afterglow > 0.0 {
-        sim.set_compute_afterglow(true, args.afterglow_rate);
-    }
-    renderer.set_dither_mode(dither_mode);
-
-    // Apply CLI --color-aa override to the launch charset (else the per-charset default stands).
-    if let Some(aa) = args.color_aa {
-        runtime_state.apply_cli_color_aa(aa);
-    }
-    // Push the resolved launch AA (default or CLI override) to the renderer so the
-    // FIRST frame already reflects it (renderer's color_aa otherwise inits to Off).
-    renderer.set_color_aa(runtime_state.current_color_aa());
+    crate::app::apply_render_config(&resolved, &mut runtime_state, &mut renderer, sim);
+    runtime_state.set_render_baseline(resolved.clone());
 
     // Initialize food persistence
     if args.food_persist && init_mode == InitMode::Food {
@@ -340,7 +352,7 @@ pub fn run_simulation(
             &args.food,
             args.food_invert,
             args.food_scale,
-            args.food_persist_strength,
+            runtime_state.app.food_persist_strength,
             0.3,
         );
 
@@ -356,11 +368,13 @@ pub fn run_simulation(
         renderer.set_species_colors(true, species_rgb_colors);
     }
 
+    // apply_render_config (above) has already set runtime_state.auto_normalize from
+    // the resolved render config, so a preset may default it ON. Seed the loop-local
+    // and the AdaptiveBrightness from rs, not the raw CLI flag.
+    let mut current_auto_normalize = runtime_state.auto_normalize;
     let mut adaptive_brightness =
-        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+        AdaptiveBrightness::new(args.normalize_window, current_auto_normalize);
     let mut hue_offset: f32 = 0.0;
-
-    let mut current_auto_normalize = args.auto_normalize;
 
     if args.random {
         runtime_state.randomize_params();
@@ -369,25 +383,10 @@ pub fn run_simulation(
 
     let start_time = std::time::Instant::now();
 
-    let mut grid_renderer = if args.grid {
-        let grid_style = args.grid_style.parse().unwrap_or(GridStyle::Cross);
-        let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor {
-            r: 255,
-            g: 255,
-            b: 255,
-        });
-        let mut renderer = GridRenderer::new(
-            grid_style,
-            args.grid_size,
-            grid_color,
-            args.grid_opacity,
-            args.grid_adaptive,
-        );
-        renderer.initialize(term_width as usize, term_height as usize);
-        Some(renderer)
-    } else {
-        None
-    };
+    let mut grid_renderer = crate::app::build_grid_renderer(
+        &runtime_state.app,
+        (term_width as usize, term_height as usize),
+    );
 
     // Compute sim render dimensions (may be smaller than terminal in windowed mode)
     let compute_render_dims = |tw: usize, th: usize| -> (usize, usize) {
@@ -430,6 +429,151 @@ pub fn run_simulation(
     } else {
         None
     };
+
+    // The SINGLE swap executor. Both the clean path (is_dirty == false → call
+    // immediately) and the post-confirm path (Enter on the dirty guard) route
+    // through this so they can never diverge. Transactional: each variant commits
+    // provenance (active_source/active_overrides) only after a successful apply.
+    #[allow(clippy::too_many_arguments)]
+    fn do_swap(
+        pending: PendingSwap,
+        rs: &mut RuntimeState,
+        renderer: &mut TerminalRenderer,
+        sim: &mut Simulation,
+        timer: &mut FrameTimer,
+        grid_renderer: &mut Option<crate::render::grid::GridRenderer>,
+        window: &mut crate::render::window::Window,
+        downsampled_frame: &mut crate::render::downsample::DownsampledFrame,
+        aux_frame: &mut crate::render::downsample::AuxFrame,
+        term_size: (usize, usize),
+    ) -> io::Result<()> {
+        match pending {
+            PendingSwap::Preset(preset) => {
+                switch_preset(
+                    preset,
+                    rs,
+                    renderer,
+                    sim,
+                    timer,
+                    grid_renderer,
+                    window,
+                    downsampled_frame,
+                    aux_frame,
+                    term_size,
+                )?;
+                rs.show_notification(format!(
+                    "Applied preset: {}",
+                    crate::terminal::control::preset_name(preset)
+                ));
+            }
+            PendingSwap::Config(config) => {
+                // The config was already resolved at selection time and carried
+                // through the pending swap, so load it through the apply seam
+                // directly, committing provenance only on success (transactional).
+                match crate::app::apply_overrides(
+                    &config.overrides,
+                    rs,
+                    renderer,
+                    sim,
+                    timer,
+                    grid_renderer,
+                    window,
+                    downsampled_frame,
+                    aux_frame,
+                    term_size,
+                    true,
+                ) {
+                    Ok(()) => {
+                        rs.active_source =
+                            crate::profile::ProfileSource::SavedConfig(config.name.clone());
+                        rs.active_overrides = config.overrides.clone();
+                        rs.show_notification(format!("Config '{}' loaded", config.name));
+                    }
+                    Err(e) => {
+                        rs.show_notification(format!("Failed to load '{}': {}", config.name, e));
+                    }
+                }
+            }
+            PendingSwap::Reset => {
+                let ov = rs.active_overrides.clone();
+                rs.reset_transient();
+                match crate::app::apply_overrides(
+                    &ov,
+                    rs,
+                    renderer,
+                    sim,
+                    timer,
+                    grid_renderer,
+                    window,
+                    downsampled_frame,
+                    aux_frame,
+                    term_size,
+                    true,
+                ) {
+                    Ok(()) => {
+                        rs.show_notification("Reset to defaults".to_string());
+                    }
+                    Err(e) => {
+                        rs.show_notification(format!("Reset failed: {e}"));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // Dirty-guard-or-swap: the single place that decides between parking a swap
+    // behind the dirty guard and applying it immediately. Returns true when it
+    // swapped now (clean path), false when it parked (dirty path). Callers that
+    // need clean-path-only side effects (e.g. zeroing hue) branch on the bool.
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_swap(
+        pending: PendingSwap,
+        rs: &mut RuntimeState,
+        renderer: &mut TerminalRenderer,
+        sim: &mut Simulation,
+        timer: &mut FrameTimer,
+        grid_renderer: &mut Option<crate::render::grid::GridRenderer>,
+        window: &mut crate::render::window::Window,
+        downsampled_frame: &mut crate::render::downsample::DownsampledFrame,
+        aux_frame: &mut crate::render::downsample::AuxFrame,
+        term_size: (usize, usize),
+        current_auto_normalize: &mut bool,
+        adaptive_brightness: &mut AdaptiveBrightness,
+        normalize_window: usize,
+    ) -> io::Result<bool> {
+        if rs.is_dirty(
+            sim.config(),
+            rs.live_palette.clone(),
+            rs.live_charset.clone(),
+        ) {
+            rs.pending_swap = Some(pending);
+            rs.close_all_overlays();
+            rs.overlay_state.open(OverlayType::DirtyGuard);
+            rs.on_modal_open();
+            Ok(false)
+        } else {
+            do_swap(
+                pending,
+                rs,
+                renderer,
+                sim,
+                timer,
+                grid_renderer,
+                window,
+                downsampled_frame,
+                aux_frame,
+                term_size,
+            )?;
+            *current_auto_normalize = rs.auto_normalize;
+            *adaptive_brightness =
+                AdaptiveBrightness::new(normalize_window, *current_auto_normalize);
+            Ok(true)
+        }
+    }
+
+    let user_binds = crate::keybind_manager::load_keybinds();
+
     loop {
         if is_shutdown_requested() {
             break;
@@ -448,16 +592,20 @@ pub fn run_simulation(
                 // to avoid calling compute_rects a second time.
                 let (new_render_w, new_render_h) = {
                     use crate::simulation::config::ChromeStyle;
-                    let new_layout = if matches!(config.chrome_style, ChromeStyle::Fullscreen) {
-                        None
-                    } else {
-                        let l = window.compute_rects(term_width as usize, term_height as usize);
-                        if matches!(l.fallback, crate::render::window::FallbackMode::Fullscreen) {
+                    // Read LIVE chrome (a loaded config may have changed it); the frozen
+                    // startup `config.chrome_style` would size buffers against stale chrome.
+                    let new_layout =
+                        if matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen) {
                             None
                         } else {
-                            Some(l)
-                        }
-                    };
+                            let l = window.compute_rects(term_width as usize, term_height as usize);
+                            if matches!(l.fallback, crate::render::window::FallbackMode::Fullscreen)
+                            {
+                                None
+                            } else {
+                                Some(l)
+                            }
+                        };
                     // Derive render dims from the computed layout before moving it into renderer
                     let dims = new_layout
                         .as_ref()
@@ -506,11 +654,12 @@ pub fn run_simulation(
         let dt_wall = dt / runtime_state.time_scale.max(f32::EPSILON);
         runtime_state.advance_fade(dt_wall);
 
-        let in_warmup = !args.skip_warmup && runtime_state.is_in_warmup(args.warmup_frames);
+        let in_warmup = !runtime_state.app.skip_warmup
+            && runtime_state.is_in_warmup(runtime_state.app.warmup_frames);
 
         let frames_since_warmup = runtime_state
             .warmup_counter
-            .saturating_sub(args.warmup_frames);
+            .saturating_sub(runtime_state.app.warmup_frames);
         let in_transition = frames_since_warmup < TRANSITION_DURATION_FRAMES;
 
         // Warmup→normal handoff: 0.0 during warmup, ramps 0→1 over
@@ -537,8 +686,9 @@ pub fn run_simulation(
             sim.update(adjusted_dt / REFERENCE_TIME_STEP);
 
             // Cap the counter so it stops once warmup + transition are complete.
-            if !args.skip_warmup
-                && runtime_state.warmup_counter < args.warmup_frames + TRANSITION_DURATION_FRAMES
+            if !runtime_state.app.skip_warmup
+                && runtime_state.warmup_counter
+                    < runtime_state.app.warmup_frames + TRANSITION_DURATION_FRAMES
             {
                 runtime_state.increment_warmup();
             }
@@ -644,9 +794,12 @@ pub fn run_simulation(
             runtime_state.temporal_accent,
         );
 
-        let current_config = args
-            .to_sim_config()
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        // Narrow live reads instead of cloning the whole SimConfig (which carries heap Vecs
+        // including obstacle masks). DiffusionKernel is Copy; species colors are the only Vec
+        // consumers, collected once here and reused at both render sites.
+        let current_diffusion_kernel = sim.config().diffusion_kernel;
+        let current_species_rgb: Vec<crate::render::palette::RgbColor> =
+            extract_species_rgb_colors(sim.config());
 
         adaptive_brightness.update(downsampled_frame.cells());
         let mut max_brightness = if current_auto_normalize {
@@ -662,7 +815,8 @@ pub fn run_simulation(
             // boost fades out.
             let brightness_fade = 1.0 - fade_factor;
 
-            let multiplier = 1.0 + (args.warmup_brightness_multiplier - 1.0) * brightness_fade;
+            let multiplier =
+                1.0 + (runtime_state.app.warmup_brightness_multiplier - 1.0) * brightness_fade;
             max_brightness *= multiplier;
         }
 
@@ -693,7 +847,7 @@ pub fn run_simulation(
         {
             Some(PresetComparisonOverlay::build_overlay(
                 &runtime_state,
-                runtime_state.comparison_preset,
+                &runtime_state.comparison_target,
             ))
         } else {
             None
@@ -748,7 +902,7 @@ pub fn run_simulation(
             .is_open(OverlayType::KeyboardHints)
             && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
         {
-            Some(KeyboardHintsOverlay::build_overlay(ui_accent))
+            Some(KeyboardHintsOverlay::build_overlay(ui_accent, &user_binds))
         } else {
             None
         };
@@ -882,7 +1036,10 @@ pub fn run_simulation(
                 let frame_time_ms = timer.last_frame_ms();
                 let cpu_percent = (frame_time_ms / TARGET_FRAME_TIME_MS) * 100.0;
 
-                let init_mode_name = match init_mode {
+                // Use the live original_init_mode (updated by apply_overrides on config load),
+                // not the startup-time `init_mode` local which is stale after a config load.
+                let live_init_mode = runtime_state.original_init_mode;
+                let init_mode_name = match live_init_mode {
                     InitMode::Random => "Random",
                     InitMode::CentralBurst => "Central",
                     InitMode::Circle => "Circle",
@@ -913,7 +1070,7 @@ pub fn run_simulation(
                     Charset::CustomAscii(_) => "Custom",
                 };
 
-                let food_source = if init_mode == InitMode::Food {
+                let food_source = if live_init_mode == InitMode::Food {
                     Some(args.food.clone())
                 } else {
                     None
@@ -968,8 +1125,8 @@ pub fn run_simulation(
                     current_config.sensor_angle,
                     seed,
                     &food_source,
-                    args.warmup_frames,
-                    args.auto_reset,
+                    runtime_state.app.warmup_frames,
+                    runtime_state.app.auto_reset,
                     ui_accent,
                     &runtime_state.panel_style,
                 ))
@@ -1029,8 +1186,20 @@ pub fn run_simulation(
             (0, 0)
         };
 
-        update_food_persistence(sim, &mut runtime_state, args);
-        check_auto_reset(sim, &mut runtime_state, args, entropy, init_mode);
+        let dirty_guard_overlay: Option<RenderedOverlay> =
+            if runtime_state.overlay_state.is_open(OverlayType::DirtyGuard) {
+                Some(DirtyGuardOverlay::build_overlay())
+            } else {
+                None
+            };
+        let (dirty_guard_x, dirty_guard_y) = if dirty_guard_overlay.is_some() {
+            DirtyGuardOverlay::calculate_position(term_width as usize, term_height as usize)
+        } else {
+            (0, 0)
+        };
+
+        update_food_persistence(sim, &mut runtime_state);
+        check_auto_reset(sim, &mut runtime_state, entropy, &blended_trail_buffer);
 
         // Update pause frame counter for animated pause effects
         if runtime_state.is_paused {
@@ -1126,10 +1295,9 @@ pub fn run_simulation(
 
         if args.species_colors_enabled() && sim.config().separate_species_trails {
             let species_trail_maps = sim.trail_maps_for_species_colors();
-            let species_rgb_colors = extract_species_rgb_colors(&current_config);
             let combined: Vec<_> = species_trail_maps
                 .iter()
-                .zip(species_rgb_colors.iter())
+                .zip(current_species_rgb.iter())
                 .map(|(tm, color)| (*tm, *color))
                 .collect();
             renderer.render_multi_species_with_overlay(
@@ -1159,6 +1327,9 @@ pub fn run_simulation(
                 config_save_overlay
                     .as_ref()
                     .map(|v| (v, config_save_x, config_save_y)),
+                dirty_guard_overlay
+                    .as_ref()
+                    .map(|v| (v, dirty_guard_x, dirty_guard_y)),
                 keyboard_hints_lines
                     .as_ref()
                     .map(|v| (v, keyboard_hints_x, keyboard_hints_y)),
@@ -1199,6 +1370,9 @@ pub fn run_simulation(
                 config_save_overlay
                     .as_ref()
                     .map(|v| (v, config_save_x, config_save_y)),
+                dirty_guard_overlay
+                    .as_ref()
+                    .map(|v| (v, dirty_guard_x, dirty_guard_y)),
                 keyboard_hints_lines
                     .as_ref()
                     .map(|v| (v, keyboard_hints_x, keyboard_hints_y)),
@@ -1251,7 +1425,8 @@ pub fn run_simulation(
 
                     // Skip warmup on any key press
                     if in_warmup {
-                        runtime_state.warmup_counter = args.warmup_frames; // Skip to end
+                        runtime_state.warmup_counter = runtime_state.app.warmup_frames;
+                        // Skip to end
                     }
 
                     // Centralized overlay input handling: toggle keys, Escape, and
@@ -1261,7 +1436,15 @@ pub fn run_simulation(
                         &key_event,
                     ) {
                         OverlayInputResult::CloseOverlay => {
+                            // Escape on the dirty guard cancels the parked swap.
+                            let was_dirty_guard = runtime_state.overlay_state.active()
+                                == Some(OverlayType::DirtyGuard);
                             runtime_state.overlay_state.close();
+                            if was_dirty_guard {
+                                runtime_state.pending_swap = None;
+                                runtime_state.on_modal_close();
+                                runtime_state.show_notification("Switch cancelled".to_string());
+                            }
                             continue;
                         }
                         OverlayInputResult::Consumed => {
@@ -1271,6 +1454,47 @@ pub fn run_simulation(
                         OverlayInputResult::NotHandled => {
                             // No overlay open, continue to normal processing
                         }
+                    }
+
+                    // Handle dirty-state guard input. Escape was already handled by
+                    // the centralized manager (→ CloseOverlay → cancels). Here we only
+                    // act on Enter (confirm); all other keys are swallowed so the modal
+                    // stays blocking. Both the confirm path and the clean path route
+                    // through the SAME `do_swap`, so they cannot diverge.
+                    if runtime_state.overlay_state.is_open(OverlayType::DirtyGuard) {
+                        use crossterm::event::KeyCode;
+                        if key_event.code == KeyCode::Enter {
+                            runtime_state.overlay_state.close();
+                            runtime_state.on_modal_close();
+                            if let Some(pending) = runtime_state.pending_swap.take() {
+                                let is_reset = matches!(pending, PendingSwap::Reset);
+                                do_swap(
+                                    pending,
+                                    &mut runtime_state,
+                                    &mut renderer,
+                                    sim,
+                                    &mut timer,
+                                    &mut grid_renderer,
+                                    &mut window,
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    (term_width as usize, term_height as usize),
+                                )?;
+                                if is_reset {
+                                    // Reset-specific loop-local side effects.
+                                    hue_offset = 0.0;
+                                }
+                                // do_swap → apply_render_config may flip auto_normalize
+                                // (preset/config can default it ON); re-sync the
+                                // loop-local + rebuild AdaptiveBrightness for any swap.
+                                current_auto_normalize = runtime_state.auto_normalize;
+                                adaptive_brightness = AdaptiveBrightness::new(
+                                    args.normalize_window,
+                                    current_auto_normalize,
+                                );
+                            }
+                        }
+                        continue;
                     }
 
                     // Handle config save dialog input
@@ -1291,52 +1515,32 @@ pub fn run_simulation(
                             }
                             KeyCode::Enter => {
                                 if !runtime_state.config_save_name_input.is_empty() {
-                                    let saved_config = config_manager::SavedConfig::from_runtime(
-                                        runtime_state.config_save_name_input.clone(),
-                                        sim.config(),
-                                        runtime_state.current_palette(&ALL_PALETTES),
-                                        charset.clone(),
-                                        args.reverse_palette,
-                                        args.invert_palette,
-                                        args.warmup_frames,
-                                        args.food_persist,
-                                        args.auto_reset,
-                                        args.grid,
-                                        if args.grid {
-                                            Some(args.grid_style.clone())
-                                        } else {
-                                            None
-                                        },
-                                        init_mode,
-                                        if init_mode == InitMode::Food {
-                                            Some(args.food.clone())
-                                        } else {
-                                            None
-                                        },
-                                        Some(&runtime_state.intensity_mapping),
-                                        runtime_state.temporal_color,
-                                        runtime_state.temporal_lag_frames,
-                                        runtime_state.temporal_mode,
-                                        runtime_state.afterglow,
-                                        runtime_state.afterglow_rate,
-                                        runtime_state.decay_gamma,
-                                        runtime_state.diffuse_weight,
-                                        runtime_state.deposit_curve,
-                                        runtime_state.deposit_scale,
-                                        runtime_state.deposit_gamma,
-                                        runtime_state.deposit_cap,
-                                        runtime_state.palette_cycle,
-                                        runtime_state.glyph,
-                                        runtime_state.temporal_accent,
-                                        runtime_state.color_aa,
-                                    );
+                                    let named_profile = config_manager::NamedProfile {
+                                        name: runtime_state.config_save_name_input.clone(),
+                                        description: None,
+                                        overrides: config_manager::capture_overrides(
+                                            sim.config(),
+                                            // Save the EXACT live palette/charset (incl. Custom),
+                                            // not the lossy index or the stale launch charset.
+                                            runtime_state.live_palette.clone(),
+                                            runtime_state.live_charset.clone(),
+                                            &runtime_state,
+                                        ),
+                                    };
 
-                                    match config_manager::save_config(saved_config) {
-                                        Ok(_) => {
-                                            runtime_state.show_notification(format!(
-                                                "Config '{}' saved successfully",
-                                                runtime_state.config_save_name_input
-                                            ));
+                                    match config_manager::save_config(named_profile) {
+                                        Ok(warning) => {
+                                            let msg = match warning {
+                                                Some(w) => format!(
+                                                    "Config '{}' saved ({})",
+                                                    runtime_state.config_save_name_input, w
+                                                ),
+                                                None => format!(
+                                                    "Config '{}' saved successfully",
+                                                    runtime_state.config_save_name_input
+                                                ),
+                                            };
+                                            runtime_state.show_notification(msg);
                                         }
                                         Err(e) => {
                                             runtime_state.show_notification(format!(
@@ -1360,23 +1564,27 @@ pub fn run_simulation(
                     {
                         use crossterm::event::KeyCode;
                         if key_event.code == KeyCode::Enter {
-                            let preset = runtime_state.comparison_preset;
-                            runtime_state.set_preset(preset);
-                            let mut new_config = SimConfig::from(preset);
-                            // Maintain existing environment/setup
-                            new_config.attractors = sim.config().attractors.clone();
-                            new_config.attractor_strength = sim.config().attractor_strength;
-                            new_config.food_image_path = sim.config().food_image_path.clone();
-                            new_config.food_image_invert = sim.config().food_image_invert;
-                            new_config.obstacles = sim.config().obstacles.clone();
-                            new_config.obstacle_masks = sim.config().obstacle_masks.clone();
-                            sim.update_config(new_config);
-
-                            runtime_state.show_notification(format!(
-                                "Applied preset: {}",
-                                crate::terminal::control::preset_name(preset)
-                            ));
+                            use crate::terminal::state::ComparisonTarget;
+                            let pending = match &runtime_state.comparison_target {
+                                ComparisonTarget::Preset(p) => PendingSwap::Preset(*p),
+                                ComparisonTarget::Config(np) => PendingSwap::Config(np.clone()),
+                            };
                             runtime_state.overlay_state.close();
+                            dispatch_swap(
+                                pending,
+                                &mut runtime_state,
+                                &mut renderer,
+                                sim,
+                                &mut timer,
+                                &mut grid_renderer,
+                                &mut window,
+                                &mut downsampled_frame,
+                                &mut aux_frame,
+                                (term_width as usize, term_height as usize),
+                                &mut current_auto_normalize,
+                                &mut adaptive_brightness,
+                                args.normalize_window,
+                            )?;
                             continue;
                         }
                         // Note: Other keys are blocked by centralized handler
@@ -1408,36 +1616,34 @@ pub fn run_simulation(
                                 continue;
                             }
                             KeyCode::Enter => {
-                                if let Ok(configs) = config_manager::list_configs() {
-                                    if let Some(config) =
-                                        configs.get(runtime_state.config_browser_selected_index)
-                                    {
-                                        match config.apply_to_runtime_state(&mut runtime_state) {
-                                            Ok(_) => {
-                                                // Apply every live param (sim + renderer caches)
-                                                // through the shared path so charset, intensity
-                                                // mapping, sigma, brightness all take effect.
-                                                apply_live_params(
-                                                    &runtime_state,
-                                                    sim,
-                                                    &mut renderer,
-                                                );
-
-                                                runtime_state.show_notification(format!(
-                                                    "Config '{}' loaded successfully",
-                                                    config.name
-                                                ));
-                                            }
-                                            Err(e) => {
-                                                runtime_state.show_notification(format!(
-                                                    "Failed to load '{}': {}",
-                                                    config.name, e
-                                                ));
-                                            }
-                                        }
-                                    }
-                                }
+                                // Resolve the selected config (in full), close the
+                                // browser, then gate the load on dirty state: dirty →
+                                // park behind the guard; clean → load now via the single
+                                // executor. Carrying the resolved config avoids a
+                                // redundant disk re-read inside do_swap.
+                                let selected_config =
+                                    config_manager::list_configs().ok().and_then(|mut configs| {
+                                        let idx = runtime_state.config_browser_selected_index;
+                                        (idx < configs.len()).then(|| configs.swap_remove(idx))
+                                    });
                                 runtime_state.overlay_state.close();
+                                if let Some(config) = selected_config {
+                                    dispatch_swap(
+                                        PendingSwap::Config(Box::new(config)),
+                                        &mut runtime_state,
+                                        &mut renderer,
+                                        sim,
+                                        &mut timer,
+                                        &mut grid_renderer,
+                                        &mut window,
+                                        &mut downsampled_frame,
+                                        &mut aux_frame,
+                                        (term_width as usize, term_height as usize),
+                                        &mut current_auto_normalize,
+                                        &mut adaptive_brightness,
+                                        args.normalize_window,
+                                    )?;
+                                }
                                 continue;
                             }
                             KeyCode::Delete => {
@@ -1553,29 +1759,89 @@ pub fn run_simulation(
                             }
                         }
                         ControlAction::Restart => {
-                            sim.reset(
-                                runtime_state.original_seed,
+                            // Constellation re-rolls a fresh layout each reset
+                            // (non-mutating: original_init_mode is untouched).
+                            let init_mode = effective_init_mode(
+                                runtime_state.current_preset,
                                 runtime_state.original_init_mode,
                             );
+                            sim.reset(runtime_state.original_seed, init_mode);
                         }
-                        ControlAction::SetPreset(preset) => {
-                            runtime_state.set_preset(preset);
-                            let mut new_config = SimConfig::from(preset);
-                            new_config.attractors = sim.config().attractors.clone();
-                            new_config.attractor_strength = sim.config().attractor_strength;
-                            new_config.food_image_path = sim.config().food_image_path.clone();
-                            new_config.food_image_invert = sim.config().food_image_invert;
-                            new_config.obstacles = sim.config().obstacles.clone();
-                            new_config.obstacle_masks = sim.config().obstacle_masks.clone();
-                            sim.update_config(new_config);
-                            timer.set_time_scale(runtime_state.time_scale);
-                        }
-                        ControlAction::ComparePreset(preset) => {
-                            runtime_state.toggle_preset_comparison(preset);
-                            if runtime_state.any_overlay_open() {
-                                runtime_state.on_modal_open();
-                            } else {
-                                runtime_state.on_modal_close();
+                        ControlAction::QuickKey(c) => match resolve_bind(c, &user_binds) {
+                            Some(crate::keybind_manager::BindTarget::Preset(preset)) => {
+                                dispatch_swap(
+                                    PendingSwap::Preset(preset),
+                                    &mut runtime_state,
+                                    &mut renderer,
+                                    sim,
+                                    &mut timer,
+                                    &mut grid_renderer,
+                                    &mut window,
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    (term_width as usize, term_height as usize),
+                                    &mut current_auto_normalize,
+                                    &mut adaptive_brightness,
+                                    args.normalize_window,
+                                )?;
+                            }
+                            Some(crate::keybind_manager::BindTarget::Config(name)) => {
+                                match config_manager::load_config(&name) {
+                                    Ok(config) => {
+                                        dispatch_swap(
+                                            PendingSwap::Config(Box::new(config)),
+                                            &mut runtime_state,
+                                            &mut renderer,
+                                            sim,
+                                            &mut timer,
+                                            &mut grid_renderer,
+                                            &mut window,
+                                            &mut downsampled_frame,
+                                            &mut aux_frame,
+                                            (term_width as usize, term_height as usize),
+                                            &mut current_auto_normalize,
+                                            &mut adaptive_brightness,
+                                            args.normalize_window,
+                                        )?;
+                                    }
+                                    Err(e) => {
+                                        runtime_state.show_notification(format!(
+                                            "Failed to load '{name}': {e}"
+                                        ));
+                                    }
+                                }
+                            }
+                            None => {
+                                runtime_state.show_notification(format!(
+                                    "Key {c} unbound — set in ~/.config/tslime/keybinds.toml"
+                                ));
+                            }
+                        },
+                        ControlAction::CompareQuickKey(c) => {
+                            use crate::keybind_manager::BindTarget;
+                            use crate::terminal::state::ComparisonTarget;
+                            let target = match resolve_bind(c, &user_binds) {
+                                Some(BindTarget::Preset(p)) => Some(ComparisonTarget::Preset(p)),
+                                Some(BindTarget::Config(name)) => {
+                                    match config_manager::load_config(&name) {
+                                        Ok(np) => Some(ComparisonTarget::Config(Box::new(np))),
+                                        Err(e) => {
+                                            runtime_state.show_notification(format!(
+                                                "Failed to load '{name}': {e}"
+                                            ));
+                                            None
+                                        }
+                                    }
+                                }
+                                None => None,
+                            };
+                            if let Some(target) = target {
+                                runtime_state.toggle_comparison(target);
+                                if runtime_state.any_overlay_open() {
+                                    runtime_state.on_modal_open();
+                                } else {
+                                    runtime_state.on_modal_close();
+                                }
                             }
                         }
                         ControlAction::AdjustTimeScale(delta) => {
@@ -1811,9 +2077,9 @@ pub fn run_simulation(
                         }
                         ControlAction::CycleWindDirection => {
                             runtime_state.cycle_wind_direction();
-                            sim.with_config_mut(|c| {
-                                c.wind = runtime_state.wind_direction.to_wind()
-                            });
+                            // Coarse cycle PRODUCES the precise vector; store it losslessly.
+                            runtime_state.wind = runtime_state.wind_direction.to_wind();
+                            sim.with_config_mut(|c| c.wind = runtime_state.wind);
                             runtime_state.show_notification(format!(
                                 "Wind: {}",
                                 runtime_state.wind_direction.name()
@@ -1821,9 +2087,8 @@ pub fn run_simulation(
                         }
                         ControlAction::CycleWindDirectionReverse => {
                             runtime_state.cycle_wind_direction_reverse();
-                            sim.with_config_mut(|c| {
-                                c.wind = runtime_state.wind_direction.to_wind()
-                            });
+                            runtime_state.wind = runtime_state.wind_direction.to_wind();
+                            sim.with_config_mut(|c| c.wind = runtime_state.wind);
                             runtime_state.show_notification(format!(
                                 "Wind: {}",
                                 runtime_state.wind_direction.name()
@@ -1979,25 +2244,24 @@ pub fn run_simulation(
                             ));
                         }
                         ControlAction::ResetToDefaults => {
-                            runtime_state.reset_to_defaults();
-                            // Rebuild the sim from the launch snapshot (initial run params,
-                            // including CLI flags), not the bare preset, then overlay the
-                            // restored runtime-state live fields and push renderer caches.
-                            let base = runtime_state
-                                .cli_overrides
-                                .clone()
-                                .unwrap_or_else(|| SimConfig::from(runtime_state.current_preset));
-                            sim.update_config(base);
-                            apply_live_params(&runtime_state, sim, &mut renderer);
-                            timer.set_time_scale(runtime_state.time_scale);
-                            hue_offset = 0.0;
-                            current_auto_normalize = runtime_state.auto_normalize;
-                            let notification = if runtime_state.cli_overrides.is_some() {
-                                "Reset to CLI parameters"
-                            } else {
-                                "Reset to defaults"
-                            };
-                            runtime_state.show_notification(notification.to_string());
+                            let applied = dispatch_swap(
+                                PendingSwap::Reset,
+                                &mut runtime_state,
+                                &mut renderer,
+                                sim,
+                                &mut timer,
+                                &mut grid_renderer,
+                                &mut window,
+                                &mut downsampled_frame,
+                                &mut aux_frame,
+                                (term_width as usize, term_height as usize),
+                                &mut current_auto_normalize,
+                                &mut adaptive_brightness,
+                                args.normalize_window,
+                            )?;
+                            if applied {
+                                hue_offset = 0.0;
+                            }
                         }
                         ControlAction::ToggleDashboard => {
                             runtime_state.toggle_dashboard();
@@ -2346,7 +2610,7 @@ pub fn run_simulation(
                 };
 
             // Build status line
-            let diffusion_kernel_name = match current_config.diffusion_kernel {
+            let diffusion_kernel_name = match current_diffusion_kernel {
                 DiffusionKernel::Mean3x3 => "Mean3x3",
                 DiffusionKernel::Gaussian => "Gaussian",
             };
@@ -2379,10 +2643,9 @@ pub fn run_simulation(
             // Re-render with updated pause state
             if args.species_colors_enabled() && sim.config().separate_species_trails {
                 let species_trail_maps = sim.trail_maps_for_species_colors();
-                let species_rgb_colors = extract_species_rgb_colors(&current_config);
                 let combined: Vec<_> = species_trail_maps
                     .iter()
-                    .zip(species_rgb_colors.iter())
+                    .zip(current_species_rgb.iter())
                     .map(|(tm, color)| (*tm, *color))
                     .collect();
                 renderer.render_multi_species_with_overlay(
@@ -2404,6 +2667,7 @@ pub fn run_simulation(
                     None,
                     None,
                     grid_renderer.as_ref(),
+                    None,
                     None,
                     None,
                     None,
@@ -2432,6 +2696,7 @@ pub fn run_simulation(
                     None,
                     None,
                     grid_renderer.as_ref(),
+                    None,
                     None,
                     None,
                     None,
@@ -2480,6 +2745,46 @@ pub fn run_simulation(
         let _ = crate::terminal::disable_mouse_tracking();
     }
 
+    Ok(())
+}
+
+/// Live preset-switch: applies the bare preset through the ONE total apply seam,
+/// wiping the trail (restart: true). CLI args are NOT sticky after a swap.
+#[allow(clippy::too_many_arguments)]
+fn switch_preset(
+    new_preset: Preset,
+    rs: &mut RuntimeState,
+    renderer: &mut TerminalRenderer,
+    sim: &mut Simulation,
+    timer: &mut FrameTimer,
+    grid_renderer: &mut Option<crate::render::grid::GridRenderer>,
+    window: &mut crate::render::window::Window,
+    downsampled_frame: &mut crate::render::downsample::DownsampledFrame,
+    aux_frame: &mut crate::render::downsample::AuxFrame,
+    term_size: (usize, usize),
+) -> io::Result<()> {
+    let ov = crate::profile_overrides::ProfileOverrides {
+        preset: Some(new_preset),
+        ..Default::default()
+    };
+    crate::app::apply_overrides(
+        &ov,
+        rs,
+        renderer,
+        sim,
+        timer,
+        grid_renderer,
+        window,
+        downsampled_frame,
+        aux_frame,
+        term_size,
+        true,
+    )
+    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    // Commit provenance ONLY after successful apply (transactional).
+    rs.set_preset(new_preset);
+    rs.active_source = crate::profile::ProfileSource::Preset(new_preset);
+    rs.active_overrides = ov;
     Ok(())
 }
 
@@ -2548,5 +2853,69 @@ mod tests {
         for mode in [Mode::Default, Mode::Live, Mode::Print] {
             assert!(!screensaver_exit_on_key(&mode, &press));
         }
+    }
+
+    /// `switch_preset` builds a bare `ProfileOverrides { preset: Some(p), ..Default::default() }`,
+    /// so the resulting overrides carry NO previously-set CLI fields.
+    /// This test verifies the contract at the `ProfileOverrides` level: a CLI-startup
+    /// override (with sensor_angle set) is NOT what a preset switch produces.
+    #[test]
+    fn switch_preset_ignores_cli() {
+        use crate::profile_overrides::ProfileOverrides;
+        use crate::simulation::config::Preset;
+
+        // Simulated CLI startup: preset=Network, sensor_angle=42.0 (non-default CLI override).
+        let cli_ov = ProfileOverrides {
+            preset: Some(Preset::Network),
+            sensor_angle: Some(42.0),
+            ..Default::default()
+        };
+
+        // What switch_preset actually builds — a bare preset override with NO CLI fields.
+        let switched_ov = ProfileOverrides {
+            preset: Some(Preset::Organic),
+            ..Default::default()
+        };
+
+        // The switched override must NOT carry the CLI sensor_angle.
+        assert_eq!(
+            switched_ov.sensor_angle, None,
+            "switch_preset must not carry forward CLI sensor_angle"
+        );
+        // And the two overrides are not equal (different preset, no CLI field).
+        assert_ne!(
+            cli_ov, switched_ov,
+            "CLI override must differ from bare-preset override"
+        );
+        // sensor_angle was set in the CLI override but not in the switched one.
+        assert_eq!(
+            cli_ov.sensor_angle,
+            Some(42.0),
+            "CLI override retains sensor_angle"
+        );
+    }
+}
+
+#[cfg(test)]
+mod keybind_resolution_tests {
+    use super::resolve_bind;
+    use crate::keybind_manager::BindTarget;
+    use crate::simulation::config::Preset;
+    use std::collections::HashMap;
+
+    #[test]
+    fn user_bind_overrides_builtin_default() {
+        let mut m = HashMap::new();
+        m.insert('1', BindTarget::Preset(Preset::Fire));
+        assert_eq!(
+            resolve_bind('1', &m),
+            Some(BindTarget::Preset(Preset::Fire))
+        );
+        assert_eq!(resolve_bind('5', &m), None);
+        m.insert('5', BindTarget::Config("mynight".to_string()));
+        assert_eq!(
+            resolve_bind('5', &m),
+            Some(BindTarget::Config("mynight".to_string()))
+        );
     }
 }
