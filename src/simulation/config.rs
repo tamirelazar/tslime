@@ -424,6 +424,8 @@ pub enum InitMode {
     Food,
     /// Agents distributed in a Gaussian blob at the center (Petri dish style).
     Petri,
+    /// Agents seeded as a real star constellation (stars + asterism edges).
+    Constellation,
 }
 
 impl InitMode {
@@ -459,7 +461,8 @@ impl InitMode {
                 | InitMode::Spiral
                 | InitMode::RandomClusters
                 | InitMode::Food
-                | InitMode::Petri => {}
+                | InitMode::Petri
+                | InitMode::Constellation => {}
             }
         }
         ALL[rng.gen_range(0..ALL.len())]
@@ -1395,6 +1398,10 @@ pub struct SimConfig {
     pub respawn_config: RespawnConfig,
     /// Trail sampling method (nearest or bilinear).
     pub sampling_mode: SamplingMode,
+    /// Constellation atlas re-stamp strength, applied each frame after
+    /// diffusion/decay. 0.0 = no re-stamp (drift); > 0.0 = self-healing
+    /// template source (static hold).
+    pub constellation_restamp_floor: f32,
 }
 
 impl SimConfig {
@@ -1520,6 +1527,8 @@ impl Default for SimConfig {
             },
             respawn_config: RespawnConfig::default(),
             sampling_mode: SamplingMode::Nearest,
+            constellation_restamp_floor:
+                crate::config_defaults::DEFAULT_CONSTELLATION_RESTAMP_FLOOR,
         }
     }
 }

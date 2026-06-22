@@ -1049,6 +1049,7 @@ pub fn run_simulation(
                     InitMode::RandomClusters => "Clusters",
                     InitMode::Food => "Food",
                     InitMode::Petri => "Petri",
+                    InitMode::Constellation => "Constellation",
                 };
 
                 let color_mode_name = match color_mode {
