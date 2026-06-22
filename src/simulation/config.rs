@@ -108,6 +108,8 @@ pub enum Preset {
     Drift,
     /// Sparse star-map scatter (Points charset).
     Constellation,
+    /// Constellation that holds its figure crisp via continuous template re-stamp.
+    ConstellationStatic,
     /// Posterized color bands (Quantize mapping + Wrap palette cycles).
     Mosaic,
     /// Veined stone via heavy Gaussian + Perlin intensity mapping.
@@ -277,6 +279,12 @@ pub const PRESETS: &[PresetSpec] = &[
         name: "Constellation",
         aliases: &[],
         quick_key: Some('2'),
+    },
+    PresetSpec {
+        preset: Preset::ConstellationStatic,
+        name: "ConstellationStatic",
+        aliases: &["conststatic", "atlas"],
+        quick_key: None,
     },
     PresetSpec {
         preset: Preset::Mosaic,

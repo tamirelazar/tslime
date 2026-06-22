@@ -47,6 +47,9 @@ pub(crate) struct PresetSimDefaults {
     pub separate_species_trails: bool,
     pub sampling_mode: SamplingMode,
     pub respawn_config: RespawnConfig,
+    /// Constellation atlas re-stamp floor. 0.0 = drift (no re-stamp);
+    /// > 0.0 = continuous self-healing template re-stamp (static hold).
+    pub constellation_restamp_floor: f32,
 }
 
 impl Default for PresetSimDefaults {
@@ -80,6 +83,8 @@ impl Default for PresetSimDefaults {
             separate_species_trails: false,
             sampling_mode: SamplingMode::Nearest,
             respawn_config: RespawnConfig::default(),
+            constellation_restamp_floor:
+                crate::config_defaults::DEFAULT_CONSTELLATION_RESTAMP_FLOOR,
         }
     }
 }
@@ -114,6 +119,7 @@ impl PresetSimDefaults {
         config.separate_species_trails = self.separate_species_trails;
         config.sampling_mode = self.sampling_mode;
         config.respawn_config = self.respawn_config;
+        config.constellation_restamp_floor = self.constellation_restamp_floor;
     }
 }
 
@@ -646,7 +652,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Sparse star-map scatter (config.rs:806-826)
+            // Sparse star-map scatter with atlas init (drift — no re-stamp)
             Preset::Constellation => Self {
                 sensor_angle: 45.0,
                 sensor_distance: 12.0,
@@ -656,13 +662,37 @@ impl From<Preset> for PresetSimDefaults {
                 deposit_amount: 4.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 max_brightness: 30.0,
-                preferred_init_mode: Some(InitMode::Random),
+                preferred_init_mode: Some(InitMode::Constellation),
+                constellation_restamp_floor: 0.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 12_000,
                     sensor_angle: 45.0,
                     rotation_angle: 25.0,
                     step_size: 0.8,
+                    deposit_amount: 4.0,
+                    ..Default::default()
+                }],
+                ..Self::default()
+            },
+            // Static-hold variant: re-stamp continuously to keep the figure crisp
+            Preset::ConstellationStatic => Self {
+                sensor_angle: 45.0,
+                sensor_distance: 12.0,
+                rotation_angle: 18.0,
+                step_size: 0.4,
+                decay_factor: 0.985,
+                deposit_amount: 4.0,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+                max_brightness: 30.0,
+                preferred_init_mode: Some(InitMode::Constellation),
+                constellation_restamp_floor: 0.15,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 12_000,
+                    sensor_angle: 45.0,
+                    rotation_angle: 18.0,
+                    step_size: 0.4,
                     deposit_amount: 4.0,
                     ..Default::default()
                 }],
@@ -1019,5 +1049,19 @@ mod tests {
                 spec.name
             );
         }
+    }
+
+    #[test]
+    fn constellation_static_is_registered_and_static() {
+        use crate::simulation::config::{preset_from_name, InitMode, Preset, SimConfig};
+        let p = preset_from_name("constellationstatic").expect("preset registered");
+        assert_eq!(p, Preset::ConstellationStatic);
+        let cfg: SimConfig = Preset::ConstellationStatic.into();
+        assert!(cfg.constellation_restamp_floor > 0.0);
+        // preferred_init_mode is Option<InitMode>; unwrap since the arm sets Some(_)
+        assert_eq!(cfg.preferred_init_mode.unwrap(), InitMode::Constellation);
+
+        let drift: SimConfig = Preset::Constellation.into();
+        assert_eq!(drift.constellation_restamp_floor, 0.0);
     }
 }
