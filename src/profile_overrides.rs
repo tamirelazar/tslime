@@ -369,7 +369,7 @@ impl ProfileOverrides {
             skip_warmup: Some(args.skip_warmup),
             warmup_brightness_multiplier: Some(args.warmup_brightness_multiplier),
             auto_reset: if args.auto_reset { Some(true) } else { None },
-            auto_reset_entropy_threshold: Some(args.collapse_entropy_threshold),
+            auto_reset_entropy_threshold: args.collapse_entropy_threshold,
             auto_reset_duration_frames: Some(args.collapse_duration_frames),
             grid: Some(args.grid),
             grid_style: args.grid_style.parse::<GridStyle>().ok(),
@@ -440,7 +440,7 @@ impl ProfileOverrides {
             auto_reset: self.auto_reset.unwrap_or(preset_app.auto_reset),
             auto_reset_entropy_threshold: self
                 .auto_reset_entropy_threshold
-                .unwrap_or(d.auto_reset_entropy_threshold),
+                .unwrap_or(preset_app.entropy_threshold),
             auto_reset_duration_frames: self
                 .auto_reset_duration_frames
                 .unwrap_or(d.auto_reset_duration_frames),

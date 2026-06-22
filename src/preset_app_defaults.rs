@@ -7,12 +7,17 @@ use crate::simulation::config::Preset;
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PresetAppDefaults {
     pub auto_reset: bool,
+    /// Entropy-collapse threshold fallback when no CLI `--collapse-threshold` is
+    /// given. `0.0` disables the entropy detector (entropy is always `>= 0`, so
+    /// `entropy < 0.0` never fires), leaving only the stagnation detector.
+    pub entropy_threshold: f32,
 }
 
 impl Default for PresetAppDefaults {
     fn default() -> Self {
         Self {
             auto_reset: crate::config_defaults::auto_reset::DEFAULT_AUTO_RESET,
+            entropy_threshold: crate::config_defaults::auto_reset::DEFAULT_ENTROPY_THRESHOLD,
         }
     }
 }
@@ -20,7 +25,14 @@ impl Default for PresetAppDefaults {
 impl From<Preset> for PresetAppDefaults {
     fn from(preset: Preset) -> Self {
         match preset {
-            Preset::Constellation => Self { auto_reset: true },
+            // Constellation re-rolls a fresh layout on collapse. The entropy
+            // detector is too eager for it (low brightness-value diversity in
+            // coherent rotating/blob patterns reads as "dead" while they are
+            // still alive), so default it off and rely on stagnation alone.
+            Preset::Constellation => Self {
+                auto_reset: true,
+                entropy_threshold: 0.0,
+            },
             _ => Self::default(),
         }
     }
@@ -42,6 +54,20 @@ mod tests {
         assert_eq!(
             PresetAppDefaults::from(Preset::Network).auto_reset,
             crate::config_defaults::auto_reset::DEFAULT_AUTO_RESET
+        );
+    }
+
+    #[test]
+    fn constellation_disables_entropy_detector() {
+        // 0.0 turns the entropy detector off (entropy is always >= 0).
+        assert_eq!(
+            PresetAppDefaults::from(Preset::Constellation).entropy_threshold,
+            0.0
+        );
+        // Other presets keep the global default.
+        assert_eq!(
+            PresetAppDefaults::from(Preset::Network).entropy_threshold,
+            crate::config_defaults::auto_reset::DEFAULT_ENTROPY_THRESHOLD
         );
     }
 }

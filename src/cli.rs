@@ -1604,11 +1604,10 @@ pub struct Args {
     #[arg(
         long = "collapse-threshold",
         value_name = "FLOAT",
-        default_value_t = auto_reset::DEFAULT_ENTROPY_THRESHOLD,
-        help = "Collapse when brightness entropy falls below this (range 0..8; healthy ~4-6, dead → 0; higher = more sensitive)"
+        help = "Collapse when brightness entropy falls below this (range 0..8; healthy ~4-6, dead → 0; higher = more sensitive). Unset uses the preset default (Constellation: 0 = entropy detector off)."
     )]
-    /// Entropy threshold for collapse detection.
-    pub collapse_entropy_threshold: f32,
+    /// Entropy threshold for collapse detection. `None` defers to the preset default.
+    pub collapse_entropy_threshold: Option<f32>,
 
     #[arg(
         long = "collapse-duration",
@@ -2272,7 +2271,7 @@ impl Default for Args {
             food_persist_radius: 50.0,
             food_persist_duration: 300,
             auto_reset: false,
-            collapse_entropy_threshold: 0.95,
+            collapse_entropy_threshold: None,
             collapse_duration_frames: 90,
             grid: false,
             grid_size: 10,
