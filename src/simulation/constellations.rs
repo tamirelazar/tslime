@@ -1,6 +1,7 @@
 //! Hand-placed stellar-constellation asterisms used by `InitMode::Constellation`.
 //! Coords are normalized to 0..1 (origin top-left); `edges` index into `stars`.
 
+use crate::simulation::config::Aspect;
 use crate::simulation::Rng;
 use rand::Rng as _;
 
@@ -109,11 +110,80 @@ pub fn pick(rng: &mut Rng) -> &'static Constellation {
     &ALL[i]
 }
 
+/// Map normalized 0..1 figure coords into grid pixels, centered with a 10%
+/// margin, scaled so the figure's **visual** aspect matches `aspect`. Halfblock
+/// packs 2 vertical px per cell, so a visual ratio W:H needs pixel ratio W:(H*2).
+pub fn fit_to_grid(
+    stars: &[(f32, f32)],
+    width: usize,
+    height: usize,
+    aspect: Aspect,
+) -> Vec<(f32, f32)> {
+    const MARGIN: f32 = 0.10;
+    let gw = width as f32;
+    let gh = height as f32;
+    let avail_w = gw * (1.0 - 2.0 * MARGIN);
+    let avail_h = gh * (1.0 - 2.0 * MARGIN);
+
+    // Target pixel aspect for an undistorted figure: W : (H * 2).
+    let target_px_ratio = aspect.width as f32 / (aspect.height as f32 * 2.0);
+
+    // Fit a unit square (the normalized space) into avail box at target ratio.
+    let (box_w, box_h) = if avail_w / avail_h > target_px_ratio {
+        (avail_h * target_px_ratio, avail_h)
+    } else {
+        (avail_w, avail_w / target_px_ratio)
+    };
+    let off_x = (gw - box_w) / 2.0;
+    let off_y = (gh - box_h) / 2.0;
+
+    stars
+        .iter()
+        .map(|&(nx, ny)| (off_x + nx * box_w, off_y + ny * box_h))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::simulation::config::Aspect;
     use crate::simulation::Rng;
     use rand::SeedableRng;
+
+    #[test]
+    fn fit_preserves_aspect_and_centers() {
+        // A unit square figure into a 3:2 visual aspect on a 300x100 grid.
+        let square = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
+        let pts = fit_to_grid(
+            &square,
+            300,
+            100,
+            Aspect {
+                width: 3,
+                height: 2,
+            },
+        );
+        // Bounding box of the square must have visual w:h == 3:2.
+        let (mut minx, mut maxx, mut miny, mut maxy) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+        for &(x, y) in &pts {
+            minx = minx.min(x);
+            maxx = maxx.max(x);
+            miny = miny.min(y);
+            maxy = maxy.max(y);
+        }
+        let bw = maxx - minx;
+        let bh = maxy - miny;
+        // visual ratio = (bw) : (bh / 2) because a cell packs 2 vertical px (halfblock).
+        let visual = bw / (bh / 2.0);
+        assert!((visual - 1.5).abs() < 0.05, "visual aspect {visual} != 1.5");
+        // Centered: equal margins horizontally.
+        assert!(
+            (minx - (300.0 - bw - minx)).abs() < 1.0,
+            "not centered in x"
+        );
+        // Within grid with margin.
+        assert!(minx >= 0.0 && maxx <= 300.0 && miny >= 0.0 && maxy <= 100.0);
+    }
 
     #[test]
     fn all_figures_have_valid_edges() {
