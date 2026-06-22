@@ -508,7 +508,7 @@ impl DefaultValues {
     }
 
     /// Shared core: build display defaults from a resolved `SimConfig`.
-    fn from_sim_config(config: &SimConfig, auto_normalize: bool) -> Self {
+    pub(crate) fn from_sim_config(config: &SimConfig, auto_normalize: bool) -> Self {
         Self {
             sensor_angle: config.sensor_angle,
             sensor_distance: config.sensor_distance,

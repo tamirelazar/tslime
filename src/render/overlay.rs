@@ -422,11 +422,24 @@ impl PresetComparisonOverlay {
                 crate::terminal::control::DefaultValues::from_preset(*p),
                 "Preset Default",
             ),
-            ComparisonTarget::Config(np) => (
-                np.name.clone(),
-                crate::terminal::control::DefaultValues::from_config(np),
-                "Config Default",
-            ),
+            ComparisonTarget::Config(np) => {
+                let (lbl, dv) = match np.overrides.resolve() {
+                    Ok(p) => (
+                        np.name.clone(),
+                        crate::terminal::control::DefaultValues::from_sim_config(
+                            &p.sim,
+                            p.render.auto_normalize,
+                        ),
+                    ),
+                    Err(_) => (
+                        format!("{} (unresolved)", np.name),
+                        crate::terminal::control::DefaultValues::from_preset(
+                            crate::simulation::config::Preset::Organic,
+                        ),
+                    ),
+                };
+                (lbl, dv, "Config Default")
+            }
         };
 
         let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
