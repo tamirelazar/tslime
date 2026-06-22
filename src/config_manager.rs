@@ -1,7 +1,7 @@
 use crate::cli::{AttractorArg, ObstacleArg, SpeciesArg};
 use crate::profile_overrides::ProfileOverrides;
-use crate::render::charset::{Charset, GlyphConfig, ALL_CHARSETS};
-use crate::render::palette::{IntensityMapping, Palette, PaletteCycle, TemporalMode, PALETTES};
+use crate::render::charset::Charset;
+use crate::render::palette::Palette;
 use crate::simulation::config::{SimConfig, TerrainType};
 use crate::terminal::control::RuntimeState;
 use serde::{Deserialize, Serialize};
@@ -107,8 +107,8 @@ pub fn capture_overrides(
         diffusion_sigma: Some(sim_config.diffusion_sigma),
         // sim levers not round-trippable via apply (restart-only) — drop per Phase B spec
         time_scale: None,
-        // population: capture for display (config-browser "Nk agents") only; NOT applied by
-        // apply_to_runtime_state (restart-only lever). Mirrors old from_runtime: first_species.count.
+        // population: capture for display (config-browser "Nk agents") only; a
+        // restart-only lever (not live-applied). Mirrors old from_runtime: first_species.count.
         population: Some(sim_config.total_population()),
         fps: None,
         food_image_path: None,
@@ -209,200 +209,6 @@ pub fn capture_overrides(
         food_persist_radius: Some(rs.app.food_persist_radius),
         food_persist_duration: Some(rs.app.food_persist_duration),
     }
-}
-
-/// Apply a `ProfileOverrides` to `RuntimeState`.
-///
-/// Port of the former `SavedConfig::apply_to_runtime_state` logic.
-/// Writes the SAME `RuntimeState` fields with the SAME `unwrap_or` defaults.
-/// The typed `ProfileOverrides` fields replace old string-parse helpers:
-/// `Option<Palette>` → palette_index via PALETTES registry, `Option<Charset>`
-/// → charset_index via `ALL_CHARSETS`, `Option<DiffusionKernel>` direct.
-pub fn apply_to_runtime_state(
-    overrides: &ProfileOverrides,
-    runtime_state: &mut RuntimeState,
-) -> Result<(), String> {
-    // Apply palette via PALETTES registry (typed, no string parse).
-    if let Some(ref p) = overrides.palette {
-        let idx = PALETTES
-            .iter()
-            .position(|spec| &spec.palette == p)
-            .ok_or_else(|| format!("Unknown palette: {:?}", p))?;
-        runtime_state.palette_index = idx;
-    }
-    // reverse/invert palette
-    runtime_state.reverse_palette = overrides.reverse_palette.unwrap_or(false);
-    runtime_state.invert_palette = overrides.invert_palette.unwrap_or(false);
-
-    // Apply charset via ALL_CHARSETS (typed, no string parse).
-    if let Some(ref c) = overrides.charset {
-        let idx = ALL_CHARSETS.iter().position(|cs| cs == c).unwrap_or(0); // default: HalfBlock at index 0
-        runtime_state.charset_index = idx;
-    }
-
-    // Apply diffusion kernel (typed Option<DiffusionKernel> — no string parse needed).
-    if let Some(kernel) = overrides.diffusion_kernel {
-        runtime_state.diffusion_kernel = kernel;
-    }
-    // diffusion_sigma: apply if present (same as old path — it was always present in from_runtime)
-    if let Some(sigma) = overrides.diffusion_sigma {
-        runtime_state.diffusion_sigma = sigma;
-    }
-
-    // Apply sim parameters (all sourced from sim_config in capture_overrides).
-    if let Some(v) = overrides.sensor_angle {
-        runtime_state.sensor_angle = v;
-    }
-    if let Some(v) = overrides.sensor_distance {
-        runtime_state.sensor_distance = v;
-    }
-    if let Some(v) = overrides.rotation_angle {
-        runtime_state.rotation_angle = v;
-    }
-    if let Some(v) = overrides.step_size {
-        runtime_state.step_size = v;
-    }
-    if let Some(v) = overrides.decay_factor {
-        runtime_state.decay_factor = v;
-    }
-    if let Some(v) = overrides.deposit_amount {
-        runtime_state.deposit_amount = v;
-    }
-    // brightness is stored as gain; apply via max_brightness (white-point).
-    if let Some(gain) = overrides.brightness {
-        runtime_state.max_brightness = crate::config_defaults::trail::white_point_from_gain(gain);
-    }
-
-    // Apply window frame (typed Option<WindowFrame> — no string parse needed).
-    if let Some(wf) = overrides.window_frame {
-        runtime_state.window_frame = wf;
-    } else {
-        // Old default path: parse_window_frame("") → unwrap_or_default()
-        runtime_state.window_frame = Default::default();
-    }
-
-    // Apply window mode chrome / layout fields.
-    if let Some(cs) = overrides.chrome_style {
-        runtime_state.chrome_style = cs;
-    } else {
-        runtime_state.chrome_style = Default::default();
-    }
-    if let Some(a) = overrides.aspect {
-        runtime_state.aspect = a;
-    } else {
-        runtime_state.aspect = Default::default();
-    }
-    if let Some(p) = overrides.window_padding {
-        runtime_state.window_padding = p;
-    } else {
-        runtime_state.window_padding = Default::default();
-    }
-    if let Some(ssb) = overrides.show_status_bar {
-        runtime_state.show_status_bar = ssb;
-    } else {
-        runtime_state.show_status_bar = false;
-    }
-    if let Some(mss) = overrides.min_sim_size {
-        runtime_state.min_sim_size = mss;
-    } else {
-        runtime_state.min_sim_size = Default::default();
-    }
-    if let Some(mfs) = overrides.min_frame_size {
-        runtime_state.min_frame_size = mfs;
-    } else {
-        runtime_state.min_frame_size = crate::simulation::config::TerminalSizeThreshold {
-            width: 12,
-            height: 6,
-        };
-    }
-
-    // Apply food persistence setting.
-    runtime_state.food_persist_enabled = overrides.food_persist.unwrap_or(false);
-
-    // Reset warmup so the changes can be seen.
-    runtime_state.warmup_counter = 0;
-
-    // Apply intensity mapping if present.
-    if let Some(ref mapping) = overrides.intensity_mapping {
-        runtime_state.intensity_mapping_index = RuntimeState::find_intensity_mapping_index(mapping);
-        runtime_state.intensity_mapping = mapping.clone();
-    } else {
-        // No mapping recorded — reset to canonical default (logarithmic) so load
-        // fully restores state rather than inheriting the session's.
-        runtime_state.intensity_mapping = IntensityMapping::default();
-        runtime_state.intensity_mapping_index =
-            RuntimeState::find_intensity_mapping_index(&runtime_state.intensity_mapping);
-    }
-
-    // Apply temporal color fields.
-    runtime_state.temporal_color = overrides.temporal_color.unwrap_or(0.0);
-    runtime_state.temporal_lag_frames = overrides.temporal_lag_frames.unwrap_or(8.0);
-    runtime_state.temporal_mode = overrides.temporal_mode.unwrap_or(TemporalMode::Hue);
-
-    // Apply afterglow fields.
-    runtime_state.afterglow = overrides.afterglow.unwrap_or(0.0);
-    runtime_state.afterglow_rate = overrides.afterglow_rate.unwrap_or(0.05);
-
-    // Apply decay gamma.
-    runtime_state.decay_gamma = overrides.decay_gamma.unwrap_or(1.0);
-
-    // Apply diffuse weight.
-    runtime_state.diffuse_weight = overrides.diffuse_weight.unwrap_or(1.0);
-
-    // Apply deposit knobs.
-    runtime_state.deposit_curve = overrides.deposit_curve.unwrap_or_default();
-    runtime_state.deposit_scale = overrides.deposit_scale.unwrap_or(1.0);
-    runtime_state.deposit_gamma = overrides.deposit_gamma.unwrap_or(1.0);
-    runtime_state.deposit_cap = overrides.deposit_cap.unwrap_or(0.0);
-
-    // Apply palette cycles.
-    {
-        use crate::render::palette::PaletteCycleMode;
-        if let Some(pc) = overrides.palette_cycle {
-            runtime_state.palette_cycle = pc;
-        } else {
-            // Old default path: cycles=1, mode=default
-            runtime_state.palette_cycle = PaletteCycle {
-                cycles: 1,
-                mode: PaletteCycleMode::default(),
-            };
-        }
-    }
-
-    // Apply glyph-by-shape config (typed GlyphSelection — no string parse needed).
-    runtime_state.glyph = match overrides.glyph_selection {
-        Some(sel) => GlyphConfig {
-            selection: Some(sel),
-            edge_threshold: overrides
-                .glyph_edge_threshold
-                .unwrap_or(crate::config_defaults::glyph_consts::DEFAULT_GLYPH_EDGE_THRESHOLD),
-        },
-        None => GlyphConfig::default(),
-    };
-
-    // Apply temporal accent color (typed Option<RgbColor> — no hex parse needed).
-    runtime_state.temporal_accent = overrides.temporal_accent;
-
-    // Apply per-charset color-AA via the same priority as apply_color_aa_all:
-    // color_aa_all (full array) takes precedence; scalar color_aa is the fallback
-    // for configs saved before color_aa_all was introduced (back-compat).
-    // NOTE: `apply_overrides` (app/mod.rs) delegates to rs.apply_color_aa_all() for
-    // the same logic; this path mirrors that behavior for unit-test use.
-    if let Some(ref arr) = overrides.color_aa_all {
-        for (i, aa) in arr.iter().enumerate() {
-            if i < runtime_state.color_aa.len() {
-                runtime_state.color_aa[i] = *aa;
-            }
-        }
-    } else if let Some(aa) = overrides.color_aa {
-        let i = runtime_state.charset_index % runtime_state.color_aa.len();
-        runtime_state.color_aa[i] = aa;
-    }
-
-    // Restart-only levers (population, init_mode, food_path, auto_reset, grid, warmup_frames)
-    // are handled by apply_overrides (app/mod.rs) which re-initialises the simulation.
-
-    Ok(())
 }
 
 /// Returns the path to the configuration file.
@@ -530,14 +336,6 @@ pub fn delete_config(name: &str) -> Result<(), String> {
     save_config_file(&config_file)
 }
 
-// ── Helper types referenced in tests (kept for type coherence) ──────────────
-// These are NOT used in production code; they exist only so tests can reference
-// the typed structs imported above without additional use-statements.
-#[allow(unused_imports)]
-use crate::render::charset::GlyphSelection;
-#[allow(unused_imports)]
-use crate::render::palette::PaletteCycleMode;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -560,6 +358,14 @@ mod tests {
             false,
             false,
         )
+    }
+
+    /// Resolve overrides through the SHIPPING path (`resolve`), the same seam the
+    /// runner's `apply_overrides` uses. Tests assert on the resolved
+    /// `Profile { sim, render, app }` rather than poking a `RuntimeState` via a
+    /// parallel apply path.
+    fn resolved(ov: &ProfileOverrides) -> crate::profile::Profile {
+        ov.resolve().expect("resolve must succeed")
     }
 
     /// Build a minimal ProfileOverrides with required sim fields populated —
@@ -606,19 +412,12 @@ mod tests {
             overrides: capture_overrides(&sim, Palette::Heat, Charset::HalfBlock, &rs),
         };
 
-        let mut new_state = create_test_runtime_state();
-        apply_to_runtime_state(&profile.overrides, &mut new_state).unwrap();
-
-        // Heat should be index 1 in PALETTES
-        let heat_idx = PALETTES
-            .iter()
-            .position(|s| s.palette == Palette::Heat)
-            .unwrap();
-        assert_eq!(new_state.palette_index, heat_idx);
+        let p = resolved(&profile.overrides);
+        assert_eq!(p.render.palette, Palette::Heat);
     }
 
     #[test]
-    fn apply_to_runtime_state_sets_diffusion_sigma() {
+    fn diffusion_sigma_resolves_through_saved_config() {
         let sim = SimConfig {
             diffusion_sigma: 2.75,
             ..SimConfig::default()
@@ -631,20 +430,14 @@ mod tests {
             overrides: capture_overrides(&sim, Palette::Heat, Charset::HalfBlock, &rs),
         };
 
-        let mut new_state = create_test_runtime_state();
-        apply_to_runtime_state(&profile.overrides, &mut new_state)
-            .expect("apply_to_runtime_state must succeed");
-        assert!((new_state.diffusion_sigma - 2.75).abs() < 1e-6);
+        let p = resolved(&profile.overrides);
+        assert!((p.sim.diffusion_sigma - 2.75).abs() < 1e-6);
     }
 
     #[test]
-    fn apply_to_runtime_state_resets_intensity_mapping_when_none() {
+    fn intensity_mapping_resolves_to_default_when_none() {
         use crate::render::palette::IntensityMapping;
-        let mut rs = create_test_runtime_state();
-        // Put a non-default mapping into the session first.
-        rs.intensity_mapping = IntensityMapping::linear();
-        rs.intensity_mapping_index =
-            RuntimeState::find_intensity_mapping_index(&rs.intensity_mapping);
+        let rs = create_test_runtime_state();
 
         // Build overrides without intensity_mapping (simulate old-format config).
         let mut overrides = capture_overrides(
@@ -655,17 +448,10 @@ mod tests {
         );
         overrides.intensity_mapping = None;
 
-        let mut new_state = create_test_runtime_state();
-        apply_to_runtime_state(&overrides, &mut new_state)
-            .expect("apply_to_runtime_state must succeed");
-
         // Default is logarithmic(10.0); a saved config with no recorded mapping
-        // must reset the session to the canonical default, not inherit linear.
-        assert_eq!(new_state.intensity_mapping, IntensityMapping::default());
-        assert_eq!(
-            new_state.intensity_mapping_index,
-            RuntimeState::find_intensity_mapping_index(&IntensityMapping::default())
-        );
+        // must resolve to the canonical default, not inherit a session value.
+        let p = resolved(&overrides);
+        assert_eq!(p.render.intensity_mapping, IntensityMapping::default());
     }
 
     #[test]
@@ -705,25 +491,19 @@ mod tests {
 
         let overrides = capture_overrides(&sim_config, Palette::Neon, Charset::HalfBlock, &state);
 
-        // Create new state and apply config
-        let mut new_state = create_test_runtime_state();
-        apply_to_runtime_state(&overrides, &mut new_state).unwrap();
-
-        // Verify all values match
-        let neon_idx = PALETTES
-            .iter()
-            .position(|s| s.palette == Palette::Neon)
-            .unwrap();
-        assert_eq!(new_state.palette_index, neon_idx);
-        assert_eq!(new_state.reverse_palette, state.reverse_palette);
-        assert_eq!(new_state.invert_palette, state.invert_palette);
-        assert_eq!(new_state.sensor_angle, state.sensor_angle);
-        assert_eq!(new_state.rotation_angle, state.rotation_angle);
-        assert_eq!(new_state.step_size, state.step_size);
-        assert_eq!(new_state.decay_factor, state.decay_factor);
-        assert_eq!(new_state.deposit_amount, state.deposit_amount);
-        assert_eq!(new_state.max_brightness, state.max_brightness);
-        assert_eq!(new_state.diffusion_kernel, state.diffusion_kernel);
+        // Resolve through the shipping path and verify all values survived.
+        let p = resolved(&overrides);
+        assert_eq!(p.render.palette, Palette::Neon);
+        // reverse/invert are persist-only (not in resolve); assert on the capture.
+        assert_eq!(overrides.reverse_palette, Some(true));
+        assert_eq!(overrides.invert_palette, Some(true));
+        assert_eq!(p.sim.sensor_angle, state.sensor_angle);
+        assert_eq!(p.sim.rotation_angle, state.rotation_angle);
+        assert_eq!(p.sim.step_size, state.step_size);
+        assert_eq!(p.sim.decay_factor, state.decay_factor);
+        assert_eq!(p.sim.deposit_amount, state.deposit_amount);
+        assert!((p.sim.max_brightness - state.max_brightness).abs() < 1e-3);
+        assert_eq!(p.sim.diffusion_kernel, state.diffusion_kernel);
     }
 
     #[test]
@@ -738,9 +518,8 @@ mod tests {
         // Simulate an old-format config that had no temporal field.
         overrides.temporal_color = None;
 
-        let mut rs = create_test_runtime_state();
-        apply_to_runtime_state(&overrides, &mut rs).expect("apply must succeed");
-        assert_eq!(rs.temporal_color, 0.0);
+        let p = resolved(&overrides);
+        assert_eq!(p.render.temporal_color, 0.0);
     }
 
     #[test]
@@ -764,13 +543,11 @@ mod tests {
         let reloaded: ProfileOverrides =
             toml::from_str(&toml_str).expect("deserialize must succeed");
 
-        // Restore into a fresh RuntimeState
-        let mut new_state = create_test_runtime_state();
-        apply_to_runtime_state(&reloaded, &mut new_state).expect("apply must succeed");
-
-        assert!((new_state.temporal_color - 0.7).abs() < 1e-6);
-        assert!((new_state.temporal_lag_frames - 12.0).abs() < 1e-6);
-        assert_eq!(new_state.temporal_mode, TemporalMode::Accent);
+        // Resolve through the shipping path.
+        let p = resolved(&reloaded);
+        assert!((p.render.temporal_color - 0.7).abs() < 1e-6);
+        assert!((p.render.temporal_lag_frames - 12.0).abs() < 1e-6);
+        assert_eq!(p.render.temporal_mode, TemporalMode::Accent);
     }
 
     #[test]
@@ -796,34 +573,32 @@ mod tests {
         let reloaded: ProfileOverrides =
             toml::from_str(&toml_str).expect("deserialize must succeed");
 
-        // Restore into a fresh RuntimeState
-        let mut new_state = create_test_runtime_state();
-        apply_to_runtime_state(&reloaded, &mut new_state).expect("apply must succeed");
-
+        // Resolve through the shipping path.
+        let p = resolved(&reloaded);
         assert!(
-            (new_state.afterglow - 0.4).abs() < 1e-6,
+            (p.render.afterglow - 0.4).abs() < 1e-6,
             "afterglow must survive round-trip (got {})",
-            new_state.afterglow
+            p.render.afterglow
         );
         assert!(
-            (new_state.afterglow_rate - 0.03).abs() < 1e-6,
+            (p.render.afterglow_rate - 0.03).abs() < 1e-6,
             "afterglow_rate must survive round-trip (got {})",
-            new_state.afterglow_rate
+            p.render.afterglow_rate
         );
         assert!(
-            (new_state.decay_gamma - 0.6).abs() < 1e-6,
+            (p.sim.decay_gamma - 0.6).abs() < 1e-6,
             "decay_gamma must survive round-trip (got {})",
-            new_state.decay_gamma
+            p.sim.decay_gamma
         );
         assert!(
-            (new_state.diffuse_weight - 0.5).abs() < 1e-6,
+            (p.sim.diffuse_weight - 0.5).abs() < 1e-6,
             "diffuse_weight must survive round-trip (got {})",
-            new_state.diffuse_weight
+            p.sim.diffuse_weight
         );
         assert!(
-            (new_state.diffusion_sigma - 3.0).abs() < 1e-6,
+            (p.sim.diffusion_sigma - 3.0).abs() < 1e-6,
             "diffusion_sigma must survive round-trip (got {})",
-            new_state.diffusion_sigma
+            p.sim.diffusion_sigma
         );
     }
 
@@ -841,16 +616,15 @@ charset = "halfblock"
         assert!(cfg.decay_gamma.is_none());
         assert!(cfg.diffuse_weight.is_none());
 
-        let mut state = create_test_runtime_state();
-        apply_to_runtime_state(&cfg, &mut state).expect("legacy config must still apply");
-        assert_eq!(state.afterglow, 0.0, "default afterglow must be 0.0");
+        let p = resolved(&cfg);
+        assert_eq!(p.render.afterglow, 0.0, "default afterglow must be 0.0");
         assert!(
-            (state.afterglow_rate - 0.05).abs() < 1e-6,
+            (p.render.afterglow_rate - 0.05).abs() < 1e-6,
             "default afterglow_rate must be 0.05"
         );
-        assert_eq!(state.decay_gamma, 1.0, "default decay_gamma must be 1.0");
+        assert_eq!(p.sim.decay_gamma, 1.0, "default decay_gamma must be 1.0");
         assert_eq!(
-            state.diffuse_weight, 1.0,
+            p.sim.diffuse_weight, 1.0,
             "default diffuse_weight must be 1.0"
         );
         assert!(cfg.deposit_curve.is_none());
@@ -858,19 +632,19 @@ charset = "halfblock"
         assert!(cfg.deposit_gamma.is_none());
         assert!(cfg.deposit_cap.is_none());
         assert_eq!(
-            state.deposit_curve,
+            p.sim.deposit_curve,
             DepositCurve::default(),
             "default deposit_curve must be Linear"
         );
         assert_eq!(
-            state.deposit_scale, 1.0,
+            p.sim.deposit_scale, 1.0,
             "default deposit_scale must be 1.0"
         );
         assert_eq!(
-            state.deposit_gamma, 1.0,
+            p.sim.deposit_gamma, 1.0,
             "default deposit_gamma must be 1.0"
         );
-        assert_eq!(state.deposit_cap, 0.0, "default deposit_cap must be 0.0");
+        assert_eq!(p.sim.deposit_cap, 0.0, "default deposit_cap must be 0.0");
     }
 
     #[test]
@@ -893,29 +667,27 @@ charset = "halfblock"
         let reloaded: ProfileOverrides =
             toml::from_str(&toml_str).expect("deserialize must succeed");
 
-        // Restore into a fresh RuntimeState
-        let mut restored = create_test_runtime_state();
-        apply_to_runtime_state(&reloaded, &mut restored).expect("apply must succeed");
-
+        // Resolve through the shipping path.
+        let p = resolved(&reloaded);
         assert_eq!(
-            restored.deposit_curve,
+            p.sim.deposit_curve,
             DepositCurve::Pow,
             "deposit_curve must survive round-trip"
         );
         assert!(
-            (restored.deposit_scale - 2.5).abs() < 1e-6,
+            (p.sim.deposit_scale - 2.5).abs() < 1e-6,
             "deposit_scale must survive round-trip (got {})",
-            restored.deposit_scale
+            p.sim.deposit_scale
         );
         assert!(
-            (restored.deposit_gamma - 0.5).abs() < 1e-6,
+            (p.sim.deposit_gamma - 0.5).abs() < 1e-6,
             "deposit_gamma must survive round-trip (got {})",
-            restored.deposit_gamma
+            p.sim.deposit_gamma
         );
         assert!(
-            (restored.deposit_cap - 7.0).abs() < 1e-6,
+            (p.sim.deposit_cap - 7.0).abs() < 1e-6,
             "deposit_cap must survive round-trip (got {})",
-            restored.deposit_cap
+            p.sim.deposit_cap
         );
     }
 
@@ -947,12 +719,10 @@ charset = "halfblock"
         let reloaded: ProfileOverrides =
             toml::from_str(&toml_str).expect("deserialize must succeed");
 
-        // Restore into a fresh RuntimeState
-        let mut rs2 = create_test_runtime_state();
-        apply_to_runtime_state(&reloaded, &mut rs2).expect("apply must succeed");
-
+        // Resolve through the shipping path.
+        let p = resolved(&reloaded);
         assert_eq!(
-            rs2.palette_cycle,
+            p.render.palette_cycle,
             PaletteCycle {
                 cycles: 4,
                 mode: PaletteCycleMode::Wrap
@@ -980,10 +750,9 @@ charset = "halfblock"
         assert_eq!(overrides.glyph_selection, Some(GlyphSelection::Hybrid));
         assert_eq!(overrides.glyph_edge_threshold, Some(0.25));
 
-        let mut rs2 = create_test_runtime_state();
-        apply_to_runtime_state(&overrides, &mut rs2).unwrap();
-        assert_eq!(rs2.glyph.selection, Some(GlyphSelection::Hybrid));
-        assert_eq!(rs2.glyph.edge_threshold, 0.25);
+        let p = resolved(&overrides);
+        assert_eq!(p.render.glyph.selection, Some(GlyphSelection::Hybrid));
+        assert_eq!(p.render.glyph.edge_threshold, 0.25);
     }
 
     #[test]
@@ -1018,14 +787,13 @@ charset = "halfblock"
             "missing key must deserialize as None"
         );
 
-        let mut state = create_test_runtime_state();
-        apply_to_runtime_state(&cfg, &mut state).expect("legacy config must still apply");
+        let p = resolved(&cfg);
         assert!(
-            state.palette_cycle.is_identity(),
+            p.render.palette_cycle.is_identity(),
             "missing palette_cycles must default to identity"
         );
         assert_eq!(
-            state.palette_cycle,
+            p.render.palette_cycle,
             PaletteCycle::default(),
             "palette_cycle must equal default"
         );
@@ -1048,15 +816,14 @@ charset = "halfblock"
         );
         assert!(cfg.glyph_edge_threshold.is_none());
 
-        let mut state = create_test_runtime_state();
-        apply_to_runtime_state(&cfg, &mut state).expect("legacy config must still apply");
+        let p = resolved(&cfg);
         assert_eq!(
-            state.glyph,
+            p.render.glyph,
             GlyphConfig::default(),
             "missing glyph keys must default to GlyphConfig::default()"
         );
         assert!(
-            state.glyph.selection.is_none(),
+            p.render.glyph.selection.is_none(),
             "missing glyph_selection must default to None"
         );
     }
@@ -1092,11 +859,10 @@ charset = "halfblock"
         let toml_str = toml::to_string(&overrides).expect("serialize must succeed");
         let reloaded: ProfileOverrides =
             toml::from_str(&toml_str).expect("deserialize must succeed");
-        let mut rs2 = create_test_runtime_state();
-        apply_to_runtime_state(&reloaded, &mut rs2).expect("apply must succeed");
+        let p = resolved(&reloaded);
 
         assert_eq!(
-            rs2.temporal_accent,
+            p.render.temporal_accent,
             Some(accent),
             "temporal_accent must survive round-trip"
         );
@@ -1120,8 +886,9 @@ charset = "halfblock"
         // Should capture the active slot value.
         assert_eq!(overrides.color_aa, Some(AaStrength::Subtle));
 
+        // Per-charset AA is applied via the shipping seam rs.apply_color_aa_all.
         let mut rs2 = create_test_runtime_state();
-        apply_to_runtime_state(&overrides, &mut rs2).expect("apply must succeed");
+        rs2.apply_color_aa_all(&overrides);
         assert_eq!(rs2.color_aa[0], AaStrength::Subtle);
     }
 
@@ -1140,7 +907,7 @@ charset = "halfblock"
         overrides.color_aa = None;
 
         let mut rs2 = create_test_runtime_state();
-        apply_to_runtime_state(&overrides, &mut rs2).expect("apply must succeed");
+        rs2.apply_color_aa_all(&overrides);
         // Default Strong for Braille must survive (not overwritten by absent field).
         assert_eq!(rs2.color_aa[3], AaStrength::Strong);
     }
@@ -1193,7 +960,7 @@ charset = "halfblock"
 
         // Apply into a fresh RuntimeState and verify all slots.
         let mut rs2 = create_test_runtime_state();
-        apply_to_runtime_state(&reloaded, &mut rs2).expect("apply must succeed");
+        rs2.apply_color_aa_all(&reloaded);
         for i in 0..NUM_CHARSETS {
             assert_eq!(
                 rs2.color_aa[i],
@@ -1224,7 +991,7 @@ charset = "halfblock"
         assert_eq!(overrides.color_aa, Some(AaStrength::Subtle));
 
         let mut rs2 = create_test_runtime_state();
-        apply_to_runtime_state(&overrides, &mut rs2).expect("apply must succeed");
+        rs2.apply_color_aa_all(&overrides);
         // Active charset slot (0) must be restored via the scalar fallback.
         assert_eq!(rs2.color_aa[0], AaStrength::Subtle);
     }
@@ -1254,12 +1021,11 @@ charset = "halfblock"
         assert_eq!(reloaded.invert_palette, Some(true));
         assert_eq!(reloaded.food_persist, Some(true));
 
-        // Apply and verify.
-        let mut new_state = create_test_runtime_state();
-        apply_to_runtime_state(&reloaded, &mut new_state).expect("apply must succeed");
-        assert!(new_state.reverse_palette);
-        assert!(new_state.invert_palette);
-        assert!(new_state.food_persist_enabled);
+        // These three are persist-only (not in the resolved Profile); the runner's
+        // apply seam reads them as `ov.<field>.unwrap_or(false)`.
+        assert!(reloaded.reverse_palette.unwrap_or(false));
+        assert!(reloaded.invert_palette.unwrap_or(false));
+        assert!(reloaded.food_persist.unwrap_or(false));
     }
 
     #[test]
@@ -1270,11 +1036,10 @@ palette = "organic"
 charset = "halfblock"
 "#;
         let cfg: ProfileOverrides = toml::from_str(toml).unwrap();
-        let mut state = create_test_runtime_state();
-        apply_to_runtime_state(&cfg, &mut state).expect("apply must succeed");
-        assert!(!state.reverse_palette);
-        assert!(!state.invert_palette);
-        assert!(!state.food_persist_enabled);
+        // Persist-only levers; the apply seam reads `ov.<field>.unwrap_or(false)`.
+        assert!(!cfg.reverse_palette.unwrap_or(false));
+        assert!(!cfg.invert_palette.unwrap_or(false));
+        assert!(!cfg.food_persist.unwrap_or(false));
     }
 
     #[test]
@@ -1295,12 +1060,11 @@ charset = "halfblock"
             "brightness gain should round-trip"
         );
 
-        let mut new_state = create_test_runtime_state();
-        apply_to_runtime_state(&overrides, &mut new_state).expect("apply must succeed");
+        let p = resolved(&overrides);
         assert!(
-            (new_state.max_brightness - 50.0).abs() < 1e-3,
+            (p.sim.max_brightness - 50.0).abs() < 1e-3,
             "max_brightness must round-trip through gain (got {})",
-            new_state.max_brightness
+            p.sim.max_brightness
         );
     }
     #[test]

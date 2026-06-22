@@ -2584,10 +2584,9 @@ mod tests {
         let sim_config = profile.sim.clone();
         let mut rs = create_test_runtime_state();
 
-        // Mirror the apply seam's RESOLVED writes (not apply_to_runtime_state(ov),
-        // which only reads ov's own Option fields and would leave preset-derived
-        // render/sim levers at hardcoded defaults). capture_overrides reads these rs
-        // fields, so a faithful clean session must carry the resolved values.
+        // Mirror the apply seam's RESOLVED writes: resolve() expands preset-derived
+        // render/sim levers, and capture_overrides reads these rs fields, so a
+        // faithful clean session must carry the resolved values.
 
         // Sim-side levers capture reads from rs (not from sim_config).
         rs.decay_gamma = sim_config.decay_gamma;

@@ -137,7 +137,7 @@ pub struct ProfileOverrides {
     pub food_persist: Option<bool>,
     /// Apply/persist-only: full per-charset AA array for config save/load. NOT consumed by
     /// `resolve()` (the resolve-side `color_aa` single scalar is the CLI lever). When present,
-    /// `apply_color_aa_all` / `apply_to_runtime_state` restores all slots from this Vec;
+    /// `RuntimeState::apply_color_aa_all` restores all slots from this Vec;
     /// the scalar `color_aa` is used as a fallback for the active charset only when this
     /// field is absent (back-compat for configs saved before this field was added).
     #[serde(default, skip_serializing_if = "Option::is_none")]
