@@ -1019,6 +1019,15 @@ impl Simulation {
                 self.config.diffusion_sigma,
             );
             trail_map.decay_gamma(effective_decay, self.config.decay_gamma);
+            if self.config.constellation_restamp_floor > 0.0 {
+                if let Some(ref template) = self.constellation_template {
+                    let floor = self.config.constellation_restamp_floor;
+                    let cur = trail_map.current_mut();
+                    for (c, &t) in cur.iter_mut().zip(template.iter()) {
+                        *c = c.max(t * floor);
+                    }
+                }
+            }
         }
 
         // Compute trail age: increment where pheromone present, reset where absent
@@ -2203,5 +2212,43 @@ mod tests {
         assert_eq!(a.agents.len(), b.agents.len());
         assert_eq!(a.agents[0].x, b.agents[0].x);
         assert_eq!(a.agents[0].y, b.agents[0].y);
+    }
+
+    // No agents; only re-stamp can maintain the figure against decay.
+    // With agents (count: 500) the trail is maintained by deposits — use
+    // count: 0 to isolate the re-stamp mechanism for a clean TDD RED → GREEN.
+    #[test]
+    fn static_restamp_reinforces_figure_drift_does_not() {
+        let mut cfg = SimConfig::default();
+        cfg.species_configs = vec![SpeciesConfig {
+            count: 0,
+            ..Default::default()
+        }];
+        cfg.constellation_restamp_floor = 0.5;
+        let mut stat = Simulation::new(160, 100, cfg.clone(), 5, InitMode::Constellation, 0);
+        let template = stat.constellation_template.clone().unwrap();
+        // Find a template-bright cell.
+        let (idx, &tval) = template
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap();
+        // Run several frames; static must keep that cell at >= template*floor.
+        for _ in 0..20 {
+            stat.update(1.0);
+        }
+        assert!(
+            stat.trail_maps[0].current()[idx] >= tval * 0.5 - 1e-3,
+            "static re-stamp did not hold the figure"
+        );
+
+        // Drift (floor 0.0) does NOT re-stamp: same field decays freely.
+        cfg.constellation_restamp_floor = 0.0;
+        let mut drift = Simulation::new(160, 100, cfg, 5, InitMode::Constellation, 0);
+        for _ in 0..20 {
+            drift.update(1.0);
+        }
+        // No assertion of growth — just that it runs without re-stamping (smoke).
+        assert!(drift.constellation_template.is_some());
     }
 }
