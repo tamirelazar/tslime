@@ -561,7 +561,7 @@ deposit_scale=1.0
 deposit_gamma=1.0
 deposit_cap=0.0
 boundary_mode=Bounce
-preferred_init_mode=Some(Random)
+preferred_init_mode=Some(Constellation)
 wind=None
 background_color=None
 obstacles=[]
@@ -570,6 +570,33 @@ separate_species_trails=false
 sampling_mode=Nearest
 respawn_config=RespawnConfig { interval: 0, base_probability: 0.01, trail_dependent: false, max_probability_multiplier: 1.0, trail_rescale: 1.0 }
 species[0]: name="default" count=12000 sa=45.0 ra=25.0 ss=0.8 da=4.0 color=RgbColor { r: 34, g: 139, b: 34 } mod=false
+
+=== constellationstatic ===
+sensor_angle=45.0
+sensor_distance=12.0
+rotation_angle=18.0
+step_size=0.4
+decay_factor=0.985
+deposit_amount=4.0
+diffusion_kernel=Mean3x3
+diffusion_sigma=1.0
+max_brightness=30.0
+decay_gamma=1.0
+diffuse_weight=1.0
+deposit_curve=Linear
+deposit_scale=1.0
+deposit_gamma=1.0
+deposit_cap=0.0
+boundary_mode=Bounce
+preferred_init_mode=Some(Constellation)
+wind=None
+background_color=None
+obstacles=[]
+attractors=[]
+separate_species_trails=false
+sampling_mode=Nearest
+respawn_config=RespawnConfig { interval: 0, base_probability: 0.01, trail_dependent: false, max_probability_multiplier: 1.0 }
+species[0]: name="default" count=12000 sa=45.0 ra=18.0 ss=0.4 da=4.0 color=RgbColor { r: 34, g: 139, b: 34 } mod=false
 
 === mosaic ===
 sensor_angle=30.0

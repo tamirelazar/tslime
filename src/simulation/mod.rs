@@ -2194,11 +2194,13 @@ mod tests {
 
     #[test]
     fn constellation_init_seeds_trail_and_is_deterministic() {
-        let mut cfg = SimConfig::default();
-        cfg.species_configs = vec![SpeciesConfig {
-            count: 2000,
+        let cfg = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 2000,
+                ..Default::default()
+            }],
             ..Default::default()
-        }];
+        };
         let a = Simulation::new(160, 100, cfg.clone(), 99, InitMode::Constellation, 0);
         let b = Simulation::new(160, 100, cfg, 99, InitMode::Constellation, 0);
         // Trail map is non-empty at frame 0 (figure pre-seeded).
@@ -2219,12 +2221,14 @@ mod tests {
     // count: 0 to isolate the re-stamp mechanism for a clean TDD RED → GREEN.
     #[test]
     fn static_restamp_reinforces_figure_drift_does_not() {
-        let mut cfg = SimConfig::default();
-        cfg.species_configs = vec![SpeciesConfig {
-            count: 0,
+        let mut cfg = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 0,
+                ..Default::default()
+            }],
+            constellation_restamp_floor: 0.5,
             ..Default::default()
-        }];
-        cfg.constellation_restamp_floor = 0.5;
+        };
         let mut stat = Simulation::new(160, 100, cfg.clone(), 5, InitMode::Constellation, 0);
         let template = stat.constellation_template.clone().unwrap();
         // Find a template-bright cell.

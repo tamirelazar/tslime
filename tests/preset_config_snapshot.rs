@@ -31,6 +31,7 @@ const PRESETS: &[&str] = &[
     "etching",
     "drift",
     "constellation",
+    "constellationstatic",
     "mosaic",
     "marble",
     "prism",
