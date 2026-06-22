@@ -17,94 +17,161 @@ pub struct Constellation {
     pub edges: &'static [(u8, u8)],
 }
 
-// Orion: belt + shoulders + feet. Indices: 0 Betelgeuse, 1 Bellatrix, 2-4 belt,
-// 5 Saiph, 6 Rigel, 7 Meissa (head).
 const ORION: Constellation = Constellation {
     name: "Orion",
     stars: &[
-        (0.30, 0.18),
-        (0.66, 0.20),
-        (0.40, 0.50),
-        (0.50, 0.52),
-        (0.60, 0.54),
-        (0.34, 0.86),
-        (0.70, 0.84),
-        (0.48, 0.04),
+        (0.30, 0.24),
+        (0.60, 0.22),
+        (0.40, 0.52),
+        (0.48, 0.54),
+        (0.56, 0.53),
+        (0.36, 0.88),
+        (0.64, 0.90),
+        (0.45, 0.08),
+        (0.46, 0.64),
+        (0.45, 0.74),
     ],
     edges: &[
+        (7, 0),
+        (7, 1),
+        (0, 1),
         (0, 2),
         (1, 4),
         (2, 3),
         (3, 4),
         (2, 5),
         (4, 6),
-        (0, 7),
-        (1, 7),
+        (3, 8),
+        (8, 9),
     ],
 };
 
 const URSA_MAJOR: Constellation = Constellation {
-    name: "Big Dipper",
+    name: "Ursa Major",
     stars: &[
-        (0.08, 0.40),
-        (0.26, 0.46),
-        (0.44, 0.52),
-        (0.60, 0.46),
-        (0.74, 0.30),
-        (0.90, 0.40),
-        (0.70, 0.58),
+        (0.80, 0.30),
+        (0.80, 0.48),
+        (0.64, 0.52),
+        (0.60, 0.38),
+        (0.46, 0.36),
+        (0.32, 0.36),
+        (0.14, 0.42),
+        (0.90, 0.66),
+        (0.66, 0.70),
+        (0.96, 0.20),
     ],
-    edges: &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 3)],
-};
-
-const CASSIOPEIA: Constellation = Constellation {
-    name: "Cassiopeia",
-    stars: &[
-        (0.08, 0.40),
-        (0.30, 0.62),
-        (0.50, 0.36),
-        (0.70, 0.64),
-        (0.92, 0.40),
+    edges: &[
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (3, 4),
+        (4, 5),
+        (5, 6),
+        (1, 8),
+        (0, 7),
+        (0, 9),
     ],
-    edges: &[(0, 1), (1, 2), (2, 3), (3, 4)],
-};
-
-const CYGNUS: Constellation = Constellation {
-    name: "Cygnus",
-    stars: &[
-        (0.50, 0.06),
-        (0.50, 0.40),
-        (0.50, 0.70),
-        (0.50, 0.94),
-        (0.18, 0.30),
-        (0.82, 0.30),
-    ],
-    edges: &[(0, 1), (1, 2), (2, 3), (4, 1), (1, 5)],
 };
 
 const SCORPIUS: Constellation = Constellation {
     name: "Scorpius",
     stars: &[
-        (0.12, 0.14),
-        (0.22, 0.26),
-        (0.34, 0.36),
-        (0.46, 0.50),
-        (0.56, 0.66),
+        (0.14, 0.10),
+        (0.10, 0.26),
+        (0.24, 0.20),
+        (0.32, 0.34),
+        (0.42, 0.46),
+        (0.50, 0.58),
+        (0.56, 0.70),
         (0.62, 0.82),
-        (0.76, 0.84),
-        (0.86, 0.72),
+        (0.74, 0.86),
+        (0.84, 0.78),
     ],
-    edges: &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7)],
+    edges: &[
+        (0, 2),
+        (1, 2),
+        (2, 3),
+        (3, 4),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 8),
+        (8, 9),
+    ],
 };
 
-const CRUX: Constellation = Constellation {
-    name: "Southern Cross",
-    stars: &[(0.50, 0.06), (0.50, 0.94), (0.16, 0.50), (0.84, 0.46)],
-    edges: &[(0, 1), (2, 3)],
+const CYGNUS: Constellation = Constellation {
+    name: "Cygnus",
+    stars: &[
+        (0.50, 0.08),
+        (0.50, 0.48),
+        (0.50, 0.92),
+        (0.14, 0.38),
+        (0.86, 0.54),
+        (0.30, 0.44),
+        (0.70, 0.50),
+    ],
+    edges: &[(0, 1), (1, 2), (3, 5), (5, 1), (1, 6), (6, 4)],
+};
+
+const LEO: Constellation = Constellation {
+    name: "Leo",
+    stars: &[
+        (0.18, 0.64),
+        (0.20, 0.50),
+        (0.26, 0.38),
+        (0.34, 0.32),
+        (0.40, 0.42),
+        (0.30, 0.52),
+        (0.86, 0.56),
+        (0.60, 0.42),
+        (0.64, 0.64),
+    ],
+    edges: &[
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 4),
+        (1, 7),
+        (7, 6),
+        (6, 8),
+        (8, 0),
+        (7, 8),
+    ],
+};
+
+const GEMINI: Constellation = Constellation {
+    name: "Gemini",
+    stars: &[
+        (0.30, 0.10),
+        (0.32, 0.30),
+        (0.28, 0.54),
+        (0.22, 0.78),
+        (0.36, 0.76),
+        (0.64, 0.14),
+        (0.62, 0.34),
+        (0.60, 0.56),
+        (0.54, 0.80),
+        (0.70, 0.80),
+        (0.47, 0.32),
+    ],
+    edges: &[
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (2, 4),
+        (5, 6),
+        (6, 7),
+        (7, 8),
+        (7, 9),
+        (1, 10),
+        (10, 6),
+    ],
 };
 
 /// All shipped figures, in display order.
-pub const ALL: &[Constellation] = &[ORION, URSA_MAJOR, CASSIOPEIA, CYGNUS, SCORPIUS, CRUX];
+pub const ALL: &[Constellation] = &[ORION, URSA_MAJOR, SCORPIUS, CYGNUS, LEO, GEMINI];
 
 /// Pick one figure using the seeded simulation RNG (deterministic under `--seed`).
 pub fn pick(rng: &mut Rng) -> &'static Constellation {
@@ -121,7 +188,7 @@ pub fn fit_to_grid(
     height: usize,
     aspect: Aspect,
 ) -> Vec<(f32, f32)> {
-    const MARGIN: f32 = 0.10;
+    const MARGIN: f32 = 0.05;
     let gw = width as f32;
     let gh = height as f32;
     let avail_w = gw * (1.0 - 2.0 * MARGIN);

@@ -682,18 +682,18 @@ impl From<Preset> for PresetSimDefaults {
                 rotation_angle: 18.0,
                 step_size: 0.3,
                 decay_factor: 0.92,
-                deposit_amount: 0.6,
+                deposit_amount: 0.3,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 30.0,
+                max_brightness: 10.0,
                 preferred_init_mode: Some(InitMode::Constellation),
                 constellation_restamp_floor: 1.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
-                    count: 2_500,
+                    count: 2_000,
                     sensor_angle: 45.0,
                     rotation_angle: 18.0,
                     step_size: 0.3,
-                    deposit_amount: 0.6,
+                    deposit_amount: 0.3,
                     ..Default::default()
                 }],
                 ..Self::default()
