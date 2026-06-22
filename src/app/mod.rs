@@ -169,6 +169,10 @@ pub(crate) fn apply_render_config(
     // Buckets via the single source of truth shared with the dirty projection.
     rs.palette_shift_speed = crate::terminal::state::palette_shift_speed_of(r.hue_shift);
 
+    // Adaptive-brightness baseline (the runner rebuilds AdaptiveBrightness from this
+    // after a swap). A preset may default this ON.
+    rs.auto_normalize = r.auto_normalize;
+
     // Temporal + afterglow runtime state and sim compute toggles.
     rs.temporal_color = r.temporal_color;
     rs.temporal_lag_frames = r.temporal_lag_frames;
@@ -756,10 +760,11 @@ pub fn print_mode(
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
+    // Read the RESOLVED auto-normalize so `--preset slime --print` honors the preset.
     let mut adaptive_brightness =
-        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+        AdaptiveBrightness::new(args.normalize_window, render.auto_normalize);
     adaptive_brightness.update(downsampled.cells());
-    let max_brightness = if args.auto_normalize {
+    let max_brightness = if render.auto_normalize {
         adaptive_brightness.get_max_brightness()
     } else {
         config.max_brightness
@@ -899,13 +904,16 @@ pub fn capture_frames_mode(
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
-    let mut adaptive_brightness =
-        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
-
-    // Temporal-color setup: enable EMA computation once before the loop.
+    // Resolve the render config first so adaptive-brightness reads the RESOLVED
+    // auto-normalize (a preset may default it ON) rather than the raw CLI flag.
     let render = crate::profile::Profile::resolve_from_args(args)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
         .render;
+
+    let mut adaptive_brightness =
+        AdaptiveBrightness::new(args.normalize_window, render.auto_normalize);
+
+    // Temporal-color setup: enable EMA computation once before the loop.
     let temporal_strength = render.temporal_color;
     let temporal_mode = render.temporal_mode;
     let temporal_accent = render.temporal_accent;
@@ -949,7 +957,7 @@ pub fn capture_frames_mode(
         );
 
         adaptive_brightness.update(downsampled.cells());
-        let max_brightness = if args.auto_normalize {
+        let max_brightness = if render.auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
             config.max_brightness
@@ -1136,13 +1144,16 @@ pub fn export_gif_mode(
     let mut gif_exporter = GifExporter::new(width, height, output_path, args.export_fps)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-    let mut adaptive_brightness =
-        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
-
-    // Temporal-color setup: enable EMA computation once before the loop.
+    // Resolve the render config first so adaptive-brightness reads the RESOLVED
+    // auto-normalize (a preset may default it ON) rather than the raw CLI flag.
     let render = crate::profile::Profile::resolve_from_args(args)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
         .render;
+
+    let mut adaptive_brightness =
+        AdaptiveBrightness::new(args.normalize_window, render.auto_normalize);
+
+    // Temporal-color setup: enable EMA computation once before the loop.
     let temporal_strength = render.temporal_color;
     let temporal_mode = render.temporal_mode;
     let temporal_accent = render.temporal_accent;
@@ -1188,7 +1199,7 @@ pub fn export_gif_mode(
         );
 
         adaptive_brightness.update(downsampled_frame.cells());
-        let max_brightness = if args.auto_normalize {
+        let max_brightness = if render.auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
             config.max_brightness
@@ -1312,13 +1323,16 @@ pub fn export_webm_mode(
     let mut webm_exporter = WebmExporter::new(width, height, output_path, args.export_fps)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-    let mut adaptive_brightness =
-        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
-
-    // Temporal-color setup: enable EMA computation once before the loop.
+    // Resolve the render config first so adaptive-brightness reads the RESOLVED
+    // auto-normalize (a preset may default it ON) rather than the raw CLI flag.
     let render = crate::profile::Profile::resolve_from_args(args)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
         .render;
+
+    let mut adaptive_brightness =
+        AdaptiveBrightness::new(args.normalize_window, render.auto_normalize);
+
+    // Temporal-color setup: enable EMA computation once before the loop.
     let temporal_strength = render.temporal_color;
     let temporal_mode = render.temporal_mode;
     let temporal_accent = render.temporal_accent;
@@ -1364,7 +1378,7 @@ pub fn export_webm_mode(
         );
 
         adaptive_brightness.update(downsampled_frame.cells());
-        let max_brightness = if args.auto_normalize {
+        let max_brightness = if render.auto_normalize {
             adaptive_brightness.get_max_brightness()
         } else {
             config.max_brightness

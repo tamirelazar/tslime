@@ -521,7 +521,9 @@ impl DefaultValues {
             },
             terrain_type: config.terrain,
             terrain_strength: config.terrain_strength,
-            auto_normalize: false,
+            auto_normalize: crate::render_art_defaults::RenderArtDefaults::from(preset)
+                .auto_normalize
+                .unwrap_or(false),
             motion_blur_frames: 0,
             max_brightness: config.max_brightness,
         }

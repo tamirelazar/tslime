@@ -38,6 +38,9 @@ pub(crate) struct RenderArtDefaults {
     pub color_aa: Option<crate::render::antialiasing::AaStrength>,
     /// Per-preset animated hue-shift in degrees/second. Identity = 0.0 (off).
     pub hue_shift: f32,
+    /// Adaptive-brightness auto-normalization. None = inherit (default off); a
+    /// preset may default it ON without dirtying a clean session.
+    pub auto_normalize: Option<bool>,
     /// Afterglow strength (lever 7). Identity = 0.0 (off).
     pub afterglow: f32,
     /// Afterglow EMA rate. Identity = 0.05.
@@ -58,6 +61,7 @@ impl Default for RenderArtDefaults {
             charset: None,
             color_aa: None,
             hue_shift: 0.0,
+            auto_normalize: None,
             afterglow: 0.0,
             afterglow_rate: 0.05,
         }
@@ -73,6 +77,7 @@ pub(crate) struct ResolvedRenderConfig {
     pub charset: crate::render::charset::Charset,
     pub color_aa: crate::render::antialiasing::AaStrength,
     pub hue_shift: f32,
+    pub auto_normalize: bool,
     pub intensity_mapping: crate::render::palette::IntensityMapping,
     pub palette_cycle: crate::render::palette::PaletteCycle,
     pub glyph: crate::render::charset::GlyphConfig,
@@ -106,6 +111,7 @@ impl Default for ResolvedRenderConfig {
             charset: ALL_CHARSETS[0].clone(),
             color_aa: crate::config_defaults::DEFAULT_COLOR_AA[0],
             hue_shift: 0.0,
+            auto_normalize: false,
             intensity_mapping: crate::render::palette::IntensityMapping::logarithmic(10.0),
             palette_cycle: crate::render::palette::PaletteCycle::default(),
             glyph: crate::render::charset::GlyphConfig::default(),
@@ -416,6 +422,12 @@ mod tests {
             assert_eq!(d.palette, None, "{preset:?} palette must be identity");
             assert_eq!(d.charset, None, "{preset:?} charset must be identity");
         }
+    }
+
+    #[test]
+    fn auto_normalize_default_off_and_overridable() {
+        assert_eq!(RenderArtDefaults::default().auto_normalize, None);
+        assert!(!ResolvedRenderConfig::default().auto_normalize);
     }
 
     #[test]

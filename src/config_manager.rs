@@ -173,6 +173,9 @@ pub fn capture_overrides(
         charset: Some(charset),
         color_aa,
         hue_shift: None,
+        // Serialize the explicit live value for dirty parity: a clean
+        // auto-normalized preset must project identically on both sides.
+        auto_normalize: Some(rs.auto_normalize),
         intensity_mapping,
         palette_cycle,
         glyph_selection,
@@ -1082,6 +1085,25 @@ charset = "halfblock"
             overrides.reverse_palette,
             Some(true),
             "capture must read live rs.reverse_palette, not a frozen startup arg"
+        );
+    }
+
+    #[test]
+    fn capture_reads_live_auto_normalize_flag() {
+        // Proves capture_overrides serializes the live rs.auto_normalize (explicit
+        // Some), required for dirty parity against a clean auto-normalized session.
+        let mut rs = create_test_runtime_state();
+        rs.auto_normalize = true;
+        let overrides = capture_overrides(
+            &SimConfig::default(),
+            Palette::Organic,
+            Charset::HalfBlock,
+            &rs,
+        );
+        assert_eq!(
+            overrides.auto_normalize,
+            Some(true),
+            "capture must read live rs.auto_normalize, not a frozen startup arg"
         );
     }
 

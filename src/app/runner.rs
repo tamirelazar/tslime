@@ -322,11 +322,13 @@ pub fn run_simulation(
         renderer.set_species_colors(true, species_rgb_colors);
     }
 
+    // apply_render_config (above) has already set runtime_state.auto_normalize from
+    // the resolved render config, so a preset may default it ON. Seed the loop-local
+    // and the AdaptiveBrightness from rs, not the raw CLI flag.
+    let mut current_auto_normalize = runtime_state.auto_normalize;
     let mut adaptive_brightness =
-        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+        AdaptiveBrightness::new(args.normalize_window, current_auto_normalize);
     let mut hue_offset: f32 = 0.0;
-
-    let mut current_auto_normalize = args.auto_normalize;
 
     if args.random {
         runtime_state.randomize_params();
@@ -1383,8 +1385,15 @@ pub fn run_simulation(
                                 if is_reset {
                                     // Reset-specific loop-local side effects.
                                     hue_offset = 0.0;
-                                    current_auto_normalize = runtime_state.auto_normalize;
                                 }
+                                // do_swap → apply_render_config may flip auto_normalize
+                                // (preset/config can default it ON); re-sync the
+                                // loop-local + rebuild AdaptiveBrightness for any swap.
+                                current_auto_normalize = runtime_state.auto_normalize;
+                                adaptive_brightness = AdaptiveBrightness::new(
+                                    args.normalize_window,
+                                    current_auto_normalize,
+                                );
                             }
                         }
                         continue;
@@ -1482,6 +1491,12 @@ pub fn run_simulation(
                                     &mut aux_frame,
                                     (term_width as usize, term_height as usize),
                                 )?;
+                                // Clean preset swap may default auto_normalize ON.
+                                current_auto_normalize = runtime_state.auto_normalize;
+                                adaptive_brightness = AdaptiveBrightness::new(
+                                    args.normalize_window,
+                                    current_auto_normalize,
+                                );
                             }
                             continue;
                         }
@@ -1549,6 +1564,12 @@ pub fn run_simulation(
                                             &mut aux_frame,
                                             (term_width as usize, term_height as usize),
                                         )?;
+                                        // Clean config load may default auto_normalize ON.
+                                        current_auto_normalize = runtime_state.auto_normalize;
+                                        adaptive_brightness = AdaptiveBrightness::new(
+                                            args.normalize_window,
+                                            current_auto_normalize,
+                                        );
                                     }
                                 }
                                 continue;
@@ -1696,6 +1717,12 @@ pub fn run_simulation(
                                     &mut aux_frame,
                                     (term_width as usize, term_height as usize),
                                 )?;
+                                // Clean preset swap may default auto_normalize ON.
+                                current_auto_normalize = runtime_state.auto_normalize;
+                                adaptive_brightness = AdaptiveBrightness::new(
+                                    args.normalize_window,
+                                    current_auto_normalize,
+                                );
                             }
                         }
                         ControlAction::ComparePreset(preset) => {
@@ -2132,6 +2159,10 @@ pub fn run_simulation(
                                 // Reset-specific loop-local side effects.
                                 hue_offset = 0.0;
                                 current_auto_normalize = runtime_state.auto_normalize;
+                                adaptive_brightness = AdaptiveBrightness::new(
+                                    args.normalize_window,
+                                    current_auto_normalize,
+                                );
                             }
                         }
                         ControlAction::ToggleDashboard => {

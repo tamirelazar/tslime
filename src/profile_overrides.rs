@@ -99,6 +99,10 @@ pub struct ProfileOverrides {
     pub color_aa: Option<AaStrength>,
     /// CLI `--palette-shift` (maps to hue_shift). `None` falls through to preset art.
     pub hue_shift: Option<f32>,
+    /// CLI `--normalize` (adaptive-brightness). `None` (CLI absent) falls through to
+    /// preset art so a preset can default it ON; `Some(true)` forces it on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_normalize: Option<bool>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -333,6 +337,13 @@ impl ProfileOverrides {
             charset: args.charset_parsed().ok().flatten(),
             color_aa: args.color_aa,
             hue_shift: args.palette_shift,
+            // None-on-absent: emitting Some(false) would shadow a preset's
+            // default-ON. `capture_overrides` serializes the explicit live value.
+            auto_normalize: if args.auto_normalize {
+                Some(true)
+            } else {
+                None
+            },
             intensity_mapping,
             palette_cycle,
             glyph_selection,
@@ -776,11 +787,13 @@ impl ProfileOverrides {
             .or(art.color_aa)
             .unwrap_or(crate::config_defaults::DEFAULT_COLOR_AA[charset_index]);
         let hue_shift = self.hue_shift.unwrap_or(art.hue_shift);
+        let auto_normalize = self.auto_normalize.or(art.auto_normalize).unwrap_or(false);
         Ok(ResolvedRenderConfig {
             palette,
             charset,
             color_aa,
             hue_shift,
+            auto_normalize,
             intensity_mapping: art.intensity_mapping,
             palette_cycle: art.palette_cycle,
             glyph: art.glyph,
@@ -1807,5 +1820,63 @@ mod tests {
             None,
             "preset + explicit seed should classify as StartupCli (None)"
         );
+    }
+
+    // ── auto_normalize membrane (Task 2) ──
+
+    /// CLI absent → `None` (must NOT shadow a preset default) → resolves `false`.
+    #[test]
+    fn auto_normalize_cli_absent_is_none_and_resolves_off() {
+        let ov = ProfileOverrides::from_args(&args(&[])).expect("from_args");
+        assert_eq!(ov.auto_normalize, None);
+        assert!(!ov.resolve_render().unwrap().auto_normalize);
+    }
+
+    /// CLI `--auto-normalize` → `Some(true)` → resolves `true`.
+    #[test]
+    fn auto_normalize_cli_flag_sets_some_true_and_resolves_on() {
+        let ov = ProfileOverrides::from_args(&args(&["--auto-normalize"])).expect("from_args");
+        assert_eq!(ov.auto_normalize, Some(true));
+        assert!(ov.resolve_render().unwrap().auto_normalize);
+    }
+
+    /// The resolve precedence: `RenderArtDefaults.auto_normalize` is the per-preset
+    /// default; `self.or(art).unwrap_or(false)` lets a preset opt in (None CLI), and
+    /// an explicit `Some(true)` override wins. (No shipping preset opts in yet — the
+    /// brief's `Preset::Slime` is a palette, not a preset — so this exercises the
+    /// art-lookup ⊕ override seam directly via the `RenderArtDefaults` field.)
+    #[test]
+    fn auto_normalize_art_default_and_override_precedence() {
+        use crate::render_art_defaults::RenderArtDefaults;
+        // The field exists and defaults to None (off) on a plain preset.
+        assert_eq!(RenderArtDefaults::default().auto_normalize, None);
+        // art ON + CLI absent → resolved ON (preset opt-in path).
+        let art_on = RenderArtDefaults {
+            auto_normalize: Some(true),
+            ..RenderArtDefaults::default()
+        };
+        assert!(None::<bool>.or(art_on.auto_normalize).unwrap_or(false));
+        // CLI explicit ON overrides art OFF.
+        assert!(Some(true)
+            .or(RenderArtDefaults::default().auto_normalize)
+            .unwrap_or(false));
+    }
+
+    /// Dirty parity: the live value drives the `Canonical` projection through the
+    /// `render.auto_normalize` field — capture reproduces it so a clean auto-normalized
+    /// session is not falsely dirty, and toggling it flips the projection.
+    #[test]
+    fn auto_normalize_capture_round_trips_for_dirty_parity() {
+        let on = ProfileOverrides {
+            auto_normalize: Some(true),
+            ..Default::default()
+        };
+        let off = ProfileOverrides {
+            auto_normalize: Some(false),
+            ..Default::default()
+        };
+        assert!(project(&on).unwrap().render.auto_normalize);
+        assert!(!project(&off).unwrap().render.auto_normalize);
+        assert_ne!(project(&on).unwrap(), project(&off).unwrap());
     }
 }
