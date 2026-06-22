@@ -21,6 +21,7 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
+use ratatui::text::Line;
 use ratatui::widgets::{List, ListItem, ListState, StatefulWidget};
 
 use crate::config_manager::NamedProfile;
@@ -78,6 +79,39 @@ pub fn buffer_to_overlay(buf: &Buffer) -> RenderedOverlay {
         title_box: None,
         rich_lines: Some(rich),
     }
+}
+
+/// Render a stack of styled ratatui [`Line`]s into detached 1-row [`Buffer`]s of the
+/// given `width`, returning each row's plain text plus its per-cell foreground colour.
+///
+/// This is the span-driven alternative to hand-rolled column-index colourisers (e.g. the
+/// old `generate_controls_rich_lines`): each [`Line`] carries its own `Span` styling, the
+/// layout/clipping is done by ratatui, and the caller blits the resulting `(char, fg)`
+/// pairs into the content region of its `PanelBuilder` chrome. Cells with no explicit
+/// style map to `None` (so the renderer's default theme colour shows through). Lines
+/// longer than `width` are clipped by ratatui exactly like `PanelBuilder`'s left-aligned
+/// truncation, so plain text stays identical to the non-styled path.
+pub fn render_styled_rows(
+    lines: &[Line<'static>],
+    width: usize,
+) -> Vec<(String, Vec<Option<RgbColor>>)> {
+    let w = width as u16;
+    lines
+        .iter()
+        .map(|line| {
+            let area = Rect::new(0, 0, w, 1);
+            let mut buf = Buffer::empty(area);
+            buf.set_line(0, 0, line, w);
+            let mut text = String::with_capacity(width);
+            let mut colors = Vec::with_capacity(width);
+            for x in 0..w {
+                let cell = &buf[(x, 0)];
+                text.push(cell.symbol().chars().next().unwrap_or(' '));
+                colors.push(color_to_rgb(cell.fg));
+            }
+            (text, colors)
+        })
+        .collect()
 }
 
 /// Inner content width (`56 - 2 border - 2*2 padding`).

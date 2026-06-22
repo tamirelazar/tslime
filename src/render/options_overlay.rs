@@ -1,5 +1,9 @@
+use ratatui::style::{Color, Style};
+use ratatui::text::{Line, Span};
+
 use crate::render::palette::RgbColor;
 use crate::render::panel::{Padding, PanelBuilder, RichCell, TextAlignment};
+use crate::render::ratatui_adapter::render_styled_rows;
 use crate::render::theme::PanelStyle;
 use crate::simulation::config::DiffusionKernel;
 use crate::simulation::config::TerrainType;
@@ -16,6 +20,104 @@ fn mini_bar(ratio: f32, total: usize) -> String {
     let filled = ((ratio.clamp(0.0, 1.0)) * total as f32).round() as usize;
     let filled = filled.min(total);
     format!("{}{}", "█".repeat(filled), "░".repeat(total - filled))
+}
+
+/// Foreground colours used when styling control rows, resolved once per build.
+struct LineColors {
+    accent: Color,
+    muted: Color,
+    modified: Color,
+    cli_only: Color,
+}
+
+/// A single content row of the controls overlay, before `PanelBuilder` chrome is applied.
+enum Row {
+    /// Blank content line.
+    Empty,
+    /// Horizontal separator (drawn by `PanelBuilder`, spans the padding).
+    Sep,
+    /// A styled line whose spans carry their own colours (blitted into the content region).
+    Styled(Line<'static>),
+}
+
+/// Converts our [`RgbColor`] into a ratatui [`Color`].
+fn rt(c: RgbColor) -> Color {
+    Color::Rgb(c.r, c.g, c.b)
+}
+
+/// Builds a parameter row `{marker} {key:<3}  {label:<18}  {bar}  {value:>9}` as a styled
+/// [`Line`]. The key is accent-coloured (or `cli_only` red), the modification marker `✱`
+/// is `modified`-coloured, and bar cells are accent (`█`/`▪`) or muted (`░`). Span styling
+/// replaces the old column-index colouriser, so the colours track the text exactly.
+fn param_line(
+    c: &LineColors,
+    marker: &str,
+    key: &str,
+    cli_only: bool,
+    label: &str,
+    bar: &str,
+    value: &str,
+) -> Row {
+    let key_color = if cli_only { c.cli_only } else { c.accent };
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let marker_style = if marker == "✱" {
+        Style::default().fg(c.modified)
+    } else {
+        Style::default()
+    };
+    spans.push(Span::styled(marker.to_string(), marker_style));
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled(
+        format!("{:<3}", key),
+        Style::default().fg(key_color),
+    ));
+    spans.push(Span::raw("  "));
+    spans.push(Span::raw(format!(
+        "{:<width$}",
+        label,
+        width = ControlsOverlay::LABEL_WIDTH
+    )));
+    spans.push(Span::raw("  "));
+    for ch in bar.chars() {
+        let style = match ch {
+            '█' | '▪' => Style::default().fg(c.accent),
+            '░' => Style::default().fg(c.muted),
+            _ => Style::default(),
+        };
+        spans.push(Span::styled(ch.to_string(), style));
+    }
+    spans.push(Span::raw("  "));
+    spans.push(Span::raw(format!(
+        "{:>width$}",
+        value,
+        width = ControlsOverlay::VALUE_WIDTH
+    )));
+    Row::Styled(Line::from(spans))
+}
+
+/// A muted dev-only row (e.g. "Dither (dev)") — every non-space glyph greyed out.
+fn dev_line(c: &LineColors, key: &str, label: &str, bar: &str, value: &str) -> Row {
+    let text = format!(
+        "{} {:<3}  {:<lw$}  {}  {:>vw$}",
+        " ",
+        key,
+        label,
+        bar,
+        value,
+        lw = ControlsOverlay::LABEL_WIDTH,
+        vw = ControlsOverlay::VALUE_WIDTH
+    );
+    let spans = text
+        .chars()
+        .map(|ch| {
+            if ch == ' ' {
+                Span::raw(" ".to_string())
+            } else {
+                Span::styled(ch.to_string(), Style::default().fg(c.muted))
+            }
+        })
+        .collect::<Vec<_>>();
+    Row::Styled(Line::from(spans))
 }
 
 /// Overlay that displays current simulation controls and parameters.
@@ -137,204 +239,180 @@ impl ControlsOverlay {
             }
         };
 
-        // Helper: builds a row with an 8-char mini progress bar.
-        // Format: "{marker} {key:<3}  {label:<LABEL_WIDTH>}  {bar:8}  {value:>VALUE_WIDTH}"
-        let param_row = |marker: &str, key: &str, label: &str, bar: String, value: String| {
-            format!(
-                "{} {:<3}  {:<label_w$}  {}  {:>value_w$}",
-                marker,
-                key,
-                label,
-                bar,
-                value,
-                label_w = Self::LABEL_WIDTH,
-                value_w = Self::VALUE_WIDTH
-            )
+        let lc = LineColors {
+            accent: rt(accent),
+            muted: rt(panel_style.muted),
+            modified: rt(panel_style.accent_modified),
+            cli_only: rt(RgbColor {
+                r: 204,
+                g: 102,
+                b: 102,
+            }),
         };
 
-        // Title no longer includes the "[N/6]" counter — the tab bar makes it redundant.
-        let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
-            .with_padding(Padding::new(2, 0, 2, 2))
-            .with_title("CONTROLS")
-            .with_title_box()
-            .add_single(indicator_line, Left)
-            .add_single(label_line, Left)
-            .add_empty()
-            .add_separator();
-
-        builder = match category_idx {
+        // Per-category parameter rows, built as styled lines (span colours track the text).
+        let category_rows: Vec<Row> = match category_idx {
             // ── Category 0: Simulation Core ──────────────────────────────────
-            0 => builder
-                .add_empty()
-                .add_single(
-                    param_row(
-                        mod_marker(sensor_angle, defaults.sensor_angle, 0.01),
-                        "A/a",
-                        "Sensor Angle",
-                        mini_bar((sensor_angle - 5.0) / 85.0, 8),
-                        format!("{:.1}°", sensor_angle),
-                    ),
-                    Left,
-                )
-                .add_single(
-                    param_row(
-                        mod_marker(sensor_distance, defaults.sensor_distance, 0.01),
-                        "J/j",
-                        "Sensor Dist",
-                        mini_bar((sensor_distance - 1.0) / 49.0, 8),
-                        format!("{:.1}px", sensor_distance),
-                    ),
-                    Left,
-                )
-                .add_single(
-                    param_row(
-                        mod_marker(rotation_angle, defaults.rotation_angle, 0.01),
-                        "T/t",
-                        "Turn Angle",
-                        mini_bar((rotation_angle - 5.0) / 85.0, 8),
-                        format!("{:.1}°", rotation_angle),
-                    ),
-                    Left,
-                )
-                .add_single(
-                    param_row(
-                        mod_marker(step_size, defaults.step_size, 0.01),
-                        "S/s",
-                        "Step Size",
-                        mini_bar((step_size - 0.5) / 4.5, 8),
-                        format!("{:.1}px", step_size),
-                    ),
-                    Left,
-                )
-                .add_single(
-                    param_row(
-                        mod_marker(decay_factor, defaults.decay_factor, 0.001),
-                        "E/e",
-                        "Decay Factor",
-                        mini_bar((decay_factor - 0.5) / 0.49, 8),
-                        format!("{:.3}", decay_factor),
-                    ),
-                    Left,
-                )
-                .add_single(
-                    param_row(
-                        mod_marker(deposit_amount, defaults.deposit_amount, 0.01),
-                        "I/i",
-                        "Deposit Amt",
-                        mini_bar((deposit_amount - 1.0) / 19.0, 8),
-                        format!("{:.1}×", deposit_amount),
-                    ),
-                    Left,
-                )
-                .add_single(
-                    param_row(
-                        " ",
-                        "+/-",
-                        "Time Scale",
-                        mini_bar((time_scale - 0.5) / 3.5, 8),
-                        format!("{:.1}×", time_scale),
-                    ),
-                    Left,
-                )
-                .add_empty(),
+            0 => vec![
+                Row::Empty,
+                param_line(
+                    &lc,
+                    mod_marker(sensor_angle, defaults.sensor_angle, 0.01),
+                    "A/a",
+                    false,
+                    "Sensor Angle",
+                    &mini_bar((sensor_angle - 5.0) / 85.0, 8),
+                    &format!("{:.1}°", sensor_angle),
+                ),
+                param_line(
+                    &lc,
+                    mod_marker(sensor_distance, defaults.sensor_distance, 0.01),
+                    "J/j",
+                    false,
+                    "Sensor Dist",
+                    &mini_bar((sensor_distance - 1.0) / 49.0, 8),
+                    &format!("{:.1}px", sensor_distance),
+                ),
+                param_line(
+                    &lc,
+                    mod_marker(rotation_angle, defaults.rotation_angle, 0.01),
+                    "T/t",
+                    false,
+                    "Turn Angle",
+                    &mini_bar((rotation_angle - 5.0) / 85.0, 8),
+                    &format!("{:.1}°", rotation_angle),
+                ),
+                param_line(
+                    &lc,
+                    mod_marker(step_size, defaults.step_size, 0.01),
+                    "S/s",
+                    false,
+                    "Step Size",
+                    &mini_bar((step_size - 0.5) / 4.5, 8),
+                    &format!("{:.1}px", step_size),
+                ),
+                param_line(
+                    &lc,
+                    mod_marker(decay_factor, defaults.decay_factor, 0.001),
+                    "E/e",
+                    false,
+                    "Decay Factor",
+                    &mini_bar((decay_factor - 0.5) / 0.49, 8),
+                    &format!("{:.3}", decay_factor),
+                ),
+                param_line(
+                    &lc,
+                    mod_marker(deposit_amount, defaults.deposit_amount, 0.01),
+                    "I/i",
+                    false,
+                    "Deposit Amt",
+                    &mini_bar((deposit_amount - 1.0) / 19.0, 8),
+                    &format!("{:.1}×", deposit_amount),
+                ),
+                param_line(
+                    &lc,
+                    " ",
+                    "+/-",
+                    false,
+                    "Time Scale",
+                    &mini_bar((time_scale - 0.5) / 3.5, 8),
+                    &format!("{:.1}×", time_scale),
+                ),
+                Row::Empty,
+            ],
             // ── Category 1: Forces & Environment ─────────────────────────────
             1 => {
                 let kernel_name = match diffusion_kernel {
                     DiffusionKernel::Mean3x3 => "Mean3x3",
                     DiffusionKernel::Gaussian => "Gaussian",
                 };
-                let mut b = builder.add_empty().add_single(
-                    param_row(
-                        mod_marker_enum(&diffusion_kernel, &defaults.diffusion_kernel),
-                        "K",
-                        "Diffusion",
-                        "────────".to_string(),
-                        kernel_name.to_string(),
-                    ),
-                    Left,
-                );
-                if matches!(diffusion_kernel, DiffusionKernel::Gaussian) {
-                    b = b.add_single(
-                        param_row(
-                            mod_marker(diffusion_sigma, defaults.diffusion_sigma, 0.01),
-                            ";/:",
-                            "Diff Sigma",
-                            mini_bar((diffusion_sigma - 0.5) / 3.5, 8),
-                            format!("{:.2}", diffusion_sigma),
-                        ),
-                        Left,
-                    );
-                }
                 let terrain_name = match terrain_type {
                     TerrainType::None => "None",
                     TerrainType::Smooth => "Smooth",
                     TerrainType::Turbulent => "Turbulent",
                     TerrainType::Mixed => "Mixed",
                 };
-                b = b
-                    .add_single(
-                        param_row(
-                            mod_marker_enum(&wind_direction, &defaults.wind_direction),
-                            "W",
-                            "Wind",
-                            "────────".to_string(),
-                            wind_direction.name().to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            mod_marker_enum(&terrain_type, &defaults.terrain_type),
-                            "U",
-                            "Terrain Type",
-                            "────────".to_string(),
-                            terrain_name.to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            mod_marker(terrain_strength, defaults.terrain_strength, 0.01),
-                            "Y/y",
-                            "Terrain Str",
-                            mini_bar((terrain_strength - 0.1) / 4.9, 8),
-                            format!("{:.1}×", terrain_strength),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            mod_marker(attractor_strength, defaults.attractor_strength, 0.01),
-                            "L/l",
-                            "Attractor",
-                            mini_bar((attractor_strength - 0.1) / 9.9, 8),
-                            format!("{:.1}×", attractor_strength),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            " ",
-                            ",",
-                            "Mouse Mode",
-                            "────────".to_string(),
-                            mouse_mode.to_string(),
-                        ),
-                        Left,
-                    );
-                if mouse_mode != "Disabled" {
-                    b = b.add_single(
-                        param_row(
-                            " ",
-                            "─",
-                            "Mouse Timeout",
-                            "────────".to_string(),
-                            format!("{:.1}s", mouse_timeout),
-                        ),
-                        Left,
-                    );
+                let mut v = vec![
+                    Row::Empty,
+                    param_line(
+                        &lc,
+                        mod_marker_enum(&diffusion_kernel, &defaults.diffusion_kernel),
+                        "K",
+                        false,
+                        "Diffusion",
+                        "────────",
+                        kernel_name,
+                    ),
+                ];
+                if matches!(diffusion_kernel, DiffusionKernel::Gaussian) {
+                    v.push(param_line(
+                        &lc,
+                        mod_marker(diffusion_sigma, defaults.diffusion_sigma, 0.01),
+                        ";/:",
+                        false,
+                        "Diff Sigma",
+                        &mini_bar((diffusion_sigma - 0.5) / 3.5, 8),
+                        &format!("{:.2}", diffusion_sigma),
+                    ));
                 }
-                b.add_empty()
+                v.push(param_line(
+                    &lc,
+                    mod_marker_enum(&wind_direction, &defaults.wind_direction),
+                    "W",
+                    false,
+                    "Wind",
+                    "────────",
+                    wind_direction.name(),
+                ));
+                v.push(param_line(
+                    &lc,
+                    mod_marker_enum(&terrain_type, &defaults.terrain_type),
+                    "U",
+                    false,
+                    "Terrain Type",
+                    "────────",
+                    terrain_name,
+                ));
+                v.push(param_line(
+                    &lc,
+                    mod_marker(terrain_strength, defaults.terrain_strength, 0.01),
+                    "Y/y",
+                    false,
+                    "Terrain Str",
+                    &mini_bar((terrain_strength - 0.1) / 4.9, 8),
+                    &format!("{:.1}×", terrain_strength),
+                ));
+                v.push(param_line(
+                    &lc,
+                    mod_marker(attractor_strength, defaults.attractor_strength, 0.01),
+                    "L/l",
+                    false,
+                    "Attractor",
+                    &mini_bar((attractor_strength - 0.1) / 9.9, 8),
+                    &format!("{:.1}×", attractor_strength),
+                ));
+                v.push(param_line(
+                    &lc,
+                    " ",
+                    ",",
+                    false,
+                    "Mouse Mode",
+                    "────────",
+                    mouse_mode,
+                ));
+                if mouse_mode != "Disabled" {
+                    v.push(param_line(
+                        &lc,
+                        " ",
+                        "─",
+                        false,
+                        "Mouse Timeout",
+                        "────────",
+                        &format!("{:.1}s", mouse_timeout),
+                    ));
+                }
+                v.push(Row::Empty);
+                v
             }
             // ── Category 2: Appearance ────────────────────────────────────────
             2 => {
@@ -354,212 +432,161 @@ impl ControlsOverlay {
                 } else {
                     "────────"
                 };
-                builder
-                    .add_empty()
-                    .add_single(
-                        param_row(
-                            " ",
-                            "9/*",
-                            "Theme",
-                            "────────".to_string(),
-                            theme_name.to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            " ",
-                            "c/C",
-                            "Palette",
-                            "────────".to_string(),
-                            palette_name.to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            " ",
-                            "`/~",
-                            "Charset",
-                            "────────".to_string(),
-                            charset_name.to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            " ",
-                            "\"",
-                            "Color AA",
-                            "────────".to_string(),
-                            color_aa_label.to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            " ",
-                            "O",
-                            "Palette Shift",
-                            "────────".to_string(),
-                            shift_name.to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            " ",
-                            "X",
-                            "Invert",
-                            inv_bar.to_string(),
-                            if invert_palette { "On" } else { "Off" }.to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            " ",
-                            "Z",
-                            "Reverse",
-                            rev_bar.to_string(),
-                            if reverse_palette { "On" } else { "Off" }.to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_empty()
+                vec![
+                    Row::Empty,
+                    param_line(&lc, " ", "9/*", false, "Theme", "────────", theme_name),
+                    param_line(&lc, " ", "c/C", false, "Palette", "────────", palette_name),
+                    param_line(&lc, " ", "`/~", false, "Charset", "────────", charset_name),
+                    param_line(
+                        &lc,
+                        " ",
+                        "\"",
+                        false,
+                        "Color AA",
+                        "────────",
+                        color_aa_label,
+                    ),
+                    param_line(
+                        &lc,
+                        " ",
+                        "O",
+                        false,
+                        "Palette Shift",
+                        "────────",
+                        shift_name,
+                    ),
+                    param_line(
+                        &lc,
+                        " ",
+                        "X",
+                        false,
+                        "Invert",
+                        inv_bar,
+                        if invert_palette { "On" } else { "Off" },
+                    ),
+                    param_line(
+                        &lc,
+                        " ",
+                        "Z",
+                        false,
+                        "Reverse",
+                        rev_bar,
+                        if reverse_palette { "On" } else { "Off" },
+                    ),
+                    Row::Empty,
+                ]
             }
             // ── Category 3: Post-Processing ───────────────────────────────────
             3 => {
-                let norm_bar = if auto_normalize != defaults.auto_normalize {
-                    if auto_normalize {
-                        "▪───────"
-                    } else {
-                        "────────"
-                    }
-                } else if auto_normalize {
+                // Normalize toggle bar: filled when auto-normalize is on.
+                let norm_bar = if auto_normalize {
                     "▪───────"
                 } else {
                     "────────"
                 };
-                builder
-                    .add_empty()
-                    .add_single(
-                        param_row(
-                            " ",
-                            "d/D",
-                            "Dither (dev)",
-                            "────────".to_string(),
-                            dither_mode_name.to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            if auto_normalize != defaults.auto_normalize {
-                                "*"
-                            } else {
-                                " "
-                            },
-                            "B",
-                            "Auto Normalize",
-                            norm_bar.to_string(),
-                            if auto_normalize { "On" } else { "Off" }.to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            mod_marker_int(motion_blur_frames, defaults.motion_blur_frames),
-                            "V",
-                            "Motion Blur",
-                            mini_bar(motion_blur_frames as f32 / 7.0, 8),
-                            format!("{} fr", motion_blur_frames),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            mod_marker(max_brightness, defaults.max_brightness, 0.01),
-                            "N/n",
-                            "Brightness",
-                            if auto_normalize {
-                                "────────".to_string()
-                            } else {
-                                // Brightness gain; default (1.0×) sits mid-bar so
-                                // it can read as brighter or dimmer either way.
-                                let gain =
-                                    crate::config_defaults::trail::brightness_gain(max_brightness);
-                                mini_bar((gain / 2.0).clamp(0.0, 1.0), 8)
-                            },
-                            if auto_normalize {
-                                "auto".to_string()
-                            } else {
-                                let gain =
-                                    crate::config_defaults::trail::brightness_gain(max_brightness);
-                                format!("{gain:.1}×")
-                            },
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            " ",
-                            "'",
-                            "Trail Age",
-                            if trail_age_enabled {
-                                "▪───────"
-                            } else {
-                                "────────"
-                            }
-                            .to_string(),
-                            if trail_age_enabled {
-                                if trail_age_reverse {
-                                    format!("On ({} rev)", trail_age_mode.name())
-                                } else {
-                                    format!("On ({})", trail_age_mode.name())
-                                }
-                            } else {
-                                "Off".to_string()
-                            },
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            " ",
-                            ".",
-                            "Trail Delta",
-                            if trail_delta_enabled {
-                                "▪───────"
-                            } else {
-                                "────────"
-                            }
-                            .to_string(),
-                            if trail_delta_enabled { "On" } else { "Off" }.to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            " ",
-                            ">",
-                            "Edge Glow",
-                            if gradient_magnitude_enabled {
-                                "▪───────"
-                            } else {
-                                "────────"
-                            }
-                            .to_string(),
-                            if gradient_magnitude_enabled {
-                                "On"
-                            } else {
-                                "Off"
-                            }
-                            .to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_empty()
+                let norm_marker = if auto_normalize != defaults.auto_normalize {
+                    "*"
+                } else {
+                    " "
+                };
+                let brightness_bar = if auto_normalize {
+                    "────────".to_string()
+                } else {
+                    // Brightness gain; default (1.0×) sits mid-bar so it can read as
+                    // brighter or dimmer either way.
+                    let gain = crate::config_defaults::trail::brightness_gain(max_brightness);
+                    mini_bar((gain / 2.0).clamp(0.0, 1.0), 8)
+                };
+                let brightness_value = if auto_normalize {
+                    "auto".to_string()
+                } else {
+                    let gain = crate::config_defaults::trail::brightness_gain(max_brightness);
+                    format!("{gain:.1}×")
+                };
+                let trail_age_value = if trail_age_enabled {
+                    if trail_age_reverse {
+                        format!("On ({} rev)", trail_age_mode.name())
+                    } else {
+                        format!("On ({})", trail_age_mode.name())
+                    }
+                } else {
+                    "Off".to_string()
+                };
+                vec![
+                    Row::Empty,
+                    dev_line(&lc, "d/D", "Dither (dev)", "────────", dither_mode_name),
+                    param_line(
+                        &lc,
+                        norm_marker,
+                        "B",
+                        false,
+                        "Auto Normalize",
+                        norm_bar,
+                        if auto_normalize { "On" } else { "Off" },
+                    ),
+                    param_line(
+                        &lc,
+                        mod_marker_int(motion_blur_frames, defaults.motion_blur_frames),
+                        "V",
+                        false,
+                        "Motion Blur",
+                        &mini_bar(motion_blur_frames as f32 / 7.0, 8),
+                        &format!("{} fr", motion_blur_frames),
+                    ),
+                    param_line(
+                        &lc,
+                        mod_marker(max_brightness, defaults.max_brightness, 0.01),
+                        "N/n",
+                        false,
+                        "Brightness",
+                        &brightness_bar,
+                        &brightness_value,
+                    ),
+                    param_line(
+                        &lc,
+                        " ",
+                        "'",
+                        false,
+                        "Trail Age",
+                        if trail_age_enabled {
+                            "▪───────"
+                        } else {
+                            "────────"
+                        },
+                        &trail_age_value,
+                    ),
+                    param_line(
+                        &lc,
+                        " ",
+                        ".",
+                        false,
+                        "Trail Delta",
+                        if trail_delta_enabled {
+                            "▪───────"
+                        } else {
+                            "────────"
+                        },
+                        if trail_delta_enabled { "On" } else { "Off" },
+                    ),
+                    param_line(
+                        &lc,
+                        " ",
+                        ">",
+                        false,
+                        "Edge Glow",
+                        if gradient_magnitude_enabled {
+                            "▪───────"
+                        } else {
+                            "────────"
+                        },
+                        if gradient_magnitude_enabled {
+                            "On"
+                        } else {
+                            "Off"
+                        },
+                    ),
+                    Row::Empty,
+                ]
             }
             // ── Category 4: Performance ───────────────────────────────────────
             4 => {
@@ -568,265 +595,184 @@ impl ControlsOverlay {
                 } else {
                     "────────"
                 };
-                builder
-                    .add_empty()
-                    .add_single(
-                        param_row(
-                            " ",
-                            "F",
-                            "Fast Mode",
-                            fast_bar.to_string(),
-                            if fast_mode_enabled { "On" } else { "Off" }.to_string(),
-                        ),
-                        Left,
-                    )
-                    .add_single(
-                        param_row(
-                            " ",
-                            "─",
-                            "Population",
-                            "────────".to_string(),
-                            format!("{}k", population / 1000),
-                        ),
-                        Left,
-                    )
-                    .add_empty()
+                vec![
+                    Row::Empty,
+                    param_line(
+                        &lc,
+                        " ",
+                        "F",
+                        false,
+                        "Fast Mode",
+                        fast_bar,
+                        if fast_mode_enabled { "On" } else { "Off" },
+                    ),
+                    // Population is a CLI-only parameter (key shown in muted red).
+                    param_line(
+                        &lc,
+                        " ",
+                        "─",
+                        true,
+                        "Population",
+                        "────────",
+                        &format!("{}k", population / 1000),
+                    ),
+                    Row::Empty,
+                ]
             }
             // ── Category 5: System ────────────────────────────────────────────
-            5 => builder
-                .add_empty()
-                .add_single(
-                    param_row(
-                        " ",
-                        "G",
-                        "Save Frame",
-                        "────────".to_string(),
-                        "(PNG)".to_string(),
-                    ),
-                    Left,
-                )
-                .add_single(
-                    param_row(
-                        " ",
-                        "0",
-                        "Reset",
-                        "────────".to_string(),
-                        "Defaults".to_string(),
-                    ),
-                    Left,
-                )
-                .add_single(
-                    param_row(
-                        " ",
-                        "8",
-                        "Randomize",
-                        "────────".to_string(),
-                        "Params".to_string(),
-                    ),
-                    Left,
-                )
-                .add_empty(),
-            _ => builder,
+            5 => vec![
+                Row::Empty,
+                param_line(&lc, " ", "G", false, "Save Frame", "────────", "(PNG)"),
+                param_line(&lc, " ", "0", false, "Reset", "────────", "Defaults"),
+                param_line(&lc, " ", "8", false, "Randomize", "────────", "Params"),
+                Row::Empty,
+            ],
+            _ => vec![],
         };
 
-        let tab_hint = " < TAB > ";
-        let esc_hint = "ESC";
-        let footer_main = "  ✱ modified  ─ CLI-only  ";
+        // ── Assemble all content rows in visual order ──────────────────────────
+        let _ = shift_held;
+        let accent_c = lc.accent;
 
-        let mut overlay = builder
-            .add_separator()
-            .add_single(footer_main.to_string(), TextAlignment::Center)
-            .add_empty()
-            .add_single(tab_hint.to_string(), TextAlignment::Center)
-            .add_single(esc_hint.to_string(), TextAlignment::Center)
-            .build_overlay();
-        overlay.rich_lines = Some(generate_controls_rich_lines(
-            &overlay.lines,
-            accent,
-            category_idx,
-            panel_style,
-            shift_held,
+        // Tab indicator markers (●/○) accent-coloured.
+        let indicator_row = Row::Styled(Line::from(
+            indicator_line
+                .chars()
+                .map(|ch| match ch {
+                    '●' | '○' => Span::styled(ch.to_string(), Style::default().fg(accent_c)),
+                    _ => Span::raw(ch.to_string()),
+                })
+                .collect::<Vec<_>>(),
         ));
-        overlay
-    }
-}
 
-/// Applies per-cell color overrides to the controls overlay lines.
-///
-/// Identifies parameter rows (key binding + mini bar) and applies:
-/// - Accent colour to the key chars (cols 5–7).
-/// - `accent_modified` colour to the `✱` modification marker at col 3.
-/// - Accent colour to filled bar chars (`█`/`▪`) at cols 27–38.
-/// - Muted colour to empty bar chars (`░`) at the same positions.
-///
-/// Also colors tab indicators (●/○) and the active tab name in the tab strip with accent color.
-/// Colors TAB direction arrows (`<` and `>`) with accent color in the footer.
-fn generate_controls_rich_lines(
-    lines: &[String],
-    accent: RgbColor,
-    category_idx: usize,
-    panel_style: &PanelStyle,
-    _shift_held: bool,
-) -> Vec<Vec<RichCell>> {
-    let modified_color = panel_style.accent_modified;
-    let muted_color = panel_style.muted;
-    let tab_labels = ["SIM", "ENV", "APP", "PST", "PRF", "SYS"];
-    let active_label = tab_labels[category_idx.min(tab_labels.len() - 1)];
-    let light_red = RgbColor {
-        r: 204,
-        g: 102,
-        b: 102,
-    };
-
-    let mut prev_was_indicator = false;
-
-    lines
-        .iter()
-        .map(|line| {
-            let chars: Vec<char> = line.chars().collect();
-            let n = chars.len();
-
-            // Check if this is the indicator line (contains ● or ○)
-            let is_indicator_line = chars.iter().any(|&c| c == '●' || c == '○');
-
-            if is_indicator_line {
-                prev_was_indicator = true;
-                return chars
-                    .iter()
-                    .map(|&c| {
-                        let fg = match c {
-                            '●' | '○' => Some(accent),
-                            _ => None,
-                        };
-                        (c, fg, None)
-                    })
-                    .collect();
-            }
-
-            // Dev-only rows: muted gray, overriding token coloring.
-            if line.contains("(dev)") {
-                prev_was_indicator = false;
-                return chars
-                    .iter()
-                    .map(|&c| {
-                        if c == '█' || c == ' ' {
-                            (c, None, None)
-                        } else {
-                            (c, Some(muted_color), None)
-                        }
-                    })
-                    .collect();
-            }
-
-            // Color the active tab label on the line immediately after the indicator line
-            let is_label_line = prev_was_indicator;
-            prev_was_indicator = false;
-
-            if is_label_line {
-                let active_chars: Vec<char> = active_label.chars().collect();
-                // Find the start position of the active label in this line
-                let match_start = chars
-                    .windows(active_chars.len())
-                    .position(|w| w == active_chars.as_slice());
-                return chars
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &c)| {
-                        let fg = match_start.and_then(|start| {
-                            if i >= start && i < start + active_chars.len() {
-                                Some(accent)
-                            } else {
-                                None
-                            }
-                        });
-                        (c, fg, None)
-                    })
-                    .collect();
-            }
-
-            // A param row: marker at col 3 (' ' or '✱'), space at col 4,
-            // col 5 is not another '✱' (distinguishes from the "✱ modified…" footer),
-            // and the region cols 3..47 is not all-spaces (padding rows).
-            let is_param_row = n == ControlsOverlay::WIDTH
-                && matches!(chars.get(3), Some(' ') | Some('✱'))
-                && matches!(chars.get(4), Some(' '))
-                && !matches!(chars.get(5), Some('✱'))
-                && chars
-                    .get(3..47.min(n))
-                    .is_some_and(|s| s.iter().any(|&c| c != ' '));
-
-            // Detect the controls footer lines
-            let line_str: String = chars.iter().collect();
-            let is_main_footer = line_str.contains("CLI-only") && line_str.contains("modified");
-            let is_tab_footer = line_str.contains("< TAB >");
-            let is_esc_footer = line_str == "ESC";
-
-            if is_main_footer {
-                return chars
-                    .iter()
-                    .map(|&c| {
-                        let fg = match c {
-                            '✱' => Some(modified_color),
-                            '─' => Some(light_red),
-                            _ => None,
-                        };
-                        (c, fg, None)
-                    })
-                    .collect();
-            }
-
-            if is_tab_footer {
-                return chars
-                    .iter()
-                    .map(|&c| {
-                        let fg = if c == '<' || c == '>' {
-                            Some(accent)
-                        } else {
-                            None
-                        };
-                        (c, fg, None)
-                    })
-                    .collect();
-            }
-
-            if is_esc_footer {
-                return chars.iter().map(|&c| (c, None, None)).collect();
-            }
-
-            // Detect CLI-only parameter rows (currently just Population)
-            let is_cli_only_row = chars
-                .get(10..20)
-                .is_some_and(|s| s.iter().collect::<String>().contains("Population"));
-
-            if !is_param_row {
-                return chars.iter().map(|&c| (c, None, None)).collect();
-            }
-
-            chars
+        // Active tab label accent-coloured.
+        let active_label = tab_labels[category_idx.min(tab_labels.len() - 1)];
+        let label_chars: Vec<char> = label_line.chars().collect();
+        let active: Vec<char> = active_label.chars().collect();
+        let active_start = label_chars
+            .windows(active.len())
+            .position(|w| w == active.as_slice());
+        let label_row = Row::Styled(Line::from(
+            label_chars
                 .iter()
                 .enumerate()
-                .map(|(i, &c)| {
-                    let fg = match i {
-                        3 if c == '✱' => Some(modified_color),
-                        5..=7 => {
-                            if is_cli_only_row {
-                                Some(light_red)
-                            } else {
-                                Some(accent)
+                .map(|(i, &ch)| {
+                    let hot = active_start.is_some_and(|s| i >= s && i < s + active.len());
+                    if hot {
+                        Span::styled(ch.to_string(), Style::default().fg(accent_c))
+                    } else {
+                        Span::raw(ch.to_string())
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ));
+
+        // Footer: "✱ modified" in the modified colour, "─ CLI-only" in the CLI-only red.
+        let footer_main = format!(
+            "{:^width$}",
+            "  ✱ modified  ─ CLI-only  ",
+            width = Self::CONTENT_WIDTH
+        );
+        let footer_row = Row::Styled(Line::from(
+            footer_main
+                .chars()
+                .map(|ch| match ch {
+                    '✱' => Span::styled("✱".to_string(), Style::default().fg(lc.modified)),
+                    '─' => Span::styled("─".to_string(), Style::default().fg(lc.cli_only)),
+                    _ => Span::raw(ch.to_string()),
+                })
+                .collect::<Vec<_>>(),
+        ));
+
+        // TAB-cycle hint: the `<`/`>` arrows accent-coloured.
+        let tab_hint = format!("{:^width$}", " < TAB > ", width = Self::CONTENT_WIDTH);
+        let tab_hint_row = Row::Styled(Line::from(
+            tab_hint
+                .chars()
+                .map(|ch| {
+                    if ch == '<' || ch == '>' {
+                        Span::styled(ch.to_string(), Style::default().fg(accent_c))
+                    } else {
+                        Span::raw(ch.to_string())
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ));
+        let esc_hint = format!("{:^width$}", "ESC", width = Self::CONTENT_WIDTH);
+        let esc_row = Row::Styled(Line::from(vec![Span::raw(esc_hint)]));
+
+        let mut rows: Vec<Row> = vec![indicator_row, label_row, Row::Empty, Row::Sep];
+        rows.extend(category_rows);
+        rows.push(Row::Sep);
+        rows.push(footer_row);
+        rows.push(Row::Empty);
+        rows.push(tab_hint_row);
+        rows.push(esc_row);
+
+        // Render the styled content once to obtain per-cell colours, then blit them
+        // into the `PanelBuilder` chrome (which keeps the border/title-box/separators
+        // pixel-identical to every other overlay).
+        let styled_lines: Vec<Line<'static>> = rows
+            .iter()
+            .filter_map(|r| match r {
+                Row::Styled(l) => Some(l.clone()),
+                _ => None,
+            })
+            .collect();
+        let rendered = render_styled_rows(&styled_lines, Self::CONTENT_WIDTH);
+
+        let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(2, 0, 2, 2))
+            .with_title("CONTROLS")
+            .with_title_box();
+        let mut order: Vec<Option<usize>> = Vec::with_capacity(rows.len());
+        let mut styled_idx = 0usize;
+        for row in &rows {
+            match row {
+                Row::Empty => {
+                    builder = builder.add_empty();
+                    order.push(None);
+                }
+                Row::Sep => {
+                    builder = builder.add_separator();
+                    order.push(None);
+                }
+                Row::Styled(_) => {
+                    builder = builder.add_single(rendered[styled_idx].0.clone(), Left);
+                    order.push(Some(styled_idx));
+                    styled_idx += 1;
+                }
+            }
+        }
+        let mut overlay = builder.build_overlay();
+
+        // Blit span colours into the content region. Offset = 1 border + 2 left padding;
+        // the first content row sits below the top border + 2 top-padding rows.
+        const CONTENT_OFFSET: usize = 3;
+        const PREFIX_LINES: usize = 3;
+        let rich: Vec<Vec<RichCell>> = overlay
+            .lines
+            .iter()
+            .enumerate()
+            .map(|(line_idx, line)| {
+                let mut cells: Vec<RichCell> = line.chars().map(|ch| (ch, None, None)).collect();
+                if line_idx >= PREFIX_LINES {
+                    if let Some(Some(idx)) = order.get(line_idx - PREFIX_LINES) {
+                        for (col, &fg) in rendered[*idx].1.iter().enumerate() {
+                            if let Some(fg) = fg {
+                                if let Some(cell) = cells.get_mut(CONTENT_OFFSET + col) {
+                                    cell.1 = Some(fg);
+                                }
                             }
                         }
-                        27..=38 => match c {
-                            '█' | '▪' => Some(accent),
-                            '░' => Some(muted_color),
-                            _ => None,
-                        },
-                        _ => None,
-                    };
-                    (c, fg, None)
-                })
-                .collect()
-        })
-        .collect()
+                    }
+                }
+                cells
+            })
+            .collect();
+        overlay.rich_lines = Some(rich);
+        overlay
+    }
 }
 
 #[cfg(test)]
