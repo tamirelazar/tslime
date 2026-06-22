@@ -143,6 +143,97 @@ pub fn fit_to_grid(
         .collect()
 }
 
+/// A picked figure, fitted to the grid, with its rasterized trail template.
+pub struct ConstellationLayout {
+    /// Human-readable name of the constellation.
+    pub name: &'static str,
+    /// Star positions in grid pixels.
+    pub stars_px: Vec<(f32, f32)>,
+    /// Edges connecting stars, as indices into the `stars_px` array.
+    pub edges: Vec<(usize, usize)>,
+    /// Row-major f32 grid (0..=1): Gaussian glow at each star + anti-aliased
+    /// lines along each edge.
+    pub template: Vec<f32>,
+}
+
+/// Pick a figure and produce its grid layout + anti-aliased template.
+pub fn build_layout(
+    rng: &mut Rng,
+    width: usize,
+    height: usize,
+    aspect: Aspect,
+) -> ConstellationLayout {
+    let c = pick(rng);
+    let stars_px = fit_to_grid(c.stars, width, height, aspect);
+    let edges: Vec<(usize, usize)> = c
+        .edges
+        .iter()
+        .map(|&(a, b)| (a as usize, b as usize))
+        .collect();
+
+    let mut template = vec![0.0f32; width * height];
+
+    // Stars: Gaussian glow (sigma ~ 2.5px).
+    let star_sigma = 2.5f32;
+    for &(sx, sy) in &stars_px {
+        stamp_gaussian(&mut template, width, height, sx, sy, star_sigma, 1.0);
+    }
+    // Edges: anti-aliased line, sampled densely, thin glow per sample.
+    for &(a, b) in &edges {
+        let (ax, ay) = stars_px[a];
+        let (bx, by) = stars_px[b];
+        let len = ((bx - ax).powi(2) + (by - ay).powi(2)).sqrt().max(1.0);
+        let steps = (len * 2.0) as usize;
+        for s in 0..=steps {
+            let t = s as f32 / steps as f32;
+            let x = ax + (bx - ax) * t;
+            let y = ay + (by - ay) * t;
+            stamp_gaussian(&mut template, width, height, x, y, 1.0, 0.7);
+        }
+    }
+    // Clamp to 0..1.
+    for v in &mut template {
+        *v = v.min(1.0);
+    }
+
+    ConstellationLayout {
+        name: c.name,
+        stars_px,
+        edges,
+        template,
+    }
+}
+
+/// Add a Gaussian splat centred at (cx, cy) with peak `peak` into `grid`
+/// (max-combine).
+fn stamp_gaussian(
+    grid: &mut [f32],
+    width: usize,
+    height: usize,
+    cx: f32,
+    cy: f32,
+    sigma: f32,
+    peak: f32,
+) {
+    let radius = (sigma * 3.0).ceil() as i32;
+    let two_s2 = 2.0 * sigma * sigma;
+    let icx = cx.round() as i32;
+    let icy = cy.round() as i32;
+    for dy in -radius..=radius {
+        for dx in -radius..=radius {
+            let x = icx + dx;
+            let y = icy + dy;
+            if x < 0 || y < 0 || x >= width as i32 || y >= height as i32 {
+                continue;
+            }
+            let d2 = (dx * dx + dy * dy) as f32;
+            let v = peak * (-d2 / two_s2).exp();
+            let idx = y as usize * width + x as usize;
+            grid[idx] = grid[idx].max(v);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,5 +301,33 @@ mod tests {
         let mut a = Rng::seed_from_u64(42);
         let mut b = Rng::seed_from_u64(42);
         assert_eq!(pick(&mut a).name, pick(&mut b).name);
+    }
+
+    #[test]
+    fn template_is_bright_on_stars_and_edges() {
+        let mut rng = Rng::seed_from_u64(7);
+        let layout = build_layout(
+            &mut rng,
+            120,
+            80,
+            Aspect {
+                width: 3,
+                height: 2,
+            },
+        );
+        assert_eq!(layout.template.len(), 120 * 80);
+        // Every star pixel neighborhood is non-zero.
+        for &(sx, sy) in &layout.stars_px {
+            let idx = (sy as usize).min(79) * 120 + (sx as usize).min(119);
+            assert!(layout.template[idx] > 0.0, "star not bright at {sx},{sy}");
+        }
+        // Edge midpoints are non-zero.
+        for &(a, b) in &layout.edges {
+            let (ax, ay) = layout.stars_px[a];
+            let (bx, by) = layout.stars_px[b];
+            let (mx, my) = ((ax + bx) / 2.0, (ay + by) / 2.0);
+            let idx = (my as usize).min(79) * 120 + (mx as usize).min(119);
+            assert!(layout.template[idx] > 0.0, "edge midpoint dark");
+        }
     }
 }
