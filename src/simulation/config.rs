@@ -437,8 +437,8 @@ pub enum InitMode {
 }
 
 impl InitMode {
-    /// Uniformly pick any init mode. Used by presets (e.g. Constellation) that
-    /// re-roll their starting layout on each reset.
+    /// Uniformly pick any init mode for non-structural presets. Named structural
+    /// modes such as `Constellation` are excluded and keep a stable layout.
     ///
     /// `ALL` is hand-maintained; the exhaustive match below is a compile-time
     /// guard — adding an `InitMode` variant fails to compile here until it is
