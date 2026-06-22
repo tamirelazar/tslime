@@ -15,6 +15,7 @@
 
 pub mod agent;
 pub mod config;
+pub mod constellations;
 pub mod food;
 pub mod trail_map;
 
