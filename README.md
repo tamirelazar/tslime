@@ -134,7 +134,7 @@ the preset and can be cycled at runtime. Preset parameters are defined in
 Showcase presets highlight specific visual levers:
 
 - **slime** — Pulsing network with strong deposits and the slime palette; auto-normalizes brightness.
-- **vines** — Flocking-pattern filaments with a window frame accent.
+- **vines** — Flocking-pattern filaments rendered without a window frame.
 - **vinescii** — The vines pattern rendered in pure ASCII.
 - **smoke** — Diffuse drift with the slate palette; auto-normalizes brightness.
 - **mold** — Bleuje-style front-lit veins with the mold palette; auto-normalizes brightness.

@@ -1846,24 +1846,42 @@ mod tests {
 
     /// The resolve precedence: `RenderArtDefaults.auto_normalize` is the per-preset
     /// default; `self.or(art).unwrap_or(false)` lets a preset opt in (None CLI), and
-    /// an explicit `Some(true)` override wins. (No shipping preset opts in yet — the
-    /// brief's `Preset::Slime` is a palette, not a preset — so this exercises the
-    /// art-lookup ⊕ override seam directly via the `RenderArtDefaults` field.)
+    /// an explicit override wins. Driven through the real `resolve_render` path using
+    /// `Preset::Slime` — a shipping preset that opts `auto_normalize` ON.
     #[test]
     fn auto_normalize_art_default_and_override_precedence() {
         use crate::render_art_defaults::RenderArtDefaults;
         // The field exists and defaults to None (off) on a plain preset.
         assert_eq!(RenderArtDefaults::default().auto_normalize, None);
-        // art ON + CLI absent → resolved ON (preset opt-in path).
-        let art_on = RenderArtDefaults {
-            auto_normalize: Some(true),
-            ..RenderArtDefaults::default()
+        // A plain preset (no art opt-in) resolves OFF.
+        let plain = ProfileOverrides {
+            preset: Some(Preset::Network),
+            ..Default::default()
         };
-        assert!(None::<bool>.or(art_on.auto_normalize).unwrap_or(false));
-        // CLI explicit ON overrides art OFF.
-        assert!(Some(true)
-            .or(RenderArtDefaults::default().auto_normalize)
-            .unwrap_or(false));
+        assert!(!plain.resolve_render().unwrap().auto_normalize);
+        // Slime opts in via RenderArtDefaults → CLI absent resolves ON.
+        assert_eq!(
+            RenderArtDefaults::from(Preset::Slime).auto_normalize,
+            Some(true)
+        );
+        let preset_optin = ProfileOverrides {
+            preset: Some(Preset::Slime),
+            ..Default::default()
+        };
+        assert!(
+            preset_optin.resolve_render().unwrap().auto_normalize,
+            "Slime opts auto_normalize ON via its preset default"
+        );
+        // An explicit CLI override wins over the preset opt-in.
+        let preset_override = ProfileOverrides {
+            preset: Some(Preset::Slime),
+            auto_normalize: Some(false),
+            ..Default::default()
+        };
+        assert!(
+            !preset_override.resolve_render().unwrap().auto_normalize,
+            "explicit Some(false) override beats the Slime preset default"
+        );
     }
 
     /// Dirty parity: the live value drives the `Canonical` projection through the

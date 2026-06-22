@@ -423,6 +423,10 @@ pub enum InitMode {
 impl InitMode {
     /// Uniformly pick any init mode. Used by presets (e.g. Constellation) that
     /// re-roll their starting layout on each reset.
+    ///
+    /// `ALL` is hand-maintained; the exhaustive match below is a compile-time
+    /// guard — adding an `InitMode` variant fails to compile here until it is
+    /// also added to `ALL`, so the picker can never silently exclude a variant.
     pub fn random(rng: &mut impl rand::Rng) -> Self {
         use InitMode::*;
         const ALL: [InitMode; 9] = [
@@ -436,6 +440,22 @@ impl InitMode {
             Food,
             Petri,
         ];
+        // Exhaustiveness guard: keep ALL in sync with the enum. Adding a variant
+        // breaks this match until it is also added to ALL above.
+        #[allow(dead_code)]
+        const fn _guard(m: InitMode) {
+            match m {
+                InitMode::Random
+                | InitMode::CentralBurst
+                | InitMode::Circle
+                | InitMode::Gradient
+                | InitMode::WaveFront
+                | InitMode::Spiral
+                | InitMode::RandomClusters
+                | InitMode::Food
+                | InitMode::Petri => {}
+            }
+        }
         ALL[rng.gen_range(0..ALL.len())]
     }
 }
