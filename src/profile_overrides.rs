@@ -77,6 +77,8 @@ pub struct ProfileOverrides {
     pub min_sim_size: Option<TerminalSizeThreshold>,
     pub min_frame_size: Option<TerminalSizeThreshold>,
     pub respawn_interval: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub respawn_config: Option<crate::simulation::config::RespawnConfig>,
     pub decay_gamma: Option<f32>,
     pub diffuse_weight: Option<f32>,
     pub deposit_curve: Option<DepositCurve>,
@@ -330,6 +332,7 @@ impl ProfileOverrides {
             min_sim_size: args.min_sim_size,
             min_frame_size: args.min_frame_size,
             respawn_interval: args.respawn_interval,
+            respawn_config: None,
             decay_gamma: args.decay_gamma,
             diffuse_weight: args.diffuse_weight,
             deposit_curve: args.deposit_curve,
@@ -702,6 +705,11 @@ impl ProfileOverrides {
         }
 
         // Respawn configuration
+        // Apply the full config first (from save/load capture_overrides), then let
+        // the CLI --respawn-interval scalar win on top if present.
+        if let Some(rc) = self.respawn_config {
+            config.respawn_config = rc;
+        }
         if let Some(interval) = self.respawn_interval {
             config.respawn_config.interval = interval;
         }
@@ -875,12 +883,12 @@ pub(crate) fn project(ov: &ProfileOverrides) -> Result<Canonical, String> {
         sc.trail_modulation = None; // un-capturable + not runtime-editable
     }
 
-    // `respawn_config` is set by the preset layer (e.g. Mold's anti-collapse
-    // respawn).  ProfileOverrides can only carry the `interval` scalar, never the
-    // full {base_probability, trail_dependent, max_probability_multiplier}, so it
-    // cannot round-trip through capture; and no keybind mutates it at runtime.  Like
-    // `trail_modulation` above, normalise it on BOTH sides so the guard stays blind —
-    // a clean swap to a preset that sets respawn must not read dirty.
+    // `respawn_config` now round-trips through capture/resolve for save/load
+    // (capture_overrides serializes the full struct; resolve_sim applies it before
+    // the scalar interval override).  It is still normalized here for the dirty
+    // comparison because it is not runtime-editable (no keybind mutates it), so a
+    // clean swap to a preset that sets it must not read dirty, and startup overrides
+    // carry None while capture carries Some.
     sim.respawn_config = Default::default();
 
     // Reproduce apply_color_aa_all priority EXACTLY ([P1]):
@@ -1955,6 +1963,57 @@ mod tests {
         assert!(
             !ov2.resolve_app().auto_reset,
             "explicit Some(false) must override the preset default"
+        );
+    }
+
+    /// `RespawnConfig` must round-trip through TOML serialization and `resolve_sim`.
+    ///
+    /// Saving a config derived from `--preset mold` and reloading it must preserve
+    /// Mold's anti-collapse respawn (interval, base_probability, trail_dependent,
+    /// max_probability_multiplier, trail_rescale) so a reloaded Mold cannot
+    /// wall-collapse.
+    #[test]
+    fn test_respawn_config_round_trips_through_toml() {
+        use crate::simulation::config::{Preset, RespawnConfig, SimConfig};
+
+        let mold_rc = SimConfig::from(Preset::Mold).respawn_config;
+        // Verify we're testing the right thing — Mold's values must differ from default.
+        assert_ne!(
+            mold_rc,
+            RespawnConfig::default(),
+            "Mold RespawnConfig must differ from default for this test to be meaningful"
+        );
+
+        let ov = ProfileOverrides {
+            respawn_config: Some(mold_rc),
+            ..Default::default()
+        };
+
+        let toml_str = toml::to_string(&ov).expect("serialize");
+        let parsed: ProfileOverrides = toml::from_str(&toml_str).expect("deserialize");
+
+        let resolved_rc = parsed.resolve_sim().expect("resolve_sim").respawn_config;
+
+        assert_eq!(
+            resolved_rc.interval, 90,
+            "interval must round-trip (got {})",
+            resolved_rc.interval
+        );
+        assert_eq!(
+            resolved_rc.base_probability, 0.0067,
+            "base_probability must round-trip"
+        );
+        assert!(
+            resolved_rc.trail_dependent,
+            "trail_dependent must round-trip"
+        );
+        assert_eq!(
+            resolved_rc.max_probability_multiplier, 150.0,
+            "max_probability_multiplier must round-trip"
+        );
+        assert_eq!(
+            resolved_rc.trail_rescale, 0.0033,
+            "trail_rescale must round-trip"
         );
     }
 }

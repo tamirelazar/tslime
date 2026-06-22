@@ -166,6 +166,7 @@ pub fn capture_overrides(
         min_sim_size: Some(sim_config.min_sim_size),
         min_frame_size: Some(sim_config.min_frame_size),
         respawn_interval: None,
+        respawn_config: Some(sim_config.respawn_config),
         decay_gamma: Some(rs.decay_gamma),
         diffuse_weight: Some(rs.diffuse_weight),
         deposit_curve: Some(rs.deposit_curve),

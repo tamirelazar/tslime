@@ -1230,7 +1230,7 @@ impl PointConfig {
 }
 
 /// Particle respawn configuration.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct RespawnConfig {
     /// Interval in frames between respawn checks (0 = disabled).
     pub interval: u32,
