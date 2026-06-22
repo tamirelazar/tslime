@@ -62,3 +62,7 @@ pub mod palette_editor;
 #[cfg(feature = "terminal")]
 /// Panel styling and theme definitions.
 pub mod panel;
+
+#[cfg(feature = "terminal")]
+/// Spike: ratatui-widget-driven overlays blitted into our RenderedOverlay contract.
+pub mod ratatui_adapter;
