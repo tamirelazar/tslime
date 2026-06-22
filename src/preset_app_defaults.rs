@@ -33,6 +33,14 @@ impl From<Preset> for PresetAppDefaults {
                 auto_reset: true,
                 entropy_threshold: 0.0,
             },
+            // ConstellationStatic holds its figure indefinitely via the
+            // per-frame template re-stamp, so it must NOT auto-reset — a reset
+            // would drop the held figure. Entropy threshold is moot while
+            // auto_reset is false; set 0.0 to keep the detector off explicitly.
+            Preset::ConstellationStatic => Self {
+                auto_reset: false,
+                entropy_threshold: 0.0,
+            },
             _ => Self::default(),
         }
     }
@@ -69,5 +77,15 @@ mod tests {
             PresetAppDefaults::from(Preset::Network).entropy_threshold,
             crate::config_defaults::auto_reset::DEFAULT_ENTROPY_THRESHOLD
         );
+    }
+
+    #[test]
+    fn constellation_static_holds_no_auto_reset() {
+        let d = PresetAppDefaults::from(Preset::ConstellationStatic);
+        assert!(
+            !d.auto_reset,
+            "ConstellationStatic must not auto-reset (it holds the figure)"
+        );
+        assert_eq!(d.entropy_threshold, 0.0);
     }
 }
