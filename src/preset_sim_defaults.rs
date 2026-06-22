@@ -341,7 +341,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Rhythmic pulsing waves with trail modulation (config.rs:583-616)
+            // Slime-mold surface tension with trail-based flow modulation (config.rs:583-616)
             Preset::Slime => Self {
                 sensor_angle: 60.0,
                 sensor_distance: 30.0,
@@ -377,7 +377,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Cohesive flocking group movement (config.rs:617-650)
+            // Creeping vine tendrils with trail-modulated cohesion (config.rs:617-650)
             Preset::Vines => Self {
                 sensor_angle: 45.0,
                 sensor_distance: 25.0,
@@ -413,7 +413,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Concentric ripple patterns; boundary wraps so rings re-enter (config.rs:651-685)
+            // Drifting smoke columns; boundary wraps so plumes re-enter (config.rs:651-685)
             Preset::Smoke => Self {
                 sensor_angle: 35.0,
                 sensor_distance: 12.0,
@@ -857,7 +857,7 @@ mod tests {
     }
 
     #[test]
-    fn lumen_arm_keeps_sim_levers_drops_afterglow() {
+    fn mold_arm_keeps_sim_levers_drops_afterglow() {
         let s = PresetSimDefaults::from(Preset::Mold);
         assert_eq!(s.decay_gamma, 0.8);
         assert_eq!(s.deposit_curve, DepositCurve::Sqrt);
@@ -931,7 +931,7 @@ mod tests {
     }
 
     #[test]
-    fn only_river_and_ripple_declare_boundary_wrap() {
+    fn only_river_and_smoke_declare_boundary_wrap() {
         for spec in crate::simulation::config::PRESETS {
             let expected = match spec.preset {
                 Preset::River | Preset::Smoke => BoundaryMode::Wrap,

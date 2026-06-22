@@ -86,11 +86,11 @@ pub enum Preset {
     ChaosEdge,
     /// Aggregating blob clusters.
     Blob,
-    /// Rhythmic pulsing waves with trail-based modulation.
+    /// Slime-mold surface tension with trail-based flow modulation.
     Slime,
-    /// Cohesive flocking group movement.
+    /// Creeping vine tendrils with trail-modulated cohesion.
     Vines,
-    /// Concentric ripple patterns.
+    /// Drifting smoke columns with wrapping boundary.
     Smoke,
     /// Enhanced vortex with trail modulation.
     #[serde(rename = "vortex36")]

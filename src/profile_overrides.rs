@@ -857,7 +857,7 @@ pub(crate) fn project(ov: &ProfileOverrides) -> Result<Canonical, String> {
     // runtime-editable (no keybind mutates a species' trail_modulation), so it
     // can never legitimately drive the dirty guard.  Normalise it to None on BOTH
     // sides before the comparison so the guard stays blind to this field — only
-    // Pulse/Flocking/Ripple/Vortex36/DynamicTendrils carry `Some(_)`, and a clean
+    // Slime/Vines/Smoke/Vortex36/DynamicTendrils carry `Some(_)`, and a clean
     // swap to one of them must not read dirty.
     let mut sim = p.sim;
     for sc in sim.species_configs.iter_mut() {
@@ -1340,7 +1340,7 @@ mod tests {
     }
 
     #[test]
-    fn test_only_river_and_ripple_resolve_to_wrap() {
+    fn test_only_river_and_smoke_resolve_to_wrap() {
         use crate::simulation::config::{BoundaryMode, Preset};
         for spec in PRESETS {
             let a = args(&["--preset", spec.name]);
@@ -1361,7 +1361,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ripple_and_river_declare_boundary_wrap() {
+    fn test_smoke_and_river_declare_boundary_wrap() {
         use crate::simulation::config::BoundaryMode;
         for name in ["smoke", "river"] {
             let c = resolve(&["--preset", name]).sim;

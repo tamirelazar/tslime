@@ -3086,7 +3086,7 @@ mod tests {
 
     #[test]
     fn afterglow_unset_uses_preset() {
-        let a = Args::parse_from(["tslime", "--preset", "lumen"]);
+        let a = Args::parse_from(["tslime", "--preset", "mold"]);
         assert_eq!(
             crate::profile::Profile::resolve_from_args(&a)
                 .unwrap()
@@ -3098,7 +3098,7 @@ mod tests {
 
     #[test]
     fn afterglow_cli_overrides_preset() {
-        let a = Args::parse_from(["tslime", "--preset", "lumen", "--afterglow", "0"]);
+        let a = Args::parse_from(["tslime", "--preset", "mold", "--afterglow", "0"]);
         assert_eq!(
             crate::profile::Profile::resolve_from_args(&a)
                 .unwrap()
@@ -3116,7 +3116,7 @@ mod tests {
 
     #[test]
     fn resolve_palette_cli_wins() {
-        let a = Args::parse_from(["tslime", "--palette", "ocean", "--preset", "lumen"]);
+        let a = Args::parse_from(["tslime", "--palette", "ocean", "--preset", "mold"]);
         let r = crate::profile::Profile::resolve_from_args(&a)
             .unwrap()
             .render;
@@ -3125,7 +3125,7 @@ mod tests {
 
     #[test]
     fn resolve_palette_preset_default() {
-        let a = Args::parse_from(["tslime", "--preset", "lumen"]);
+        let a = Args::parse_from(["tslime", "--preset", "mold"]);
         let r = crate::profile::Profile::resolve_from_args(&a)
             .unwrap()
             .render;
@@ -3179,16 +3179,16 @@ mod tests {
 
     // --- switch/reset/Model-B/toggle resolution matrix (Task 17) ---
 
-    /// identity → art-on: Lumen carries temporal and afterglow levers.
+    /// identity → art-on: Mold carries temporal and afterglow levers.
     #[test]
     fn switch_identity_to_art_on_enables_temporal_and_afterglow() {
-        let a = Args::parse_from(["tslime", "--preset", "lumen"]);
+        let a = Args::parse_from(["tslime", "--preset", "mold"]);
         let r = crate::profile::Profile::resolve_from_args(&a)
             .unwrap()
             .render;
         assert_eq!(r.palette, crate::cli::Palette::Slime);
-        assert!(r.temporal_color > 0.0, "lumen must have temporal_color > 0");
-        assert!(r.afterglow > 0.0, "lumen must have afterglow > 0");
+        assert!(r.temporal_color > 0.0, "mold must have temporal_color > 0");
+        assert!(r.afterglow > 0.0, "mold must have afterglow > 0");
     }
 
     /// art-on → identity: Network carries no art-on levers (temporal=0, afterglow=0).
