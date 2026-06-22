@@ -26,11 +26,11 @@ respawn_config=RespawnConfig { interval: 0, base_probability: 0.01, trail_depend
 species[0]: name="default" count=50000 sa=15.0 ra=30.0 ss=1.0 da=5.0 color=RgbColor { r: 34, g: 139, b: 34 } mod=false
 
 === exploratory ===
-sensor_angle=45.0
+sensor_angle=30.0
 sensor_distance=15.0
 rotation_angle=60.0
 step_size=1.0
-decay_factor=0.96
+decay_factor=0.92
 deposit_amount=3.0
 diffusion_kernel=Mean3x3
 diffusion_sigma=1.0
@@ -50,7 +50,7 @@ attractors=[]
 separate_species_trails=false
 sampling_mode=Nearest
 respawn_config=RespawnConfig { interval: 0, base_probability: 0.01, trail_dependent: false, max_probability_multiplier: 1.0 }
-species[0]: name="default" count=30000 sa=45.0 ra=60.0 ss=1.0 da=3.0 color=RgbColor { r: 34, g: 139, b: 34 } mod=false
+species[0]: name="default" count=30000 sa=30.0 ra=60.0 ss=1.0 da=3.0 color=RgbColor { r: 34, g: 139, b: 34 } mod=false
 
 === tendrils ===
 sensor_angle=30.0
@@ -466,9 +466,9 @@ species[0]: name="tendril" count=25000 sa=22.5 ra=45.0 ss=1.0 da=5.0 color=RgbCo
 === mold ===
 sensor_angle=22.5
 sensor_distance=9.0
-rotation_angle=50.0
+rotation_angle=60.0
 step_size=1.0
-decay_factor=0.85
+decay_factor=0.9
 deposit_amount=5.0
 diffusion_kernel=Mean3x3
 diffusion_sigma=1.0
@@ -479,7 +479,7 @@ deposit_curve=Sqrt
 deposit_scale=1.5
 deposit_gamma=1.0
 deposit_cap=0.0
-boundary_mode=Wrap
+boundary_mode=Bounce
 preferred_init_mode=Some(Food)
 wind=None
 background_color=None
@@ -488,7 +488,7 @@ attractors=[]
 separate_species_trails=false
 sampling_mode=Nearest
 respawn_config=RespawnConfig { interval: 0, base_probability: 0.01, trail_dependent: false, max_probability_multiplier: 1.0 }
-species[0]: name="default" count=50000 sa=22.5 ra=50.0 ss=1.0 da=5.0 color=RgbColor { r: 34, g: 139, b: 34 } mod=false
+species[0]: name="default" count=50000 sa=22.5 ra=60.0 ss=1.0 da=5.0 color=RgbColor { r: 34, g: 139, b: 34 } mod=false
 
 === etching ===
 sensor_angle=30.0

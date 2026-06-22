@@ -634,6 +634,12 @@ pub struct RuntimeState {
     pub notification: Option<(String, std::time::Instant, NotificationLevel)>,
     /// Frame counter for entropy collapse detection.
     pub collapse_frame_counter: usize,
+    /// Frame counter for stagnation collapse detection (a near-static pattern
+    /// that no longer changes, even when entropy is healthy).
+    pub stagnation_frame_counter: usize,
+    /// Sampled trail values from the previous frame, used to measure
+    /// frame-to-frame change for stagnation detection.
+    pub prev_trail_sample: Vec<f32>,
     /// Warmup frame counter.
     pub warmup_counter: usize,
     /// Food persistence counter.
@@ -835,6 +841,8 @@ impl RuntimeState {
             saved_palette_name: None,
             notification: None,
             collapse_frame_counter: 0,
+            stagnation_frame_counter: 0,
+            prev_trail_sample: Vec::new(),
             warmup_counter: 0,
             food_persist_counter: 0,
             food_persist_enabled: false,
@@ -1251,11 +1259,9 @@ impl RuntimeState {
     pub fn cycle_window_frame(&mut self) {
         self.force_checkpoint();
         self.window_frame = match self.window_frame {
-            WindowFrame::None => WindowFrame::Negative,
-            WindowFrame::Negative => WindowFrame::Accented,
+            WindowFrame::None => WindowFrame::Accented,
             WindowFrame::Accented => WindowFrame::Glow,
-            WindowFrame::Glow => WindowFrame::Reactive,
-            WindowFrame::Reactive => WindowFrame::Frame,
+            WindowFrame::Glow => WindowFrame::Frame,
             WindowFrame::Frame => WindowFrame::None,
         };
     }
@@ -1265,11 +1271,9 @@ impl RuntimeState {
         self.force_checkpoint();
         self.window_frame = match self.window_frame {
             WindowFrame::None => WindowFrame::Frame,
-            WindowFrame::Negative => WindowFrame::None,
-            WindowFrame::Accented => WindowFrame::Negative,
+            WindowFrame::Accented => WindowFrame::None,
             WindowFrame::Glow => WindowFrame::Accented,
-            WindowFrame::Reactive => WindowFrame::Glow,
-            WindowFrame::Frame => WindowFrame::Reactive,
+            WindowFrame::Frame => WindowFrame::Glow,
         };
     }
 
@@ -1857,9 +1861,55 @@ impl RuntimeState {
         }
     }
 
-    /// Resets the collapse frame counter.
+    /// Tracks pattern stagnation for collapse detection.
+    ///
+    /// A pattern can survive entropy-collapse detection while being visually
+    /// dead — e.g. a near-static diagonal line that no longer evolves. This
+    /// detector samples the trail map at a fixed stride and measures the mean
+    /// frame-to-frame change, normalized by the signal magnitude so the
+    /// threshold is scale-independent. When that relative change stays below
+    /// `epsilon` for `duration_frames`, the pattern is considered collapsed.
+    ///
+    /// Returns true once stagnation is sustained for the full duration.
+    pub fn track_stagnation(
+        &mut self,
+        blended: &[f32],
+        epsilon: f32,
+        duration_frames: usize,
+    ) -> bool {
+        const STRIDE: usize = 64;
+        let sample: Vec<f32> = blended.iter().step_by(STRIDE).copied().collect();
+
+        let stagnant = if !sample.is_empty() && self.prev_trail_sample.len() == sample.len() {
+            let mut sum_abs = 0.0f32;
+            let mut max_mag = 1e-6f32;
+            for (cur, prev) in sample.iter().zip(self.prev_trail_sample.iter()) {
+                sum_abs += (cur - prev).abs();
+                max_mag = max_mag.max(cur.abs());
+            }
+            let mean_change = sum_abs / sample.len() as f32;
+            (mean_change / max_mag) < epsilon
+        } else {
+            // First frame (or a resize changed the sample length): can't compare.
+            false
+        };
+
+        self.prev_trail_sample = sample;
+
+        if stagnant {
+            self.stagnation_frame_counter += 1;
+            self.stagnation_frame_counter >= duration_frames
+        } else {
+            self.stagnation_frame_counter = 0;
+            false
+        }
+    }
+
+    /// Resets the collapse frame counters (entropy + stagnation).
     pub fn reset_collapse_counter(&mut self) {
         self.collapse_frame_counter = 0;
+        self.stagnation_frame_counter = 0;
+        self.prev_trail_sample.clear();
     }
 
     /// Updates statistics history buffers.
@@ -2160,6 +2210,24 @@ mod tests {
         assert!(state.track_entropy(5.0, 10.0, 1)); // below threshold → collapse
         state.reset_collapse_counter();
         assert_eq!(state.collapse_frame_counter, 0);
+    }
+
+    #[test]
+    fn test_runtime_state_stagnation_tracking() {
+        let mut state = create_test_runtime_state();
+        let static_frame = vec![0.5f32; 256];
+
+        // First call seeds the previous sample (can't compare yet).
+        assert!(!state.track_stagnation(&static_frame, 0.004, 3));
+        // Identical frames → zero change → stagnant; fires after duration.
+        assert!(!state.track_stagnation(&static_frame, 0.004, 3));
+        assert!(!state.track_stagnation(&static_frame, 0.004, 3));
+        assert!(state.track_stagnation(&static_frame, 0.004, 3));
+
+        // A frame that changes substantially resets the stagnation counter.
+        let moving_frame = vec![0.9f32; 256];
+        assert!(!state.track_stagnation(&moving_frame, 0.004, 3));
+        assert_eq!(state.stagnation_frame_counter, 0);
     }
 
     #[test]

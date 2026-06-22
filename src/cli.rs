@@ -815,7 +815,7 @@ pub struct Args {
     #[arg(
         long = "window-frame",
         value_name = "MODE",
-        help = "Window frame display mode (none, negative, accented, glow, reactive, frame)"
+        help = "Window frame display mode (none, accented, glow, frame)"
     )]
     /// Window frame display mode for terminal visualization.
     pub window_frame: Option<WindowFrame>,
@@ -851,6 +851,22 @@ pub struct Args {
     )]
     /// Outer padding between terminal edge and window frame.
     pub window_padding: Option<WindowPadding>,
+
+    #[arg(
+        long = "frame-matte-cols",
+        value_name = "COLS",
+        help = "Background gap (columns) between the frame border and the simulation (left/right)"
+    )]
+    /// Frame background matte width in columns (left/right).
+    pub frame_matte_cols: Option<usize>,
+
+    #[arg(
+        long = "frame-matte-rows",
+        value_name = "ROWS",
+        help = "Background gap (rows) between the frame border and the simulation (top/bottom)"
+    )]
+    /// Frame background matte height in rows (top/bottom).
+    pub frame_matte_rows: Option<usize>,
 
     #[arg(
         long = "show-status-bar",
@@ -2322,6 +2338,8 @@ impl Default for Args {
             chrome_style: None,
             aspect: None,
             window_padding: None,
+            frame_matte_cols: None,
+            frame_matte_rows: None,
             show_status_bar: false,
             min_sim_size: None,
             min_frame_size: None,

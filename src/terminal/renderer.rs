@@ -505,7 +505,9 @@ impl TerminalRenderer {
                     layout.frame_y,
                     layout.frame_w,
                     layout.frame_h,
-                    None,
+                    self.background_color,
+                    layout.sim_x - layout.frame_x,
+                    layout.sim_y - layout.frame_y,
                 );
             }
         }
@@ -685,11 +687,19 @@ impl TerminalRenderer {
                         layout.frame_y,
                         layout.frame_w,
                         layout.frame_h,
-                        None,
+                        self.background_color,
+                        layout.sim_x - layout.frame_x,
+                        layout.sim_y - layout.frame_y,
                     );
                 }
             } else {
-                buffer.render_window_frame(self.window_frame, accent, None);
+                buffer.render_window_frame(
+                    self.window_frame,
+                    accent,
+                    self.background_color,
+                    crate::render::window::FRAME_RING_COLS,
+                    crate::render::window::FRAME_RING_ROWS,
+                );
             }
         }
 
@@ -1179,11 +1189,19 @@ impl TerminalRenderer {
                         layout.frame_y,
                         layout.frame_w,
                         layout.frame_h,
-                        None,
+                        self.background_color,
+                        layout.sim_x - layout.frame_x,
+                        layout.sim_y - layout.frame_y,
                     );
                 }
             } else {
-                buffer.render_window_frame(self.window_frame, accent, None);
+                buffer.render_window_frame(
+                    self.window_frame,
+                    accent,
+                    self.background_color,
+                    crate::render::window::FRAME_RING_COLS,
+                    crate::render::window::FRAME_RING_ROWS,
+                );
             }
         }
 
@@ -1432,8 +1450,8 @@ mod tests {
         );
         r.set_charset(Charset::Ascii);
         assert_eq!(r.charset(), &Charset::Ascii);
-        r.set_window_frame(WindowFrame::Negative);
-        assert_eq!(r.window_frame(), WindowFrame::Negative);
+        r.set_window_frame(WindowFrame::Glow);
+        assert_eq!(r.window_frame(), WindowFrame::Glow);
         r.set_intensity_mapping(None);
         assert!(r.intensity_mapping().is_none());
     }

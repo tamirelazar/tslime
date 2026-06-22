@@ -611,6 +611,24 @@ pub mod auto_reset {
     pub const DEFAULT_ENTROPY_THRESHOLD: f32 = 0.95;
     /// Default number of frames below threshold before reset.
     pub const DEFAULT_DURATION_FRAMES: usize = 90;
+    /// Relative frame-to-frame trail change below which a pattern is considered
+    /// stagnant (static). Normalized by signal magnitude, so this is a fraction:
+    /// 0.0025 ≈ a 0.25% mean change per frame. Kept low (strict) so only a
+    /// nearly-frozen pattern counts — a living sim with subtle motion does not.
+    pub const DEFAULT_STAGNATION_EPSILON: f32 = 0.0025;
+    /// Number of consecutively-stagnant frames before a stagnation reset fires.
+    /// At ~30 FPS this is roughly 60 seconds of a near-frozen pattern — long
+    /// enough to avoid false collapses on slow-but-alive presets.
+    pub const DEFAULT_STAGNATION_FRAMES: usize = 1800;
+}
+
+/// Window-frame background matte defaults (gap between border and simulation).
+pub mod frame_matte {
+    /// Default matte width in columns (left/right). Wider than rows to offset
+    /// the ~1:2 terminal cell aspect so the gap reads as visually even.
+    pub const DEFAULT_COLS: usize = 4;
+    /// Default matte height in rows (top/bottom).
+    pub const DEFAULT_ROWS: usize = 1;
 }
 
 /// Export defaults.

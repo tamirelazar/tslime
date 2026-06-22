@@ -1520,7 +1520,7 @@ mod tests {
         // Callers keep index and the EXACT live value in sync (Step 4b); sync_renderer_caches
         // now pushes the exact live_charset so Custom/CustomAscii survive a load.
         rs.live_charset = Charset::Ascii;
-        rs.window_frame = WindowFrame::Negative;
+        rs.window_frame = WindowFrame::Glow;
         sync_renderer_caches(&rs, &mut r);
         assert_eq!(r.charset(), &rs.live_charset);
         assert_eq!(r.window_frame(), rs.window_frame);
@@ -1884,6 +1884,8 @@ mod tests {
         let window = crate::render::window::Window {
             aspect: SimConfig::default().aspect,
             padding: SimConfig::default().window_padding,
+            ring_cols: SimConfig::default().frame_matte_cols + 1,
+            ring_rows: SimConfig::default().frame_matte_rows + 1,
             min_sim_size: SimConfig::default().min_sim_size,
             min_frame_size: SimConfig::default().min_frame_size,
         };

@@ -71,6 +71,8 @@ pub struct ProfileOverrides {
     pub chrome_style: Option<ChromeStyle>,
     pub aspect: Option<Aspect>,
     pub window_padding: Option<WindowPadding>,
+    pub frame_matte_cols: Option<usize>,
+    pub frame_matte_rows: Option<usize>,
     pub show_status_bar: Option<bool>,
     pub min_sim_size: Option<TerminalSizeThreshold>,
     pub min_frame_size: Option<TerminalSizeThreshold>,
@@ -318,6 +320,8 @@ impl ProfileOverrides {
             },
             aspect: args.aspect,
             window_padding: args.window_padding,
+            frame_matte_cols: args.frame_matte_cols,
+            frame_matte_rows: args.frame_matte_rows,
             show_status_bar: if args.show_status_bar {
                 Some(true)
             } else {
@@ -680,6 +684,12 @@ impl ProfileOverrides {
         }
         if let Some(p) = self.window_padding {
             config.window_padding = p;
+        }
+        if let Some(c) = self.frame_matte_cols {
+            config.frame_matte_cols = c;
+        }
+        if let Some(r) = self.frame_matte_rows {
+            config.frame_matte_rows = r;
         }
         if let Some(v) = self.show_status_bar {
             config.show_status_bar = v;
@@ -1350,7 +1360,7 @@ mod tests {
                 .expect("resolve")
                 .sim;
             let expected = match spec.preset {
-                Preset::River | Preset::Smoke | Preset::Mold => BoundaryMode::Wrap,
+                Preset::River | Preset::Smoke => BoundaryMode::Wrap,
                 _ => BoundaryMode::Bounce,
             };
             assert_eq!(

@@ -804,14 +804,10 @@ pub enum BoundaryMode {
 pub enum WindowFrame {
     /// No frame - full terminal used for simulation.
     None,
-    /// Leave 1-cell margin empty around edges.
-    Negative,
     /// Solid block border using accent color.
     Accented,
     /// Gradient border fading from accent color inward.
     Glow,
-    /// Border responds to nearby agent activity.
-    Reactive,
     /// Thin-line frame (default).
     #[default]
     Frame,
@@ -819,24 +815,26 @@ pub enum WindowFrame {
 
 impl WindowFrame {
     /// Returns true if this mode reduces simulation display area.
+    ///
+    /// The windowed layout reserves a frame ring for every mode uniformly, so
+    /// no single mode specially reduces the area; retained for API stability.
     pub fn reduces_display_area(&self) -> bool {
-        matches!(self, WindowFrame::Negative)
+        false
     }
 
     /// Returns the window frame thickness in cells.
     pub fn thickness(&self) -> usize {
         match self {
             WindowFrame::None => 0,
-            WindowFrame::Negative | WindowFrame::Frame => 2,
+            WindowFrame::Frame => 2,
             WindowFrame::Accented => 1,
             WindowFrame::Glow => 3,
-            WindowFrame::Reactive => 2,
         }
     }
 
     /// Returns true if window frame has visual rendering.
     pub fn is_visible(&self) -> bool {
-        !matches!(self, WindowFrame::None | WindowFrame::Negative)
+        !matches!(self, WindowFrame::None)
     }
 }
 
@@ -846,13 +844,11 @@ impl std::str::FromStr for WindowFrame {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "none" => Ok(WindowFrame::None),
-            "negative" => Ok(WindowFrame::Negative),
             "accented" => Ok(WindowFrame::Accented),
             "glow" => Ok(WindowFrame::Glow),
-            "reactive" => Ok(WindowFrame::Reactive),
             "frame" => Ok(WindowFrame::Frame),
             _ => Err(format!(
-                "Invalid window frame: {}. Must be one of: none, negative, accented, glow, reactive, frame",
+                "Invalid window frame: {}. Must be one of: none, accented, glow, frame",
                 s
             )),
         }
@@ -1361,6 +1357,12 @@ pub struct SimConfig {
     pub boundary_mode: BoundaryMode,
     /// Window frame display mode for terminal visualization.
     pub window_frame: WindowFrame,
+    /// Background matte width in columns between the frame border and the sim
+    /// (left/right). Wider than `frame_matte_rows` to offset terminal cell aspect.
+    pub frame_matte_cols: usize,
+    /// Background matte height in rows between the frame border and the sim
+    /// (top/bottom).
+    pub frame_matte_rows: usize,
     /// Chrome display style (minimal, expanded, fullscreen).
     pub chrome_style: ChromeStyle,
     /// Visual aspect ratio of the simulation window.
@@ -1486,6 +1488,8 @@ impl Default for SimConfig {
             preferred_init_mode: Some(InitMode::Food),
             boundary_mode: BoundaryMode::Bounce,
             window_frame: WindowFrame::Frame,
+            frame_matte_cols: crate::config_defaults::frame_matte::DEFAULT_COLS,
+            frame_matte_rows: crate::config_defaults::frame_matte::DEFAULT_ROWS,
             chrome_style: ChromeStyle::Minimal,
             aspect: Aspect::default(),
             window_padding: WindowPadding::Auto,

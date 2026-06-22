@@ -6,6 +6,20 @@
 
 use crate::simulation::config::{Aspect, TerminalSizeThreshold, WindowPadding};
 
+/// Default frame ring thickness in **columns** on each of the left/right sides.
+///
+/// The ring = the border (1 cell at the outer edge) plus a background **matte**
+/// between the border and the simulation. This is the default; the matte is
+/// configurable via `SimConfig::frame_matte_cols` (ring = matte + 1 border cell).
+/// Horizontal is wider than [`FRAME_RING_ROWS`] to offset the ~1:2 terminal cell
+/// aspect so the matte reads as visually even. Used by `Window::default` and the
+/// no-layout (fullscreen) render path.
+pub const FRAME_RING_COLS: usize = crate::config_defaults::frame_matte::DEFAULT_COLS + 1;
+
+/// Default frame ring thickness in **rows** on each of the top/bottom sides.
+/// See [`FRAME_RING_COLS`].
+pub const FRAME_RING_ROWS: usize = crate::config_defaults::frame_matte::DEFAULT_ROWS + 1;
+
 /// How the window layout was resolved when terminal space was limited.
 pub enum FallbackMode {
     /// Normal layout with padding and centered frame.
@@ -50,6 +64,12 @@ pub struct Window {
     pub aspect: Aspect,
     /// Outer padding strategy (auto 5% or fixed cells).
     pub padding: WindowPadding,
+    /// Frame ring thickness in columns per side (border + matte). The sim is
+    /// inset by this on the left/right.
+    pub ring_cols: usize,
+    /// Frame ring thickness in rows per side (border + matte). The sim is inset
+    /// by this on the top/bottom.
+    pub ring_rows: usize,
     /// Minimum sim size before triggering EdgeHug fallback.
     pub min_sim_size: TerminalSizeThreshold,
     /// Minimum sim size before triggering Fullscreen fallback.
@@ -61,6 +81,8 @@ impl Default for Window {
         Self {
             aspect: Aspect::default(),
             padding: WindowPadding::Auto,
+            ring_cols: FRAME_RING_COLS,
+            ring_rows: FRAME_RING_ROWS,
             min_sim_size: TerminalSizeThreshold {
                 width: 20,
                 height: 10,
@@ -85,11 +107,14 @@ impl Window {
             WindowPadding::Fixed(n) => n,
         };
 
-        // Available space after padding; reserve 1 cell per side for the frame
+        // Available space after padding; reserve the frame ring per side (outer
+        // accent edge + inner background separator). Horizontal is thicker than
+        // vertical (see FRAME_RING_COLS/ROWS) for visual balance. The simulation
+        // is inset by the ring so it never renders under the border.
         let avail_w = term_w.saturating_sub(pad * 2);
         let avail_h = term_h.saturating_sub(pad * 2);
-        let inner_w = avail_w.saturating_sub(2);
-        let inner_h = avail_h.saturating_sub(2);
+        let inner_w = avail_w.saturating_sub(self.ring_cols * 2);
+        let inner_h = avail_h.saturating_sub(self.ring_rows * 2);
 
         // Fit sim to aspect (cell_ratio = sim_cells_w / sim_cells_h)
         let cell_ratio = self.aspect.cell_ratio();
@@ -122,25 +147,25 @@ impl Window {
 
         // Edge-hug fallback: sim too small with padding, but OK without
         if sim_w < self.min_sim_size.width || sim_h < self.min_sim_size.height {
-            let eh_sim_w = term_w.saturating_sub(2);
-            let eh_sim_h = term_h.saturating_sub(2);
+            let eh_sim_w = term_w.saturating_sub(self.ring_cols * 2);
+            let eh_sim_h = term_h.saturating_sub(self.ring_rows * 2);
             return WindowLayout {
                 pad: 0,
                 frame_x: 0,
                 frame_y: 0,
                 frame_w: term_w,
                 frame_h: term_h,
-                sim_x: 1,
-                sim_y: 1,
+                sim_x: self.ring_cols,
+                sim_y: self.ring_rows,
                 sim_w: eh_sim_w,
                 sim_h: eh_sim_h,
                 fallback: FallbackMode::EdgeHug,
             };
         }
 
-        // Normal: center frame in terminal
-        let frame_w = sim_w + 2;
-        let frame_h = sim_h + 2;
+        // Normal: center frame in terminal (aspect-aware ring on each side)
+        let frame_w = sim_w + self.ring_cols * 2;
+        let frame_h = sim_h + self.ring_rows * 2;
         let frame_x = term_w.saturating_sub(frame_w) / 2;
         let frame_y = term_h.saturating_sub(frame_h) / 2;
 
@@ -150,8 +175,8 @@ impl Window {
             frame_y,
             frame_w,
             frame_h,
-            sim_x: frame_x + 1,
-            sim_y: frame_y + 1,
+            sim_x: frame_x + self.ring_cols,
+            sim_y: frame_y + self.ring_rows,
             sim_w,
             sim_h,
             fallback: FallbackMode::Normal,
@@ -205,10 +230,11 @@ mod tests {
     fn test_sim_inside_frame() {
         let w = default_window();
         let layout = w.compute_rects(120, 60);
-        assert_eq!(layout.sim_x, layout.frame_x + 1);
-        assert_eq!(layout.sim_y, layout.frame_y + 1);
-        assert_eq!(layout.sim_w, layout.frame_w - 2);
-        assert_eq!(layout.sim_h, layout.frame_h - 2);
+        // Aspect-aware ring: FRAME_RING_COLS left/right, FRAME_RING_ROWS top/bottom.
+        assert_eq!(layout.sim_x, layout.frame_x + FRAME_RING_COLS);
+        assert_eq!(layout.sim_y, layout.frame_y + FRAME_RING_ROWS);
+        assert_eq!(layout.sim_w, layout.frame_w - FRAME_RING_COLS * 2);
+        assert_eq!(layout.sim_h, layout.frame_h - FRAME_RING_ROWS * 2);
     }
 
     #[test]

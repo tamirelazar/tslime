@@ -160,6 +160,8 @@ pub fn capture_overrides(
         chrome_style: Some(sim_config.chrome_style),
         aspect: Some(sim_config.aspect),
         window_padding: Some(sim_config.window_padding),
+        frame_matte_cols: Some(sim_config.frame_matte_cols),
+        frame_matte_rows: Some(sim_config.frame_matte_rows),
         show_status_bar: Some(sim_config.show_status_bar),
         min_sim_size: Some(sim_config.min_sim_size),
         min_frame_size: Some(sim_config.min_frame_size),

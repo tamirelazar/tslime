@@ -140,17 +140,22 @@ impl From<Preset> for PresetSimDefaults {
             },
             // Wide searching tentacles (config.rs:401-417)
             Preset::Exploratory => Self {
-                sensor_angle: 45.0,
+                // sensor 30° + rotation 60° + decay 0.92 keep a continuously
+                // spreading, dynamic network. The old 45°/0.96 over-persisted and
+                // condensed the whole population onto a single shrinking filament
+                // within ~60s (headless decline 0.29); the wide 45° sensor collapsed
+                // at every decay, so it was narrowed to 30° (stable, decline ~1.1).
+                sensor_angle: 30.0,
                 sensor_distance: 15.0,
                 rotation_angle: 60.0,
-                decay_factor: 0.96,
+                decay_factor: 0.92,
                 deposit_amount: 3.0,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 max_brightness: 12.0,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 30_000,
-                    sensor_angle: 45.0,
+                    sensor_angle: 30.0,
                     rotation_angle: 60.0,
                     deposit_amount: 3.0,
                     ..Default::default()
@@ -553,17 +558,19 @@ impl From<Preset> for PresetSimDefaults {
             // (moves to RenderArtDefaults). Sim levers: deposit_curve, deposit_scale,
             // decay_gamma (config.rs:744-762)
             Preset::Mold => Self {
-                // Wider sensor + higher rotation + Wrap boundary sustain a branching
-                // network. The old 15°/30° + Bounce condensed the whole population onto
-                // one filament that hugged the walls/diagonal (visible "collapse").
-                // Wrap removes wall pile-up; persistence (decay 0.85) is preserved.
+                // Wider sensor (22.5°) + high rotation (60°) hold a *contained*
+                // branching colony under Bounce: agents fold back at the walls into
+                // internal veins instead of condensing onto one wall-hugging filament
+                // (the old 15°/30° collapse) or wrapping toroidally (the seamless-edge
+                // character of the earlier Wrap retune). decay 0.90 keeps persistence
+                // without runaway accumulation; headless coverage holds ~0.40 @1500f.
                 sensor_angle: 22.5,
-                rotation_angle: 50.0,
-                decay_factor: 0.85,
+                rotation_angle: 60.0,
+                decay_factor: 0.90,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 max_brightness: 20.0,
                 window_frame: WindowFrame::Accented,
-                boundary_mode: BoundaryMode::Wrap,
+                boundary_mode: BoundaryMode::Bounce,
                 deposit_curve: DepositCurve::Sqrt,
                 deposit_scale: 1.5,
                 decay_gamma: 0.8,
@@ -571,7 +578,7 @@ impl From<Preset> for PresetSimDefaults {
                     name: "default".to_string(),
                     count: 50_000,
                     sensor_angle: 22.5,
-                    rotation_angle: 50.0,
+                    rotation_angle: 60.0,
                     ..Default::default()
                 }],
                 ..Self::default()
@@ -973,10 +980,10 @@ mod tests {
     }
 
     #[test]
-    fn only_river_smoke_mold_declare_boundary_wrap() {
+    fn only_river_smoke_declare_boundary_wrap() {
         for spec in crate::simulation::config::PRESETS {
             let expected = match spec.preset {
-                Preset::River | Preset::Smoke | Preset::Mold => BoundaryMode::Wrap,
+                Preset::River | Preset::Smoke => BoundaryMode::Wrap,
                 _ => BoundaryMode::Bounce,
             };
             assert_eq!(

@@ -99,16 +99,30 @@ pub(crate) fn effective_init_mode(preset: Preset, base: InitMode) -> InitMode {
 ///
 /// Monitors entropy levels and resets the simulation if it collapses
 /// (entropy stays below threshold for specified duration).
-fn check_auto_reset(sim: &mut Simulation, runtime_state: &mut RuntimeState, entropy: f32) {
+fn check_auto_reset(
+    sim: &mut Simulation,
+    runtime_state: &mut RuntimeState,
+    entropy: f32,
+    blended_trail: &[f32],
+) {
     if !runtime_state.app.auto_reset || runtime_state.is_paused {
         return;
     }
 
-    let should_reset = runtime_state.track_entropy(
+    // Collapse fires on either signal: entropy falling away (the field dies out)
+    // or the pattern stagnating (a near-static shape that stops evolving even
+    // while entropy stays healthy, e.g. a frozen diagonal line).
+    let entropy_collapse = runtime_state.track_entropy(
         entropy,
         runtime_state.app.auto_reset_entropy_threshold,
         runtime_state.app.auto_reset_duration_frames,
     );
+    let stagnation_collapse = runtime_state.track_stagnation(
+        blended_trail,
+        crate::config_defaults::auto_reset::DEFAULT_STAGNATION_EPSILON,
+        crate::config_defaults::auto_reset::DEFAULT_STAGNATION_FRAMES,
+    );
+    let should_reset = entropy_collapse || stagnation_collapse;
 
     if should_reset {
         let new_seed = std::time::SystemTime::now()
@@ -219,6 +233,8 @@ pub fn run_simulation(
     let mut window = crate::render::window::Window {
         aspect: config.aspect,
         padding: config.window_padding,
+        ring_cols: config.frame_matte_cols + 1,
+        ring_rows: config.frame_matte_rows + 1,
         min_sim_size: config.min_sim_size,
         min_frame_size: config.min_frame_size,
     };
@@ -1116,7 +1132,7 @@ pub fn run_simulation(
         };
 
         update_food_persistence(sim, &mut runtime_state);
-        check_auto_reset(sim, &mut runtime_state, entropy);
+        check_auto_reset(sim, &mut runtime_state, entropy, &blended_trail_buffer);
 
         // Update pause frame counter for animated pause effects
         if runtime_state.is_paused {
