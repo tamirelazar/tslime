@@ -413,14 +413,14 @@ impl FrameBuffer {
 
         // Draw panel background first if specified
         if let (Some(bg), Some(ind), w) = (panel_bg_color, indicator_color, indicator_width) {
-            if w > 0 && start_y < self.height {
+            if w > 0 && start_y < self.height && start_x < self.width {
                 let panel_width = text_lines
                     .iter()
                     .map(|l| l.as_ref().chars().count())
                     .max()
                     .unwrap_or(0)
                     .saturating_add(start_x)
-                    .min(self.width - start_x);
+                    .min(self.width.saturating_sub(start_x));
 
                 let panel_height = text_lines.len().min(self.height.saturating_sub(start_y));
 
@@ -4486,5 +4486,39 @@ mod tests {
                 "AA-ineligible charset: Strong and Off must produce identical char"
             );
         }
+    }
+
+    /// draw_text_overlay_with_panel must not panic when start_x >= buffer width.
+    ///
+    /// Before the fix, `.min(self.width - start_x)` would underflow (usize subtraction
+    /// wraps) and the function would either panic or corrupt memory.
+    #[test]
+    fn draw_text_overlay_with_panel_start_x_gte_width_no_panic() {
+        let mut buf = FrameBuffer::new(10, 5, crate::cli::ColorMode::TrueColor, None);
+        let lines = ["hello", "world"];
+
+        // start_x exactly equal to width — must return without panic.
+        buf.draw_text_overlay_with_panel(
+            &lines,
+            10, // start_x == width
+            0,
+            231,
+            None,
+            Some(crate::render::palette::RgbColor { r: 0, g: 0, b: 0 }),
+            Some(crate::render::palette::RgbColor { r: 255, g: 0, b: 0 }),
+            1,
+        );
+
+        // start_x beyond width — must also return without panic.
+        buf.draw_text_overlay_with_panel(
+            &lines,
+            999, // start_x >> width
+            0,
+            231,
+            None,
+            Some(crate::render::palette::RgbColor { r: 0, g: 0, b: 0 }),
+            Some(crate::render::palette::RgbColor { r: 255, g: 0, b: 0 }),
+            1,
+        );
     }
 }
