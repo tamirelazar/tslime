@@ -66,6 +66,7 @@ pub struct ProfileOverrides {
     pub terrain_strength: Option<f32>,
     pub background_color: Option<String>,
     pub boundary_mode: Option<BoundaryMode>,
+    #[serde(default, with = "serde_opt_window_frame")]
     pub window_frame: Option<WindowFrame>,
     pub chrome_style: Option<ChromeStyle>,
     pub aspect: Option<Aspect>,
@@ -1193,6 +1194,30 @@ mod serde_opt_intensity_mapping {
             _ => None,
         };
         Ok(mapping)
+    }
+}
+
+/// Serde module for `Option<WindowFrame>` that tolerates the legacy empty-string
+/// encoding (`window_frame = ""`) emitted by pre-Phase-B `presets.toml` files.
+/// Empty / missing → `None`; any other value parses via `WindowFrame::FromStr`.
+/// Without this, one stale file makes the whole config unparseable, poisoning all
+/// save/load.  Serialization is unchanged from the default `Option` behaviour.
+mod serde_opt_window_frame {
+    use crate::simulation::config::WindowFrame;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &Option<WindowFrame>, s: S) -> Result<S::Ok, S::Error> {
+        v.serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<WindowFrame>, D::Error> {
+        match Option::<String>::deserialize(d)?.as_deref() {
+            None | Some("") => Ok(None),
+            Some(token) => token
+                .parse::<WindowFrame>()
+                .map(Some)
+                .map_err(|_| serde::de::Error::custom(format!("unknown window_frame: {token}"))),
+        }
     }
 }
 

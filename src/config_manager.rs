@@ -434,7 +434,13 @@ fn load_config_file() -> Result<ConfigFile, String> {
     let contents =
         fs::read_to_string(&path).map_err(|e| format!("Failed to read config file: {}", e))?;
 
-    toml::from_str(&contents).map_err(|e| format!("Failed to parse config file: {}", e))
+    parse_config_file(&contents)
+}
+
+/// Parse config-file TOML into a `ConfigFile`. Pure (no IO) so the stale-schema
+/// tolerance can be regression-tested directly.
+fn parse_config_file(contents: &str) -> Result<ConfigFile, String> {
+    toml::from_str(contents).map_err(|e| format!("Failed to parse config file: {}", e))
 }
 
 fn save_config_file(config_file: &ConfigFile) -> Result<(), String> {
@@ -450,14 +456,45 @@ fn save_config_file(config_file: &ConfigFile) -> Result<(), String> {
 
 /// Saves a `NamedProfile` to the config file.
 ///
-/// Overwrites any existing configuration with the same name.
-pub fn save_config(profile: NamedProfile) -> Result<(), String> {
-    let mut config_file = load_config_file()?;
+/// Overwrites any existing configuration with the same name. If the existing
+/// on-disk file is unparseable (e.g. a stale schema the lenient serde still
+/// can't recover), it is moved aside to `presets.toml.bak` and a fresh file is
+/// started, so one bad file never blocks saving. Returns `Some(warning)` when a
+/// backup happened, so the caller can surface it.
+pub fn save_config(profile: NamedProfile) -> Result<Option<String>, String> {
+    let (mut config_file, warning) = match load_config_file() {
+        Ok(cf) => (cf, None),
+        Err(_) => {
+            let bak = back_up_config_file()?;
+            (
+                ConfigFile {
+                    presets: Vec::new(),
+                },
+                Some(format!(
+                    "Existing config was unreadable; backed up to {bak}"
+                )),
+            )
+        }
+    };
 
     config_file.presets.retain(|c| c.name != profile.name);
     config_file.presets.push(profile);
 
-    save_config_file(&config_file)
+    save_config_file(&config_file)?;
+    Ok(warning)
+}
+
+/// Move the current (unparseable) config file aside to `presets.toml.bak`,
+/// returning the backup file name for surfacing to the user.
+fn back_up_config_file() -> Result<String, String> {
+    let path = get_config_path()?;
+    let bak = path.with_extension("toml.bak");
+    fs::rename(&path, &bak).map_err(|e| format!("Failed to back up unreadable config: {}", e))?;
+    Ok(bak
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("presets.toml.bak")
+        .to_string())
 }
 
 /// Loads a saved configuration by name.
@@ -1446,5 +1483,53 @@ charset = "halfblock"
             let parsed: TerrainType = s.parse().expect("must parse");
             assert_eq!(parsed, t, "terrain_name/FromStr must be inverse for {s}");
         }
+    }
+
+    /// A pre-Phase-B `presets.toml` carried `window_frame = ""` plus fields that
+    /// were later dropped (`food_path`, `show_status_bar`, `min_sim_size`, …).
+    /// The new serde must tolerate it: unknown fields ignored, empty `window_frame`
+    /// treated as `None`, so one stale file never poisons all config save/load.
+    const LEGACY_PRESETS_TOML: &str = r#"
+[[preset]]
+name = "Mossy Roots"
+population = 50000
+decay_factor = 0.5
+palette = "moss"
+charset = "halfblock"
+init_mode = "food"
+food_path = "assets/tslime_logo.png"
+window_frame = ""
+chrome_style = "minimal"
+aspect = "3:2"
+window_padding = "auto"
+show_status_bar = false
+min_sim_size = "20x10"
+min_frame_size = "12x6"
+
+[[preset]]
+name = "warm-1"
+population = 50000
+palette = "warm"
+charset = "ascii"
+window_frame = "glow"
+chrome_style = "minimal"
+food_path = "assets/tslime_logo.png"
+"#;
+
+    #[test]
+    fn legacy_presets_file_parses_without_poisoning() {
+        let cf = parse_config_file(LEGACY_PRESETS_TOML)
+            .expect("stale-schema presets.toml must not hard-fail parsing");
+        assert_eq!(cf.presets.len(), 2, "both entries survive");
+        // Empty-string window_frame degrades to None (falls through to preset art).
+        assert_eq!(cf.presets[0].overrides.window_frame, None);
+        // A valid window_frame still deserializes.
+        assert_eq!(
+            cf.presets[1].overrides.window_frame,
+            Some(crate::simulation::config::WindowFrame::Glow)
+        );
+        // Dropped fields are ignored, real fields still land.
+        assert_eq!(cf.presets[0].name, "Mossy Roots");
+        assert_eq!(cf.presets[0].overrides.population, Some(50000));
     }
 }

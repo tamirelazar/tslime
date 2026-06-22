@@ -1423,11 +1423,18 @@ pub fn run_simulation(
                                     };
 
                                     match config_manager::save_config(named_profile) {
-                                        Ok(_) => {
-                                            runtime_state.show_notification(format!(
-                                                "Config '{}' saved successfully",
-                                                runtime_state.config_save_name_input
-                                            ));
+                                        Ok(warning) => {
+                                            let msg = match warning {
+                                                Some(w) => format!(
+                                                    "Config '{}' saved ({})",
+                                                    runtime_state.config_save_name_input, w
+                                                ),
+                                                None => format!(
+                                                    "Config '{}' saved successfully",
+                                                    runtime_state.config_save_name_input
+                                                ),
+                                            };
+                                            runtime_state.show_notification(msg);
                                         }
                                         Err(e) => {
                                             runtime_state.show_notification(format!(
