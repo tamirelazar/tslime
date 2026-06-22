@@ -417,6 +417,43 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
+            // ASCII-rendered cohesive flocking — same sim as Vines, ASCII charset via render layer.
+            Preset::Vinescii => Self {
+                sensor_angle: 45.0,
+                sensor_distance: 25.0,
+                rotation_angle: 60.0,
+                step_size: 1.5,
+                decay_factor: 0.88,
+                deposit_amount: 5.0,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+                max_brightness: 20.0,
+                window_frame: WindowFrame::None,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 50_000,
+                    sensor_angle: 45.0,
+                    rotation_angle: 60.0,
+                    step_size: 1.5,
+                    deposit_amount: 5.0,
+                    color: RgbColor::from_hex(0x4169e1),
+                    trail_modulation: Some(PointConfig {
+                        sensor_distance_base: 25.0,
+                        sensor_distance_multiplier: -20.0,
+                        sensor_distance_exponent: 1.0,
+                        sensor_angle_base: 45.0,
+                        sensor_angle_multiplier: 0.0,
+                        sensor_angle_exponent: 1.0,
+                        rotation_angle_base: 60.0,
+                        rotation_angle_multiplier: -50.0,
+                        rotation_angle_exponent: 1.5,
+                        step_size_base: 1.5,
+                        step_size_multiplier: 1.0,
+                        step_size_exponent: 1.0,
+                        ..Default::default()
+                    }),
+                }],
+                ..Self::default()
+            },
             // Drifting smoke columns; boundary wraps so plumes re-enter (config.rs:651-685)
             Preset::Smoke => Self {
                 sensor_angle: 35.0,

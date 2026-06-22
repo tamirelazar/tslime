@@ -90,6 +90,8 @@ pub enum Preset {
     Slime,
     /// Creeping vine tendrils with trail-modulated cohesion.
     Vines,
+    /// ASCII-rendered cohesive flocking (vines pattern).
+    Vinescii,
     /// Drifting smoke columns with wrapping boundary.
     Smoke,
     /// Enhanced vortex with trail modulation.
@@ -226,6 +228,12 @@ pub const PRESETS: &[PresetSpec] = &[
         preset: Preset::Vines,
         name: "Vines",
         aliases: &["flocking"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Vinescii,
+        name: "Vinescii",
+        aliases: &["vines-ascii"],
         quick_key: None,
     },
     PresetSpec {

@@ -284,6 +284,11 @@ impl From<Preset> for RenderArtDefaults {
                 hue_shift: 8.0,
                 ..Self::default()
             },
+            // ASCII-rendered vines: same sim as Vines, pure ASCII charset.
+            Preset::Vinescii => Self {
+                charset: Some(Charset::Ascii),
+                ..Self::default()
+            },
             _ => Self::default(),
         }
     }
@@ -470,5 +475,18 @@ mod tests {
         assert_eq!(RenderArtDefaults::from(Preset::Drift).afterglow, 0.1);
         assert_eq!(RenderArtDefaults::from(Preset::Forge).afterglow, 0.3);
         assert_eq!(RenderArtDefaults::from(Preset::Gossamer).afterglow, 0.2);
+    }
+
+    #[test]
+    fn vinescii_is_ascii_vines() {
+        use crate::preset_sim_defaults::PresetSimDefaults;
+        assert_eq!(
+            PresetSimDefaults::from(Preset::Vinescii).species_configs,
+            PresetSimDefaults::from(Preset::Vines).species_configs
+        );
+        assert_eq!(
+            RenderArtDefaults::from(Preset::Vinescii).charset,
+            Some(crate::render::charset::Charset::Ascii)
+        );
     }
 }

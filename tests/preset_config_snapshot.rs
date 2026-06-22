@@ -23,6 +23,7 @@ const PRESETS: &[&str] = &[
     "blob",
     "slime",
     "vines",
+    "vinescii",
     "smoke",
     "vortex36",
     "dynamictendrils",
