@@ -208,9 +208,14 @@ impl From<Preset> for RenderArtDefaults {
                 afterglow: 0.1,
                 ..Self::default()
             },
-            // Points charset: sparse particle star-map.
+            // Atlas linework: Braille for fine continuous lines between stars.
             Preset::Constellation => Self {
-                charset: Some(Charset::Points),
+                charset: Some(Charset::Braille),
+                palette: Some(Palette::Cosmic),
+                ..Self::default()
+            },
+            Preset::ConstellationStatic => Self {
+                charset: Some(Charset::Braille),
                 palette: Some(Palette::Cosmic),
                 ..Self::default()
             },
@@ -487,6 +492,15 @@ mod tests {
         assert_eq!(RenderArtDefaults::from(Preset::Drift).afterglow, 0.1);
         assert_eq!(RenderArtDefaults::from(Preset::Forge).afterglow, 0.3);
         assert_eq!(RenderArtDefaults::from(Preset::Gossamer).afterglow, 0.2);
+    }
+
+    #[test]
+    fn both_constellations_render_braille_cosmic() {
+        for p in [Preset::Constellation, Preset::ConstellationStatic] {
+            let d = RenderArtDefaults::from(p);
+            assert_eq!(d.charset, Some(Charset::Braille));
+            assert_eq!(d.palette, Some(Palette::Cosmic));
+        }
     }
 
     #[test]
