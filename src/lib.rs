@@ -68,6 +68,8 @@ pub mod overlay;
 /// Saved palette management.
 #[cfg(feature = "terminal")]
 pub mod palette_manager;
+/// Per-preset app-runtime defaults.
+pub(crate) mod preset_app_defaults;
 /// Per-preset optional sim-layer overrides.
 pub(crate) mod preset_sim_defaults;
 /// Shared resolved lever set for presets and saved configs.

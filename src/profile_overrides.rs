@@ -367,7 +367,7 @@ impl ProfileOverrides {
             warmup_frames: Some(args.warmup_frames),
             skip_warmup: Some(args.skip_warmup),
             warmup_brightness_multiplier: Some(args.warmup_brightness_multiplier),
-            auto_reset: Some(args.auto_reset),
+            auto_reset: if args.auto_reset { Some(true) } else { None },
             auto_reset_entropy_threshold: Some(args.collapse_entropy_threshold),
             auto_reset_duration_frames: Some(args.collapse_duration_frames),
             grid: Some(args.grid),
@@ -426,13 +426,17 @@ impl ProfileOverrides {
     /// Each field falls back to its `AppRuntimeConfig::default()` when not set.
     pub(crate) fn resolve_app(&self) -> AppRuntimeConfig {
         let d = AppRuntimeConfig::default();
+        let preset_app = self
+            .preset
+            .map(crate::preset_app_defaults::PresetAppDefaults::from)
+            .unwrap_or_default();
         AppRuntimeConfig {
             warmup_frames: self.warmup_frames.unwrap_or(d.warmup_frames),
             skip_warmup: self.skip_warmup.unwrap_or(d.skip_warmup),
             warmup_brightness_multiplier: self
                 .warmup_brightness_multiplier
                 .unwrap_or(d.warmup_brightness_multiplier),
-            auto_reset: self.auto_reset.unwrap_or(d.auto_reset),
+            auto_reset: self.auto_reset.unwrap_or(preset_app.auto_reset),
             auto_reset_entropy_threshold: self
                 .auto_reset_entropy_threshold
                 .unwrap_or(d.auto_reset_entropy_threshold),
@@ -1878,5 +1882,42 @@ mod tests {
         assert!(project(&on).unwrap().render.auto_normalize);
         assert!(!project(&off).unwrap().render.auto_normalize);
         assert_ne!(project(&on).unwrap(), project(&off).unwrap());
+    }
+
+    // ── auto_reset membrane (Task 3) ──
+
+    /// CLI `--preset constellation` absent `--auto-reset` flag → `auto_reset` is `None`
+    /// (must NOT shadow the preset's own default).
+    #[test]
+    fn auto_reset_cli_absent_is_none() {
+        let a = args(&["--preset", "constellation"]);
+        let ov = ProfileOverrides::from_args(&a).expect("from_args");
+        assert_eq!(
+            ov.auto_reset, None,
+            "from_args must emit None for auto_reset when --auto-reset flag is absent"
+        );
+    }
+
+    /// Constellation resolves `auto_reset = true` when CLI does not override it.
+    #[test]
+    fn resolve_app_uses_preset_auto_reset_default() {
+        let ov = ProfileOverrides {
+            preset: Some(crate::simulation::config::Preset::Constellation),
+            ..Default::default()
+        };
+        assert!(
+            ov.resolve_app().auto_reset,
+            "constellation auto_reset should be on by default"
+        );
+        // Explicit override wins over the preset's default.
+        let ov2 = ProfileOverrides {
+            preset: Some(crate::simulation::config::Preset::Constellation),
+            auto_reset: Some(false),
+            ..Default::default()
+        };
+        assert!(
+            !ov2.resolve_app().auto_reset,
+            "explicit Some(false) must override the preset default"
+        );
     }
 }
