@@ -875,6 +875,14 @@ pub(crate) fn project(ov: &ProfileOverrides) -> Result<Canonical, String> {
         sc.trail_modulation = None; // un-capturable + not runtime-editable
     }
 
+    // `respawn_config` is set by the preset layer (e.g. Mold's anti-collapse
+    // respawn).  ProfileOverrides can only carry the `interval` scalar, never the
+    // full {base_probability, trail_dependent, max_probability_multiplier}, so it
+    // cannot round-trip through capture; and no keybind mutates it at runtime.  Like
+    // `trail_modulation` above, normalise it on BOTH sides so the guard stays blind —
+    // a clean swap to a preset that sets respawn must not read dirty.
+    sim.respawn_config = Default::default();
+
     // Reproduce apply_color_aa_all priority EXACTLY ([P1]):
     //   1. full per-charset array if color_aa_all present,
     //   2. else the FULLY RESOLVED color_aa on the RESOLVED charset's slot over defaults.

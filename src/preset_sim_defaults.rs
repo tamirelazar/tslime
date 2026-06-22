@@ -558,12 +558,19 @@ impl From<Preset> for PresetSimDefaults {
             // (moves to RenderArtDefaults). Sim levers: deposit_curve, deposit_scale,
             // decay_gamma (config.rs:744-762)
             Preset::Mold => Self {
-                // Wider sensor (22.5°) + high rotation (60°) hold a *contained*
-                // branching colony under Bounce: agents fold back at the walls into
-                // internal veins instead of condensing onto one wall-hugging filament
-                // (the old 15°/30° collapse) or wrapping toroidally (the seamless-edge
-                // character of the earlier Wrap retune). decay 0.90 keeps persistence
-                // without runaway accumulation; headless coverage holds ~0.40 @1500f.
+                // Wider sensor (22.5°) + high rotation (60°) under Bounce keep a
+                // *contained* branching colony whose veins fold back at the walls.
+                // But Bounce alone accumulates a wall-parallel trail that, given enough
+                // frames, condenses ALL agents onto one wall-hugging filament (the
+                // sensor/rotation/decay retunes only delayed it — at ~6000f the colony
+                // collapsed to a single edge filament, edge:interior trail ratio >30x).
+                // The structural fix is gentle trail-dependent respawn: every 90 frames
+                // an agent sitting in high-trail (i.e. the bright wall line) is scattered
+                // back into the field with probability rising up to 5x where the trail is
+                // brightest, so the runaway feedback can never close. Tuned as gently as
+                // possible (base 0.002) to keep the self-organised vein network intact —
+                // holds edge:interior trail ~1.1x with crisp large-celled structure out
+                // to 40000f, where decay 0.90 alone collapsed by ~6000f.
                 sensor_angle: 22.5,
                 rotation_angle: 60.0,
                 decay_factor: 0.90,
@@ -574,6 +581,12 @@ impl From<Preset> for PresetSimDefaults {
                 deposit_curve: DepositCurve::Sqrt,
                 deposit_scale: 1.5,
                 decay_gamma: 0.8,
+                respawn_config: RespawnConfig {
+                    interval: 90,
+                    base_probability: 0.002,
+                    trail_dependent: true,
+                    max_probability_multiplier: 5.0,
+                },
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 50_000,
