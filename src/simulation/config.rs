@@ -1026,7 +1026,7 @@ impl std::str::FromStr for BoundaryMode {
 ///
 /// This enables dynamic parameter adjustment based on the trail value at each agent's position,
 /// creating diverse emergent behaviors as described in Sage Jenson's "36 Points" work.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PointConfig {
     /// Sensor distance base value (p1).
     pub sensor_distance_base: f32,

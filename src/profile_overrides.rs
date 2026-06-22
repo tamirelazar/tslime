@@ -583,7 +583,7 @@ impl ProfileOverrides {
                     step_size: s.step_size,
                     deposit_amount: s.deposit_amount,
                     color: s.color,
-                    trail_modulation: None,
+                    trail_modulation: s.trail_modulation,
                 })
                 .collect();
         } else if self.preset.is_none() {
@@ -835,14 +835,13 @@ pub(crate) fn project(ov: &ProfileOverrides) -> Result<Canonical, String> {
     let mut render = p.render.clone();
     render.hue_shift = 0.0;
 
-    // `trail_modulation` is set by the preset layer (SpeciesConfig) but is NOT
-    // representable in the capture schema (`SpeciesArg` has no trail_modulation
-    // field), so capture_overrides always emits `None` for it.  Comparing it in
-    // the dirty guard can ONLY produce false-positives for Pulse/Flocking/Ripple/
-    // Vortex36/DynamicTendrils (all carry `trail_modulation: Some(_)` from their
-    // PresetSimDefaults).  It is also not runtime-editable (no keybind mutates a
-    // species' trail_modulation).  Normalise it to None on BOTH sides before the
-    // comparison so the guard stays blind to this unresolvable field.
+    // `trail_modulation` is set by the preset layer (SpeciesConfig). It now
+    // round-trips through capture (`SpeciesArg.trail_modulation`), but it is not
+    // runtime-editable (no keybind mutates a species' trail_modulation), so it
+    // can never legitimately drive the dirty guard.  Normalise it to None on BOTH
+    // sides before the comparison so the guard stays blind to this field — only
+    // Pulse/Flocking/Ripple/Vortex36/DynamicTendrils carry `Some(_)`, and a clean
+    // swap to one of them must not read dirty.
     let mut sim = p.sim;
     for sc in sim.species_configs.iter_mut() {
         sc.trail_modulation = None; // un-capturable + not runtime-editable

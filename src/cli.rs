@@ -13,8 +13,9 @@ use crate::config_defaults::{
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
-    Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode, Obstacle, Preset,
-    SimConfig, TerminalSizeThreshold, TerrainType, Wind, WindowFrame, WindowPadding,
+    Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode, Obstacle,
+    PointConfig, Preset, SimConfig, TerminalSizeThreshold, TerrainType, Wind, WindowFrame,
+    WindowPadding,
 };
 use crate::validation::Validatable;
 
@@ -134,6 +135,12 @@ pub struct SpeciesArg {
     pub deposit_amount: f32,
     /// RGB color.
     pub color: RgbColor,
+    /// Trail-based parameter modulation (36 Points). Persistence-only: carried
+    /// through saved-config TOML so trail-modulated presets (Pulse, Flocking, …)
+    /// survive a save/reload round-trip. The CLI string form does not set it
+    /// (`FromStr` leaves it `None`); it is sourced from the live `SpeciesConfig`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trail_modulation: Option<PointConfig>,
 }
 
 impl std::str::FromStr for SpeciesArg {
@@ -208,6 +215,7 @@ impl std::str::FromStr for SpeciesArg {
                 step_size,
                 deposit_amount,
                 color,
+                trail_modulation: None,
             })
         } else {
             let parts: Vec<&str> = rest.rsplitn(2, ':').collect();
@@ -231,6 +239,7 @@ impl std::str::FromStr for SpeciesArg {
                 step_size,
                 deposit_amount,
                 color,
+                trail_modulation: None,
             })
         }
     }

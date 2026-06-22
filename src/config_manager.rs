@@ -142,6 +142,7 @@ pub fn capture_overrides(
                 step_size: s.step_size,
                 deposit_amount: s.deposit_amount,
                 color: s.color,
+                trail_modulation: s.trail_modulation,
             })
             .collect(),
         separate_species_trails: sim_config.separate_species_trails,
@@ -1515,6 +1516,47 @@ window_frame = "glow"
 chrome_style = "minimal"
 food_path = "assets/tslime_logo.png"
 "#;
+
+    #[test]
+    fn trail_modulation_round_trips_through_saved_config() {
+        use crate::simulation::config::{PointConfig, SpeciesConfig};
+        let rs = create_test_runtime_state();
+        // Preset-derived species carry trail_modulation; capture must preserve it.
+        // Use exactly-representable f32 values so the TOML round-trip is bit-stable.
+        let modulation = PointConfig {
+            sensor_angle_multiplier: 0.5,
+            step_size_base: 2.5,
+            trail_rescale: 0.25,
+            ..PointConfig::default()
+        };
+        let sim = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                trail_modulation: Some(modulation),
+                ..SpeciesConfig::default()
+            }],
+            ..SimConfig::default()
+        };
+        let overrides = capture_overrides(&sim, Palette::Organic, Charset::HalfBlock, &rs);
+        assert_eq!(
+            overrides.species[0].trail_modulation,
+            Some(modulation),
+            "capture must carry trail_modulation into SpeciesArg"
+        );
+        // Round-trip through the actual save format (TOML), then resolve.
+        let named = NamedProfile {
+            name: "t".to_string(),
+            description: None,
+            overrides,
+        };
+        let toml_str = toml::to_string(&named).expect("serialize");
+        let reparsed: NamedProfile = toml::from_str(&toml_str).expect("deserialize");
+        let profile = reparsed.overrides.resolve().expect("resolve");
+        assert_eq!(
+            profile.sim.species_configs[0].trail_modulation,
+            Some(modulation),
+            "trail_modulation must survive save -> reload -> resolve"
+        );
+    }
 
     #[test]
     fn legacy_presets_file_parses_without_poisoning() {
