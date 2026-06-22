@@ -1,9 +1,11 @@
 //! Hand-placed stellar-constellation asterisms used by `InitMode::Constellation`.
 //! Coords are normalized to 0..1 (origin top-left); `edges` index into `stars`.
 
+use crate::simulation::agent::Agent;
 use crate::simulation::config::Aspect;
 use crate::simulation::Rng;
 use rand::Rng as _;
+use std::f32::consts::PI;
 
 /// One asterism: bright stars plus the line segments that connect them.
 pub struct Constellation {
@@ -234,6 +236,77 @@ fn stamp_gaussian(
     }
 }
 
+/// Seed `population` agents from `layout`: 35% Gaussian blobs at stars, 65%
+/// along edges (∝ length) with edge-tangent headings split both directions.
+pub fn seed_agents(
+    rng: &mut Rng,
+    layout: &ConstellationLayout,
+    agents: &mut Vec<Agent>,
+    population: usize,
+    species_id: u8,
+) {
+    let star_pop = population * 35 / 100;
+    let edge_pop = population - star_pop;
+
+    // Stars: even split, Gaussian blob (sigma 2.0).
+    let n_stars = layout.stars_px.len().max(1);
+    for i in 0..star_pop {
+        let (cx, cy) = layout.stars_px[i % n_stars];
+        let (dx, dy) = gaussian_offset(rng, 2.0);
+        let heading = rng.gen_range(0.0..PI * 2.0);
+        agents.push(Agent::new(cx + dx, cy + dy, heading, species_id));
+    }
+
+    // Edges: count proportional to length.
+    let lengths: Vec<f32> = layout
+        .edges
+        .iter()
+        .map(|&(a, b)| {
+            let (ax, ay) = layout.stars_px[a];
+            let (bx, by) = layout.stars_px[b];
+            ((bx - ax).powi(2) + (by - ay).powi(2)).sqrt().max(1.0)
+        })
+        .collect();
+    let total_len: f32 = lengths.iter().sum::<f32>().max(1.0);
+
+    let mut placed = 0usize;
+    for (ei, &(a, b)) in layout.edges.iter().enumerate() {
+        let (ax, ay) = layout.stars_px[a];
+        let (bx, by) = layout.stars_px[b];
+        let want = ((edge_pop as f32) * (lengths[ei] / total_len)).round() as usize;
+        let want = if ei == layout.edges.len() - 1 {
+            edge_pop.saturating_sub(placed) // last edge soaks up rounding remainder
+        } else {
+            want
+        };
+        let tangent = (by - ay).atan2(bx - ax);
+        for k in 0..want {
+            let t = rng.gen_range(0.0..1.0f32);
+            let x = ax + (bx - ax) * t;
+            let y = ay + (by - ay) * t;
+            // Half travel each way along the edge, plus small angular jitter.
+            let dir = if k % 2 == 0 { 0.0 } else { PI };
+            let jitter = rng.gen_range(-0.15..0.15f32);
+            agents.push(Agent::new(x, y, tangent + dir + jitter, species_id));
+            placed += 1;
+        }
+    }
+    // Top up any shortfall from rounding onto the first star.
+    while agents.len() < (population) {
+        let (cx, cy) = layout.stars_px[0];
+        let heading = rng.gen_range(0.0..PI * 2.0);
+        agents.push(Agent::new(cx, cy, heading, species_id));
+    }
+}
+
+fn gaussian_offset(rng: &mut Rng, sigma: f32) -> (f32, f32) {
+    let u1: f32 = rng.gen();
+    let u2: f32 = rng.gen();
+    let r = (-2.0 * u1.max(1e-6).ln()).sqrt();
+    let theta = 2.0 * PI * u2;
+    (r * theta.cos() * sigma, r * theta.sin() * sigma)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,6 +401,32 @@ mod tests {
             let (mx, my) = ((ax + bx) / 2.0, (ay + by) / 2.0);
             let idx = (my as usize).min(79) * 120 + (mx as usize).min(119);
             assert!(layout.template[idx] > 0.0, "edge midpoint dark");
+        }
+    }
+
+    #[test]
+    fn seed_agents_splits_population_and_uses_tangent_headings() {
+        let mut rng = Rng::seed_from_u64(3);
+        let layout = build_layout(
+            &mut rng,
+            200,
+            120,
+            Aspect {
+                width: 3,
+                height: 2,
+            },
+        );
+        let mut agents: Vec<Agent> = Vec::new();
+        seed_agents(&mut rng, &layout, &mut agents, 1000, 0);
+        // All agents placed (no drops), within grid.
+        assert_eq!(agents.len(), 1000);
+        for a in &agents {
+            assert!(
+                a.x >= 0.0 && a.x <= 200.0 && a.y >= 0.0 && a.y <= 120.0,
+                "agent at ({}, {}) out of bounds",
+                a.x,
+                a.y
+            );
         }
     }
 }
