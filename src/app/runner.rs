@@ -1082,7 +1082,8 @@ pub fn run_simulation(
                     runtime_state.config_browser_selected_index = runtime_state
                         .config_browser_selected_index
                         .min(configs.len().saturating_sub(1));
-                    Some(ConfigBrowserOverlay::build_overlay(
+                    // SPIKE (Option B): PanelBuilder chrome, ratatui-driven scroll list.
+                    Some(crate::render::ratatui_adapter::build_config_browser(
                         &configs,
                         runtime_state.config_browser_selected_index,
                     ))
@@ -1107,8 +1108,11 @@ pub fn run_simulation(
             if runtime_state.overlay_state.is_open(OverlayType::ConfigSave)
                 && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
             {
-                Some(ConfigSaveOverlay::build_overlay(
-                    &runtime_state.config_save_name_input,
+                // SPIKE: tui_input-backed field with a rendered caret (was append-only).
+                Some(crate::render::ratatui_adapter::build_config_save(
+                    runtime_state.config_save_name_input.value(),
+                    runtime_state.config_save_name_input.cursor(),
+                    &runtime_state.panel_style,
                 ))
             } else {
                 None
@@ -1433,23 +1437,50 @@ pub fn run_simulation(
                     // Handle config save dialog input
                     if runtime_state.overlay_state.is_open(OverlayType::ConfigSave) {
                         use crossterm::event::{KeyCode, KeyModifiers};
+                        use tui_input::InputRequest;
+                        // Map crossterm keys → tui_input requests ourselves (tui-input's
+                        // own crossterm backend is disabled to avoid version coupling).
+                        let input = &mut runtime_state.config_save_name_input;
                         match key_event.code {
                             KeyCode::Char(c)
                                 if !key_event.modifiers.contains(KeyModifiers::CONTROL) =>
                             {
-                                if runtime_state.config_save_name_input.len() < 26 {
-                                    runtime_state.config_save_name_input.push(c);
+                                if input.value().chars().count() < 26 {
+                                    input.handle(InputRequest::InsertChar(c));
                                 }
                                 continue;
                             }
                             KeyCode::Backspace => {
-                                runtime_state.config_save_name_input.pop();
+                                input.handle(InputRequest::DeletePrevChar);
+                                continue;
+                            }
+                            KeyCode::Delete => {
+                                input.handle(InputRequest::DeleteNextChar);
+                                continue;
+                            }
+                            KeyCode::Left => {
+                                input.handle(InputRequest::GoToPrevChar);
+                                continue;
+                            }
+                            KeyCode::Right => {
+                                input.handle(InputRequest::GoToNextChar);
+                                continue;
+                            }
+                            KeyCode::Home => {
+                                input.handle(InputRequest::GoToStart);
+                                continue;
+                            }
+                            KeyCode::End => {
+                                input.handle(InputRequest::GoToEnd);
                                 continue;
                             }
                             KeyCode::Enter => {
-                                if !runtime_state.config_save_name_input.is_empty() {
+                                if !runtime_state.config_save_name_input.value().is_empty() {
                                     let named_profile = config_manager::NamedProfile {
-                                        name: runtime_state.config_save_name_input.clone(),
+                                        name: runtime_state
+                                            .config_save_name_input
+                                            .value()
+                                            .to_string(),
                                         description: None,
                                         overrides: config_manager::capture_overrides(
                                             sim.config(),
@@ -1466,11 +1497,12 @@ pub fn run_simulation(
                                             let msg = match warning {
                                                 Some(w) => format!(
                                                     "Config '{}' saved ({})",
-                                                    runtime_state.config_save_name_input, w
+                                                    runtime_state.config_save_name_input.value(),
+                                                    w
                                                 ),
                                                 None => format!(
                                                     "Config '{}' saved successfully",
-                                                    runtime_state.config_save_name_input
+                                                    runtime_state.config_save_name_input.value()
                                                 ),
                                             };
                                             runtime_state.show_notification(msg);
@@ -2217,7 +2249,7 @@ pub fn run_simulation(
                         ControlAction::ShowConfigSaveDialog => {
                             runtime_state.close_all_overlays();
                             runtime_state.overlay_state.open(OverlayType::ConfigSave);
-                            runtime_state.config_save_name_input.clear();
+                            runtime_state.config_save_name_input.reset();
                             runtime_state.on_modal_open();
                         }
                         ControlAction::RandomizeParams => {

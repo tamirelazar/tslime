@@ -650,8 +650,9 @@ pub struct RuntimeState {
     pub initial_food_attractors: Vec<crate::simulation::config::Attractor>,
     /// Selected index in config browser.
     pub config_browser_selected_index: usize,
-    /// Input buffer for save dialog.
-    pub config_save_name_input: String,
+    /// Input buffer for save dialog. `tui_input::Input` tracks value + cursor so the
+    /// field supports mid-string editing (arrows/Home/End/Delete), not just append/pop.
+    pub config_save_name_input: tui_input::Input,
     /// Default values for reset.
     pub default_values: DefaultValues,
     /// Application-runtime config (warmup / auto-reset / grid / food-persist).
@@ -848,7 +849,7 @@ impl RuntimeState {
             food_persist_enabled: false,
             initial_food_attractors: Vec::new(),
             config_browser_selected_index: 0,
-            config_save_name_input: String::new(),
+            config_save_name_input: tui_input::Input::default(),
             default_values,
             app: crate::app_config::AppRuntimeConfig::default(),
             wind: cli_config.wind,
