@@ -152,7 +152,10 @@ pub fn capture_overrides(
         terrain: terrain_name(sim_config.terrain),
         terrain_strength: Some(sim_config.terrain_strength),
         background_color: sim_config.background_color.clone(),
-        boundary_mode: None,
+        // Capture boundary_mode so a Wrap preset (River/Smoke/Mold) round-trips
+        // through projection; leaving it None defaulted the live mirror to Bounce
+        // and made any Wrap preset read falsely dirty. Symmetric with window_frame.
+        boundary_mode: Some(sim_config.boundary_mode),
         window_frame: Some(sim_config.window_frame),
         chrome_style: Some(sim_config.chrome_style),
         aspect: Some(sim_config.aspect),

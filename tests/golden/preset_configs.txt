@@ -84,11 +84,11 @@ sensor_angle=22.5
 sensor_distance=9.0
 rotation_angle=45.0
 step_size=1.0
-decay_factor=0.85
+decay_factor=0.5
 deposit_amount=5.0
 diffusion_kernel=Gaussian
 diffusion_sigma=1.0
-max_brightness=20.0
+max_brightness=100.0
 decay_gamma=1.0
 diffuse_weight=1.0
 deposit_curve=Linear
@@ -464,9 +464,9 @@ species[0]: name="tendril" count=25000 sa=22.5 ra=45.0 ss=1.0 da=5.0 color=RgbCo
   modulation=PointConfig { sensor_distance_base: 5.0, sensor_distance_multiplier: 45.0, sensor_distance_exponent: 0.7, sensor_angle_base: 15.0, sensor_angle_multiplier: 60.0, sensor_angle_exponent: 2.0, rotation_angle_base: 10.0, rotation_angle_multiplier: 50.0, rotation_angle_exponent: 1.5, step_size_base: 0.5, step_size_multiplier: 3.0, step_size_exponent: 1.0, vertical_offset: 0.0, heading_offset: 0.0, trail_rescale: 1.0 }
 
 === mold ===
-sensor_angle=15.0
+sensor_angle=22.5
 sensor_distance=9.0
-rotation_angle=30.0
+rotation_angle=50.0
 step_size=1.0
 decay_factor=0.85
 deposit_amount=5.0
@@ -479,7 +479,7 @@ deposit_curve=Sqrt
 deposit_scale=1.5
 deposit_gamma=1.0
 deposit_cap=0.0
-boundary_mode=Bounce
+boundary_mode=Wrap
 preferred_init_mode=Some(Food)
 wind=None
 background_color=None
@@ -488,7 +488,7 @@ attractors=[]
 separate_species_trails=false
 sampling_mode=Nearest
 respawn_config=RespawnConfig { interval: 0, base_probability: 0.01, trail_dependent: false, max_probability_multiplier: 1.0 }
-species[0]: name="default" count=50000 sa=15.0 ra=30.0 ss=1.0 da=5.0 color=RgbColor { r: 34, g: 139, b: 34 } mod=false
+species[0]: name="default" count=50000 sa=22.5 ra=50.0 ss=1.0 da=5.0 color=RgbColor { r: 34, g: 139, b: 34 } mod=false
 
 === etching ===
 sensor_angle=30.0

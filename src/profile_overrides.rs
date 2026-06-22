@@ -163,7 +163,8 @@ pub struct ProfileOverrides {
     /// Enable automatic reset when the simulation collapses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_reset: Option<bool>,
-    /// Entropy threshold above which the simulation is considered collapsed.
+    /// Entropy threshold below which the simulation is considered collapsed
+    /// (brightness-value entropy is 0..8; healthy ~4-6, dead → 0).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_reset_entropy_threshold: Option<f32>,
     /// Number of frames the simulation must remain collapsed before auto-reset fires.
@@ -1340,7 +1341,7 @@ mod tests {
     }
 
     #[test]
-    fn test_only_river_and_smoke_resolve_to_wrap() {
+    fn test_only_river_smoke_mold_resolve_to_wrap() {
         use crate::simulation::config::{BoundaryMode, Preset};
         for spec in PRESETS {
             let a = args(&["--preset", spec.name]);
@@ -1349,7 +1350,7 @@ mod tests {
                 .expect("resolve")
                 .sim;
             let expected = match spec.preset {
-                Preset::River | Preset::Smoke => BoundaryMode::Wrap,
+                Preset::River | Preset::Smoke | Preset::Mold => BoundaryMode::Wrap,
                 _ => BoundaryMode::Bounce,
             };
             assert_eq!(

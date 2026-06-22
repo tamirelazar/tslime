@@ -287,6 +287,18 @@ impl From<Preset> for RenderArtDefaults {
             // ASCII-rendered vines: same sim as Vines, pure ASCII charset.
             Preset::Vinescii => Self {
                 charset: Some(Charset::Ascii),
+                auto_normalize: Some(true),
+                ..Self::default()
+            },
+            // Vines: auto-normalize keeps the slow climbing growth legible.
+            Preset::Vines => Self {
+                auto_normalize: Some(true),
+                ..Self::default()
+            },
+            // River: ocean water look with a Braille charset (accent frame is set sim-side).
+            Preset::River => Self {
+                charset: Some(Charset::Braille),
+                palette: Some(Palette::Ocean),
                 ..Self::default()
             },
             _ => Self::default(),
@@ -303,15 +315,15 @@ mod tests {
     /// The surviving "plain" presets that carry no art-on defaults (identity).
     /// Showcase presets (Lumen/Etching + the completion-pass set) are excluded:
     /// they carry art-on payloads, not identity.
-    const EXISTING_PRESETS: [Preset; 10] = [
+    // Presets with NO render-art overrides (back-compat identity set). River and
+    // Vines were given render mods (ocean/braille; auto-normalize) and so left this set.
+    const EXISTING_PRESETS: [Preset; 8] = [
         Preset::Tendrils,
-        Preset::River,
         Preset::PetriDish,
         Preset::Vortex,
         Preset::Lightning,
         Preset::ChaosEdge,
         Preset::Blob,
-        Preset::Vines,
         Preset::Vortex36,
         Preset::DynamicTendrils,
     ];
@@ -355,8 +367,8 @@ mod tests {
         let mosaic = RenderArtDefaults::from(Preset::Mosaic);
         assert!(mosaic.palette_cycle.cycles >= 2);
 
-        // Existing presets stay identity.
-        for p in [Preset::Tendrils, Preset::River, Preset::Blob] {
+        // Existing (unmodded) presets stay identity.
+        for p in [Preset::Tendrils, Preset::PetriDish, Preset::Blob] {
             let d = RenderArtDefaults::from(p);
             assert_eq!(d.temporal_color, 0.0);
             assert_eq!(d.palette, None);

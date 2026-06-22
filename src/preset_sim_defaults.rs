@@ -178,18 +178,11 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Balanced natural-looking growth (config.rs:437-445) — no species override
-            Preset::Organic => Self {
-                sensor_angle: 22.5,
-                sensor_distance: 9.0,
-                rotation_angle: 45.0,
-                step_size: 1.0,
-                decay_factor: 0.85,
-                diffusion_kernel: DiffusionKernel::Gaussian,
-                max_brightness: 20.0,
-                window_frame: WindowFrame::Accented,
-                ..Self::default()
-            },
+            // Organic is the launch default: its sim params ARE SimConfig::default()
+            // (PresetSimDefaults::default() mirrors them field-for-field). The Organic
+            // look is render-only (Braille + Vibrant in RenderArtDefaults); no sim
+            // deviation here, so a bare launch and `--preset organic` resolve identically.
+            Preset::Organic => Self::default(),
             // Fast flame-like patterns (config.rs:446-462)
             Preset::Fire => Self {
                 sensor_angle: 15.0,
@@ -217,6 +210,7 @@ impl From<Preset> for PresetSimDefaults {
                 decay_factor: 0.90,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 max_brightness: 18.0,
+                window_frame: WindowFrame::Accented,
                 boundary_mode: BoundaryMode::Wrap,
                 wind: Some(Wind::new(0.3, 0.0)),
                 species_configs: vec![SpeciesConfig {
@@ -559,20 +553,25 @@ impl From<Preset> for PresetSimDefaults {
             // (moves to RenderArtDefaults). Sim levers: deposit_curve, deposit_scale,
             // decay_gamma (config.rs:744-762)
             Preset::Mold => Self {
-                sensor_angle: 15.0,
-                rotation_angle: 30.0,
+                // Wider sensor + higher rotation + Wrap boundary sustain a branching
+                // network. The old 15°/30° + Bounce condensed the whole population onto
+                // one filament that hugged the walls/diagonal (visible "collapse").
+                // Wrap removes wall pile-up; persistence (decay 0.85) is preserved.
+                sensor_angle: 22.5,
+                rotation_angle: 50.0,
                 decay_factor: 0.85,
                 diffusion_kernel: DiffusionKernel::Mean3x3,
                 max_brightness: 20.0,
                 window_frame: WindowFrame::Accented,
+                boundary_mode: BoundaryMode::Wrap,
                 deposit_curve: DepositCurve::Sqrt,
                 deposit_scale: 1.5,
                 decay_gamma: 0.8,
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 50_000,
-                    sensor_angle: 15.0,
-                    rotation_angle: 30.0,
+                    sensor_angle: 22.5,
+                    rotation_angle: 50.0,
                     ..Default::default()
                 }],
                 ..Self::default()
@@ -974,10 +973,10 @@ mod tests {
     }
 
     #[test]
-    fn only_river_and_smoke_declare_boundary_wrap() {
+    fn only_river_smoke_mold_declare_boundary_wrap() {
         for spec in crate::simulation::config::PRESETS {
             let expected = match spec.preset {
-                Preset::River | Preset::Smoke => BoundaryMode::Wrap,
+                Preset::River | Preset::Smoke | Preset::Mold => BoundaryMode::Wrap,
                 _ => BoundaryMode::Bounce,
             };
             assert_eq!(

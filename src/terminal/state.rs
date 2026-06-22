@@ -1839,9 +1839,16 @@ impl RuntimeState {
 
     /// Tracks entropy for collapse detection.
     ///
-    /// Returns true if collapse detected (entropy > threshold for duration).
+    /// Collapse = the trail's brightness-value entropy (see
+    /// `DashboardOverlay::calculate_entropy`, range 0..8) drops *below* `threshold`
+    /// and stays there for `duration_frames`. A healthy pattern sits high (~4-6); a
+    /// dead/uniform field falls toward 0. Returns true once collapse is sustained.
+    ///
+    /// NOTE: the comparison is `<` (low entropy = collapse). An earlier `>` fired on
+    /// every healthy frame (entropy ~4-6 always exceeds the 0.95 default), which made
+    /// auto-reset presets (Constellation) restart roughly every `duration_frames`.
     pub fn track_entropy(&mut self, entropy: f32, threshold: f32, duration_frames: usize) -> bool {
-        if entropy > threshold {
+        if entropy < threshold {
             self.collapse_frame_counter += 1;
             self.collapse_frame_counter >= duration_frames
         } else {
@@ -2147,8 +2154,10 @@ mod tests {
             false,
             false,
         );
-        assert!(!state.track_entropy(5.0, 10.0, 5));
-        assert!(state.track_entropy(15.0, 10.0, 1));
+        // Collapse = entropy BELOW threshold. Above-threshold (healthy) never fires
+        // and resets the counter; sustained below-threshold fires.
+        assert!(!state.track_entropy(15.0, 10.0, 5)); // above threshold → healthy
+        assert!(state.track_entropy(5.0, 10.0, 1)); // below threshold → collapse
         state.reset_collapse_counter();
         assert_eq!(state.collapse_frame_counter, 0);
     }

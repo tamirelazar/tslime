@@ -28,7 +28,8 @@ pub(crate) struct AppRuntimeConfig {
     // ── auto-reset ──
     /// Enable automatic reset when the simulation collapses.
     pub auto_reset: bool,
-    /// Entropy threshold above which the simulation is considered collapsed.
+    /// Entropy threshold below which the simulation is considered collapsed
+    /// (brightness-value entropy is 0..8; healthy ~4-6, dead → 0).
     pub auto_reset_entropy_threshold: f32,
     /// Number of frames the simulation must remain collapsed before auto-reset fires.
     pub auto_reset_duration_frames: usize,

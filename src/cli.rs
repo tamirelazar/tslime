@@ -796,9 +796,12 @@ pub struct Args {
     #[arg(
         long = "preset",
         value_name = "NAME",
-        help = "Use named preset (see README or run without --preset for defaults); names are case-insensitive"
+        default_value = "organic",
+        help = "Use named preset (see README); defaults to 'organic'. Names are case-insensitive"
     )]
-    /// Named parameter preset.
+    /// Named parameter preset. A bare launch (no `--preset`) defaults to Organic,
+    /// so the default launch and `--preset organic` resolve identically — there is
+    /// no separate hard-coded default config set.
     pub preset: Option<Preset>,
 
     #[arg(
@@ -1602,7 +1605,7 @@ pub struct Args {
         long = "collapse-threshold",
         value_name = "FLOAT",
         default_value_t = auto_reset::DEFAULT_ENTROPY_THRESHOLD,
-        help = "Entropy threshold to detect collapse (0.0-1.0, higher = more sensitive)"
+        help = "Collapse when brightness entropy falls below this (range 0..8; healthy ~4-6, dead → 0; higher = more sensitive)"
     )]
     /// Entropy threshold for collapse detection.
     pub collapse_entropy_threshold: f32,
@@ -3170,7 +3173,13 @@ mod tests {
     #[test]
     fn resolve_color_aa_halfblock_default_is_off() {
         use crate::render::antialiasing::AaStrength;
-        let a = Args::parse_from(["tslime"]);
+        // HalfBlock is the default substrate charset. A clap-parsed bare launch is now
+        // Organic (charset Braille), so reach the halfblock path via struct-default
+        // Args (preset None bypasses the clap default and resolves the bare substrate).
+        let a = Args {
+            preset: None,
+            ..Default::default()
+        };
         let r = crate::profile::Profile::resolve_from_args(&a)
             .unwrap()
             .render;
