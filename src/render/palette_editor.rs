@@ -121,8 +121,9 @@ pub struct PaletteEditorState {
     pub base_palette_name: String,
     /// Whether the palette has been modified.
     pub is_modified: bool,
-    /// Input buffer for save dialog.
-    pub save_name_input: String,
+    /// Input buffer for save dialog. `tui_input::Input` tracks value + cursor for
+    /// mid-string editing (arrows/Home/End/Delete), not just append/backspace.
+    pub save_name_input: tui_input::Input,
     /// Index of the currently selected saved palette in load dialog.
     pub saved_palette_index: usize,
     /// List of saved palettes from storage.
@@ -155,7 +156,7 @@ impl PaletteEditorState {
             original_colors: colors,
             base_palette_name,
             is_modified: false,
-            save_name_input: String::new(),
+            save_name_input: tui_input::Input::default(),
             saved_palette_index: 0,
             saved_palettes_list: Vec::new(),
             stored_hues,
@@ -412,7 +413,7 @@ impl OverlayInputHandler for PaletteEditorState {
             KeyCode::Esc => {
                 match self.mode {
                     EditorMode::SaveDialog => {
-                        self.save_name_input.clear();
+                        self.save_name_input.reset();
                         self.mode = EditorMode::Editing;
                     }
                     EditorMode::LoadDialog => {
@@ -425,11 +426,21 @@ impl OverlayInputHandler for PaletteEditorState {
                 true
             }
             KeyCode::Left => {
-                self.select_prev_color();
+                if matches!(self.mode, EditorMode::SaveDialog) {
+                    self.save_name_input
+                        .handle(tui_input::InputRequest::GoToPrevChar);
+                } else {
+                    self.select_prev_color();
+                }
                 true
             }
             KeyCode::Right => {
-                self.select_next_color();
+                if matches!(self.mode, EditorMode::SaveDialog) {
+                    self.save_name_input
+                        .handle(tui_input::InputRequest::GoToNextChar);
+                } else {
+                    self.select_next_color();
+                }
                 true
             }
             KeyCode::Up => {
@@ -500,16 +511,16 @@ impl OverlayInputHandler for PaletteEditorState {
                         return false; // Signal to apply and close
                     }
                     EditorMode::SaveDialog => {
-                        if !self.save_name_input.is_empty() {
+                        if !self.save_name_input.value().is_empty() {
                             let palette = palette_manager::SavedPalette::new(
-                                self.save_name_input.clone(),
+                                self.save_name_input.value().to_string(),
                                 self.colors,
                             );
                             if let Err(e) = palette_manager::save_palette(palette) {
                                 eprintln!("Failed to save palette: {}", e);
                             }
                         }
-                        self.save_name_input.clear();
+                        self.save_name_input.reset();
                         self.mode = EditorMode::Editing;
                     }
                     EditorMode::LoadDialog => {
@@ -530,8 +541,9 @@ impl OverlayInputHandler for PaletteEditorState {
                 if matches!(self.mode, EditorMode::SaveDialog)
                     && !key.modifiers.contains(KeyModifiers::CONTROL)
                 {
-                    if self.save_name_input.len() < 24 {
-                        self.save_name_input.push(c);
+                    if self.save_name_input.value().chars().count() < 24 {
+                        self.save_name_input
+                            .handle(tui_input::InputRequest::InsertChar(c));
                     }
                     true
                 } else {
@@ -540,7 +552,35 @@ impl OverlayInputHandler for PaletteEditorState {
             }
             KeyCode::Backspace => {
                 if matches!(self.mode, EditorMode::SaveDialog) {
-                    self.save_name_input.pop();
+                    self.save_name_input
+                        .handle(tui_input::InputRequest::DeletePrevChar);
+                    true
+                } else {
+                    false
+                }
+            }
+            KeyCode::Delete => {
+                if matches!(self.mode, EditorMode::SaveDialog) {
+                    self.save_name_input
+                        .handle(tui_input::InputRequest::DeleteNextChar);
+                    true
+                } else {
+                    false
+                }
+            }
+            KeyCode::Home => {
+                if matches!(self.mode, EditorMode::SaveDialog) {
+                    self.save_name_input
+                        .handle(tui_input::InputRequest::GoToStart);
+                    true
+                } else {
+                    false
+                }
+            }
+            KeyCode::End => {
+                if matches!(self.mode, EditorMode::SaveDialog) {
+                    self.save_name_input
+                        .handle(tui_input::InputRequest::GoToEnd);
                     true
                 } else {
                     false
@@ -867,7 +907,7 @@ impl PaletteEditorOverlay {
     ) -> RenderedOverlay {
         match state.mode {
             EditorMode::Editing => Self::build_editing_overlay(state, panel_style, accent),
-            EditorMode::SaveDialog => Self::build_save_dialog_overlay(state),
+            EditorMode::SaveDialog => Self::build_save_dialog_overlay(state, panel_style),
             EditorMode::LoadDialog => {
                 Self::build_load_dialog_overlay(state, &state.saved_palettes_list)
             }
@@ -955,10 +995,15 @@ impl PaletteEditorOverlay {
         overlay
     }
 
-    fn build_save_dialog_overlay(state: &PaletteEditorState) -> RenderedOverlay {
-        let name_str = format!("Name: {:<25}", state.save_name_input);
+    fn build_save_dialog_overlay(
+        state: &PaletteEditorState,
+        panel_style: &crate::render::theme::PanelStyle,
+    ) -> RenderedOverlay {
+        const LABEL: &str = "Name: ";
+        const FIELD_WIDTH: usize = 25;
+        let name_str = format!("{LABEL}{:<FIELD_WIDTH$}", state.save_name_input.value());
 
-        PanelBuilder::new(38, None)
+        let mut overlay = PanelBuilder::new(38, None)
             .with_padding(Padding::COMPACT)
             .with_title("SAVE PALETTE")
             .with_title_box()
@@ -969,7 +1014,17 @@ impl PaletteEditorOverlay {
                 "  Enter: Save    Esc: Cancel".to_string(),
                 TextAlignment::Left,
             )
-            .build_overlay()
+            .build_overlay();
+
+        // tui_input-backed caret (same helper as the config-save dialog).
+        crate::render::ratatui_adapter::stamp_caret(
+            &mut overlay,
+            LABEL,
+            FIELD_WIDTH,
+            state.save_name_input.cursor(),
+            panel_style,
+        );
+        overlay
     }
 
     fn build_load_dialog_overlay(
@@ -986,7 +1041,17 @@ impl PaletteEditorOverlay {
             builder =
                 builder.add_single("  No saved palettes yet".to_string(), TextAlignment::Left);
         } else {
-            for (i, palette) in saved_palettes.iter().enumerate().take(8) {
+            // ratatui ListState keeps the selection visible — fixes the old take(8)
+            // truncation that hid palettes past the 8th when one was selected.
+            const MAX_VISIBLE: usize = 8;
+            let total = saved_palettes.len();
+            let start = crate::render::ratatui_adapter::list_scroll_offset(
+                total,
+                state.saved_palette_index,
+                MAX_VISIBLE,
+            );
+            let end = (start + MAX_VISIBLE).min(total);
+            for (i, palette) in saved_palettes.iter().enumerate().take(end).skip(start) {
                 let marker = if i == state.saved_palette_index {
                     "›"
                 } else {
@@ -1421,5 +1486,45 @@ mod tests {
                 i
             );
         }
+    }
+
+    #[test]
+    fn save_dialog_renders_caret() {
+        let mut state = PaletteEditorState::new(&Palette::Forest);
+        state.mode = EditorMode::SaveDialog;
+        state.save_name_input = tui_input::Input::new("abc".to_string());
+        let style = crate::render::theme::PanelStyle::default();
+        let overlay =
+            PaletteEditorOverlay::build_overlay(&state, &style, RgbColor::new(255, 128, 0));
+        let text = overlay.lines.join("\n");
+        assert!(text.contains("Name: abc"), "field text missing:\n{text}");
+        let rich = overlay
+            .rich_lines
+            .expect("save dialog needs caret rich_lines");
+        let caret = rich
+            .iter()
+            .flatten()
+            .filter(|c| c.2 == Some(style.accent_active))
+            .count();
+        assert_eq!(caret, 1, "expected exactly one caret cell");
+    }
+
+    #[test]
+    fn load_dialog_keeps_selection_visible() {
+        // 15 palettes, select the last: the old take(8) hid it; ListState windows to it.
+        let mut state = PaletteEditorState::new(&Palette::Forest);
+        state.mode = EditorMode::LoadDialog;
+        state.saved_palettes_list = (0..15)
+            .map(|i| palette_manager::SavedPalette::new(format!("pal{i:02}"), state.colors))
+            .collect();
+        state.saved_palette_index = 14;
+        let style = crate::render::theme::PanelStyle::default();
+        let overlay =
+            PaletteEditorOverlay::build_overlay(&state, &style, RgbColor::new(255, 128, 0));
+        let text = overlay.lines.join("\n");
+        assert!(
+            text.contains("pal14"),
+            "selected last palette must stay visible (old take(8) bug):\n{text}"
+        );
     }
 }

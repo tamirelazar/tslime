@@ -85,7 +85,7 @@ const BROWSER_CONTENT_WIDTH: usize = 50;
 /// Max config rows shown at once.
 const BROWSER_MAX_VISIBLE: usize = 9;
 
-/// Format one config row body (no selection marker — the `List` adds that).
+/// Format one config row body (no selection marker — the caller adds that).
 fn config_row_text(index: usize, c: &NamedProfile) -> String {
     let palette = c
         .overrides
@@ -97,25 +97,63 @@ fn config_row_text(index: usize, c: &NamedProfile) -> String {
     format!("{} {} - {} - {}k agents", index + 1, c.name, palette, pop)
 }
 
-/// Read a single buffer row back as trimmed text.
-fn row_text(buf: &Buffer, y: u16) -> String {
-    let area = buf.area;
-    let mut s = String::with_capacity(area.width as usize);
-    for x in 0..area.width {
-        s.push(buf[(x, y)].symbol().chars().next().unwrap_or(' '));
+/// Index of the first visible row so `selected` stays on-screen, computed by ratatui's
+/// `ListState` — the same "keep selection visible" logic its `List` widget uses.
+///
+/// This replaces the hand-rolled scroll-window arithmetic
+/// (`ConfigBrowserOverlay::config_browser_window`) and fixes the palette load dialog's
+/// `take(N)` truncation, which hid selections past the window. We render `total` blank
+/// items into a detached 1×`max_visible` buffer and read back the settled offset.
+pub fn list_scroll_offset(total: usize, selected: usize, max_visible: usize) -> usize {
+    if total <= max_visible || max_visible == 0 {
+        return 0;
     }
-    s.trim_end().to_string()
+    let area = Rect::new(0, 0, 1, max_visible as u16);
+    let mut buf = Buffer::empty(area);
+    let items: Vec<ListItem> = (0..total).map(|_| ListItem::new(" ")).collect();
+    let mut state = ListState::default();
+    state.select(Some(selected.min(total - 1)));
+    StatefulWidget::render(List::new(items), area, &mut buf, &mut state);
+    state.offset()
+}
+
+/// Stamp a block caret onto a built dialog overlay's editable field. Locates `label`
+/// in the overlay lines and highlights the cell at `label_end + cursor`, so callers keep
+/// their own `PanelBuilder` chrome and just delegate caret placement. `field_width`
+/// clamps the cursor. Caret = `accent_active` background, `bg_color` foreground.
+pub fn stamp_caret(
+    overlay: &mut RenderedOverlay,
+    label: &str,
+    field_width: usize,
+    cursor: usize,
+    style: &PanelStyle,
+) {
+    let cursor = cursor.min(field_width.saturating_sub(1));
+    let mut rich: Vec<Vec<RichCell>> = overlay
+        .lines
+        .iter()
+        .map(|l| l.chars().map(|c| (c, None, None)).collect())
+        .collect();
+    if let Some((row_idx, row)) = overlay
+        .lines
+        .iter()
+        .enumerate()
+        .find(|(_, l)| l.contains(label))
+    {
+        // `find` returns a byte index; labels here are ASCII so it equals the char index.
+        let label_start = row.find(label).unwrap_or(0);
+        let caret_col = label_start + label.chars().count() + cursor;
+        if let Some(cell) = rich.get_mut(row_idx).and_then(|r| r.get_mut(caret_col)) {
+            cell.1 = Some(style.bg_color);
+            cell.2 = Some(style.accent_active);
+        }
+    }
+    overlay.rich_lines = Some(rich);
 }
 
 /// Option-B config browser: **chrome is the existing `PanelBuilder`** (title box,
-/// block border, footer — pixel-identical to the current app), while the scrolling
-/// list window is driven by a ratatui `List` + `ListState`.
-///
-/// `ListState` owns the scroll offset and the "keep selection visible" logic that is
-/// hand-rolled today in `ConfigBrowserOverlay::config_browser_window`. We render the
-/// full list into a detached buffer sized to the visible region, read back the rows
-/// ratatui chose to show, and feed them — plus `▲ N above` / `▼ N below` indicators
-/// derived from `ListState::offset()` — into the unchanged panel chrome.
+/// block border, footer — pixel-identical to the current app), while the scroll window
+/// is driven by [`list_scroll_offset`] (ratatui `ListState`) instead of hand-rolled math.
 pub fn build_config_browser(configs: &[NamedProfile], selected: usize) -> RenderedOverlay {
     use TextAlignment::Left;
 
@@ -137,38 +175,17 @@ pub fn build_config_browser(configs: &[NamedProfile], selected: usize) -> Render
 
     let total = configs.len();
     let selected = selected.min(total - 1);
-
-    // ── ratatui owns the scroll window ──────────────────────────────────────
-    let area = Rect::new(
-        0,
-        0,
-        BROWSER_CONTENT_WIDTH as u16,
-        BROWSER_MAX_VISIBLE as u16,
-    );
-    let mut buf = Buffer::empty(area);
-    let items: Vec<ListItem> = configs
-        .iter()
-        .enumerate()
-        .map(|(i, c)| ListItem::new(config_row_text(i, c)))
-        .collect();
-    // highlight_symbol "›" mirrors the app; non-selected rows get a leading space so
-    // numbers stay aligned. No highlight_style → marker-only selection (matches app).
-    let list = List::new(items).highlight_symbol("›");
-    let mut list_state = ListState::default();
-    list_state.select(Some(selected));
-    StatefulWidget::render(list, area, &mut buf, &mut list_state);
-
-    let start = list_state.offset();
+    let start = list_scroll_offset(total, selected, BROWSER_MAX_VISIBLE);
     let end = (start + BROWSER_MAX_VISIBLE).min(total);
 
-    // ── feed ratatui's chosen rows into the unchanged PanelBuilder chrome ────
     if start > 0 {
         builder = builder.add_single(format!("▲ {} above", start), Left);
     } else {
         builder = builder.add_empty();
     }
-    for y in 0..(end - start) as u16 {
-        builder = builder.add_single(row_text(&buf, y), Left);
+    for (i, c) in configs.iter().enumerate().skip(start).take(end - start) {
+        let marker = if i == selected { "›" } else { " " };
+        builder = builder.add_single(format!("{marker}{}", config_row_text(i, c)), Left);
     }
     if end < total {
         builder = builder.add_single(format!("▼ {} below", total - end), Left);
@@ -188,18 +205,15 @@ const SAVE_CONTENT_WIDTH: usize = 34;
 /// Visible width of the editable name field.
 const SAVE_FIELD_WIDTH: usize = 25;
 
-/// Option-B save dialog: PanelBuilder chrome (identical to `ConfigSaveOverlay`) plus a
-/// `tui_input`-backed editable field that renders a **block caret** at the cursor.
-///
-/// `value`/`cursor` come from `tui_input::Input` (char-indexed cursor), so the field
-/// supports mid-string insert/delete and Home/End/arrows — the hand-rolled version only
-/// did append + backspace with the cursor pinned to the end.
+/// Option-B config-save dialog: PanelBuilder chrome plus a `tui_input`-backed editable
+/// field with a block caret ([`stamp_caret`]). `value`/`cursor` come from
+/// `tui_input::Input`, enabling mid-string insert/delete and Home/End/arrows — the
+/// hand-rolled version only did append + backspace with the cursor pinned to the end.
 pub fn build_config_save(value: &str, cursor: usize, style: &PanelStyle) -> RenderedOverlay {
     use TextAlignment::Left;
 
     const LABEL: &str = "Name: ";
-    let field = format!("{value:<SAVE_FIELD_WIDTH$}");
-    let name_line = format!("{LABEL}{field}");
+    let name_line = format!("{LABEL}{value:<SAVE_FIELD_WIDTH$}");
 
     let mut overlay = PanelBuilder::new(SAVE_CONTENT_WIDTH, None)
         .with_padding(Padding::new(0, 0, 1, 1))
@@ -212,32 +226,7 @@ pub fn build_config_save(value: &str, cursor: usize, style: &PanelStyle) -> Rend
         .add_single("Enter: Save    Esc: Cancel", Left)
         .build_overlay();
 
-    // Place a block caret via rich_lines: find the name row, then the column just past
-    // the label plus the (char-indexed) cursor. Locating by label text keeps this robust
-    // to PanelBuilder's border/padding offsets.
-    let cursor = cursor.min(SAVE_FIELD_WIDTH.saturating_sub(1));
-    let caret_bg = style.accent_active;
-    let caret_fg = style.bg_color;
-    let mut rich: Vec<Vec<RichCell>> = overlay
-        .lines
-        .iter()
-        .map(|l| l.chars().map(|c| (c, None, None)).collect())
-        .collect();
-    if let Some((row_idx, row)) = overlay
-        .lines
-        .iter()
-        .enumerate()
-        .find(|(_, l)| l.contains(LABEL))
-    {
-        let label_start = row.chars().collect::<String>().find(LABEL).unwrap_or(0);
-        // find() returns a byte index; LABEL is ASCII so it equals the char index here.
-        let caret_col = label_start + LABEL.chars().count() + cursor;
-        if let Some(cell) = rich.get_mut(row_idx).and_then(|r| r.get_mut(caret_col)) {
-            cell.1 = Some(caret_fg);
-            cell.2 = Some(caret_bg);
-        }
-    }
-    overlay.rich_lines = Some(rich);
+    stamp_caret(&mut overlay, LABEL, SAVE_FIELD_WIDTH, cursor, style);
     overlay
 }
 
