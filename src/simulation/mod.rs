@@ -240,10 +240,11 @@ impl Simulation {
         }
 
         if let Some(ref layout) = constellation_layout {
+            let scale = config.max_brightness;
             for tm in &mut trail_maps {
                 let cur = tm.current_mut();
                 for (c, &t) in cur.iter_mut().zip(layout.template.iter()) {
-                    *c = c.max(t);
+                    *c = c.max(t * scale);
                 }
             }
         }
@@ -1022,9 +1023,10 @@ impl Simulation {
             if self.config.constellation_restamp_floor > 0.0 {
                 if let Some(ref template) = self.constellation_template {
                     let floor = self.config.constellation_restamp_floor;
+                    let scale = self.config.max_brightness;
                     let cur = trail_map.current_mut();
                     for (c, &t) in cur.iter_mut().zip(template.iter()) {
-                        *c = c.max(t * floor);
+                        *c = c.max(t * scale * floor);
                     }
                 }
             }
@@ -1160,10 +1162,11 @@ impl Simulation {
             trail_map.clear();
         }
         if let Some(ref layout) = constellation_layout {
+            let scale = self.config.max_brightness;
             for tm in &mut self.trail_maps {
                 let cur = tm.current_mut();
                 for (c, &t) in cur.iter_mut().zip(layout.template.iter()) {
-                    *c = c.max(t);
+                    *c = c.max(t * scale);
                 }
             }
         }
@@ -2217,48 +2220,57 @@ mod tests {
     }
 
     // No agents; only re-stamp can maintain the figure against decay.
-    // With agents (count: 500) the trail is maintained by deposits — use
-    // count: 0 to isolate the re-stamp mechanism for a clean TDD RED → GREEN.
+    // count: 0 isolates the re-stamp mechanism — no agent deposits in play.
     #[test]
     fn static_restamp_reinforces_figure_drift_does_not() {
+        // scale == SimConfig::default().max_brightness (100.0).  Template values
+        // live in 0..=1; after pre-seeding they are scaled to trail-brightness
+        // units (0..=scale).  Re-stamp floor 1.0 means every cell is held at
+        // >= tval * scale * 1.0 each frame.
+        let scale = SimConfig::default().max_brightness;
         let mut cfg = SimConfig {
             species_configs: vec![SpeciesConfig {
                 count: 0,
                 ..Default::default()
             }],
-            constellation_restamp_floor: 0.5,
+            constellation_restamp_floor: 1.0,
             ..Default::default()
         };
         let mut stat = Simulation::new(160, 100, cfg.clone(), 5, InitMode::Constellation, 0);
         let template = stat.constellation_template.clone().unwrap();
-        // Find a template-bright cell.
+        // Find the brightest template cell.
         let (idx, &tval) = template
             .iter()
             .enumerate()
             .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
             .unwrap();
-        // Run several frames; static must keep that cell at >= template*floor.
+        // Run 20 frames; static re-stamp (floor 1.0) must hold the cell.
         for _ in 0..20 {
             stat.update(1.0);
         }
+        let held = stat.trail_maps[0].current()[idx];
         assert!(
-            stat.trail_maps[0].current()[idx] >= tval * 0.5 - 1e-3,
-            "static re-stamp did not hold the figure"
+            held >= tval * scale * 1.0 - 1e-3,
+            "static re-stamp did not hold the figure (held={held}, expected>={e})",
+            e = tval * scale * 1.0 - 1e-3
+        );
+        // Scaling sanity: value must be well above 1.0 — the old (unscaled) bug left it <= 1.0.
+        assert!(
+            held > 1.5,
+            "scaling bug: held={held} should be >> 1.0 (scale={scale})"
         );
 
-        // Drift (floor 0.0) does NOT re-stamp: same field decays freely.
+        // Drift (floor 0.0) does NOT re-stamp: the figure decays freely.
         cfg.constellation_restamp_floor = 0.0;
         let mut drift = Simulation::new(160, 100, cfg, 5, InitMode::Constellation, 0);
         for _ in 0..20 {
             drift.update(1.0);
         }
-        // No assertion of growth — just that it runs without re-stamping (smoke).
         assert!(drift.constellation_template.is_some());
-        // Real invariant: drift (floor 0.0) never re-stamps, so the cell must have
-        // decayed significantly below the static-reinforced value.
+        // After 20 frames of decay-only the cell must sit below the static floor.
         assert!(
-            drift.trail_maps[0].current()[idx] < tval * 0.5 - 1e-3,
-            "drift (floor 0.0) must not re-stamp: cell should decay below static floor"
+            drift.trail_maps[0].current()[idx] < tval * scale * 1.0,
+            "drift (floor 0.0) must not re-stamp: cell should have decayed"
         );
     }
 }

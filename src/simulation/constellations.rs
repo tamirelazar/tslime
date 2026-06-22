@@ -175,12 +175,12 @@ pub fn build_layout(
 
     let mut template = vec![0.0f32; width * height];
 
-    // Stars: Gaussian glow (sigma ~ 2.5px).
-    let star_sigma = 2.5f32;
+    // Stars: Gaussian glow (sigma 2.2px, peak 1.0).
+    let star_sigma = 2.2f32;
     for &(sx, sy) in &stars_px {
         stamp_gaussian(&mut template, width, height, sx, sy, star_sigma, 1.0);
     }
-    // Edges: anti-aliased line, sampled densely, thin glow per sample.
+    // Edges: anti-aliased line, sampled densely, thin glow per sample (sigma 0.55, peak 0.45).
     for &(a, b) in &edges {
         let (ax, ay) = stars_px[a];
         let (bx, by) = stars_px[b];
@@ -190,7 +190,7 @@ pub fn build_layout(
             let t = s as f32 / steps as f32;
             let x = ax + (bx - ax) * t;
             let y = ay + (by - ay) * t;
-            stamp_gaussian(&mut template, width, height, x, y, 1.0, 0.7);
+            stamp_gaussian(&mut template, width, height, x, y, 0.55, 0.45);
         }
     }
     // Clamp to 0..1.
