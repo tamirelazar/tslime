@@ -2250,5 +2250,11 @@ mod tests {
         }
         // No assertion of growth — just that it runs without re-stamping (smoke).
         assert!(drift.constellation_template.is_some());
+        // Real invariant: drift (floor 0.0) never re-stamps, so the cell must have
+        // decayed significantly below the static-reinforced value.
+        assert!(
+            drift.trail_maps[0].current()[idx] < tval * 0.5 - 1e-3,
+            "drift (floor 0.0) must not re-stamp: cell should decay below static floor"
+        );
     }
 }
