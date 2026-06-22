@@ -708,9 +708,13 @@ impl DirtyGuardOverlay {
     }
 
     /// Calculates center position for the guard dialog.
+    ///
+    /// The overlay is 7 visible rows tall: 6 main-panel lines (top border + 4 content
+    /// rows + bottom border) plus 1 title-box line drawn one row above. Subtracting 7
+    /// keeps the dialog vertically centred.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::TOTAL_WIDTH)) / 2;
-        let y = (term_height.saturating_sub(5)) / 2;
+        let y = (term_height.saturating_sub(7)) / 2;
         (x, y)
     }
 }
