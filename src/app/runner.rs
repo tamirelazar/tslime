@@ -84,6 +84,17 @@ fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeStat
     }
 }
 
+/// The init mode to actually seed with. Constellation re-rolls a fresh random
+/// mode each reset; every other preset uses its stable baseline. Does NOT mutate
+/// config or `original_init_mode`, so dirty-projection stays clean.
+pub(crate) fn effective_init_mode(preset: Preset, base: InitMode) -> InitMode {
+    if matches!(preset, Preset::Constellation) {
+        InitMode::random(&mut rand::thread_rng())
+    } else {
+        base
+    }
+}
+
 /// Checks if simulation should auto-reset based on entropy collapse.
 ///
 /// Monitors entropy levels and resets the simulation if it collapses
@@ -107,7 +118,11 @@ fn check_auto_reset(sim: &mut Simulation, runtime_state: &mut RuntimeState, entr
 
         // Use the live original init mode (the apply seam updates it on restart),
         // NOT the startup `init_mode` local which is stale after a config load.
-        let init_mode = runtime_state.original_init_mode;
+        // Constellation re-rolls a fresh layout each reset (non-mutating).
+        let init_mode = effective_init_mode(
+            runtime_state.current_preset,
+            runtime_state.original_init_mode,
+        );
         sim.reset(new_seed, init_mode);
         runtime_state.reset_collapse_counter();
         runtime_state.reset_warmup();
@@ -1687,10 +1702,13 @@ pub fn run_simulation(
                             }
                         }
                         ControlAction::Restart => {
-                            sim.reset(
-                                runtime_state.original_seed,
+                            // Constellation re-rolls a fresh layout each reset
+                            // (non-mutating: original_init_mode is untouched).
+                            let init_mode = effective_init_mode(
+                                runtime_state.current_preset,
                                 runtime_state.original_init_mode,
                             );
+                            sim.reset(runtime_state.original_seed, init_mode);
                         }
                         ControlAction::SetPreset(preset) => {
                             // Dirty live edits → park the swap behind the guard;

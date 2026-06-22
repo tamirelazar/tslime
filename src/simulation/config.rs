@@ -420,6 +420,26 @@ pub enum InitMode {
     Petri,
 }
 
+impl InitMode {
+    /// Uniformly pick any init mode. Used by presets (e.g. Constellation) that
+    /// re-roll their starting layout on each reset.
+    pub fn random(rng: &mut impl rand::Rng) -> Self {
+        use InitMode::*;
+        const ALL: [InitMode; 9] = [
+            Random,
+            CentralBurst,
+            Circle,
+            Gradient,
+            WaveFront,
+            Spiral,
+            RandomClusters,
+            Food,
+            Petri,
+        ];
+        ALL[rng.gen_range(0..ALL.len())]
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 /// Types of terrain-based steering bias.
 pub enum TerrainType {
@@ -1677,6 +1697,30 @@ impl TryFrom<String> for TerminalSizeThreshold {
 mod tests {
     use super::*;
     use std::f32::consts::PI;
+
+    #[test]
+    fn init_mode_random_covers_all_over_many_draws() {
+        use rand::SeedableRng;
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(42);
+        const ALL: [InitMode; 9] = [
+            InitMode::Random,
+            InitMode::CentralBurst,
+            InitMode::Circle,
+            InitMode::Gradient,
+            InitMode::WaveFront,
+            InitMode::Spiral,
+            InitMode::RandomClusters,
+            InitMode::Food,
+            InitMode::Petri,
+        ];
+        let mut seen = [false; 9];
+        for _ in 0..1000 {
+            let m = InitMode::random(&mut rng);
+            let i = ALL.iter().position(|x| *x == m).unwrap();
+            seen[i] = true;
+        }
+        assert!(seen.iter().all(|&s| s), "every InitMode should appear");
+    }
 
     #[test]
     fn test_default_config() {

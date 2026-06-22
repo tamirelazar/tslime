@@ -338,8 +338,15 @@ pub(crate) fn apply_overrides(
         let init = profile.sim.preferred_init_mode.unwrap_or(InitMode::Food);
         let seed = profile.seed.unwrap_or_else(fresh_seed);
         rs.original_seed = seed;
+        // Baseline stays the preset's preferred mode (non-mutating w.r.t. the
+        // reroll) so dirty-projection sees no permanent edit.
         rs.original_init_mode = init;
-        sim.reset(seed, init);
+        // Constellation re-rolls a fresh layout on this (re-)seed. The preset being
+        // applied comes from the overrides; fall back to the live preset for config
+        // loads / resets that don't pin a preset.
+        let effective_preset = ov.preset.unwrap_or(rs.current_preset);
+        let effective_init = crate::app::runner::effective_init_mode(effective_preset, init);
+        sim.reset(seed, effective_init);
     }
 
     timer.set_time_scale(rs.time_scale);
