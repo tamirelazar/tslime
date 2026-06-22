@@ -402,6 +402,13 @@ pub mod grid {
     pub const DEFAULT_GRID_OPACITY: f32 = 0.15;
     /// Default grid line style.
     pub const DEFAULT_GRID_STYLE: &str = "cross";
+    /// Default grid line color as a packed `0xRRGGBB` value (matches
+    /// [`super::palette::DEFAULT_GRID_COLOR`] = "ffffff").
+    pub const DEFAULT_GRID_COLOR_HEX: u32 = 0xffffff;
+    /// Whether the background grid is enabled by default.
+    pub const DEFAULT_GRID_ENABLED: bool = false;
+    /// Whether grid opacity adapts to trail density by default.
+    pub const DEFAULT_GRID_ADAPTIVE: bool = false;
 
     /// Minimum grid size.
     pub const MIN_GRID_SIZE: usize = 1;
@@ -576,6 +583,8 @@ pub mod warmup {
     pub const DEFAULT_WARMUP_FRAMES: usize = 60;
     /// Default brightness multiplier during warmup.
     pub const DEFAULT_BRIGHTNESS_MULTIPLIER: f32 = 2.5;
+    /// Whether the warmup phase is skipped by default.
+    pub const DEFAULT_SKIP_WARMUP: bool = false;
     /// Default decay factor during warmup.
     pub const DEFAULT_DECAY_FACTOR: f32 = 0.99;
     /// Speed multiplier during warmup (30% of normal speed).
@@ -596,6 +605,8 @@ pub mod food_persist {
 
 /// Auto-reset defaults.
 pub mod auto_reset {
+    /// Whether automatic reset on collapse is enabled by default.
+    pub const DEFAULT_AUTO_RESET: bool = false;
     /// Default entropy threshold for collapse detection.
     pub const DEFAULT_ENTROPY_THRESHOLD: f32 = 0.95;
     /// Default number of frames below threshold before reset.

@@ -60,24 +60,21 @@ impl Default for AppRuntimeConfig {
     fn default() -> Self {
         use crate::config_defaults::{auto_reset, food_persist, grid, warmup};
 
-        // grid_color: config_defaults::palette::DEFAULT_GRID_COLOR is "ffffff" hex.
-        let grid_color = RgbColor::from_hex(0xffffff);
-
         Self {
             warmup_frames: warmup::DEFAULT_WARMUP_FRAMES,
-            skip_warmup: false,
+            skip_warmup: warmup::DEFAULT_SKIP_WARMUP,
             warmup_brightness_multiplier: warmup::DEFAULT_BRIGHTNESS_MULTIPLIER,
 
-            auto_reset: false,
+            auto_reset: auto_reset::DEFAULT_AUTO_RESET,
             auto_reset_entropy_threshold: auto_reset::DEFAULT_ENTROPY_THRESHOLD,
             auto_reset_duration_frames: auto_reset::DEFAULT_DURATION_FRAMES,
 
-            grid: false,
+            grid: grid::DEFAULT_GRID_ENABLED,
             grid_style: GridStyle::Cross,
             grid_size: grid::DEFAULT_GRID_SIZE,
-            grid_color,
+            grid_color: RgbColor::from_hex(grid::DEFAULT_GRID_COLOR_HEX),
             grid_opacity: grid::DEFAULT_GRID_OPACITY,
-            grid_adaptive: false,
+            grid_adaptive: grid::DEFAULT_GRID_ADAPTIVE,
 
             food_persist_strength: food_persist::DEFAULT_STRENGTH,
             food_persist_radius: food_persist::DEFAULT_RADIUS,
@@ -95,12 +92,12 @@ mod tests {
         use crate::config_defaults::{auto_reset, food_persist, grid, warmup};
         let cfg = AppRuntimeConfig::default();
         assert_eq!(cfg.warmup_frames, warmup::DEFAULT_WARMUP_FRAMES);
-        assert!(!cfg.skip_warmup);
+        assert_eq!(cfg.skip_warmup, warmup::DEFAULT_SKIP_WARMUP);
         assert_eq!(
             cfg.warmup_brightness_multiplier,
             warmup::DEFAULT_BRIGHTNESS_MULTIPLIER
         );
-        assert!(!cfg.auto_reset);
+        assert_eq!(cfg.auto_reset, auto_reset::DEFAULT_AUTO_RESET);
         assert_eq!(
             cfg.auto_reset_entropy_threshold,
             auto_reset::DEFAULT_ENTROPY_THRESHOLD
@@ -109,11 +106,15 @@ mod tests {
             cfg.auto_reset_duration_frames,
             auto_reset::DEFAULT_DURATION_FRAMES
         );
-        assert!(!cfg.grid);
+        assert_eq!(cfg.grid, grid::DEFAULT_GRID_ENABLED);
         assert_eq!(cfg.grid_style, GridStyle::Cross);
         assert_eq!(cfg.grid_size, grid::DEFAULT_GRID_SIZE);
+        assert_eq!(
+            cfg.grid_color,
+            RgbColor::from_hex(grid::DEFAULT_GRID_COLOR_HEX)
+        );
         assert_eq!(cfg.grid_opacity, grid::DEFAULT_GRID_OPACITY);
-        assert!(!cfg.grid_adaptive);
+        assert_eq!(cfg.grid_adaptive, grid::DEFAULT_GRID_ADAPTIVE);
         assert_eq!(cfg.food_persist_strength, food_persist::DEFAULT_STRENGTH);
         assert_eq!(cfg.food_persist_radius, food_persist::DEFAULT_RADIUS);
         assert_eq!(cfg.food_persist_duration, food_persist::DEFAULT_DURATION);
