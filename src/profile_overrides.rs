@@ -1349,7 +1349,7 @@ mod tests {
                 .expect("resolve")
                 .sim;
             let expected = match spec.preset {
-                Preset::River | Preset::Ripple => BoundaryMode::Wrap,
+                Preset::River | Preset::Smoke => BoundaryMode::Wrap,
                 _ => BoundaryMode::Bounce,
             };
             assert_eq!(
@@ -1363,7 +1363,7 @@ mod tests {
     #[test]
     fn test_ripple_and_river_declare_boundary_wrap() {
         use crate::simulation::config::BoundaryMode;
-        for name in ["ripple", "river"] {
+        for name in ["smoke", "river"] {
             let c = resolve(&["--preset", name]).sim;
             assert_eq!(
                 c.boundary_mode,
@@ -1376,7 +1376,7 @@ mod tests {
     #[test]
     fn test_cli_boundary_mode_overrides_preset_wrap() {
         use crate::simulation::config::BoundaryMode;
-        let c = resolve(&["--preset", "ripple", "--boundary-mode", "bounce"]).sim;
+        let c = resolve(&["--preset", "smoke", "--boundary-mode", "bounce"]).sim;
         assert_eq!(c.boundary_mode, BoundaryMode::Bounce);
     }
 

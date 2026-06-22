@@ -141,7 +141,7 @@ impl From<Preset> for RenderArtDefaults {
         // color on the palette gradient (no foreign hand-picked hues, no
         // off-palette hue rotation).
         match preset {
-            Preset::Lumen => Self {
+            Preset::Mold => Self {
                 temporal_color: 0.5,
                 temporal_lag_frames: 8.0,
                 temporal_mode: TemporalMode::Accent,
@@ -273,29 +273,29 @@ mod tests {
         Preset::Lightning,
         Preset::ChaosEdge,
         Preset::Blob,
-        Preset::Pulse,
-        Preset::Flocking,
-        Preset::Ripple,
+        Preset::Slime,
+        Preset::Vines,
+        Preset::Smoke,
         Preset::Vortex36,
         Preset::DynamicTendrils,
     ];
 
     #[test]
     fn showcase_presets_have_art_on() {
-        let lumen = RenderArtDefaults::from(Preset::Lumen);
-        assert!(lumen.temporal_color > 0.0);
+        let mold = RenderArtDefaults::from(Preset::Mold);
+        assert!(mold.temporal_color > 0.0);
         assert_eq!(
-            lumen.temporal_mode,
+            mold.temporal_mode,
             crate::render::palette::TemporalMode::Accent
         );
         // Showcase presets blend toward their OWN palette's vivid stop, so the
         // accent is intentionally None (palette-derived, not a foreign hue).
-        assert_eq!(lumen.temporal_accent, None);
-        assert_eq!(lumen.palette, Some(crate::render::palette::Palette::Slime));
+        assert_eq!(mold.temporal_accent, None);
+        assert_eq!(mold.palette, Some(crate::render::palette::Palette::Slime));
 
         // All showcase presets use palette-coherent Accent mode (no hue-mode
         // drift off the gradient).
-        for p in [Preset::Lumen, Preset::Etching] {
+        for p in [Preset::Mold, Preset::Etching] {
             let d = RenderArtDefaults::from(p);
             assert_eq!(
                 d.temporal_mode,
@@ -359,7 +359,7 @@ mod tests {
             Preset::Network,
             Preset::Organic,
             Preset::Fire,
-            Preset::Ripple,
+            Preset::Smoke,
         ] {
             assert!(RenderArtDefaults::from(preset).palette_cycle.is_identity());
         }
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn afterglow_presets_glow() {
-        assert_eq!(RenderArtDefaults::from(Preset::Lumen).afterglow, 0.3);
+        assert_eq!(RenderArtDefaults::from(Preset::Mold).afterglow, 0.3);
         assert_eq!(RenderArtDefaults::from(Preset::Etching).afterglow, 0.2);
         assert_eq!(RenderArtDefaults::from(Preset::Drift).afterglow, 0.1);
         assert_eq!(RenderArtDefaults::from(Preset::Forge).afterglow, 0.3);

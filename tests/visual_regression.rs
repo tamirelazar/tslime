@@ -479,27 +479,27 @@ fn test_visual_regression_river_preset() {
 }
 
 #[test]
-fn test_visual_regression_ripple_preset() {
-    let output = capture_print_output(&["-s", "42", "--preset", "ripple"], 80, 24);
+fn test_visual_regression_smoke_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "smoke"], 80, 24);
     let normalized = normalize_output(&output);
 
     if should_update_golden() {
-        update_golden("ripple_preset", &normalized).unwrap();
+        update_golden("smoke_preset", &normalized).unwrap();
         return;
     }
 
-    match load_golden("ripple_preset") {
+    match load_golden("smoke_preset") {
         Ok(golden) => {
             assert_eq!(
                 normalized, golden,
-                "Visual regression: ripple preset output differs from golden file"
+                "Visual regression: smoke preset output differs from golden file"
             );
         }
         Err(_) => {
             eprintln!(
                 "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
             );
-            update_golden("ripple_preset", &normalized).unwrap();
+            update_golden("smoke_preset", &normalized).unwrap();
         }
     }
 }
@@ -1269,27 +1269,27 @@ fn test_visual_regression_sculpted_brightness() {
 // ============== SHOWCASE PRESET TESTS ==============
 
 #[test]
-fn test_visual_regression_lumen_preset() {
-    let output = capture_print_output(&["-s", "42", "--preset", "lumen"], 80, 24);
+fn test_visual_regression_mold_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "mold"], 80, 24);
     let normalized = normalize_output(&output);
 
     if should_update_golden() {
-        update_golden("lumen_preset", &normalized).unwrap();
+        update_golden("mold_preset", &normalized).unwrap();
         return;
     }
 
-    match load_golden("lumen_preset") {
+    match load_golden("mold_preset") {
         Ok(golden) => {
             assert_eq!(
                 normalized, golden,
-                "Visual regression: lumen preset output differs from golden file"
+                "Visual regression: mold preset output differs from golden file"
             );
         }
         Err(_) => {
             eprintln!(
                 "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
             );
-            update_golden("lumen_preset", &normalized).unwrap();
+            update_golden("mold_preset", &normalized).unwrap();
         }
     }
 }

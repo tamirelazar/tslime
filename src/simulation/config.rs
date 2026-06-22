@@ -87,11 +87,11 @@ pub enum Preset {
     /// Aggregating blob clusters.
     Blob,
     /// Rhythmic pulsing waves with trail-based modulation.
-    Pulse,
+    Slime,
     /// Cohesive flocking group movement.
-    Flocking,
+    Vines,
     /// Concentric ripple patterns.
-    Ripple,
+    Smoke,
     /// Enhanced vortex with trail modulation.
     #[serde(rename = "vortex36")]
     Vortex36,
@@ -99,7 +99,7 @@ pub enum Preset {
     #[serde(rename = "dynamictendrils")]
     DynamicTendrils,
     /// Bleuje-style front-lit veins: temporal-accent recolor of growing fronts.
-    Lumen,
+    Mold,
     /// Directional filament linework via Sobel glyph selection (Braille, TUI-only).
     Etching,
     /// Color that shifts with motion direction (temporal Hue mode).
@@ -217,21 +217,21 @@ pub const PRESETS: &[PresetSpec] = &[
         quick_key: None,
     },
     PresetSpec {
-        preset: Preset::Pulse,
-        name: "Pulse",
-        aliases: &[],
+        preset: Preset::Slime,
+        name: "Slime",
+        aliases: &["pulse"],
         quick_key: None,
     },
     PresetSpec {
-        preset: Preset::Flocking,
-        name: "Flocking",
-        aliases: &[],
+        preset: Preset::Vines,
+        name: "Vines",
+        aliases: &["flocking"],
         quick_key: None,
     },
     PresetSpec {
-        preset: Preset::Ripple,
-        name: "Ripple",
-        aliases: &[],
+        preset: Preset::Smoke,
+        name: "Smoke",
+        aliases: &["ripple"],
         quick_key: None,
     },
     PresetSpec {
@@ -247,9 +247,9 @@ pub const PRESETS: &[PresetSpec] = &[
         quick_key: None,
     },
     PresetSpec {
-        preset: Preset::Lumen,
-        name: "Lumen",
-        aliases: &[],
+        preset: Preset::Mold,
+        name: "Mold",
+        aliases: &["lumen"],
         quick_key: None,
     },
     PresetSpec {

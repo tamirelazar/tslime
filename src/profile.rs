@@ -62,17 +62,17 @@ mod tests {
     /// from_preset for the same preset twice is deterministic / equal (dirty basis).
     #[test]
     fn from_preset_is_equal_for_same_preset() {
-        let a = Profile::from_preset(Preset::Lumen).expect("a");
-        let b = Profile::from_preset(Preset::Lumen).expect("b");
+        let a = Profile::from_preset(Preset::Mold).expect("a");
+        let b = Profile::from_preset(Preset::Mold).expect("b");
         assert_eq!(a, b);
     }
 
     /// Different presets resolve to different profiles (sanity: PartialEq discriminates).
     #[test]
     fn from_preset_differs_across_presets() {
-        let lumen = Profile::from_preset(Preset::Lumen).expect("lumen");
+        let mold = Profile::from_preset(Preset::Mold).expect("mold");
         let network = Profile::from_preset(Preset::Network).expect("network");
-        assert_ne!(lumen, network);
+        assert_ne!(mold, network);
     }
 
     /// from_preset resolves to the BARE preset defaults (no CLI overlay).

@@ -2636,7 +2636,7 @@ mod tests {
     fn clean_preset_swap_is_not_dirty() {
         use crate::profile_overrides::ProfileOverrides;
         let ov = ProfileOverrides {
-            preset: Some(Preset::Lumen),
+            preset: Some(Preset::Mold),
             ..Default::default()
         };
         let (rs, sim) = clean_session(ov);
@@ -2670,7 +2670,7 @@ mod tests {
     fn mutated_is_dirty() {
         use crate::profile_overrides::ProfileOverrides;
         let ov = ProfileOverrides {
-            preset: Some(Preset::Lumen),
+            preset: Some(Preset::Mold),
             ..Default::default()
         };
         let (rs, mut sim) = clean_session(ov);
@@ -2687,7 +2687,7 @@ mod tests {
     fn flag_edit_is_dirty() {
         use crate::profile_overrides::ProfileOverrides;
         let ov = ProfileOverrides {
-            preset: Some(Preset::Lumen),
+            preset: Some(Preset::Mold),
             ..Default::default()
         };
         let (mut rs, sim) = clean_session(ov);
@@ -2756,12 +2756,12 @@ mod tests {
     fn pending_swap_parks_and_takes_once() {
         let mut rs = create_test_runtime_state();
         assert!(rs.pending_swap.is_none());
-        rs.pending_swap = Some(PendingSwap::Preset(Preset::Lumen));
+        rs.pending_swap = Some(PendingSwap::Preset(Preset::Mold));
         rs.overlay_state.open(OverlayType::DirtyGuard);
         assert!(rs.overlay_state.is_open(OverlayType::DirtyGuard));
         assert_eq!(
             rs.pending_swap.take(),
-            Some(PendingSwap::Preset(Preset::Lumen))
+            Some(PendingSwap::Preset(Preset::Mold))
         );
         assert!(
             rs.pending_swap.is_none(),
@@ -2821,27 +2821,27 @@ mod tests {
         );
     }
 
-    /// FALSE-POSITIVE GATE: bare-preset sessions for trail-modulated presets (Pulse,
+    /// FALSE-POSITIVE GATE: bare-preset sessions for trail-modulated presets (Slime,
     /// DynamicTendrils) must NOT read dirty immediately after applying.
     ///
     /// Before the project() normalization fix these presets produced a false-positive
     /// because `SpeciesArg` cannot carry `trail_modulation`, so capture_overrides
     /// always emitted `None` while the active side resolved to `Some(_)` — causing
-    /// every unedited Pulse/Flocking/Ripple/Vortex36/DynamicTendrils session to be
+    /// every unedited Slime/Vines/Smoke/Vortex36/DynamicTendrils session to be
     /// incorrectly flagged dirty.
     #[test]
     fn clean_preset_swap_with_trail_modulation_is_not_dirty() {
         use crate::profile_overrides::ProfileOverrides;
 
-        // Pulse carries trail_modulation: Some(_) in PresetSimDefaults (line 359).
-        let ov_pulse = ProfileOverrides {
-            preset: Some(Preset::Pulse),
+        // Slime carries trail_modulation: Some(_) in PresetSimDefaults (line 359).
+        let ov_slime = ProfileOverrides {
+            preset: Some(Preset::Slime),
             ..Default::default()
         };
-        let (rs, sim) = clean_session(ov_pulse);
+        let (rs, sim) = clean_session(ov_slime);
         assert!(
             !rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
-            "a freshly-applied Pulse preset (trail_modulation: Some) must not read dirty"
+            "a freshly-applied Slime preset (trail_modulation: Some) must not read dirty"
         );
 
         // DynamicTendrils also carries trail_modulation: Some(_) (line 493).

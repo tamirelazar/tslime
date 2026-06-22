@@ -342,7 +342,7 @@ impl From<Preset> for PresetSimDefaults {
                 ..Self::default()
             },
             // Rhythmic pulsing waves with trail modulation (config.rs:583-616)
-            Preset::Pulse => Self {
+            Preset::Slime => Self {
                 sensor_angle: 60.0,
                 sensor_distance: 30.0,
                 rotation_angle: 15.0,
@@ -378,7 +378,7 @@ impl From<Preset> for PresetSimDefaults {
                 ..Self::default()
             },
             // Cohesive flocking group movement (config.rs:617-650)
-            Preset::Flocking => Self {
+            Preset::Vines => Self {
                 sensor_angle: 45.0,
                 sensor_distance: 25.0,
                 rotation_angle: 60.0,
@@ -414,7 +414,7 @@ impl From<Preset> for PresetSimDefaults {
                 ..Self::default()
             },
             // Concentric ripple patterns; boundary wraps so rings re-enter (config.rs:651-685)
-            Preset::Ripple => Self {
+            Preset::Smoke => Self {
                 sensor_angle: 35.0,
                 sensor_distance: 12.0,
                 rotation_angle: 30.0,
@@ -516,7 +516,7 @@ impl From<Preset> for PresetSimDefaults {
             // Bleuje-style front-lit veins; NOTE: afterglow=0.3 intentionally dropped
             // (moves to RenderArtDefaults). Sim levers: deposit_curve, deposit_scale,
             // decay_gamma (config.rs:744-762)
-            Preset::Lumen => Self {
+            Preset::Mold => Self {
                 sensor_angle: 15.0,
                 rotation_angle: 30.0,
                 decay_factor: 0.85,
@@ -858,7 +858,7 @@ mod tests {
 
     #[test]
     fn lumen_arm_keeps_sim_levers_drops_afterglow() {
-        let s = PresetSimDefaults::from(Preset::Lumen);
+        let s = PresetSimDefaults::from(Preset::Mold);
         assert_eq!(s.decay_gamma, 0.8);
         assert_eq!(s.deposit_curve, DepositCurve::Sqrt);
         assert_eq!(s.deposit_scale, 1.5);
@@ -934,7 +934,7 @@ mod tests {
     fn only_river_and_ripple_declare_boundary_wrap() {
         for spec in crate::simulation::config::PRESETS {
             let expected = match spec.preset {
-                Preset::River | Preset::Ripple => BoundaryMode::Wrap,
+                Preset::River | Preset::Smoke => BoundaryMode::Wrap,
                 _ => BoundaryMode::Bounce,
             };
             assert_eq!(

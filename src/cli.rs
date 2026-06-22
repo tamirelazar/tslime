@@ -796,7 +796,7 @@ pub struct Args {
     #[arg(
         long = "preset",
         value_name = "NAME",
-        help = "Use named preset (network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon, dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators)"
+        help = "Use named preset (see README or run without --preset for defaults); names are case-insensitive"
     )]
     /// Named parameter preset.
     pub preset: Option<Preset>,
@@ -3219,14 +3219,14 @@ mod tests {
     #[test]
     fn model_b_cli_palette_persists() {
         let mut a = Args::parse_from(["tslime", "--palette", "ocean", "--preset", "network"]);
-        a.preset = Some(crate::simulation::config::Preset::Lumen);
+        a.preset = Some(crate::simulation::config::Preset::Mold);
         assert_eq!(
             crate::profile::Profile::resolve_from_args(&a)
                 .unwrap()
                 .render
                 .palette,
             crate::cli::Palette::Ocean,
-            "--palette ocean must survive a preset switch to Lumen"
+            "--palette ocean must survive a preset switch to Mold"
         );
     }
 
@@ -3235,14 +3235,14 @@ mod tests {
     #[test]
     fn model_b_cli_sensor_angle_persists() {
         let mut a = Args::parse_from(["tslime", "--sensor-angle", "30", "--preset", "network"]);
-        a.preset = Some(crate::simulation::config::Preset::Lumen);
+        a.preset = Some(crate::simulation::config::Preset::Mold);
         let c = crate::profile_overrides::ProfileOverrides::from_args(&a)
             .and_then(|o| o.resolve())
             .unwrap()
             .sim;
         assert_eq!(
             c.sensor_angle, 30.0,
-            "--sensor-angle 30 must survive a preset switch to Lumen"
+            "--sensor-angle 30 must survive a preset switch to Mold"
         );
     }
 }
