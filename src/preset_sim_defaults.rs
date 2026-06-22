@@ -12,7 +12,7 @@
 use crate::config_defaults::{agent, trail};
 use crate::simulation::config::{
     Attractor, BoundaryMode, DepositCurve, DiffusionKernel, InitMode, Obstacle, Preset,
-    RespawnConfig, SamplingMode, SimConfig, SpeciesConfig, Wind,
+    RespawnConfig, SamplingMode, SimConfig, SpeciesConfig, Wind, WindowFrame,
 };
 
 /// Declarative per-preset sim-layer spec. Replaces the imperative
@@ -36,6 +36,7 @@ pub(crate) struct PresetSimDefaults {
     pub deposit_scale: f32,
     pub deposit_gamma: f32,
     pub boundary_mode: BoundaryMode,
+    pub window_frame: WindowFrame,
     pub preferred_init_mode: Option<InitMode>,
     pub wind: Option<Wind>,
     pub background_color: Option<String>,
@@ -68,6 +69,7 @@ impl Default for PresetSimDefaults {
             deposit_scale: trail::DEFAULT_DEPOSIT_SCALE,
             deposit_gamma: trail::DEFAULT_DEPOSIT_GAMMA,
             boundary_mode: BoundaryMode::Bounce,
+            window_frame: WindowFrame::Frame,
             preferred_init_mode: Some(InitMode::Food),
             wind: None,
             background_color: None,
@@ -101,6 +103,7 @@ impl PresetSimDefaults {
         config.deposit_scale = self.deposit_scale;
         config.deposit_gamma = self.deposit_gamma;
         config.boundary_mode = self.boundary_mode;
+        config.window_frame = self.window_frame;
         config.preferred_init_mode = self.preferred_init_mode;
         config.wind = self.wind;
         config.background_color = self.background_color.clone();
@@ -900,6 +903,31 @@ mod tests {
         assert_eq!(d.separate_species_trails, plain.separate_species_trails);
         assert_eq!(d.sampling_mode, plain.sampling_mode);
         assert_eq!(d.respawn_config, plain.respawn_config);
+    }
+
+    #[test]
+    fn window_frame_defaults_to_frame_and_is_settable() {
+        use crate::simulation::config::{SimConfig, WindowFrame};
+        assert_eq!(
+            PresetSimDefaults::default().window_frame,
+            WindowFrame::Frame
+        );
+        let spec = PresetSimDefaults {
+            window_frame: WindowFrame::Accented,
+            ..PresetSimDefaults::default()
+        };
+        let mut cfg = SimConfig::default();
+        spec.apply_to(&mut cfg);
+        assert_eq!(cfg.window_frame, WindowFrame::Accented);
+    }
+
+    #[test]
+    fn plain_preset_keeps_default_frame() {
+        use crate::simulation::config::WindowFrame;
+        assert_eq!(
+            PresetSimDefaults::from(crate::simulation::config::Preset::Network).window_frame,
+            WindowFrame::Frame
+        );
     }
 
     #[test]
