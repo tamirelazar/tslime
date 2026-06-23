@@ -106,10 +106,8 @@ pub enum Preset {
     Etching,
     /// Color that shifts with motion direction (temporal Hue mode).
     Drift,
-    /// Sparse star-map scatter (Points charset).
+    /// Constellation: crisp star-map held via continuous template re-stamp (Points charset).
     Constellation,
-    /// Constellation that holds its figure crisp via continuous template re-stamp.
-    ConstellationStatic,
     /// Posterized color bands (Quantize mapping + Wrap palette cycles).
     Mosaic,
     /// Veined stone via heavy Gaussian + Perlin intensity mapping.
@@ -276,15 +274,9 @@ pub const PRESETS: &[PresetSpec] = &[
     },
     PresetSpec {
         preset: Preset::Constellation,
-        name: "Constellation",
-        aliases: &[],
+        name: "constellations",
+        aliases: &["constellation", "atlas"],
         quick_key: Some('2'),
-    },
-    PresetSpec {
-        preset: Preset::ConstellationStatic,
-        name: "ConstellationStatic",
-        aliases: &["conststatic", "atlas"],
-        quick_key: None,
     },
     PresetSpec {
         preset: Preset::Mosaic,

@@ -216,13 +216,6 @@ impl From<Preset> for RenderArtDefaults {
                 auto_normalize: Some(false),
                 ..Self::default()
             },
-            Preset::ConstellationStatic => Self {
-                charset: Some(Charset::Points),
-                palette: Some(Palette::Cosmic),
-                intensity_mapping: IntensityMapping::linear_log_split(10.0),
-                auto_normalize: Some(false),
-                ..Self::default()
-            },
             // Quantize mapping + Wrap palette cycling: posterized bands.
             Preset::Mosaic => Self {
                 intensity_mapping: IntensityMapping::quantize(6),
@@ -499,17 +492,15 @@ mod tests {
     }
 
     #[test]
-    fn both_constellations_render_points_cosmic() {
-        for p in [Preset::Constellation, Preset::ConstellationStatic] {
-            let d = RenderArtDefaults::from(p);
-            assert_eq!(d.charset, Some(Charset::Points));
-            assert_eq!(d.palette, Some(Palette::Cosmic));
-            assert_eq!(d.auto_normalize, Some(false));
-            assert_eq!(
-                d.intensity_mapping,
-                IntensityMapping::linear_log_split(10.0)
-            );
-        }
+    fn constellation_renders_points_cosmic() {
+        let d = RenderArtDefaults::from(Preset::Constellation);
+        assert_eq!(d.charset, Some(Charset::Points));
+        assert_eq!(d.palette, Some(Palette::Cosmic));
+        assert_eq!(d.auto_normalize, Some(false));
+        assert_eq!(
+            d.intensity_mapping,
+            IntensityMapping::linear_log_split(10.0)
+        );
     }
 
     #[test]

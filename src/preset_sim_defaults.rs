@@ -652,31 +652,8 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Sparse star-map scatter with atlas init (drift — no re-stamp)
+            // Constellation: continuous template re-stamp holds the figure crisp
             Preset::Constellation => Self {
-                sensor_angle: 45.0,
-                sensor_distance: 12.0,
-                rotation_angle: 25.0,
-                step_size: 0.5,
-                decay_factor: 0.95,
-                deposit_amount: 1.5,
-                diffusion_kernel: DiffusionKernel::Mean3x3,
-                max_brightness: 30.0,
-                preferred_init_mode: Some(InitMode::Constellation),
-                constellation_restamp_floor: 0.0,
-                species_configs: vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 5_000,
-                    sensor_angle: 45.0,
-                    rotation_angle: 25.0,
-                    step_size: 0.5,
-                    deposit_amount: 1.5,
-                    ..Default::default()
-                }],
-                ..Self::default()
-            },
-            // Static-hold variant: re-stamp continuously to keep the figure crisp
-            Preset::ConstellationStatic => Self {
                 sensor_angle: 45.0,
                 sensor_distance: 12.0,
                 rotation_angle: 18.0,
@@ -1052,16 +1029,18 @@ mod tests {
     }
 
     #[test]
-    fn constellation_static_is_registered_and_static() {
+    fn constellation_is_registered_and_static() {
         use crate::simulation::config::{preset_from_name, InitMode, Preset, SimConfig};
-        let p = preset_from_name("constellationstatic").expect("preset registered");
-        assert_eq!(p, Preset::ConstellationStatic);
-        let cfg: SimConfig = Preset::ConstellationStatic.into();
+        // Primary name
+        let p = preset_from_name("constellations").expect("preset registered");
+        assert_eq!(p, Preset::Constellation);
+        // Alias
+        let p2 = preset_from_name("constellation").expect("alias registered");
+        assert_eq!(p2, Preset::Constellation);
+
+        let cfg: SimConfig = Preset::Constellation.into();
         assert!(cfg.constellation_restamp_floor > 0.0);
         // preferred_init_mode is Option<InitMode>; unwrap since the arm sets Some(_)
         assert_eq!(cfg.preferred_init_mode.unwrap(), InitMode::Constellation);
-
-        let drift: SimConfig = Preset::Constellation.into();
-        assert_eq!(drift.constellation_restamp_floor, 0.0);
     }
 }

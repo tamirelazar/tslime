@@ -25,19 +25,11 @@ impl Default for PresetAppDefaults {
 impl From<Preset> for PresetAppDefaults {
     fn from(preset: Preset) -> Self {
         match preset {
-            // Constellation re-rolls a fresh layout on collapse. The entropy
-            // detector is too eager for it (low brightness-value diversity in
-            // coherent rotating/blob patterns reads as "dead" while they are
-            // still alive), so default it off and rely on stagnation alone.
+            // Constellation holds its figure indefinitely via the per-frame
+            // template re-stamp, so it must NOT auto-reset — a reset would drop
+            // the held figure. Entropy threshold is moot while auto_reset is
+            // false; set 0.0 to keep the detector off explicitly.
             Preset::Constellation => Self {
-                auto_reset: true,
-                entropy_threshold: 0.0,
-            },
-            // ConstellationStatic holds its figure indefinitely via the
-            // per-frame template re-stamp, so it must NOT auto-reset — a reset
-            // would drop the held figure. Entropy threshold is moot while
-            // auto_reset is false; set 0.0 to keep the detector off explicitly.
-            Preset::ConstellationStatic => Self {
                 auto_reset: false,
                 entropy_threshold: 0.0,
             },
@@ -57,8 +49,9 @@ mod tests {
         );
     }
     #[test]
-    fn constellation_opts_in() {
-        assert!(PresetAppDefaults::from(Preset::Constellation).auto_reset);
+    fn constellation_opts_out_of_auto_reset() {
+        // Constellation holds its figure via template re-stamp — must NOT auto-reset.
+        assert!(!PresetAppDefaults::from(Preset::Constellation).auto_reset);
         assert_eq!(
             PresetAppDefaults::from(Preset::Network).auto_reset,
             crate::config_defaults::auto_reset::DEFAULT_AUTO_RESET
@@ -77,15 +70,5 @@ mod tests {
             PresetAppDefaults::from(Preset::Network).entropy_threshold,
             crate::config_defaults::auto_reset::DEFAULT_ENTROPY_THRESHOLD
         );
-    }
-
-    #[test]
-    fn constellation_static_holds_no_auto_reset() {
-        let d = PresetAppDefaults::from(Preset::ConstellationStatic);
-        assert!(
-            !d.auto_reset,
-            "ConstellationStatic must not auto-reset (it holds the figure)"
-        );
-        assert_eq!(d.entropy_threshold, 0.0);
     }
 }
