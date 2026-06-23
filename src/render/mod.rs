@@ -25,6 +25,8 @@
 
 /// Adaptive brightness normalization logic.
 pub mod adaptive_brightness;
+/// Ambient instrument surface and state machine.
+pub mod ambient;
 /// Color anti-aliasing for subcell-shape charsets.
 pub mod antialiasing;
 /// Character set definitions and mapping logic.
