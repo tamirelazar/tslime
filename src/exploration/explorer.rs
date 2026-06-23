@@ -423,6 +423,7 @@ impl ExplorationParams {
             InitMode::RandomClusters => "InitMode::RandomClusters",
             InitMode::Food => "InitMode::Food",
             InitMode::Petri => "InitMode::Petri",
+            InitMode::Constellation => "InitMode::Constellation",
         };
 
         format!(

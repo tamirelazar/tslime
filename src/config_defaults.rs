@@ -717,6 +717,9 @@ pub mod color_mode {
     pub const DEFAULT_MODE: &str = "true";
 }
 
+/// Default constellation re-stamp floor (0.0 = off; Static presets raise it).
+pub const DEFAULT_CONSTELLATION_RESTAMP_FLOOR: f32 = 0.0;
+
 #[cfg(test)]
 mod tests {
     use super::*;

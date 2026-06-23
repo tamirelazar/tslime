@@ -15,6 +15,7 @@
 
 pub mod agent;
 pub mod config;
+pub mod constellations;
 pub mod food;
 pub mod trail_map;
 
@@ -164,6 +165,8 @@ pub struct Simulation {
     combined_trail_buffer: Option<Vec<f32>>,
     /// Frame counter for deterministic respawn timing.
     frame_count: u64,
+    /// Rasterized constellation template for `InitMode::Constellation` (re-stamp + pre-seed).
+    constellation_template: Option<Vec<f32>>,
 }
 
 impl Simulation {
@@ -179,6 +182,17 @@ impl Simulation {
         let mut rng = Rng::seed_from_u64(seed);
         let total_population = config.total_population();
         let mut agents = Vec::with_capacity(total_population);
+
+        let constellation_layout = if matches!(init_mode, InitMode::Constellation) {
+            Some(constellations::build_layout(
+                &mut rng,
+                width,
+                height,
+                config.aspect,
+            ))
+        } else {
+            None
+        };
 
         let food_path = config.food_image_path.as_deref();
         let food_invert = config.food_image_invert;
@@ -196,6 +210,7 @@ impl Simulation {
                 food_path,
                 food_invert,
                 food_scale,
+                constellation_layout.as_ref(),
             );
         }
 
@@ -222,6 +237,16 @@ impl Simulation {
                 sigma,
                 boundary_mode,
             ));
+        }
+
+        if let Some(ref layout) = constellation_layout {
+            let scale = config.max_brightness;
+            for tm in &mut trail_maps {
+                let cur = tm.current_mut();
+                for (c, &t) in cur.iter_mut().zip(layout.template.iter()) {
+                    *c = c.max(t * scale);
+                }
+            }
         }
 
         let noise_seed = (seed % u64::MAX) as u32;
@@ -253,6 +278,7 @@ impl Simulation {
             gradient_magnitude: None,
             combined_trail_buffer,
             frame_count: 0,
+            constellation_template: constellation_layout.map(|l| l.template),
         }
     }
 
@@ -302,6 +328,7 @@ impl Simulation {
         food_image_path: Option<&str>,
         food_image_invert: bool,
         food_image_scale: f32,
+        constellation_layout: Option<&constellations::ConstellationLayout>,
     ) {
         match init_mode {
             InitMode::Random => {
@@ -343,6 +370,13 @@ impl Simulation {
                     );
                 } else {
                     eprintln!("Warning: Food mode selected but no image path provided, falling back to random");
+                    Self::init_random(rng, width, height, agents, population, species_id);
+                }
+            }
+            InitMode::Constellation => {
+                if let Some(layout) = constellation_layout {
+                    constellations::seed_agents(rng, layout, agents, population, species_id);
+                } else {
                     Self::init_random(rng, width, height, agents, population, species_id);
                 }
             }
@@ -986,6 +1020,16 @@ impl Simulation {
                 self.config.diffusion_sigma,
             );
             trail_map.decay_gamma(effective_decay, self.config.decay_gamma);
+            if self.config.constellation_restamp_floor > 0.0 {
+                if let Some(ref template) = self.constellation_template {
+                    let floor = self.config.constellation_restamp_floor;
+                    let scale = self.config.max_brightness;
+                    let cur = trail_map.current_mut();
+                    for (c, &t) in cur.iter_mut().zip(template.iter()) {
+                        *c = c.max(t * scale * floor);
+                    }
+                }
+            }
         }
 
         // Compute trail age: increment where pheromone present, reset where absent
@@ -1087,6 +1131,17 @@ impl Simulation {
         let food_invert = self.config.food_image_invert;
         let food_scale = self.config.food_image_scale;
 
+        let constellation_layout = if matches!(init_mode, InitMode::Constellation) {
+            Some(constellations::build_layout(
+                &mut self.rng,
+                width,
+                height,
+                self.config.aspect,
+            ))
+        } else {
+            None
+        };
+
         for (species_id, species_config) in self.config.species_configs.iter().enumerate() {
             Self::init_species(
                 &mut self.rng,
@@ -1099,12 +1154,24 @@ impl Simulation {
                 food_path,
                 food_invert,
                 food_scale,
+                constellation_layout.as_ref(),
             );
         }
 
         for trail_map in &mut self.trail_maps {
             trail_map.clear();
         }
+        if let Some(ref layout) = constellation_layout {
+            let scale = self.config.max_brightness;
+            for tm in &mut self.trail_maps {
+                let cur = tm.current_mut();
+                for (c, &t) in cur.iter_mut().zip(layout.template.iter()) {
+                    *c = c.max(t * scale);
+                }
+            }
+        }
+        self.constellation_template = constellation_layout.map(|l| l.template);
+
         if let Some(ref mut history) = self.trail_history {
             history.clear();
         }
@@ -2126,5 +2193,84 @@ mod tests {
         assert!(sim.compute_afterglow());
         sim.set_compute_afterglow(false, 0.05);
         assert!(!sim.compute_afterglow());
+    }
+
+    #[test]
+    fn constellation_init_seeds_trail_and_is_deterministic() {
+        let cfg = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 2000,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let a = Simulation::new(160, 100, cfg.clone(), 99, InitMode::Constellation, 0);
+        let b = Simulation::new(160, 100, cfg, 99, InitMode::Constellation, 0);
+        // Trail map is non-empty at frame 0 (figure pre-seeded).
+        let bright: f32 = a.trail_maps[0]
+            .current()
+            .iter()
+            .copied()
+            .fold(0.0, f32::max);
+        assert!(bright > 0.0, "trail not pre-seeded with figure");
+        // Same seed -> identical agent positions.
+        assert_eq!(a.agents.len(), b.agents.len());
+        assert_eq!(a.agents[0].x, b.agents[0].x);
+        assert_eq!(a.agents[0].y, b.agents[0].y);
+    }
+
+    // No agents; only re-stamp can maintain the figure against decay.
+    // count: 0 isolates the re-stamp mechanism — no agent deposits in play.
+    #[test]
+    fn static_restamp_reinforces_figure_drift_does_not() {
+        // scale == SimConfig::default().max_brightness (100.0).  Template values
+        // live in 0..=1; after pre-seeding they are scaled to trail-brightness
+        // units (0..=scale).  Re-stamp floor 1.0 means every cell is held at
+        // >= tval * scale * 1.0 each frame.
+        let scale = SimConfig::default().max_brightness;
+        let mut cfg = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 0,
+                ..Default::default()
+            }],
+            constellation_restamp_floor: 1.0,
+            ..Default::default()
+        };
+        let mut stat = Simulation::new(160, 100, cfg.clone(), 5, InitMode::Constellation, 0);
+        let template = stat.constellation_template.clone().unwrap();
+        // Find the brightest template cell.
+        let (idx, &tval) = template
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap();
+        // Run 20 frames; static re-stamp (floor 1.0) must hold the cell.
+        for _ in 0..20 {
+            stat.update(1.0);
+        }
+        let held = stat.trail_maps[0].current()[idx];
+        assert!(
+            held >= tval * scale * 1.0 - 1e-3,
+            "static re-stamp did not hold the figure (held={held}, expected>={e})",
+            e = tval * scale * 1.0 - 1e-3
+        );
+        // Scaling sanity: value must be well above 1.0 — the old (unscaled) bug left it <= 1.0.
+        assert!(
+            held > 1.5,
+            "scaling bug: held={held} should be >> 1.0 (scale={scale})"
+        );
+
+        // Drift (floor 0.0) does NOT re-stamp: the figure decays freely.
+        cfg.constellation_restamp_floor = 0.0;
+        let mut drift = Simulation::new(160, 100, cfg, 5, InitMode::Constellation, 0);
+        for _ in 0..20 {
+            drift.update(1.0);
+        }
+        assert!(drift.constellation_template.is_some());
+        // After 20 frames of decay-only the cell must sit below the static floor.
+        assert!(
+            drift.trail_maps[0].current()[idx] < tval * scale * 1.0,
+            "drift (floor 0.0) must not re-stamp: cell should have decayed"
+        );
     }
 }
