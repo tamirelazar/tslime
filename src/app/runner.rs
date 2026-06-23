@@ -1198,6 +1198,7 @@ pub fn run_simulation(
 
         // Clamp dt to avoid UI animation jumps during lag spikes (max 0.1s / 10 FPS)
         let dt = dt.min(0.1);
+        runtime_state.advance_phase(dt);
 
         // Fixed simulation timestep, decoupled from frame-write jitter. A blocked
         // write (e.g. terminal back-pressure while holding a key) inflates wall `dt`

@@ -764,6 +764,8 @@ pub struct RuntimeState {
     pub palette_cycle: crate::render::palette::PaletteCycle,
     /// Glyph-selection config (lever 10). Default identity (no override).
     pub glyph: crate::render::charset::GlyphConfig,
+    /// Monotonic seconds for overlay motion (breath, eases). Advanced each frame by dt.
+    pub phase_clock: f32,
 }
 
 impl RuntimeState {
@@ -910,6 +912,7 @@ impl RuntimeState {
             deposit_cap: cli_config.deposit_cap,
             palette_cycle: crate::render::palette::PaletteCycle::default(),
             glyph: crate::render::charset::GlyphConfig::default(),
+            phase_clock: 0.0,
         }
     }
 
@@ -1727,6 +1730,13 @@ impl RuntimeState {
                 self.chrome_state = ChromeState::Minimal;
             }
         }
+    }
+
+    /// Advances the monotonic phase clock by `dt` seconds (clamped frame time).
+    pub fn advance_phase(&mut self, dt: f32) {
+        // Wrap at a large multiple of 2π so f32 precision stays good for sin().
+        const WRAP: f32 = 100_000.0;
+        self.phase_clock = (self.phase_clock + dt) % WRAP;
     }
 
     /// Called when a modal pane is opened.
@@ -2971,5 +2981,27 @@ mod tests {
             ControlAction::ControlsAdjustFocused(1.0),
             ControlAction::ControlsActivateFocused,
         ];
+    }
+}
+
+#[cfg(test)]
+mod phase_tests {
+    use super::*;
+    #[test]
+    fn advance_phase_accumulates_dt() {
+        let mut rs = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Network,
+            MouseInteractionMode::Disabled,
+            0.0,
+            &crate::simulation::config::SimConfig::default(),
+            crate::cli::PauseStyle::Vignette,
+            false,
+            false,
+        );
+        let before = rs.phase_clock;
+        rs.advance_phase(0.5);
+        assert!((rs.phase_clock - (before + 0.5)).abs() < 1e-6);
     }
 }
