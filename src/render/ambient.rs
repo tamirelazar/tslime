@@ -13,10 +13,10 @@
 //!
 //! "Live" means: `sticky == true` OR `now <= until`.
 
+use crate::render::motion::{breath, lerp_rgb};
 use crate::render::palette::RgbColor;
 use crate::render::panel::{RenderedOverlay, RichCell};
 use crate::render::theme::PanelStyle;
-use crate::render::motion::{breath, lerp_rgb};
 use crate::render::widgets::{gauge, swatch, value_state, ParamState, RowBuf};
 use crate::terminal::state::NotificationLevel;
 
@@ -481,7 +481,13 @@ mod ambient_tests {
     #[test]
     fn build_ambient_base_emits_strip_h_rows() {
         let st = crate::render::theme::GRUVBOX_DARK;
-        let ov = build_ambient(&AmbientState::Base, STRIP_W, &st, &BaseStatus::default(), 0.0);
+        let ov = build_ambient(
+            &AmbientState::Base,
+            STRIP_W,
+            &st,
+            &BaseStatus::default(),
+            0.0,
+        );
         assert_eq!(ov.lines.len(), STRIP_H);
         assert_eq!(ov.rich_lines.unwrap().len(), STRIP_H);
     }

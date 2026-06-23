@@ -987,7 +987,7 @@ impl TerminalRenderer {
         }
 
         // Ambient BASE surface — bottom-docked always-on strip (Task 12).
-        // Composited last so it appears above the simulation but below modal overlays.
+        // Composited last: the ambient strip paints over the bottom rows, above all other overlays.
         if let Some((overlay, x, y)) = ambient_overlay {
             if let Some(ref rich) = overlay.rich_lines {
                 buffer.draw_rich_overlay_dim(rich, x, y, 1.0);
@@ -1418,6 +1418,7 @@ impl TerminalRenderer {
         }
 
         // Ambient BASE surface — bottom-docked always-on strip (Task 12).
+        // Composited last: the ambient strip paints over the bottom rows, above all other overlays.
         if let Some((overlay, x, y)) = ambient_overlay {
             if let Some(ref rich) = overlay.rich_lines {
                 buffer.draw_rich_overlay_dim(rich, x, y, 1.0);

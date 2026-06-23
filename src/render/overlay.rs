@@ -769,7 +769,7 @@ impl OverlayRenderer {
     ///   PRESET  ◦  1.0×  ◦  ■ PALETTE  ◦  50k  ◦  KERNEL      ↺ ↻  ⏸ PAUSED  ? help
     /// ```
     pub fn build_status_line(
-        _is_paused: bool,
+        is_paused: bool,
         preset: Preset,
         time_scale: f32,
         palette: Palette,
@@ -867,7 +867,7 @@ impl OverlayRenderer {
             right.push_str("  ");
         }
 
-        if _is_paused {
+        if is_paused {
             paused_offset_in_right = Some(right.chars().count());
             right.push_str("⏸ PAUSED  ");
         }

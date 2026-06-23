@@ -798,7 +798,6 @@ fn build_param_views_for_category(
         .collect()
 }
 
-
 /// Build a [`TuneView`] for the parameter a just-dispatched [`ControlAction`]
 /// adjusted, sourcing the value/range/default/state from the same registry +
 /// [`build_param_views_for_category`] path the Controls surface uses.
@@ -3651,13 +3650,8 @@ mod tests {
     fn tune_view_for_numeric_adjust_is_some_with_gauge() {
         let state = controls_test_state();
         let ctx = controls_test_ctx();
-        let tv = tune_view_for_action(
-            &state,
-            &ControlAction::AdjustSensorAngle(1.0),
-            &ctx,
-            50_000,
-        )
-        .expect("sensor-angle adjust must surface a TuneView");
+        let tv = tune_view_for_action(&state, &ControlAction::AdjustSensorAngle(1.0), &ctx, 50_000)
+            .expect("sensor-angle adjust must surface a TuneView");
         assert_eq!(tv.label, "Sensor Angle");
         assert_eq!(tv.range, (0.0, 1.0)); // normalized gauge
         assert!((0.0..=1.0).contains(&tv.value));
