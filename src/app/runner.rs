@@ -20,6 +20,7 @@ use crate::overlay::{OverlayInputManager, OverlayInputResult, OverlayType};
 use crate::palette_manager;
 use crate::render::adaptive_brightness::AdaptiveBrightness;
 use crate::render::charset::Charset;
+use crate::render::controls::registry::RegistryCtx;
 use crate::render::dither::DitherMode;
 use crate::render::downsample::downsample;
 use crate::render::grid::{GridRenderer, GridStyle};
@@ -155,6 +156,105 @@ fn check_auto_reset(
 /// e.g. Windows) are ignored so a single keystroke does not double-fire.
 fn screensaver_exit_on_key(mode: &Mode, key_event: &crossterm::event::KeyEvent) -> bool {
     *mode == Mode::Screensaver && key_event.kind == crossterm::event::KeyEventKind::Press
+}
+
+/// Outcome of [`apply_controls_action`].
+///
+/// Controls-overlay interaction is split into a pure state mutation (focus,
+/// depth) and an optional "real" [`ControlAction`] that must be re-dispatched
+/// through the main action match (because adjusting the focused parameter is
+/// exactly the same as pressing its hotkey, which can touch the simulation,
+/// renderer, timer, etc. that live in the run loop).
+enum ControlsDispatch {
+    /// The action was not a controls-overlay action; let the main match handle it.
+    Passthrough,
+    /// The action was fully handled by mutating [`RuntimeState`]; nothing else to do.
+    Handled,
+    /// Re-dispatch this real [`ControlAction`] through the main action match.
+    Redispatch(ControlAction),
+}
+
+/// Applies the controls-overlay interaction actions (depth toggle, focus
+/// movement, focused adjust/activate) to [`RuntimeState`], and performs
+/// in-category focus retargeting for plain per-param hotkeys.
+///
+/// Returns:
+/// - [`ControlsDispatch::Handled`] when the action was a pure state mutation.
+/// - [`ControlsDispatch::Redispatch`] with the real action to re-run (focused
+///   adjust/activate resolve to the focused parameter's hotkey action).
+/// - [`ControlsDispatch::Passthrough`] otherwise (the main match handles it),
+///   after retargeting focus if the hotkey's parameter is in the current
+///   category.
+fn apply_controls_action(
+    state: &mut RuntimeState,
+    action: &ControlAction,
+    ctx: &RegistryCtx,
+) -> ControlsDispatch {
+    use crate::render::controls::registry;
+    use crate::render::controls::ControlsDepth;
+
+    let category = state.controls_category_idx;
+
+    match action {
+        ControlAction::ToggleControlsDepth => {
+            state.controls_depth = match state.controls_depth {
+                ControlsDepth::Closed => ControlsDepth::Console,
+                ControlsDepth::Console => ControlsDepth::Tuner,
+                ControlsDepth::Tuner => ControlsDepth::Console,
+            };
+            ControlsDispatch::Handled
+        }
+        ControlAction::ControlsFocusNext => {
+            let len = registry::visible_params(category, ctx).len();
+            if len > 0 {
+                state.controls_focus = (state.controls_focus + 1).min(len - 1);
+            }
+            ControlsDispatch::Handled
+        }
+        ControlAction::ControlsFocusPrev => {
+            state.controls_focus = state.controls_focus.saturating_sub(1);
+            ControlsDispatch::Handled
+        }
+        ControlAction::ControlsAdjustFocused(sign) => {
+            // Auto-promote: a focused adjust from Closed opens the Tuner first.
+            if state.controls_depth == ControlsDepth::Closed {
+                state.controls_depth = ControlsDepth::Tuner;
+            }
+            let params = registry::visible_params(category, ctx);
+            let Some(desc) = params.get(state.controls_focus.min(params.len().saturating_sub(1)))
+            else {
+                return ControlsDispatch::Handled;
+            };
+            match registry::action_for(desc.id, *sign) {
+                Some(real) => ControlsDispatch::Redispatch(real),
+                None => ControlsDispatch::Handled,
+            }
+        }
+        ControlAction::ControlsActivateFocused => {
+            let params = registry::visible_params(category, ctx);
+            let Some(desc) = params.get(state.controls_focus.min(params.len().saturating_sub(1)))
+            else {
+                return ControlsDispatch::Handled;
+            };
+            match registry::activate_action_for(desc.id) {
+                Some(real) => ControlsDispatch::Redispatch(real),
+                None => ControlsDispatch::Handled,
+            }
+        }
+        // Any other action: if it's a per-param hotkey whose parameter is in the
+        // CURRENT category, retarget focus to it (silent cross-category rule:
+        // parameters in other categories never change focus or category).
+        other => {
+            if let Some(id) = registry::param_id_for_action(other) {
+                if let Some((cat, idx)) = registry::locate(id, ctx) {
+                    if cat == category {
+                        state.controls_focus = idx;
+                    }
+                }
+            }
+            ControlsDispatch::Passthrough
+        }
+    }
 }
 
 /// Runs the interactive simulation loop (Live or Screensaver mode).
@@ -1735,7 +1835,23 @@ pub fn run_simulation(
                         break;
                     }
 
-                    let action = handle_key_event(&key_event);
+                    let mut action = handle_key_event(&key_event);
+                    // Build the registry visibility context from current runtime state.
+                    let registry_ctx = RegistryCtx {
+                        diffusion_gaussian: matches!(
+                            runtime_state.diffusion_kernel,
+                            DiffusionKernel::Gaussian
+                        ),
+                        mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
+                    };
+                    // Controls-overlay interaction is intercepted first. Focused
+                    // adjust/activate resolve to a real action that is then
+                    // re-dispatched through the same match below (one hop).
+                    match apply_controls_action(&mut runtime_state, &action, &registry_ctx) {
+                        ControlsDispatch::Handled => continue,
+                        ControlsDispatch::Redispatch(real) => action = real,
+                        ControlsDispatch::Passthrough => {}
+                    }
                     match action {
                         ControlAction::Quit => {
                             should_exit = true;
@@ -2428,12 +2544,15 @@ pub fn run_simulation(
                             }
                         }
                         ControlAction::None => {}
-                        // Controls-overlay interaction actions — wired in Task 8.
+                        // Controls-overlay interaction actions are intercepted by
+                        // `apply_controls_action` above (they either mutate state
+                        // and `continue`, or re-dispatch a real action), so they
+                        // never reach this match. These arms keep it exhaustive.
                         ControlAction::ToggleControlsDepth
                         | ControlAction::ControlsFocusNext
                         | ControlAction::ControlsFocusPrev
                         | ControlAction::ControlsAdjustFocused(_)
-                        | ControlAction::ControlsActivateFocused => { /* wired in Task 8 */ }
+                        | ControlAction::ControlsActivateFocused => {}
                     }
                 }
                 Event::Mouse(mouse_event) => {
@@ -2793,6 +2912,116 @@ mod tests {
             kind,
             state: KeyEventState::NONE,
         }
+    }
+
+    fn controls_test_state() -> RuntimeState {
+        use crate::cli::PauseStyle;
+        use crate::simulation::config::SimConfig;
+        RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            MouseInteractionMode::Disabled,
+            3.0,
+            &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
+        )
+    }
+
+    fn controls_test_ctx() -> RegistryCtx {
+        RegistryCtx {
+            diffusion_gaussian: false,
+            mouse_enabled: false,
+        }
+    }
+
+    #[test]
+    fn controls_depth_toggle_cycles_console_tuner() {
+        use crate::render::controls::ControlsDepth;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        assert_eq!(state.controls_depth, ControlsDepth::Closed);
+
+        // Closed -> Console
+        assert!(matches!(
+            apply_controls_action(&mut state, &ControlAction::ToggleControlsDepth, &ctx),
+            ControlsDispatch::Handled
+        ));
+        assert_eq!(state.controls_depth, ControlsDepth::Console);
+
+        // Console -> Tuner
+        apply_controls_action(&mut state, &ControlAction::ToggleControlsDepth, &ctx);
+        assert_eq!(state.controls_depth, ControlsDepth::Tuner);
+
+        // Tuner -> Console
+        apply_controls_action(&mut state, &ControlAction::ToggleControlsDepth, &ctx);
+        assert_eq!(state.controls_depth, ControlsDepth::Console);
+    }
+
+    #[test]
+    fn controls_focus_next_clamps_to_last_visible() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // SIM category (index 0) has 7 params; focus must clamp at 6.
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        for _ in 0..20 {
+            apply_controls_action(&mut state, &ControlAction::ControlsFocusNext, &ctx);
+        }
+        assert_eq!(state.controls_focus, 6);
+
+        for _ in 0..20 {
+            apply_controls_action(&mut state, &ControlAction::ControlsFocusPrev, &ctx);
+        }
+        assert_eq!(state.controls_focus, 0);
+    }
+
+    #[test]
+    fn controls_adjust_focused_redispatches_real_action() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // SIM[0] = SensorAngle. A forward adjust must re-dispatch AdjustSensorAngle(+1.0).
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        match apply_controls_action(&mut state, &ControlAction::ControlsAdjustFocused(1.0), &ctx) {
+            ControlsDispatch::Redispatch(ControlAction::AdjustSensorAngle(d)) => {
+                assert_eq!(d, 1.0)
+            }
+            _ => panic!("expected Redispatch(AdjustSensorAngle(1.0))"),
+        }
+    }
+
+    #[test]
+    fn controls_in_category_hotkey_retargets_focus() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // In SIM category, pressing the StepSize hotkey (SIM index 3) must move
+        // focus to 3 and pass the action through to the main match.
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        assert!(matches!(
+            apply_controls_action(&mut state, &ControlAction::AdjustStepSize(0.1), &ctx),
+            ControlsDispatch::Passthrough
+        ));
+        assert_eq!(state.controls_focus, 3);
+    }
+
+    #[test]
+    fn controls_cross_category_hotkey_does_not_retarget() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // In SIM category (0), a Palette hotkey (APP category) must NOT change
+        // focus or category; it just passes through.
+        state.controls_category_idx = 0;
+        state.controls_focus = 2;
+        assert!(matches!(
+            apply_controls_action(&mut state, &ControlAction::CyclePalette, &ctx),
+            ControlsDispatch::Passthrough
+        ));
+        assert_eq!(state.controls_focus, 2);
+        assert_eq!(state.controls_category_idx, 0);
     }
 
     #[test]
