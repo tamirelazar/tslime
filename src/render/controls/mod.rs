@@ -10,6 +10,9 @@ pub use value::{gauge, heatmap_slider, sparkline};
 pub mod console;
 pub use console::{build_console, ParamState, ParamView};
 
+pub mod tuner;
+pub use tuner::build_tuner;
+
 use crate::render::palette::RgbColor;
 use crate::render::panel::RenderedOverlay;
 use crate::render::theme::PanelStyle;
