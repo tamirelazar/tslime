@@ -1,7 +1,9 @@
 //! L2 shared widget kit: primitives + spacing rhythm, all consuming L1 PanelStyle tokens.
 
+mod kit;
 mod rowbuf;
 mod state;
+pub use kit::*;
 pub use rowbuf::RowBuf;
 pub use state::{state_color, ParamState};
 
