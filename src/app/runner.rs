@@ -1414,9 +1414,9 @@ pub fn run_simulation(
         );
 
         // Narrow live reads instead of cloning the whole SimConfig (which carries heap Vecs
-        // including obstacle masks). DiffusionKernel is Copy; species colors are the only Vec
-        // consumers, collected once here and reused at both render sites.
-        let current_diffusion_kernel = sim.config().diffusion_kernel;
+        // including obstacle masks). Species colors are the only Vec consumers, collected once
+        // here and reused at both render sites. (DiffusionKernel is read directly via sim.config()
+        // where needed — the old local was removed in Task 15 with build_status_line.)
         let current_species_rgb: Vec<crate::render::palette::RgbColor> =
             extract_species_rgb_colors(sim.config());
 
@@ -1532,6 +1532,11 @@ pub fn run_simulation(
         // Build controls overlay (h key). The Controls surface is gated by the
         // overlay open-state (so esc / CloseOverlays / exclusivity keep working),
         // while `controls_depth` selects which depth (Console / Tuner) renders.
+        //
+        // Task 15: Tuner depth is now handled entirely by the ambient strip (see
+        // ambient_overlay_built below). Only Console depth renders a separate
+        // composite here; Tuner returns (None, 0, 0) so the bottom rows belong
+        // exclusively to the ambient strip.
         let (controls_lines, controls_x, controls_y): (Option<RenderedOverlay>, usize, usize) =
             if runtime_state.overlay_state.is_open(OverlayType::Controls)
                 && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
@@ -1542,45 +1547,43 @@ pub fn run_simulation(
                     ControlsDepth::Closed => ControlsDepth::Console,
                     other => other,
                 };
-                let ctx = RegistryCtx {
-                    diffusion_gaussian: matches!(
-                        runtime_state.diffusion_kernel,
-                        DiffusionKernel::Gaussian
-                    ),
-                    mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
-                };
-                let params = build_param_views(&runtime_state, &ctx, agent_count);
-                let truecolor = matches!(color_mode, ColorMode::TrueColor);
-                let overlay = build_controls(
-                    depth,
-                    runtime_state.controls_category_idx,
-                    runtime_state.controls_focus,
-                    &params,
-                    &runtime_state.panel_style,
-                    ui_accent,
-                    truecolor,
-                    term_width as usize,
-                );
-                // Position differs by depth:
-                //   Console → centered on screen.
-                //   Tuner   → bottom-docked (x=0, y = term_height − strip_height − 1).
-                let (x, y) = match overlay.as_ref() {
-                    Some(ov) => {
-                        let w = ov.lines.first().map(|l| l.chars().count()).unwrap_or(0);
-                        let h = ov.lines.len();
-                        match depth {
-                            ControlsDepth::Tuner => {
-                                (0, (term_height as usize).saturating_sub(h + 1))
-                            }
-                            _ => (
+                // Tuner depth: ambient strip owns the bottom rows — no separate composite.
+                if depth == ControlsDepth::Tuner {
+                    (None, 0, 0)
+                } else {
+                    let ctx = RegistryCtx {
+                        diffusion_gaussian: matches!(
+                            runtime_state.diffusion_kernel,
+                            DiffusionKernel::Gaussian
+                        ),
+                        mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
+                    };
+                    let params = build_param_views(&runtime_state, &ctx, agent_count);
+                    let truecolor = matches!(color_mode, ColorMode::TrueColor);
+                    let overlay = build_controls(
+                        depth,
+                        runtime_state.controls_category_idx,
+                        runtime_state.controls_focus,
+                        &params,
+                        &runtime_state.panel_style,
+                        ui_accent,
+                        truecolor,
+                        term_width as usize,
+                    );
+                    // Console → centered on screen.
+                    let (x, y) = match overlay.as_ref() {
+                        Some(ov) => {
+                            let w = ov.lines.first().map(|l| l.chars().count()).unwrap_or(0);
+                            let h = ov.lines.len();
+                            (
                                 (term_width as usize).saturating_sub(w) / 2,
                                 (term_height as usize).saturating_sub(h) / 2,
-                            ),
+                            )
                         }
-                    }
-                    None => (0, 0),
-                };
-                (overlay, x, y)
+                        None => (0, 0),
+                    };
+                    (overlay, x, y)
+                }
             } else {
                 (None, 0, 0)
             };
@@ -1595,7 +1598,6 @@ pub fn run_simulation(
         };
 
         // Task 12: Build ambient BASE surface (replaces legacy single-row status_data in MAIN path).
-        // The status_data (pause path) is still used by the pause render branch.
         let dither_label = match runtime_state.dither_mode {
             crate::render::dither::DitherMode::None => None,
             crate::render::dither::DitherMode::Ordered { intensity, .. } => {
@@ -1634,38 +1636,92 @@ pub fn run_simulation(
             }
         }
         let ambient_overlay_built: Option<RenderedOverlay> = if show_status {
-            let now = runtime_state.phase_clock;
-            let resolved =
-                crate::render::ambient::resolve(&runtime_state.ambient_states, now).clone();
-            let mut ambient_strip = build_ambient(
-                &resolved,
-                term_width as usize,
-                &runtime_state.panel_style,
-                &ambient_base_status,
-                now,
-            );
-            // TUNE surfaces/settles: ease the strip's dim from 0 → 1 over the
-            // last 0.3s before `until` (settle) and the first 0.3s after it
-            // surfaces. We approximate with a settle ease: full opacity while
-            // far from expiry, easing toward BASE as `now` approaches `until`.
-            if let AmbientState::Tune { until, .. } = &resolved {
-                use crate::render::motion::{dim_overlay, ease_in_out};
-                const EASE_SECS: f32 = 0.3;
-                let remaining = until - now;
-                let dim = if remaining >= EASE_SECS {
-                    1.0
-                } else if remaining <= 0.0 {
-                    0.0
-                } else {
-                    ease_in_out((remaining / EASE_SECS).clamp(0.0, 1.0))
-                };
-                if dim < 1.0 {
-                    if let Some(rich) = ambient_strip.rich_lines.as_mut() {
-                        dim_overlay(rich, dim, runtime_state.panel_style.status_bar_bg);
+            let controls_open = runtime_state.overlay_state.is_open(OverlayType::Controls)
+                && !runtime_state.overlay_state.is_open(OverlayType::Dashboard);
+            let mode = ambient_mode(controls_open, runtime_state.controls_depth);
+
+            match mode {
+                // Console open: ambient hidden (M1: hide — Console is the full surface).
+                AmbientMode::Hidden => None,
+                // Tuner open: persistent TUNE for the currently focused param.
+                AmbientMode::Tuner => {
+                    let now = runtime_state.phase_clock;
+                    let ctx = RegistryCtx {
+                        diffusion_gaussian: matches!(
+                            runtime_state.diffusion_kernel,
+                            DiffusionKernel::Gaussian
+                        ),
+                        mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
+                    };
+                    let params = build_param_views(&runtime_state, &ctx, agent_count);
+                    if let Some(pv) = params.get(
+                        runtime_state
+                            .controls_focus
+                            .min(params.len().saturating_sub(1)),
+                    ) {
+                        let (value, default) = match (pv.ratio, pv.def_ratio) {
+                            (Some(r), Some(d)) => (r, d),
+                            _ => (0.0, 0.0),
+                        };
+                        let tune_view = crate::render::ambient::TuneView {
+                            label: pv.desc.label.to_string(),
+                            value_text: pv.value_text.clone(),
+                            value,
+                            range: (0.0, 1.0),
+                            default,
+                            state: pv.state,
+                        };
+                        let persistent_tune = AmbientState::Tune {
+                            param: tune_view,
+                            until: f32::MAX,
+                        };
+                        Some(build_ambient(
+                            &persistent_tune,
+                            term_width as usize,
+                            &runtime_state.panel_style,
+                            &ambient_base_status,
+                            now,
+                        ))
+                    } else {
+                        None
                     }
                 }
+                // Closed (no controls open): normal BASE/MSG resolution.
+                AmbientMode::Normal => {
+                    let now = runtime_state.phase_clock;
+                    let resolved =
+                        crate::render::ambient::resolve(&runtime_state.ambient_states, now).clone();
+                    let mut ambient_strip = build_ambient(
+                        &resolved,
+                        term_width as usize,
+                        &runtime_state.panel_style,
+                        &ambient_base_status,
+                        now,
+                    );
+                    // TUNE surfaces/settles: ease the strip's dim from 0 → 1 over the
+                    // last 0.3s before `until` (settle) and the first 0.3s after it
+                    // surfaces. We approximate with a settle ease: full opacity while
+                    // far from expiry, easing toward BASE as `now` approaches `until`.
+                    if let AmbientState::Tune { until, .. } = &resolved {
+                        use crate::render::motion::{dim_overlay, ease_in_out};
+                        const EASE_SECS: f32 = 0.3;
+                        let remaining = until - now;
+                        let dim = if remaining >= EASE_SECS {
+                            1.0
+                        } else if remaining <= 0.0 {
+                            0.0
+                        } else {
+                            ease_in_out((remaining / EASE_SECS).clamp(0.0, 1.0))
+                        };
+                        if dim < 1.0 {
+                            if let Some(rich) = ambient_strip.rich_lines.as_mut() {
+                                dim_overlay(rich, dim, runtime_state.panel_style.status_bar_bg);
+                            }
+                        }
+                    }
+                    Some(ambient_strip)
+                }
             }
-            Some(ambient_strip)
         } else {
             None
         };
@@ -3426,37 +3482,106 @@ pub fn run_simulation(
                     (None, 0, 0)
                 };
 
-            // Build status line
-            let diffusion_kernel_name = match current_diffusion_kernel {
-                DiffusionKernel::Mean3x3 => "Mean3x3",
-                DiffusionKernel::Gaussian => "Gaussian",
-            };
-            let (status_line, status_colors) = OverlayRenderer::build_status_line(
-                runtime_state.is_paused,
-                runtime_state.current_preset,
-                runtime_state.time_scale,
-                current_palette.clone(),
-                runtime_state.dither_mode,
-                term_width as usize,
-                Some(sim.agent_count()),
-                Some(diffusion_kernel_name),
-                !runtime_state.undo_stack.is_empty(),
-                !runtime_state.redo_stack.is_empty(),
-                Some(ui_accent),
-                &runtime_state.panel_style,
-            );
-            let status_x = OverlayRenderer::status_line_x(&status_line, term_width as usize);
-            // Suppress status bar in windowed mode unless explicitly enabled.
+            // Pause path: build ambient strip (same logic as main path, unified).
+            // Replaces the legacy build_status_line call (Task 15).
             let show_status_pause = {
                 use crate::simulation::config::ChromeStyle;
                 matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
                     || runtime_state.show_status_bar
             };
-            let status_data = if show_status_pause {
-                Some((status_line, status_x, status_colors))
+            let pause_dither_label = match runtime_state.dither_mode {
+                crate::render::dither::DitherMode::None => None,
+                crate::render::dither::DitherMode::Ordered { intensity, .. } => {
+                    Some(format!("D {:.1}×", intensity))
+                }
+                crate::render::dither::DitherMode::ErrorDiffusion { .. } => Some("ED".to_string()),
+                crate::render::dither::DitherMode::Hybrid { intensity, .. } => {
+                    Some(format!("H {:.1}×", intensity))
+                }
+            };
+            let pause_base_status = BaseStatus {
+                preset_name: preset_name(runtime_state.current_preset).to_string(),
+                palette_name: palette_name(current_palette.clone()).to_string(),
+                time_scale_text: format!("{:.1}×", runtime_state.time_scale),
+                population: Some(sim.agent_count()),
+                dither_label: pause_dither_label,
+                can_undo: !runtime_state.undo_stack.is_empty(),
+                can_redo: !runtime_state.redo_stack.is_empty(),
+                accent: ui_accent,
+                is_paused: runtime_state.is_paused,
+            };
+            let pause_ambient_overlay: Option<RenderedOverlay> = if show_status_pause {
+                let controls_open = runtime_state.overlay_state.is_open(OverlayType::Controls)
+                    && !runtime_state.overlay_state.is_open(OverlayType::Dashboard);
+                let mode = ambient_mode(controls_open, runtime_state.controls_depth);
+                match mode {
+                    AmbientMode::Hidden => None,
+                    AmbientMode::Tuner => {
+                        let now = runtime_state.phase_clock;
+                        let ctx = RegistryCtx {
+                            diffusion_gaussian: matches!(
+                                runtime_state.diffusion_kernel,
+                                DiffusionKernel::Gaussian
+                            ),
+                            mouse_enabled: runtime_state.mouse_mode
+                                != MouseInteractionMode::Disabled,
+                        };
+                        let params = build_param_views(&runtime_state, &ctx, sim.agent_count());
+                        if let Some(pv) = params.get(
+                            runtime_state
+                                .controls_focus
+                                .min(params.len().saturating_sub(1)),
+                        ) {
+                            let (value, default) = match (pv.ratio, pv.def_ratio) {
+                                (Some(r), Some(d)) => (r, d),
+                                _ => (0.0, 0.0),
+                            };
+                            let tune_view = crate::render::ambient::TuneView {
+                                label: pv.desc.label.to_string(),
+                                value_text: pv.value_text.clone(),
+                                value,
+                                range: (0.0, 1.0),
+                                default,
+                                state: pv.state,
+                            };
+                            let persistent_tune = AmbientState::Tune {
+                                param: tune_view,
+                                until: f32::MAX,
+                            };
+                            Some(build_ambient(
+                                &persistent_tune,
+                                term_width as usize,
+                                &runtime_state.panel_style,
+                                &pause_base_status,
+                                now,
+                            ))
+                        } else {
+                            None
+                        }
+                    }
+                    AmbientMode::Normal => {
+                        let now = runtime_state.phase_clock;
+                        let resolved =
+                            crate::render::ambient::resolve(&runtime_state.ambient_states, now)
+                                .clone();
+                        Some(build_ambient(
+                            &resolved,
+                            term_width as usize,
+                            &runtime_state.panel_style,
+                            &pause_base_status,
+                            now,
+                        ))
+                    }
+                }
             } else {
                 None
             };
+            #[allow(clippy::type_complexity)]
+            let status_data: Option<(
+                String,
+                usize,
+                Vec<(usize, crate::render::palette::RgbColor)>,
+            )> = None;
 
             // Re-render with updated pause state
             if args.species_colors_enabled() && sim.config().separate_species_trails {
@@ -3491,7 +3616,9 @@ pub fn run_simulation(
                     None,
                     None,
                     None,
-                    None, // ambient_overlay — Task 15 unifies pause path
+                    pause_ambient_overlay
+                        .as_ref()
+                        .map(|v| (v, 0usize, (term_height as usize).saturating_sub(6))),
                     Some(&runtime_state.panel_style),
                     runtime_state.overlay_state.active(),
                     runtime_state.pause_style,
@@ -3521,7 +3648,9 @@ pub fn run_simulation(
                     None,
                     None,
                     None,
-                    None, // ambient_overlay — Task 15 unifies pause path
+                    pause_ambient_overlay
+                        .as_ref()
+                        .map(|v| (v, 0usize, (term_height as usize).saturating_sub(6))),
                     Some(&runtime_state.panel_style),
                     runtime_state.overlay_state.active(),
                     runtime_state.pause_style,
@@ -3624,6 +3753,40 @@ pub fn get_terminal_size() -> (usize, usize) {
     match crossterm::terminal::size() {
         Ok((w, h)) => (w as usize, h as usize),
         Err(_) => (80, 24),
+    }
+}
+
+/// Which bottom-surface mode the ambient strip should take this frame.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum AmbientMode {
+    /// Console overlay is open — hide the ambient strip (M1).
+    Hidden,
+    /// Controls are at Tuner depth — show the persistent TUNE surface.
+    Tuner,
+    /// Controls closed or not open — BASE/MSG normal resolution.
+    Normal,
+}
+
+/// Resolve which ambient mode applies for this frame.
+///
+/// `controls_open` — true when the Controls overlay is open and Dashboard is not.
+/// `controls_depth` — the current depth within the controls panel.
+///
+/// The `Closed`-while-open defensive case (controls reported open but depth is
+/// `Closed`) maps to `Hidden` (treats it as Console), preserving prior behaviour.
+fn ambient_mode(
+    controls_open: bool,
+    controls_depth: crate::render::controls::ControlsDepth,
+) -> AmbientMode {
+    use crate::render::controls::ControlsDepth;
+    if controls_open {
+        match controls_depth {
+            ControlsDepth::Closed => AmbientMode::Hidden,
+            ControlsDepth::Console => AmbientMode::Hidden,
+            ControlsDepth::Tuner => AmbientMode::Tuner,
+        }
+    } else {
+        AmbientMode::Normal
     }
 }
 
@@ -4050,6 +4213,42 @@ mod tests {
             cli_ov.sensor_angle,
             Some(42.0),
             "CLI override retains sensor_angle"
+        );
+    }
+
+    // ── Task-15 tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn ambient_hidden_when_controls_depth_is_console() {
+        use crate::render::controls::ControlsDepth;
+        // Console open → ambient_mode returns Hidden.
+        assert_eq!(
+            ambient_mode(true, ControlsDepth::Console),
+            AmbientMode::Hidden,
+            "ambient must be hidden when Console depth is active"
+        );
+        // Defensive: Closed-while-open → also Hidden.
+        assert_eq!(
+            ambient_mode(true, ControlsDepth::Closed),
+            AmbientMode::Hidden,
+            "ambient must be hidden for Closed-while-open defensive case"
+        );
+    }
+
+    #[test]
+    fn ambient_shows_tuner_depth_when_controls_tuner() {
+        use crate::render::controls::ControlsDepth;
+        // Tuner open → ambient_mode returns Tuner.
+        assert_eq!(
+            ambient_mode(true, ControlsDepth::Tuner),
+            AmbientMode::Tuner,
+            "ambient must be Tuner when Tuner depth is active"
+        );
+        // Controls not open → Normal regardless of depth.
+        assert_eq!(
+            ambient_mode(false, ControlsDepth::Tuner),
+            AmbientMode::Normal,
+            "ambient must be Normal when controls are not open"
         );
     }
 }
