@@ -223,7 +223,7 @@ impl KeyboardHintsOverlay {
                 Left,
             )
             .add_empty()
-            .add_single(thin_sep, Left)
+            .add_single(&thin_sep, Left)
             .add_empty()
             .add_two_col("OVERLAYS", "POST-PROCESSING", Left, Left)
             .add_two_col(
@@ -234,13 +234,13 @@ impl KeyboardHintsOverlay {
             )
             .add_two_col(
                 "?          Keyboard hints",
-                "[ / ]      Dither (dev)",
+                "9 / *      Cycle theme",
                 Left,
                 Left,
             )
             .add_two_col(
                 "\\ / |      Dashboard",
-                "9 / *      Cycle theme",
+                "{ }        Dither (dev)",
                 Left,
                 Left,
             )
@@ -250,8 +250,24 @@ impl KeyboardHintsOverlay {
                 Left,
                 Left,
             )
+            .add_empty()
+            .add_single(&thin_sep, Left)
+            .add_empty()
+            .add_two_col("CONTROLS (h opens)", "CONTROLS (h opens)", Left, Left)
             .add_two_col(
-                "Tab        Cycle category",
+                "Tab        Tuner ⇄ Console",
+                "[ / ]      Prev / Next category",
+                Left,
+                Left,
+            )
+            .add_two_col(
+                "↑ / ↓      Move focus",
+                "← / →      Adjust param",
+                Left,
+                Left,
+            )
+            .add_two_col(
+                "↵          Activate action",
                 {
                     #[cfg(feature = "audio")]
                     let choir_hint = "F2         Choir on / off";
@@ -1867,6 +1883,36 @@ mod status_line_tests {
                 line
             );
         }
+    }
+
+    #[test]
+    fn test_keyboard_hints_controls_depth_grammar() {
+        let overlay = KeyboardHintsOverlay::build_overlay(RgbColor::new(255, 255, 255));
+        let joined = overlay.lines.join("\n");
+
+        // New grammar: Tab toggles depth (Tuner ⇄ Console)
+        assert!(joined.contains("Tab"), "missing Tab keybind");
+        assert!(
+            joined.contains("Tuner") || joined.contains("Console") || joined.contains("depth"),
+            "Tab hint should reference Tuner, Console, or depth"
+        );
+
+        // New grammar: [ ] for prev/next category
+        assert!(joined.contains("["), "missing [ keybind for prev category");
+        assert!(joined.contains("]"), "missing ] keybind for next category");
+        assert!(joined.contains("category"), "missing category hint");
+
+        // New grammar: ← → for adjust focused param
+        assert!(
+            joined.contains("←") || joined.contains("→") || joined.contains("adjust"),
+            "should reference arrow keys for adjust"
+        );
+
+        // Old grammar: Tab should NOT say "Cycle category" anymore
+        assert!(
+            !joined.contains("Tab        Cycle category"),
+            "Tab should no longer cycle category"
+        );
     }
 
     #[test]
