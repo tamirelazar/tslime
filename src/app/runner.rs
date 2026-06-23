@@ -1391,6 +1391,7 @@ pub fn run_simulation(
                     mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
                 };
                 let params = build_param_views(&runtime_state, &ctx, agent_count);
+                let truecolor = matches!(color_mode, ColorMode::TrueColor);
                 let overlay = build_controls(
                     depth,
                     runtime_state.controls_category_idx,
@@ -1398,17 +1399,25 @@ pub fn run_simulation(
                     &params,
                     &runtime_state.panel_style,
                     ui_accent,
+                    truecolor,
+                    term_width as usize,
                 );
-                // Center the overlay using its own dimensions (Console differs from
-                // the legacy overlay, and Tuner may render nothing → fall back).
+                // Position differs by depth:
+                //   Console → centered on screen.
+                //   Tuner   → bottom-docked (x=0, y = term_height − strip_height − 1).
                 let (x, y) = match overlay.as_ref() {
                     Some(ov) => {
                         let w = ov.lines.first().map(|l| l.chars().count()).unwrap_or(0);
                         let h = ov.lines.len();
-                        (
-                            (term_width as usize).saturating_sub(w) / 2,
-                            (term_height as usize).saturating_sub(h) / 2,
-                        )
+                        match depth {
+                            ControlsDepth::Tuner => {
+                                (0, (term_height as usize).saturating_sub(h + 1))
+                            }
+                            _ => (
+                                (term_width as usize).saturating_sub(w) / 2,
+                                (term_height as usize).saturating_sub(h) / 2,
+                            ),
+                        }
                     }
                     None => (0, 0),
                 };

@@ -209,6 +209,8 @@ fn render_focused(
 /// - `accent`: caller-supplied accent colour from the active simulation palette.
 /// - `truecolor`: when `true`, the heatmap slider uses a green→red gradient; when
 ///   `false`, it falls back to a solid accent colour for 256-colour terminals.
+/// - `width`: terminal width in columns; the strip fills this width (clamped to at
+///   least [`STRIP_W`] so layout invariants hold).
 ///
 /// Returns a [`RenderedOverlay`] with:
 /// - `title_box = None` (no chrome — the Tuner is chrome-light by design).
@@ -220,8 +222,9 @@ pub fn build_tuner(
     style: &PanelStyle,
     accent: RgbColor,
     truecolor: bool,
+    width: usize,
 ) -> RenderedOverlay {
-    let w = STRIP_W;
+    let w = width.max(STRIP_W);
     let mut bufs: Vec<RowBuf> = Vec::with_capacity(STRIP_H);
 
     // ── row 0: dim top-border line (▔ repeated across width) ────────────────
@@ -348,6 +351,7 @@ mod tests {
             &s,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
             true,
+            STRIP_W,
         );
         let rich = ov.rich_lines.expect("tuner needs rich_lines");
         assert!(
@@ -370,6 +374,7 @@ mod tests {
             &s,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
             true,
+            STRIP_W,
         );
         assert_eq!(
             ov.lines.len(),
@@ -387,6 +392,7 @@ mod tests {
             &s,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
             false, // 256-colour — still produces ━/● chars
+            STRIP_W,
         );
         let combined: String = ov.lines.concat();
         assert!(
@@ -416,6 +422,7 @@ mod tests {
             &s,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
             true,
+            STRIP_W,
         );
         let combined: String = ov.lines.concat();
         assert!(
@@ -445,6 +452,7 @@ mod tests {
             &s,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
             true,
+            STRIP_W,
         );
         let combined: String = ov.lines.concat();
         assert!(combined.contains("[ ON  ]"), "toggle 'on' should show pill");
@@ -471,6 +479,7 @@ mod tests {
             &s,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
             true,
+            STRIP_W,
         );
         let combined: String = ov.lines.concat();
         assert!(
@@ -500,6 +509,7 @@ mod tests {
             &s,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
             true,
+            STRIP_W,
         );
         // RECENT label appears in the strip
         let combined: String = ov.lines.concat();
@@ -514,6 +524,31 @@ mod tests {
     }
 
     #[test]
+    fn tuner_width_threading_wider_than_strip_w() {
+        let s = crate::render::theme::SLIME_DARK;
+        let wide = 160usize;
+        let ov = build_tuner(
+            &numeric_fixture(),
+            &[],
+            &s,
+            crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            true,
+            wide,
+        );
+        let rich = ov.rich_lines.as_ref().unwrap();
+        for row in rich.iter() {
+            assert_eq!(row.len(), wide, "wider strip must fill full terminal width");
+        }
+        for line in ov.lines.iter() {
+            assert_eq!(
+                line.chars().count(),
+                wide,
+                "lines width must match threaded terminal width"
+            );
+        }
+    }
+
+    #[test]
     fn tuner_rich_lines_width_matches_lines() {
         let s = crate::render::theme::SLIME_DARK;
         let ov = build_tuner(
@@ -522,6 +557,7 @@ mod tests {
             &s,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
             true,
+            STRIP_W,
         );
         let rich = ov.rich_lines.as_ref().unwrap();
         for (li, (line, rrow)) in ov.lines.iter().zip(rich.iter()).enumerate() {

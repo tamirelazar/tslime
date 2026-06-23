@@ -23,11 +23,18 @@ use crate::render::theme::PanelStyle;
 /// draw (`Closed`).
 ///
 /// - `Console` → [`build_console`].
-/// - `Tuner` → `None` for now; the real Tuner render is wired in Task 12. The
-///   surface visibility gate in the runner still tracks open/close, so a `None`
-///   here simply means "draw nothing this frame" until the Tuner builder lands.
+/// - `Tuner` → [`build_tuner`] using `params[focus]` as the focused parameter.
+///   `recent` is passed as an empty slice (no rolling history source yet; the
+///   tuner falls back to showing the focused param in the RECENT row).
+///   Returns `None` only when `params` is empty.
 /// - `Closed` → `None`.
-#[doc = "Tuner depth currently returns `None`; its renderer is wired in Task 12."]
+///
+/// `truecolor` gates the heatmap-slider gradient; pass `true` for 24-bit
+/// terminals and `false` for 256-colour or below.
+///
+/// `term_width` is forwarded to [`build_tuner`] so the strip fills the full
+/// terminal width instead of the default [`STRIP_W`] minimum.
+#[allow(clippy::too_many_arguments)]
 pub fn build_controls(
     depth: ControlsDepth,
     category: usize,
@@ -35,11 +42,23 @@ pub fn build_controls(
     params: &[ParamView],
     style: &PanelStyle,
     accent: RgbColor,
+    truecolor: bool,
+    term_width: usize,
 ) -> Option<RenderedOverlay> {
     match depth {
         ControlsDepth::Console => Some(build_console(category, focus, params, style, accent)),
-        // Task 12 wires the Tuner renderer here; until then, nothing to draw.
-        ControlsDepth::Tuner => None,
+        ControlsDepth::Tuner => {
+            // Clamp focus to a valid index; bail gracefully when params is empty.
+            let focused = params.get(focus.min(params.len().saturating_sub(1)))?;
+            Some(build_tuner(
+                focused,
+                &[],
+                style,
+                accent,
+                truecolor,
+                term_width,
+            ))
+        }
         ControlsDepth::Closed => None,
     }
 }
@@ -83,16 +102,50 @@ mod tests {
         }];
 
         assert!(
-            build_controls(ControlsDepth::Console, 0, 0, &fixture, &style, accent).is_some(),
+            build_controls(
+                ControlsDepth::Console,
+                0,
+                0,
+                &fixture,
+                &style,
+                accent,
+                true,
+                80
+            )
+            .is_some(),
             "Console depth must produce an overlay"
         );
         assert!(
-            build_controls(ControlsDepth::Closed, 0, 0, &fixture, &style, accent).is_none(),
+            build_controls(
+                ControlsDepth::Closed,
+                0,
+                0,
+                &fixture,
+                &style,
+                accent,
+                true,
+                80
+            )
+            .is_none(),
             "Closed depth must produce no overlay"
         );
         assert!(
-            build_controls(ControlsDepth::Tuner, 0, 0, &fixture, &style, accent).is_none(),
-            "Tuner depth is wired in Task 12; for now it produces no overlay"
+            build_controls(
+                ControlsDepth::Tuner,
+                0,
+                0,
+                &fixture,
+                &style,
+                accent,
+                true,
+                80
+            )
+            .is_some(),
+            "Tuner depth must produce an overlay once a focused param exists"
+        );
+        assert!(
+            build_controls(ControlsDepth::Tuner, 0, 0, &[], &style, accent, true, 80).is_none(),
+            "Tuner depth with empty params must produce no overlay"
         );
     }
 }
