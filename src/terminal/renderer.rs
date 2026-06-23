@@ -539,6 +539,7 @@ impl TerminalRenderer {
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
+        ambient_overlay: Option<(&RenderedOverlay, usize, usize)>,
         panel_style: Option<&PanelStyle>,
         _focused_overlay: Option<crate::overlay::OverlayType>,
         pause_style: PauseStyle,
@@ -715,6 +716,7 @@ impl TerminalRenderer {
                     snap.population,
                     layout.sim_w,
                 );
+                let footer_st = panel_style.unwrap_or(&crate::render::theme::GRUVBOX_DARK);
                 let (footer_status, footer_colors) = ExpandedChromeOverlay::build_footer_status(
                     snap.is_paused,
                     snap.preset,
@@ -727,6 +729,7 @@ impl TerminalRenderer {
                     snap.can_undo,
                     snap.can_redo,
                     Some(accent),
+                    footer_st,
                 );
                 let footer_keys = ExpandedChromeOverlay::build_footer_keybinds(
                     snap.chrome_state == ChromeState::ModalPane,
@@ -983,6 +986,14 @@ impl TerminalRenderer {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::PALETTE_EDITOR);
         }
 
+        // Ambient BASE surface — bottom-docked always-on strip (Task 12).
+        // Composited last so it appears above the simulation but below modal overlays.
+        if let Some((overlay, x, y)) = ambient_overlay {
+            if let Some(ref rich) = overlay.rich_lines {
+                buffer.draw_rich_overlay_dim(rich, x, y, 1.0);
+            }
+        }
+
         execute!(self.stdout, &buffer)
     }
 
@@ -1010,6 +1021,7 @@ impl TerminalRenderer {
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
+        ambient_overlay: Option<(&RenderedOverlay, usize, usize)>,
         panel_style_ms: Option<&PanelStyle>,
         _focused_overlay: Option<crate::overlay::OverlayType>,
         pause_style: PauseStyle,
@@ -1405,6 +1417,13 @@ impl TerminalRenderer {
             draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::PALETTE_EDITOR);
         }
 
+        // Ambient BASE surface — bottom-docked always-on strip (Task 12).
+        if let Some((overlay, x, y)) = ambient_overlay {
+            if let Some(ref rich) = overlay.rich_lines {
+                buffer.draw_rich_overlay_dim(rich, x, y, 1.0);
+            }
+        }
+
         execute!(self.stdout, &buffer)
     }
 }
@@ -1495,6 +1514,7 @@ mod tests {
             None,
             None,
             None,
+            None, // ambient_overlay
             None,
             PauseStyle::Vignette,
             false,

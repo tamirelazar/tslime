@@ -13,6 +13,7 @@
 //!
 //! "Live" means: `sticky == true` OR `now <= until`.
 
+use crate::render::palette::RgbColor;
 use crate::render::panel::{RenderedOverlay, RichCell};
 use crate::render::theme::PanelStyle;
 use crate::render::widgets::{gauge, swatch, value_state, ParamState, RowBuf};
@@ -27,6 +28,48 @@ const STRIP_H: usize = 6;
 const STRIP_W: usize = 80;
 
 // ── Public types ──────────────────────────────────────────────────────────────
+
+/// Status context for the BASE state of the ambient instrument.
+///
+/// All strings are pre-formatted by the caller (preset name, palette name, etc.)
+/// so the renderer has no dependency on config enum types.
+#[derive(Clone, Debug)]
+pub struct BaseStatus {
+    /// Human-readable preset name (e.g. `"Organic"`).
+    pub preset_name: String,
+    /// Human-readable palette name (e.g. `"Forest"`).
+    pub palette_name: String,
+    /// Time scale multiplier string (e.g. `"1.0×"`).
+    pub time_scale_text: String,
+    /// Optional population in agents (displayed as `Nk`).
+    pub population: Option<usize>,
+    /// Optional dither-mode label (e.g. `"D 0.5×"`, `"ED"`).
+    pub dither_label: Option<String>,
+    /// Whether an undo entry is available.
+    pub can_undo: bool,
+    /// Whether a redo entry is available.
+    pub can_redo: bool,
+    /// Palette accent color for the swatch block.
+    pub accent: RgbColor,
+    /// Whether the simulation is paused.
+    pub is_paused: bool,
+}
+
+impl Default for BaseStatus {
+    fn default() -> Self {
+        Self {
+            preset_name: String::new(),
+            palette_name: String::new(),
+            time_scale_text: String::new(),
+            population: None,
+            dither_label: None,
+            can_undo: false,
+            can_redo: false,
+            accent: RgbColor { r: 0, g: 0, b: 0 },
+            is_paused: false,
+        }
+    }
+}
 
 /// A focused-param view for the TUNE state.
 #[derive(Clone, Debug)]
@@ -127,10 +170,16 @@ pub fn resolve(states: &[AmbientState], now: f32) -> &AmbientState {
 /// - `state`  — the resolved [`AmbientState`] to render.
 /// - `width`  — terminal width in columns.
 /// - `st`     — the active [`PanelStyle`] for colour tokens. No hardcoded RGB.
+/// - `base`   — status context for the BASE arm; ignored for TUNE and MSG arms.
 ///
 /// Returns a [`RenderedOverlay`] with `title_box = None` and `rich_lines`
 /// populated. The `lines` field carries the plain-text representation.
-pub fn build_ambient(state: &AmbientState, width: usize, st: &PanelStyle) -> RenderedOverlay {
+pub fn build_ambient(
+    state: &AmbientState,
+    width: usize,
+    st: &PanelStyle,
+    base: &BaseStatus,
+) -> RenderedOverlay {
     let w = width.max(STRIP_W);
     let mut bufs: Vec<RowBuf> = Vec::with_capacity(STRIP_H);
 
@@ -146,16 +195,91 @@ pub fn build_ambient(state: &AmbientState, width: usize, st: &PanelStyle) -> Ren
     match state {
         // ── BASE: idle status ─────────────────────────────────────────────────
         AmbientState::Base => {
-            // row 1: "BASE" label + palette swatch hint
+            // ── row 1: preset · time_scale · swatch · palette ─────────────────
             {
                 let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-                row.put(2, "BASE", Some(st.muted), None);
-                let sw = swatch(st.accent_active);
-                row.put_cells(8, &sw, None);
-                row.put(10, "ambient instrument", Some(st.muted), None);
+                let mut col = 2usize;
+
+                // preset name
+                row.put(col, &base.preset_name, Some(st.text_primary), None);
+                col += base.preset_name.chars().count();
+
+                // separator
+                row.put(col, "  ◦  ", Some(st.muted), None);
+                col += 5;
+
+                // time scale
+                row.put(col, &base.time_scale_text, Some(st.text_primary), None);
+                col += base.time_scale_text.chars().count();
+
+                // palette swatch + name (if space)
+                if w >= 52 {
+                    row.put(col, "  ◦  ", Some(st.muted), None);
+                    col += 5;
+                    let sw = swatch(base.accent);
+                    let sw_w = sw.len();
+                    row.put_cells(col, &sw, None);
+                    col += sw_w;
+                    row.put(col, "  ", None, None);
+                    col += 2;
+                    row.put(col, &base.palette_name, Some(st.text_primary), None);
+                    col += base.palette_name.chars().count() + 2;
+                }
+
+                // population (if space)
+                if let Some(pop) = base.population {
+                    if w >= 68 {
+                        let pop_str = format!("◦  {}k  ", pop / 1000);
+                        row.put(col, &pop_str, Some(st.muted), None);
+                        col += pop_str.chars().count();
+                    }
+                }
+
+                // dither label (if present + space)
+                if let Some(ref dither) = base.dither_label {
+                    if w >= 60 {
+                        let d_str = format!("◦  {}  ", dither);
+                        row.put(col, &d_str, Some(st.muted), None);
+                        col += d_str.chars().count();
+                    }
+                }
+
+                // Right-side indicators: undo / redo / paused / ? help
+                let mut right_parts: Vec<(String, RgbColor)> = Vec::new();
+
+                if base.can_undo || base.can_redo {
+                    let undo_char = if base.can_undo { "↺" } else { "·" };
+                    let redo_char = if base.can_redo { "↻" } else { "·" };
+                    right_parts.push((undo_char.to_string(), st.accent_success));
+                    right_parts.push((" ".to_string(), st.text_primary));
+                    right_parts.push((redo_char.to_string(), st.accent_info));
+                    right_parts.push(("  ".to_string(), st.text_primary));
+                }
+
+                if base.is_paused {
+                    right_parts.push(("⏸ PAUSED  ".to_string(), st.accent_warning));
+                }
+
+                if w >= 100 {
+                    right_parts.push(("?".to_string(), st.accent_info));
+                    right_parts.push((" help  ".to_string(), st.muted));
+                }
+
+                // Place right-side indicators right-aligned
+                let right_chars: usize = right_parts.iter().map(|(s, _)| s.chars().count()).sum();
+                let right_start = w.saturating_sub(right_chars);
+
+                if right_start > col {
+                    let mut rc = right_start;
+                    for (text, color) in &right_parts {
+                        row.put(rc, text, Some(*color), None);
+                        rc += text.chars().count();
+                    }
+                }
+
                 bufs.push(row);
             }
-            // rows 2-4: blank
+            // ── rows 2-4: blank content rows ─────────────────────────────────
             for _ in 0..3 {
                 bufs.push(RowBuf::new_matte(w, st.status_bar_bg));
             }
@@ -319,7 +443,7 @@ mod ambient_tests {
     #[test]
     fn build_ambient_base_emits_strip_h_rows() {
         let st = crate::render::theme::GRUVBOX_DARK;
-        let ov = build_ambient(&AmbientState::Base, STRIP_W, &st);
+        let ov = build_ambient(&AmbientState::Base, STRIP_W, &st, &BaseStatus::default());
         assert_eq!(ov.lines.len(), STRIP_H);
         assert_eq!(ov.rich_lines.unwrap().len(), STRIP_H);
     }
@@ -331,7 +455,7 @@ mod ambient_tests {
             param: tune_stub(),
             until: 100.0,
         };
-        let ov = build_ambient(&state, STRIP_W, &st);
+        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default());
         assert_eq!(ov.lines.len(), STRIP_H);
         assert_eq!(ov.rich_lines.unwrap().len(), STRIP_H);
     }
@@ -345,7 +469,7 @@ mod ambient_tests {
             sticky: true,
             until: f32::INFINITY,
         };
-        let ov = build_ambient(&state, STRIP_W, &st);
+        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default());
         assert_eq!(ov.lines.len(), STRIP_H);
         assert_eq!(ov.rich_lines.unwrap().len(), STRIP_H);
     }
@@ -387,7 +511,7 @@ mod ambient_tests {
             param: tune_stub(),
             until: 100.0,
         };
-        let ov = build_ambient(&state, STRIP_W, &st);
+        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default());
         let combined: String = ov.lines.concat();
         assert!(
             combined.contains("Stub Param"),
@@ -404,9 +528,85 @@ mod ambient_tests {
             sticky: false,
             until: 10.0,
         };
-        let ov = build_ambient(&state, STRIP_W, &st);
+        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default());
         let combined: String = ov.lines.concat();
         assert!(combined.contains("saved"), "MSG should render text");
         assert!(combined.contains('✓'), "Success MSG should render ✓ icon");
+    }
+
+    // ── Task 12: BASE status uses L2 tokens — Nord colors differ from Gruvbox ──
+
+    /// Collect all fg RgbColor values from the rich_lines of the first row (row 1)
+    /// that are not None — these are the status indicator colors.
+    fn collect_fg_colors(
+        rich_lines: &[Vec<crate::render::panel::RichCell>],
+    ) -> Vec<crate::render::palette::RgbColor> {
+        rich_lines
+            .iter()
+            .flat_map(|row| row.iter().filter_map(|(_, fg, _)| *fg))
+            .collect()
+    }
+
+    #[test]
+    fn base_status_gruvbox_and_nord_differ_in_colors() {
+        // Render BASE status on two different themes with a recognizable accent color.
+        // Because both themes route undo/redo/help through their own token colors,
+        // the fg color sets MUST differ — proving the per-theme bug is fixed.
+        let base = BaseStatus {
+            preset_name: "Organic".to_string(),
+            palette_name: "Forest".to_string(),
+            time_scale_text: "1.0×".to_string(),
+            population: Some(50_000),
+            dither_label: None,
+            can_undo: true,
+            can_redo: true,
+            accent: crate::render::palette::RgbColor {
+                r: 200,
+                g: 100,
+                b: 50,
+            },
+            is_paused: false,
+        };
+
+        let gruvbox = crate::render::theme::GRUVBOX_DARK;
+        let nord = crate::render::theme::NORD;
+
+        // Use a wide terminal so ? help is rendered (requires ≥100 cols)
+        let width = 120;
+
+        let ov_gruvbox = build_ambient(&AmbientState::Base, width, &gruvbox, &base);
+        let ov_nord = build_ambient(&AmbientState::Base, width, &nord, &base);
+
+        let colors_gruvbox = collect_fg_colors(&ov_gruvbox.rich_lines.unwrap());
+        let colors_nord = collect_fg_colors(&ov_nord.rich_lines.unwrap());
+
+        // The token colors must differ between themes — if they don't,
+        // the hardcoded RGB is still leaking.
+        assert_ne!(
+            colors_gruvbox, colors_nord,
+            "NORD and GRUVBOX_DARK BASE status must use different fg colors (token-driven)"
+        );
+
+        // Spot-check: ↺ uses accent_success, which differs between themes
+        // Gruvbox accent_success = #B8BB26 (yellowish green)
+        // Nord    accent_success = #A3BE8C (green)
+        assert_ne!(
+            gruvbox.accent_success, nord.accent_success,
+            "Test precondition: themes must have different accent_success"
+        );
+
+        // Verify gruvbox uses its token for accent_success (undo indicator)
+        assert!(
+            colors_gruvbox.contains(&gruvbox.accent_success),
+            "Gruvbox BASE should use gruvbox.accent_success for ↺: {:?}",
+            colors_gruvbox
+        );
+
+        // Verify nord uses its token for accent_success
+        assert!(
+            colors_nord.contains(&nord.accent_success),
+            "Nord BASE should use nord.accent_success for ↺: {:?}",
+            colors_nord
+        );
     }
 }

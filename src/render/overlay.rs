@@ -780,26 +780,15 @@ impl OverlayRenderer {
         can_undo: bool,
         can_redo: bool,
         accent: Option<RgbColor>,
+        st: &PanelStyle,
     ) -> (String, Vec<(usize, RgbColor)>) {
         const SEP: &str = "  ◦  ";
         let mut color_overrides: Vec<(usize, RgbColor)> = Vec::new();
 
-        // Theme colors for status bar chrome (GRUVBOX-matching hardcoded values)
-        let muted = RgbColor {
-            r: 102,
-            g: 92,
-            b: 84,
-        };
-        let accent_success = RgbColor {
-            r: 184,
-            g: 187,
-            b: 38,
-        }; // green for undo ↺
-        let accent_info = RgbColor {
-            r: 131,
-            g: 165,
-            b: 152,
-        }; // teal for redo ↻ and ?
+        // Theme colors drawn from L2 tokens — no hardcoded RGB.
+        let muted = st.muted;
+        let accent_success = st.accent_success; // green for undo ↺
+        let accent_info = st.accent_info; // teal for redo ↻ and ?
 
         let preset_text = preset_name(preset);
         let palette_text = palette_name(palette);
@@ -907,16 +896,11 @@ impl OverlayRenderer {
             if let Some(off) = help_q_offset_in_right {
                 color_overrides.push((right_start + off, accent_info));
             }
-            // Color ⏸ PAUSED with amber
+            // Color ⏸ PAUSED with accent_warning token
             if let Some(paused_off) = paused_offset_in_right {
                 let global_start = right_start + paused_off;
-                let amber = RgbColor {
-                    r: 215,
-                    g: 153,
-                    b: 33,
-                };
                 for i in 0.."⏸ PAUSED".chars().count() {
-                    color_overrides.push((global_start + i, amber));
+                    color_overrides.push((global_start + i, st.accent_warning));
                 }
             }
             format!("{}{}{}", left, " ".repeat(gap), right)
@@ -1717,6 +1701,7 @@ mod status_line_tests {
             false,
             false,
             None,
+            &crate::render::theme::GRUVBOX_DARK,
         );
         // At 40 cols: should only have preset and time
         assert!(status.contains("Organic"));
@@ -1739,6 +1724,7 @@ mod status_line_tests {
             false,
             false,
             None,
+            &crate::render::theme::GRUVBOX_DARK,
         );
         // At 80 cols: should have preset, time, palette, and population
         assert!(status.contains("Network"));
@@ -1765,6 +1751,7 @@ mod status_line_tests {
             false,
             false,
             None,
+            &crate::render::theme::GRUVBOX_DARK,
         );
         // At 120 cols: should have everything including help
         assert!(status.contains("Exploratory"));
@@ -1777,6 +1764,7 @@ mod status_line_tests {
 
     #[test]
     fn test_status_line_paused() {
+        let st = &crate::render::theme::GRUVBOX_DARK;
         let (status, colors) = OverlayRenderer::build_status_line(
             true,
             Preset::Organic,
@@ -1789,15 +1777,11 @@ mod status_line_tests {
             false,
             false,
             None,
+            st,
         );
         assert!(status.contains("⏸ PAUSED"));
-        // PAUSED should have amber color overrides
-        let amber = RgbColor {
-            r: 215,
-            g: 153,
-            b: 33,
-        };
-        assert!(colors.iter().any(|(_, c)| *c == amber));
+        // PAUSED should have accent_warning color overrides
+        assert!(colors.iter().any(|(_, c)| *c == st.accent_warning));
     }
 
     #[test]
@@ -1817,6 +1801,7 @@ mod status_line_tests {
             false,
             false,
             None,
+            &crate::render::theme::GRUVBOX_DARK,
         );
         assert!(status.contains("D 0.5×"));
     }
@@ -1835,6 +1820,7 @@ mod status_line_tests {
             false,
             false,
             None,
+            &crate::render::theme::GRUVBOX_DARK,
         );
         // Should still work without population or diffusion kernel
         assert!(status.contains("Organic"));
@@ -2305,6 +2291,7 @@ impl ExpandedChromeOverlay {
         can_undo: bool,
         can_redo: bool,
         accent: Option<RgbColor>,
+        st: &PanelStyle,
     ) -> (String, Vec<(usize, RgbColor)>) {
         OverlayRenderer::build_status_line(
             is_paused,
@@ -2318,6 +2305,7 @@ impl ExpandedChromeOverlay {
             can_undo,
             can_redo,
             accent,
+            st,
         )
     }
 

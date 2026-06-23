@@ -19,6 +19,7 @@ use crate::food_image::FOOD_IMAGE_PNG;
 use crate::overlay::{OverlayInputManager, OverlayInputResult, OverlayType};
 use crate::palette_manager;
 use crate::render::adaptive_brightness::AdaptiveBrightness;
+use crate::render::ambient::{build_ambient, AmbientState, BaseStatus};
 use crate::render::charset::Charset;
 use crate::render::controls::registry::RegistryCtx;
 use crate::render::dither::DitherMode;
@@ -1523,39 +1524,59 @@ pub fn run_simulation(
                 (None, 0, 0)
             };
 
-        // Build status line (shown when any overlay visible or paused)
-        let diffusion_kernel_name = match runtime_state.diffusion_kernel {
-            DiffusionKernel::Mean3x3 => "Mean3x3",
-            DiffusionKernel::Gaussian => "Gaussian",
-        };
-        let (status_line, status_colors) = OverlayRenderer::build_status_line(
-            runtime_state.is_paused,
-            runtime_state.current_preset,
-            runtime_state.time_scale,
-            current_palette.clone(),
-            runtime_state.dither_mode,
-            term_width as usize,
-            Some(agent_count),
-            Some(diffusion_kernel_name),
-            !runtime_state.undo_stack.is_empty(),
-            !runtime_state.redo_stack.is_empty(),
-            Some(ui_accent),
-        );
-        let status_x = OverlayRenderer::status_line_x(&status_line, term_width as usize);
         // In windowed mode the expanded chrome footer replaces the status bar.
-        // Only show the legacy status bar in fullscreen mode, or when explicitly
-        // enabled via `show_status_bar`.
+        // Only show the ambient strip in fullscreen mode, or when explicitly
+        // enabled via `show_status_bar`. Gate removed (Task 12): always-on at rest.
         let show_status = {
             use crate::simulation::config::ChromeStyle;
             matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
                 || runtime_state.show_status_bar
         };
-        let status_data =
-            if show_status && (runtime_state.any_overlay_open() || runtime_state.is_paused) {
-                Some((status_line, status_x, status_colors))
-            } else {
-                None
-            };
+
+        // Task 12: Build ambient BASE surface (replaces legacy single-row status_data in MAIN path).
+        // The status_data (pause path) is still used by the pause render branch.
+        let dither_label = match runtime_state.dither_mode {
+            crate::render::dither::DitherMode::None => None,
+            crate::render::dither::DitherMode::Ordered { intensity, .. } => {
+                Some(format!("D {:.1}×", intensity))
+            }
+            crate::render::dither::DitherMode::ErrorDiffusion { .. } => Some("ED".to_string()),
+            crate::render::dither::DitherMode::Hybrid { intensity, .. } => {
+                Some(format!("H {:.1}×", intensity))
+            }
+        };
+        let ambient_base_status = BaseStatus {
+            preset_name: preset_name(runtime_state.current_preset).to_string(),
+            palette_name: palette_name(current_palette.clone()).to_string(),
+            time_scale_text: format!("{:.1}×", runtime_state.time_scale),
+            population: Some(agent_count),
+            dither_label,
+            can_undo: !runtime_state.undo_stack.is_empty(),
+            can_redo: !runtime_state.redo_stack.is_empty(),
+            accent: ui_accent,
+            is_paused: runtime_state.is_paused,
+        };
+        let ambient_overlay_built: Option<RenderedOverlay> = if show_status {
+            let ambient_strip = build_ambient(
+                &AmbientState::Base,
+                term_width as usize,
+                &runtime_state.panel_style,
+                &ambient_base_status,
+            );
+            Some(ambient_strip)
+        } else {
+            None
+        };
+        // STRIP_H = 6 rows; bottom-dock at term_height - STRIP_H.
+        let ambient_y = (term_height as usize).saturating_sub(6);
+        let ambient_data = ambient_overlay_built
+            .as_ref()
+            .map(|v| (v, 0usize, ambient_y));
+
+        // Legacy single-row status_data: only used by the PAUSE path renderer (see below).
+        // In the MAIN path we pass None — the ambient strip takes its place.
+        #[allow(clippy::type_complexity)]
+        let status_data: Option<(String, usize, Vec<(usize, RgbColor)>)> = None;
 
         let notification_overlay: Option<RenderedOverlay> = runtime_state
             .current_notification_full()
@@ -1900,6 +1921,7 @@ pub fn run_simulation(
                 palette_editor_overlay
                     .as_ref()
                     .map(|v| (v, palette_editor_x, palette_editor_y)),
+                ambient_data,
                 Some(&runtime_state.panel_style),
                 runtime_state.overlay_state.active(),
                 runtime_state.pause_style,
@@ -1943,6 +1965,7 @@ pub fn run_simulation(
                 palette_editor_overlay
                     .as_ref()
                     .map(|v| (v, palette_editor_x, palette_editor_y)),
+                ambient_data,
                 Some(&runtime_state.panel_style),
                 runtime_state.overlay_state.active(),
                 runtime_state.pause_style,
@@ -3261,6 +3284,7 @@ pub fn run_simulation(
                 !runtime_state.undo_stack.is_empty(),
                 !runtime_state.redo_stack.is_empty(),
                 Some(ui_accent),
+                &runtime_state.panel_style,
             );
             let status_x = OverlayRenderer::status_line_x(&status_line, term_width as usize);
             // Suppress status bar in windowed mode unless explicitly enabled.
@@ -3308,6 +3332,7 @@ pub fn run_simulation(
                     None,
                     None,
                     None,
+                    None, // ambient_overlay — Task 15 unifies pause path
                     Some(&runtime_state.panel_style),
                     runtime_state.overlay_state.active(),
                     runtime_state.pause_style,
@@ -3337,6 +3362,7 @@ pub fn run_simulation(
                     None,
                     None,
                     None,
+                    None, // ambient_overlay — Task 15 unifies pause path
                     Some(&runtime_state.panel_style),
                     runtime_state.overlay_state.active(),
                     runtime_state.pause_style,
