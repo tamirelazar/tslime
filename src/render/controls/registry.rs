@@ -99,7 +99,7 @@ pub enum ParamId {
 pub struct ParamDesc {
     /// Unique identifier for this parameter.
     pub id: ParamId,
-    /// Keyboard hint (e.g., "A/a", "—").
+    /// Keyboard hint (e.g., "A/a", "─").
     pub key_hint: &'static str,
     /// Human-readable label.
     pub label: &'static str,
@@ -392,7 +392,7 @@ mod tests {
         // Mouse Timeout has no ControlAction; it must be Display, not CliReadonly.
         let d = ParamDesc {
             id: ParamId::MouseTimeout,
-            key_hint: "—",
+            key_hint: "─",
             label: "Mouse Timeout",
             kind: ParamKind::Display,
         };
