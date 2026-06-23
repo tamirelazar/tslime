@@ -194,6 +194,15 @@ fn apply_controls_action(
 
     let category = state.controls_category_idx;
 
+    // Defensive clamp: if a conditional row disappeared (e.g. Gaussian toggled
+    // off removes Diff Sigma; mouse disabled removes Mouse Timeout) the focus
+    // index can be stale. Correct it before any action so that navigation and
+    // adjust always land on a real row.
+    let visible_len = registry::visible_params(category, ctx).len();
+    if visible_len > 0 {
+        state.controls_focus = state.controls_focus.min(visible_len - 1);
+    }
+
     match action {
         ControlAction::ToggleControlsDepth => {
             state.controls_depth = match state.controls_depth {
@@ -238,6 +247,31 @@ fn apply_controls_action(
             match registry::activate_action_for(desc.id) {
                 Some(real) => ControlsDispatch::Redispatch(real),
                 None => ControlsDispatch::Handled,
+            }
+        }
+        // Category cycling: when the controls overlay is open, cycle the category
+        // here and clamp focus to the new category's visible row count, then
+        // return Handled so the runner's match arm is skipped (no double-cycle).
+        // When the overlay is closed, return Passthrough so the runner's arm can
+        // open the overlay and set depth=Console.
+        ControlAction::CycleOptionsCategory => {
+            if state.overlay_state.is_open(OverlayType::Controls) {
+                state.cycle_controls_category(true);
+                let new_len = registry::visible_params(state.controls_category_idx, ctx).len();
+                state.controls_focus = state.controls_focus.min(new_len.saturating_sub(1));
+                ControlsDispatch::Handled
+            } else {
+                ControlsDispatch::Passthrough
+            }
+        }
+        ControlAction::CycleOptionsCategoryReverse => {
+            if state.overlay_state.is_open(OverlayType::Controls) {
+                state.cycle_controls_category(false);
+                let new_len = registry::visible_params(state.controls_category_idx, ctx).len();
+                state.controls_focus = state.controls_focus.min(new_len.saturating_sub(1));
+                ControlsDispatch::Handled
+            } else {
+                ControlsDispatch::Passthrough
             }
         }
         // Any other action: if it's a per-param hotkey whose parameter is in the
@@ -3465,6 +3499,97 @@ mod tests {
         ));
         assert_eq!(state.controls_focus, 2);
         assert_eq!(state.controls_category_idx, 0);
+    }
+
+    // ── Task-14 tests ─────────────────────────────────────────────────────────
+
+    /// ControlsAdjustFocused from Closed must auto-promote depth to Tuner and
+    /// then continue to dispatch the focused parameter's adjust action.
+    #[test]
+    fn arrow_from_closed_promotes_to_tuner() {
+        use crate::render::controls::ControlsDepth;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // Start fully closed (RuntimeState::new sets depth=Closed).
+        assert_eq!(state.controls_depth, ControlsDepth::Closed);
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        // A focused adjust must auto-promote depth to Tuner.
+        apply_controls_action(&mut state, &ControlAction::ControlsAdjustFocused(1.0), &ctx);
+        assert_eq!(state.controls_depth, ControlsDepth::Tuner);
+    }
+
+    /// After cycling to a category with fewer visible rows than the current
+    /// focus index, controls_focus must be clamped to the new category's last
+    /// row (no stale out-of-bounds index).
+    #[test]
+    fn category_change_clamps_focus() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // Open the controls overlay so CycleOptionsCategory is handled inside
+        // apply_controls_action (not just the closed→open branch in the runner).
+        state
+            .overlay_state
+            .open(crate::overlay::OverlayType::Controls);
+        // SIM (category 0) has 7 rows; set focus to the last row (index 6).
+        state.controls_category_idx = 0;
+        state.controls_focus = 6;
+        // Cycle through all categories until we reach SYS (index 5, 3 rows).
+        // SIM→ENV→APP→PST→PRF→SYS = 5 forward cycles.
+        for _ in 0..5 {
+            apply_controls_action(&mut state, &ControlAction::CycleOptionsCategory, &ctx);
+        }
+        assert_eq!(state.controls_category_idx, 5); // SYS
+                                                    // SYS has 3 rows (indices 0-2); focus must be clamped to at most 2.
+        let sys_len = crate::render::controls::registry::visible_params(5, &ctx).len();
+        assert!(
+            state.controls_focus < sys_len,
+            "focus {} out of bounds for SYS len {}",
+            state.controls_focus,
+            sys_len,
+        );
+    }
+
+    /// When ctx shrinks the current category's visible list (e.g. Gaussian
+    /// toggled off removes Diff Sigma from ENV), the defensive clamp at the
+    /// top of apply_controls_action must correct a stale focus index before
+    /// the action runs.
+    #[test]
+    fn conditional_row_disappearance_clamps_focus() {
+        let mut state = controls_test_state();
+        // Start in ENV (category 1) with Gaussian ON — that adds Diff Sigma,
+        // giving 7 rows (indices 0-6). Set focus to the last row.
+        let ctx_gaussian_on = RegistryCtx {
+            diffusion_gaussian: true,
+            mouse_enabled: false,
+        };
+        state.controls_category_idx = 1; // ENV
+        let len_with_sigma =
+            crate::render::controls::registry::visible_params(1, &ctx_gaussian_on).len();
+        state.controls_focus = len_with_sigma - 1; // last row
+                                                   // Now ctx flips to Gaussian OFF — Diff Sigma disappears, shorter list.
+        let ctx_gaussian_off = RegistryCtx {
+            diffusion_gaussian: false,
+            mouse_enabled: false,
+        };
+        let len_without_sigma =
+            crate::render::controls::registry::visible_params(1, &ctx_gaussian_off).len();
+        assert!(
+            len_without_sigma < len_with_sigma,
+            "gaussian off must shrink ENV row count"
+        );
+        // Any action dispatched with the new (shorter) ctx must clamp focus.
+        apply_controls_action(
+            &mut state,
+            &ControlAction::ControlsFocusPrev, // innocuous action
+            &ctx_gaussian_off,
+        );
+        assert!(
+            state.controls_focus < len_without_sigma,
+            "focus {} must be within new ENV len {}",
+            state.controls_focus,
+            len_without_sigma,
+        );
     }
 
     #[test]
