@@ -293,8 +293,8 @@ fn apply_controls_action(
 /// Builds the [`ParamView`] list for the currently-visible parameters of the
 /// active controls category, sourcing every value from live [`RuntimeState`].
 ///
-/// Value formatting, gauge ranges, and modified/default detection mirror the
-/// legacy `ControlsOverlay::build_overlay` per-param logic so the new Console
+/// Value formatting, gauge ranges, and modified/default detection follow the
+/// same logic as [`build_param_views`] / the controls module so the Console
 /// reads identically to the old controls overlay.
 ///
 /// `ratio`/`def_ratio` are filled only for [`ParamKind::Numeric`] rows; for all

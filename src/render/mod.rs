@@ -53,9 +53,6 @@ pub mod window;
 pub mod window_frame;
 
 #[cfg(feature = "terminal")]
-/// Controls overlay rendering.
-pub mod options_overlay;
-#[cfg(feature = "terminal")]
 /// General overlay rendering utilities (help, stats, etc.).
 pub mod overlay;
 #[cfg(feature = "terminal")]

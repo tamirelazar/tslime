@@ -16,7 +16,6 @@ use crate::overlay::{OverlayState, OverlayType};
 use crate::render::charset::Charset;
 pub use crate::render::charset::ALL_CHARSETS;
 use crate::render::dither::{DitherMatrix, DitherMode};
-use crate::render::options_overlay::ControlsOverlay;
 use crate::render::palette::IntensityMapping;
 use crate::render::theme::{PanelStyle, ALL_THEMES, GRUVBOX_DARK};
 use crate::simulation::config::{
@@ -1149,12 +1148,12 @@ impl RuntimeState {
 
     /// Cycles through control categories.
     pub fn cycle_controls_category(&mut self, forward: bool) {
+        let total = crate::render::controls::registry::CATEGORY_NAMES.len();
         if forward {
-            self.controls_category_idx =
-                (self.controls_category_idx + 1) % ControlsOverlay::TOTAL_CATEGORIES;
+            self.controls_category_idx = (self.controls_category_idx + 1) % total;
         } else {
             self.controls_category_idx = if self.controls_category_idx == 0 {
-                ControlsOverlay::TOTAL_CATEGORIES - 1
+                total - 1
             } else {
                 self.controls_category_idx - 1
             };
