@@ -2428,6 +2428,12 @@ pub fn run_simulation(
                             }
                         }
                         ControlAction::None => {}
+                        // Controls-overlay interaction actions — wired in Task 8.
+                        ControlAction::ToggleControlsDepth
+                        | ControlAction::ControlsFocusNext
+                        | ControlAction::ControlsFocusPrev
+                        | ControlAction::ControlsAdjustFocused(_)
+                        | ControlAction::ControlsActivateFocused => { /* wired in Task 8 */ }
                     }
                 }
                 Event::Mouse(mouse_event) => {

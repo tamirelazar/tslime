@@ -403,6 +403,16 @@ pub enum ControlAction {
     /// Toggle choir-mode audio sonification on/off.
     #[cfg(feature = "audio")]
     ToggleChoir,
+    /// Cycle controls overlay depth: Closed → Console → Tuner → Closed.
+    ToggleControlsDepth,
+    /// Move focus to the next control in the controls overlay.
+    ControlsFocusNext,
+    /// Move focus to the previous control in the controls overlay.
+    ControlsFocusPrev,
+    /// Adjust the currently focused control by the given signed delta (−1.0 / +1.0).
+    ControlsAdjustFocused(f32),
+    /// Activate (press) the currently focused control in the controls overlay.
+    ControlsActivateFocused,
     /// No action.
     None,
 }
@@ -2951,5 +2961,16 @@ mod tests {
             !rs2.is_dirty(&sim2, rs2.live_palette.clone(), rs2.live_charset.clone()),
             "a freshly-applied DynamicTendrils preset (trail_modulation: Some) must not read dirty"
         );
+    }
+
+    #[test]
+    fn controls_actions_exist() {
+        let _ = [
+            ControlAction::ToggleControlsDepth,
+            ControlAction::ControlsFocusNext,
+            ControlAction::ControlsFocusPrev,
+            ControlAction::ControlsAdjustFocused(1.0),
+            ControlAction::ControlsActivateFocused,
+        ];
     }
 }
