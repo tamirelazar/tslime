@@ -23,6 +23,7 @@ use crate::render::controls::{ParamState, ParamView};
 use crate::render::palette::RgbColor;
 use crate::render::panel::{RenderedOverlay, RichCell};
 use crate::render::theme::PanelStyle;
+use crate::render::widgets::RowBuf;
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -33,16 +34,6 @@ const STRIP_W: usize = 80;
 
 /// Number of rows in the tuner strip (including top border + bottom margin).
 const STRIP_H: usize = 6;
-
-/// Background colour for the ambient strip.
-///
-/// Intentionally darker than the panel bg to create a translucent-feel matte without
-/// alpha blending (terminals can't alpha-blend; the art shows AROUND the strip edges).
-const STRIP_BG: RgbColor = RgbColor {
-    r: 10,
-    g: 16,
-    b: 12,
-};
 
 /// Width of the heatmap slider in the focused-param row.
 const SLIDER_W: usize = 44;
@@ -56,69 +47,6 @@ const RECENT_LABEL_W: usize = 8; // "RECENT  "
 /// Columns reserved per recent-param slot (label + sparkline + value).
 const RECENT_SLOT_W: usize = 18;
 
-// ── Row buffer ────────────────────────────────────────────────────────────────
-
-/// A character + optional per-cell colours for one content row.
-struct RowBuf {
-    chars: Vec<char>,
-    fg: Vec<Option<RgbColor>>,
-    bg: Vec<Option<RgbColor>>,
-}
-
-impl RowBuf {
-    /// Allocate a blank row of `w` columns, all filled with the strip bg matte.
-    fn new_matte(w: usize) -> Self {
-        Self {
-            chars: vec![' '; w],
-            fg: vec![None; w],
-            bg: vec![Some(STRIP_BG); w],
-        }
-    }
-
-    /// Write `s` starting at column `at` with optional per-character fg/bg.
-    fn put(&mut self, at: usize, s: &str, fg: Option<RgbColor>, bg: Option<RgbColor>) {
-        for (i, ch) in s.chars().enumerate() {
-            let c = at + i;
-            if c < self.chars.len() {
-                self.chars[c] = ch;
-                if fg.is_some() {
-                    self.fg[c] = fg;
-                }
-                if bg.is_some() {
-                    self.bg[c] = bg;
-                }
-            }
-        }
-    }
-
-    /// Write coloured character cells (from a gauge/heatmap result) starting at `at`.
-    fn put_cells(&mut self, at: usize, cells: &[(char, RgbColor)]) {
-        for (i, (ch, col)) in cells.iter().enumerate() {
-            let c = at + i;
-            if c < self.chars.len() {
-                self.chars[c] = *ch;
-                self.fg[c] = Some(*col);
-                // leave bg as-is (already the strip matte)
-            }
-        }
-    }
-
-    /// Convert to a `Vec<RichCell>`.
-    fn into_rich(self) -> Vec<RichCell> {
-        self.chars
-            .into_iter()
-            .zip(self.fg)
-            .zip(self.bg)
-            .map(|((ch, fg), bg)| (ch, fg, bg))
-            .collect()
-    }
-
-    /// Convert chars to a plain `String` (for `RenderedOverlay::lines`).
-    fn text(&self) -> String {
-        self.chars.iter().collect()
-    }
-}
-
 // ── Kind-aware focused-param widget ──────────────────────────────────────────
 
 /// Render the focused-param row into `row`.
@@ -131,12 +59,12 @@ impl RowBuf {
 /// ```
 fn render_focused(
     row: &mut RowBuf,
+    w: usize,
     pv: &ParamView,
     accent: RgbColor,
     style: &PanelStyle,
     truecolor: bool,
 ) {
-    let w = row.chars.len();
     // Left: "[key] Label" (up to 20 chars)
     let head = format!("[{}] {}", pv.desc.key_hint, pv.desc.label);
     let head: String = head.chars().take(18).collect();
@@ -164,7 +92,7 @@ fn render_focused(
             if let (Some(ratio), Some(def_ratio)) = (pv.ratio, pv.def_ratio) {
                 let cells =
                     heatmap_slider(ratio, def_ratio, widget_w, truecolor, accent, style.muted);
-                row.put_cells(widget_start, &cells);
+                row.put_cells(widget_start, &cells, None);
             } else {
                 // No ratio: show dimmed value hint
                 row.put(widget_start, "─── (no range) ───", Some(style.muted), None);
@@ -228,10 +156,9 @@ pub fn build_tuner(
     let mut bufs: Vec<RowBuf> = Vec::with_capacity(STRIP_H);
 
     // ── row 0: dim top-border line (▔ repeated across width) ────────────────
-    let mut border = RowBuf::new_matte(w);
+    let mut border = RowBuf::new_matte(w, style.status_bar_bg);
     for c in 0..w {
-        border.chars[c] = '▔';
-        border.fg[c] = Some(style.border_color);
+        border.put(c, "▔", Some(style.border_color), None);
     }
     bufs.push(border);
 
@@ -239,7 +166,7 @@ pub fn build_tuner(
     // ParamView has no history slice; we render current-value sparkline-of-one.
     // A real rolling history would be supplied by the runner (out of scope: Task 13+).
     {
-        let mut rrow = RowBuf::new_matte(w);
+        let mut rrow = RowBuf::new_matte(w, style.status_bar_bg);
         rrow.put(2, "RECENT", Some(style.muted), None);
         let sources: Vec<&ParamView> = if recent.is_empty() {
             // Fall back to the focused param so the row is never empty.
@@ -265,11 +192,7 @@ pub fn build_tuner(
             };
             let spark_col = match pv.state {
                 ParamState::Modified => style.accent_modified,
-                ParamState::Cli => RgbColor {
-                    r: 204,
-                    g: 102,
-                    b: 102,
-                },
+                ParamState::Cli => style.cli_color,
                 _ => style.muted,
             };
             rrow.put(rx, &spark, Some(spark_col), None);
@@ -284,18 +207,18 @@ pub fn build_tuner(
     }
 
     // ── row 2: blank strip row ────────────────────────────────────────────────
-    bufs.push(RowBuf::new_matte(w));
+    bufs.push(RowBuf::new_matte(w, style.status_bar_bg));
 
     // ── row 3: focused-param kind-aware widget ────────────────────────────────
     {
-        let mut frow = RowBuf::new_matte(w);
-        render_focused(&mut frow, focused, accent, style, truecolor);
+        let mut frow = RowBuf::new_matte(w, style.status_bar_bg);
+        render_focused(&mut frow, w, focused, accent, style, truecolor);
         bufs.push(frow);
     }
 
     // ── row 4: hint line ──────────────────────────────────────────────────────
     {
-        let mut hint = RowBuf::new_matte(w);
+        let mut hint = RowBuf::new_matte(w, style.status_bar_bg);
         hint.put(
             2,
             "←→ tune · ↑↓ pick · fades when idle",
@@ -306,7 +229,7 @@ pub fn build_tuner(
     }
 
     // ── row 5: bottom margin (clearance for status-bar row) ──────────────────
-    bufs.push(RowBuf::new_matte(w));
+    bufs.push(RowBuf::new_matte(w, style.status_bar_bg));
 
     // ── Assemble ──────────────────────────────────────────────────────────────
     let lines: Vec<String> = bufs.iter().map(|b| b.text()).collect();
@@ -344,7 +267,8 @@ mod tests {
 
     #[test]
     fn tuner_emits_rich_grid_with_matte() {
-        let s = crate::render::theme::SLIME_DARK;
+        let mut s = crate::render::theme::SLIME_DARK;
+        s.status_bar_bg = RgbColor::new(1, 2, 3);
         let ov = build_tuner(
             &numeric_fixture(),
             &[],
@@ -356,8 +280,9 @@ mod tests {
         let rich = ov.rich_lines.expect("tuner needs rich_lines");
         assert!(
             rich.iter()
-                .any(|row| row.iter().any(|(_, _, bg)| bg.is_some())),
-            "no matte bg"
+                .flatten()
+                .all(|(_, _, bg)| *bg == Some(s.status_bar_bg)),
+            "matte must use the supplied theme's status-bar background"
         );
         assert!(
             ov.title_box.is_none(),

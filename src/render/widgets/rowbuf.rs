@@ -103,6 +103,22 @@ impl RowBuf {
         }
     }
 
+    /// Applies this row's set color layers to existing rich cells without changing glyphs.
+    pub(crate) fn overlay_styles(&self, destination: &mut [RichCell], at: usize) {
+        let Some(destination) = destination.get_mut(at..) else {
+            return;
+        };
+        let source = self.fg.iter().zip(&self.bg);
+        for (dst, (src_fg, src_bg)) in destination.iter_mut().zip(source) {
+            if src_fg.is_some() {
+                dst.1 = *src_fg;
+            }
+            if src_bg.is_some() {
+                dst.2 = *src_bg;
+            }
+        }
+    }
+
     /// Consumes the row and merges its parallel layers into rich cells.
     pub fn into_rich(self) -> Vec<RichCell> {
         self.chars
@@ -244,5 +260,52 @@ mod rowbuf_tests {
         );
         dst.blit(usize::MAX, &src);
         assert_eq!(dst.into_rich(), vec![(' ', None, None); 2]);
+    }
+
+    #[test]
+    fn overlay_styles_copies_set_layers_and_preserves_chars_and_unset_layers() {
+        let dst_fg = RgbColor::new(1, 2, 3);
+        let dst_bg = RgbColor::new(4, 5, 6);
+        let src_fg = RgbColor::new(7, 8, 9);
+        let src_bg = RgbColor::new(10, 11, 12);
+        let mut source = RowBuf::new(2);
+        source.put(0, "x", Some(src_fg), None);
+        source.put(1, "y", None, Some(src_bg));
+        let mut destination = vec![
+            ('A', Some(dst_fg), Some(dst_bg)),
+            ('B', Some(dst_fg), Some(dst_bg)),
+        ];
+
+        source.overlay_styles(&mut destination, 0);
+
+        assert_eq!(destination[0], ('A', Some(src_fg), Some(dst_bg)));
+        assert_eq!(destination[1], ('B', Some(dst_fg), Some(src_bg)));
+    }
+
+    #[test]
+    fn overlay_styles_clips_at_destination_width() {
+        let fg = RgbColor::new(1, 2, 3);
+        let bg = RgbColor::new(4, 5, 6);
+        let mut source = RowBuf::new(3);
+        source.put(0, "abc", Some(fg), Some(bg));
+        let mut destination = vec![('A', None, None), ('B', None, None)];
+
+        source.overlay_styles(&mut destination, 1);
+
+        assert_eq!(destination[0], ('A', None, None));
+        assert_eq!(destination[1], ('B', Some(fg), Some(bg)));
+    }
+
+    #[test]
+    fn overlay_styles_at_max_offset_is_a_noop() {
+        let fg = RgbColor::new(1, 2, 3);
+        let bg = RgbColor::new(4, 5, 6);
+        let mut source = RowBuf::new(1);
+        source.put(0, "x", Some(fg), Some(bg));
+        let mut destination = vec![('A', None, None)];
+
+        source.overlay_styles(&mut destination, usize::MAX);
+
+        assert_eq!(destination, vec![('A', None, None)]);
     }
 }

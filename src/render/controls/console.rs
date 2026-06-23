@@ -17,6 +17,9 @@ use crate::render::controls::registry::{ParamDesc, ParamKind, CATEGORY_NAMES};
 use crate::render::palette::RgbColor;
 use crate::render::panel::{Padding, PanelBuilder, RenderedOverlay, RichCell, TextAlignment};
 use crate::render::theme::PanelStyle;
+use crate::render::widgets::{state_color, RowBuf};
+
+pub use crate::render::widgets::ParamState;
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -43,34 +46,7 @@ const RIGHT_W: usize = CW - RIGHT_AT;
 /// height so the panel size is stable even when those conditionals flip on.
 pub(crate) const MAX_VISIBLE_ROWS: usize = 8;
 
-/// Background color for the focused row in the left list.
-const FOCUS_BG: RgbColor = RgbColor {
-    r: 34,
-    g: 52,
-    b: 40,
-};
-
-/// Color used for CLI-readonly parameters.
-const CLI_RED: RgbColor = RgbColor {
-    r: 204,
-    g: 102,
-    b: 102,
-};
-
 // ── Public types ──────────────────────────────────────────────────────────────
-
-/// Semantic state of a parameter as of the last render tick.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ParamState {
-    /// Value equals the current preset/session default.
-    Default,
-    /// Value has been changed from the default during this session.
-    Modified,
-    /// Value was supplied via CLI and cannot be changed at runtime.
-    Cli,
-    /// Read-only display value (no keybind available).
-    Display,
-}
 
 /// Caller-assembled view data for one parameter row.
 ///
@@ -89,84 +65,6 @@ pub struct ParamView {
     pub def_ratio: Option<f32>,
     /// Semantic state — drives colour selection.
     pub state: ParamState,
-}
-
-// ── Internal row buffer ───────────────────────────────────────────────────────
-
-/// A character + optional per-cell colours for one content row.
-struct RowBuf {
-    chars: Vec<char>,
-    fg: Vec<Option<RgbColor>>,
-    bg: Vec<Option<RgbColor>>,
-}
-
-impl RowBuf {
-    fn new(w: usize) -> Self {
-        Self {
-            chars: vec![' '; w],
-            fg: vec![None; w],
-            bg: vec![None; w],
-        }
-    }
-
-    /// Write `s` starting at column `at` with optional per-character fg/bg.
-    fn put(&mut self, at: usize, s: &str, fg: Option<RgbColor>, bg: Option<RgbColor>) {
-        for (i, ch) in s.chars().enumerate() {
-            let c = at + i;
-            if c < self.chars.len() {
-                self.chars[c] = ch;
-                if fg.is_some() {
-                    self.fg[c] = fg;
-                }
-                if bg.is_some() {
-                    self.bg[c] = bg;
-                }
-            }
-        }
-    }
-
-    /// Write coloured character cells (from a gauge/heatmap result) starting at `at`.
-    fn put_cells(&mut self, at: usize, cells: &[(char, RgbColor)], bg: Option<RgbColor>) {
-        for (i, (ch, col)) in cells.iter().enumerate() {
-            let c = at + i;
-            if c < self.chars.len() {
-                self.chars[c] = *ch;
-                self.fg[c] = Some(*col);
-                if bg.is_some() {
-                    self.bg[c] = bg;
-                }
-            }
-        }
-    }
-
-    /// Fill a range of cells with `bg`.
-    fn set_bg(&mut self, range: std::ops::Range<usize>, bg: RgbColor) {
-        for c in range {
-            if c < self.bg.len() {
-                self.bg[c] = Some(bg);
-            }
-        }
-    }
-
-    /// Blit `other` onto `self` starting at column `at`, skipping `None` overrides.
-    fn blit(&mut self, at: usize, other: &RowBuf) {
-        for i in 0..other.chars.len() {
-            let c = at + i;
-            if c < self.chars.len() {
-                self.chars[c] = other.chars[i];
-                if other.fg[i].is_some() {
-                    self.fg[c] = other.fg[i];
-                }
-                if other.bg[i].is_some() {
-                    self.bg[c] = other.bg[i];
-                }
-            }
-        }
-    }
-
-    fn text(&self) -> String {
-        self.chars.iter().collect()
-    }
 }
 
 /// Row kind for the `assemble` helper.
@@ -243,15 +141,6 @@ fn wrap_text(s: &str, w: usize) -> Vec<String> {
     out
 }
 
-/// Return the state colour for a parameter given its semantic state.
-fn state_color(state: ParamState, st: &PanelStyle) -> RgbColor {
-    match state {
-        ParamState::Cli => CLI_RED,
-        ParamState::Modified => st.accent_modified,
-        ParamState::Default | ParamState::Display => st.muted,
-    }
-}
-
 /// Assemble a list of [`Rk`] content rows + PanelBuilder chrome → [`RenderedOverlay`].
 ///
 /// Mirrors `examples/controls_prototype.rs::assemble`: each [`Rk::Buf`] is added to
@@ -290,16 +179,7 @@ fn assemble(title: &str, content_w: usize, pad: Padding, rows: Vec<Rk>) -> Rende
             let mut cells: Vec<RichCell> = line.chars().map(|ch| (ch, None, None)).collect();
             if li >= prefix {
                 if let Some(Some(b)) = bufs.get(li - prefix) {
-                    for i in 0..b.chars.len() {
-                        if let Some(cell) = cells.get_mut(offset + i) {
-                            if b.fg[i].is_some() {
-                                cell.1 = b.fg[i];
-                            }
-                            if b.bg[i].is_some() {
-                                cell.2 = b.bg[i];
-                            }
-                        }
-                    }
+                    b.overlay_styles(&mut cells, offset);
                 }
             }
             cells
@@ -346,8 +226,8 @@ pub fn build_console(
         let mut b = RowBuf::new(LEFT_W);
         let focused = i == focus_clamped;
         if focused {
-            b.set_bg(0..LEFT_W, FOCUS_BG);
-            b.put(0, "▎", Some(style.accent_active), Some(FOCUS_BG));
+            b.set_bg(0..LEFT_W, style.focus_bg);
+            b.put(0, "▎", Some(style.accent_active), Some(style.focus_bg));
         }
         let marker = match pv.state {
             ParamState::Modified => "✱",
@@ -415,7 +295,7 @@ pub fn build_console(
         head.put(0, pv.desc.label, Some(style.text_primary), None);
         let key_str = format!("[{}]", pv.desc.key_hint);
         let key_col = match pv.state {
-            ParamState::Cli => Some(CLI_RED),
+            ParamState::Cli => Some(style.cli_color),
             _ => Some(style.accent_active),
         };
         let key_start = RIGHT_W.saturating_sub(key_str.len());
@@ -469,10 +349,10 @@ pub fn build_console(
             }
             ParamKind::CliReadonly => {
                 // Value + "restart to change"
-                valrow.put(0, &pv.value_text, Some(CLI_RED), None);
+                valrow.put(0, &pv.value_text, Some(style.cli_color), None);
                 let hint = "restart to change";
                 let hint_start = RIGHT_W.saturating_sub(hint.len());
-                valrow.put(hint_start, hint, Some(CLI_RED), None);
+                valrow.put(hint_start, hint, Some(style.cli_color), None);
             }
             ParamKind::Display => {
                 // Value, dimmed
@@ -628,7 +508,7 @@ pub fn build_console(
     let mut leg = RowBuf::new(CW);
     leg.put(0, "✱ modified", Some(style.accent_modified), None);
     leg.put(13, "│ default", Some(style.accent_active), None);
-    leg.put(DIVIDER_AT, "─ cli-only", Some(CLI_RED), None);
+    leg.put(DIVIDER_AT, "─ cli-only", Some(style.cli_color), None);
     rows.push(Rk::Buf(leg));
 
     assemble(&title, CW, Padding::new(1, 1, 2, 2), rows)
@@ -857,18 +737,24 @@ mod tests {
     fn focused_row_has_bg_override() {
         // focus=2 is intentionally out-of-range (fixture_params(0) has only 2 items)
         // and clamped to the last item index (1).
+        let mut style = crate::render::theme::SLIME_DARK;
+        let focus_bg = RgbColor::new(1, 2, 3);
+        style.focus_bg = focus_bg;
         let ov = build_console(
             0,
             2,
             &fixture_params(0),
-            &crate::render::theme::SLIME_DARK,
+            &style,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
         );
         let rich = ov.rich_lines.unwrap();
-        assert!(
+        assert_eq!(
             rich.iter()
-                .any(|row| row.iter().any(|(_, _, bg)| bg.is_some())),
-            "no focus bg highlight"
+                .flatten()
+                .filter(|(_, _, bg)| *bg == Some(focus_bg))
+                .count(),
+            LEFT_W,
+            "focused row must use the supplied focus_bg token"
         );
     }
 
@@ -919,17 +805,28 @@ mod tests {
     fn cli_readonly_param_detail_content() {
         // CliReadonly kind (category 4=PRF, fixture_params(4) has Population)
         // Detail should contain the "restart to change" hint string.
+        let mut style = crate::render::theme::SLIME_DARK;
+        let cli_color = RgbColor::new(1, 2, 3);
+        style.cli_color = cli_color;
         let ov = build_console(
             4,
             0,
             &fixture_params(4),
-            &crate::render::theme::SLIME_DARK,
+            &style,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
         );
         let combined: String = ov.lines.concat();
         assert!(
             combined.contains("restart to change"),
             "cli-readonly detail should contain 'restart to change' hint"
+        );
+        assert!(
+            ov.rich_lines
+                .expect("console needs rich_lines")
+                .iter()
+                .flatten()
+                .any(|(_, fg, _)| *fg == Some(cli_color)),
+            "CLI content must use the supplied cli_color token"
         );
     }
 
