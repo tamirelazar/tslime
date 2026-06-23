@@ -2492,21 +2492,23 @@ pub fn run_simulation(
                             // If no overlays open, Esc does nothing (doesn't quit)
                         }
                         ControlAction::CycleOptionsCategory => {
+                            // Only reached when the overlay is CLOSED: open it into Console depth.
+                            // The open-overlay case (cycle category + clamp focus) is handled earlier
+                            // in apply_controls_action, which returns Handled so this arm is skipped.
                             if !runtime_state.overlay_state.is_open(OverlayType::Controls) {
                                 runtime_state.toggle_controls();
                                 runtime_state.controls_depth =
                                     crate::render::controls::ControlsDepth::Console;
-                            } else {
-                                runtime_state.cycle_controls_category(true);
                             }
                         }
                         ControlAction::CycleOptionsCategoryReverse => {
+                            // Only reached when the overlay is CLOSED: open it into Console depth.
+                            // The open-overlay case (cycle category + clamp focus) is handled earlier
+                            // in apply_controls_action, which returns Handled so this arm is skipped.
                             if !runtime_state.overlay_state.is_open(OverlayType::Controls) {
                                 runtime_state.toggle_controls();
                                 runtime_state.controls_depth =
                                     crate::render::controls::ControlsDepth::Console;
-                            } else {
-                                runtime_state.cycle_controls_category(false);
                             }
                         }
                         ControlAction::AdjustSensorAngle(delta) => {
