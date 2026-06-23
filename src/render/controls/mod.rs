@@ -1,6 +1,9 @@
 //! Two-depth Controls "Instrument" surface (Tuner ⇄ Console). See
 //! docs/superpowers/specs/2026-06-23-controls-instrument-ui-design.md.
 
+pub mod registry;
+pub use registry::{ParamDesc, ParamId, ParamKind};
+
 /// Which depth of the Controls surface is showing.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum ControlsDepth {
