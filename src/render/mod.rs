@@ -69,5 +69,5 @@ pub mod palette_editor;
 pub mod panel;
 
 #[cfg(feature = "terminal")]
-/// Spike: ratatui-widget-driven overlays blitted into our RenderedOverlay contract.
+/// Config browser and save-dialog overlay builders (hand-rolled; no ratatui dep).
 pub mod ratatui_adapter;

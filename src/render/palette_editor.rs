@@ -1041,9 +1041,8 @@ impl PaletteEditorOverlay {
             builder =
                 builder.add_single("  No saved palettes yet".to_string(), TextAlignment::Left);
         } else {
-            // Hand-rolled scroll window keeps the selection visible — replaces the old
-            // ratatui ListState call and fixes the take(8) truncation that hid palettes
-            // past the 8th when one was selected.
+            // Hand-rolled scroll window keeps the selection visible, fixing the old
+            // take(8) truncation that hid palettes past the 8th when one was selected.
             const MAX_VISIBLE: usize = 8;
             let total = saved_palettes.len();
             let start = crate::render::ratatui_adapter::scroll_start(

@@ -1,118 +1,13 @@
-//! Spike: drive overlay chrome with ratatui *widgets only* — no backend, no `Terminal`.
+//! Config browser and save-dialog overlay builders.
 //!
-//! ## Why this shape
-//!
-//! ratatui's `Terminal`/backend keeps an internal back-buffer and writes diffs to
-//! stdout. Letting it own the screen alongside our hand-rolled full-frame ANSI
-//! writer (`FrameBuffer::build_frame_string`) is the unsupported "two writers, one
-//! screen" trap that corrupts the sim on resize/redraw.
-//!
-//! Instead we use ratatui purely as a *layout + widget library*: render widgets into
-//! a detached [`ratatui::buffer::Buffer`] (which never touches stdout), then blit that
-//! buffer's cells into our existing [`RenderedOverlay`] contract. The compositor and
-//! the flicker-tuned emission path stay 100% ours. This is Option B from the spike.
-//!
-//! What we get for free here that is hand-rolled today:
-//! - `ListState`-driven scroll offset that keeps the selection visible (replaces
-//!   `ConfigBrowserOverlay::config_browser_window`).
-//! - `Scrollbar` widget.
-//! - `Block` borders + title + inner-rect layout (replaces `PanelBuilder` border math).
-
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::Color;
-use ratatui::text::Line;
-use ratatui::widgets::{List, ListItem, ListState, StatefulWidget};
+//! Builds [`RenderedOverlay`] instances for the config browser and save dialog using
+//! the hand-rolled [`PanelBuilder`] chrome (title box, block border, footer).
+//! No ratatui dependency — scroll-window math is done by [`scroll_start`], and
+//! the editable field caret is handled by [`stamp_caret`] + `tui-input`.
 
 use crate::config_manager::NamedProfile;
-use crate::render::palette::RgbColor;
 use crate::render::panel::{Padding, PanelBuilder, RenderedOverlay, RichCell, TextAlignment};
 use crate::render::theme::PanelStyle;
-
-/// Map a ratatui `Color` to our `RgbColor`. `Reset` (and anything we don't paint
-/// explicitly) becomes `None` so the underlying sim cell shows through.
-fn color_to_rgb(c: Color) -> Option<RgbColor> {
-    match c {
-        Color::Rgb(r, g, b) => Some(RgbColor::new(r, g, b)),
-        Color::Reset => None,
-        // We style every widget with explicit Rgb below, so named colors are only a
-        // safety net. Map the basics; leave the rest transparent.
-        Color::Black => Some(RgbColor::new(0, 0, 0)),
-        Color::White => Some(RgbColor::new(0xEE, 0xEE, 0xEE)),
-        Color::Gray => Some(RgbColor::new(0x88, 0x88, 0x88)),
-        Color::DarkGray => Some(RgbColor::new(0x44, 0x44, 0x44)),
-        _ => None,
-    }
-}
-
-/// Convert a fully-rendered detached ratatui `Buffer` into our overlay contract.
-///
-/// Each buffer cell becomes a [`RichCell`] `(char, fg, bg)`. We emit both `lines`
-/// (plain text, first char of each cell's symbol) and `rich_lines` (per-cell colour),
-/// matching what the renderer already composites via `draw_text_overlay` +
-/// `draw_rich_overlay`.
-///
-/// Note: wide glyphs occupy two ratatui cells (the second has an empty symbol); we map
-/// one `char` per cell, so wide chars in overlay text would shift by one. Overlay
-/// chrome is ASCII/box-drawing today, so this is fine for the spike — flagged for a
-/// real migration.
-pub fn buffer_to_overlay(buf: &Buffer) -> RenderedOverlay {
-    let area = buf.area;
-    let mut lines: Vec<String> = Vec::with_capacity(area.height as usize);
-    let mut rich: Vec<Vec<RichCell>> = Vec::with_capacity(area.height as usize);
-
-    for y in 0..area.height {
-        let mut line = String::with_capacity(area.width as usize);
-        let mut rich_row: Vec<RichCell> = Vec::with_capacity(area.width as usize);
-        for x in 0..area.width {
-            let cell = &buf[(x, y)];
-            let ch = cell.symbol().chars().next().unwrap_or(' ');
-            line.push(ch);
-            rich_row.push((ch, color_to_rgb(cell.fg), color_to_rgb(cell.bg)));
-        }
-        lines.push(line);
-        rich.push(rich_row);
-    }
-
-    RenderedOverlay {
-        lines,
-        title_box: None,
-        rich_lines: Some(rich),
-    }
-}
-
-/// Render a stack of styled ratatui [`Line`]s into detached 1-row [`Buffer`]s of the
-/// given `width`, returning each row's plain text plus its per-cell foreground colour.
-///
-/// This is the span-driven alternative to hand-rolled column-index colourisers (e.g. the
-/// old `generate_controls_rich_lines`): each [`Line`] carries its own `Span` styling, the
-/// layout/clipping is done by ratatui, and the caller blits the resulting `(char, fg)`
-/// pairs into the content region of its `PanelBuilder` chrome. Cells with no explicit
-/// style map to `None` (so the renderer's default theme colour shows through). Lines
-/// longer than `width` are clipped by ratatui exactly like `PanelBuilder`'s left-aligned
-/// truncation, so plain text stays identical to the non-styled path.
-pub fn render_styled_rows(
-    lines: &[Line<'static>],
-    width: usize,
-) -> Vec<(String, Vec<Option<RgbColor>>)> {
-    let w = width as u16;
-    lines
-        .iter()
-        .map(|line| {
-            let area = Rect::new(0, 0, w, 1);
-            let mut buf = Buffer::empty(area);
-            buf.set_line(0, 0, line, w);
-            let mut text = String::with_capacity(width);
-            let mut colors = Vec::with_capacity(width);
-            for x in 0..w {
-                let cell = &buf[(x, 0)];
-                text.push(cell.symbol().chars().next().unwrap_or(' '));
-                colors.push(color_to_rgb(cell.fg));
-            }
-            (text, colors)
-        })
-        .collect()
-}
 
 /// Inner content width (`56 - 2 border - 2*2 padding`).
 const BROWSER_CONTENT_WIDTH: usize = 50;
@@ -129,26 +24,6 @@ fn config_row_text(index: usize, c: &NamedProfile) -> String {
         .unwrap_or("?");
     let pop = c.overrides.population.unwrap_or(0) / 1000;
     format!("{} {} - {} - {}k agents", index + 1, c.name, palette, pop)
-}
-
-/// Index of the first visible row so `selected` stays on-screen, computed by ratatui's
-/// `ListState` — the same "keep selection visible" logic its `List` widget uses.
-///
-/// This replaces the hand-rolled scroll-window arithmetic
-/// (`ConfigBrowserOverlay::config_browser_window`) and fixes the palette load dialog's
-/// `take(N)` truncation, which hid selections past the window. We render `total` blank
-/// items into a detached 1×`max_visible` buffer and read back the settled offset.
-pub fn list_scroll_offset(total: usize, selected: usize, max_visible: usize) -> usize {
-    if total <= max_visible || max_visible == 0 {
-        return 0;
-    }
-    let area = Rect::new(0, 0, 1, max_visible as u16);
-    let mut buf = Buffer::empty(area);
-    let items: Vec<ListItem> = (0..total).map(|_| ListItem::new(" ")).collect();
-    let mut state = ListState::default();
-    state.select(Some(selected.min(total - 1)));
-    StatefulWidget::render(List::new(items), area, &mut buf, &mut state);
-    state.offset()
 }
 
 /// Stamp a block caret onto a built dialog overlay's editable field. Locates `label`
@@ -449,17 +324,6 @@ mod tests {
         assert_eq!(scroll_start(15, 14, 9), 6);
         // Out-of-range selection clamped.
         assert_eq!(scroll_start(15, 99, 9), 6);
-    }
-
-    // The general detached-buffer adapter still round-trips dims (used for future
-    // full-widget overlays like a ratatui-rendered palette grid).
-    #[test]
-    fn buffer_adapter_roundtrips_dims() {
-        let area = Rect::new(0, 0, 10, 3);
-        let buf = Buffer::empty(area);
-        let overlay = buffer_to_overlay(&buf);
-        assert_eq!(overlay.lines.len(), 3);
-        assert!(overlay.lines.iter().all(|l| l.chars().count() == 10));
     }
 
     const BROWSER_WIDTH_TOTAL: usize = 56;
