@@ -11,6 +11,7 @@ use crate::render::charset::{self as charset, Charset};
 use crate::render::dither::DitherMode;
 use crate::render::downsample::{downsample_multi_species, Cell as DownsampleCell};
 use crate::render::error_diffusion::ErrorDiffusion;
+use crate::render::motion::{breath, lerp_rgb};
 use crate::render::overlay::{ExpandedChromeOverlay, OverlayConfig};
 use crate::render::palette;
 use crate::render::palette::IntensityMapping;
@@ -96,6 +97,8 @@ pub struct TerminalRenderer {
     temporal_accent: Option<palette::RgbColor>,
     palette_cycle: palette::PaletteCycle,
     glyph: charset::GlyphConfig,
+    /// Monotonic seconds for overlay motion (breath on title-box accent). Set each frame.
+    phase_clock: f32,
 }
 
 impl TerminalRenderer {
@@ -149,7 +152,13 @@ impl TerminalRenderer {
             temporal_accent: None,
             palette_cycle: palette::PaletteCycle::default(),
             glyph: charset::GlyphConfig::default(),
+            phase_clock: 0.0,
         }
+    }
+
+    /// Set the phase clock for overlay motion (title-box breath, eases).
+    pub fn set_phase_clock(&mut self, t: f32) {
+        self.phase_clock = t;
     }
 
     /// Set the window frame mode for rendering.
@@ -846,7 +855,14 @@ impl TerminalRenderer {
                 } else {
                     buf.draw_text_overlay(&tb.lines, mini_x, mini_y, badge_fg, bg);
                 }
-                // Apply accent color to border chars
+                // Apply breathed accent color to border chars (title-box signature).
+                // Breath: lerp accent toward muted by (1 - breath(clock, 5s, 12%)).
+                let title_accent = if let Some(style) = panel_style {
+                    let pulse = breath(self.phase_clock, 5.0, 0.12);
+                    lerp_rgb(style.muted, accent, pulse)
+                } else {
+                    accent
+                };
                 let num_lines = tb.lines.len();
                 for (line_idx, line) in tb.lines.iter().enumerate() {
                     let width = line.chars().count();
@@ -866,9 +882,12 @@ impl TerminalRenderer {
                         if cell_x < buf.width && cell_y < buf.height {
                             let idx = cell_y * buf.width + cell_x;
                             match buf.color_mode {
-                                ColorMode::TrueColor => buf.cells[idx].fg_color_rgb = Some(accent),
+                                ColorMode::TrueColor => {
+                                    buf.cells[idx].fg_color_rgb = Some(title_accent)
+                                }
                                 _ => {
-                                    buf.cells[idx].fg_color_256 = Some(palette::rgb_to_256(accent))
+                                    buf.cells[idx].fg_color_256 =
+                                        Some(palette::rgb_to_256(title_accent))
                                 }
                             }
                         }
@@ -1278,7 +1297,13 @@ impl TerminalRenderer {
                     badge_fg,
                     Some(config.bg_color_256),
                 );
-                // Apply accent color to border chars
+                // Apply breathed accent color to border chars (title-box signature).
+                let title_accent = if let Some(style) = panel_style_ms {
+                    let pulse = breath(self.phase_clock, 5.0, 0.12);
+                    lerp_rgb(style.muted, accent, pulse)
+                } else {
+                    accent
+                };
                 let num_lines = tb.lines.len();
                 for (line_idx, line) in tb.lines.iter().enumerate() {
                     let width = line.chars().count();
@@ -1298,9 +1323,12 @@ impl TerminalRenderer {
                         if cell_x < buf.width && cell_y < buf.height {
                             let idx = cell_y * buf.width + cell_x;
                             match buf.color_mode {
-                                ColorMode::TrueColor => buf.cells[idx].fg_color_rgb = Some(accent),
+                                ColorMode::TrueColor => {
+                                    buf.cells[idx].fg_color_rgb = Some(title_accent)
+                                }
                                 _ => {
-                                    buf.cells[idx].fg_color_256 = Some(palette::rgb_to_256(accent))
+                                    buf.cells[idx].fg_color_256 =
+                                        Some(palette::rgb_to_256(title_accent))
                                 }
                             }
                         }

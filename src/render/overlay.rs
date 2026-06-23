@@ -2,7 +2,7 @@ use crate::cli::Palette;
 use crate::render::dither::DitherMode;
 use crate::render::palette::RgbColor;
 use crate::render::theme::PanelStyle;
-use crate::render::widgets::{gauge, legend, truncate_ellipsis};
+use crate::render::widgets::{gauge, legend, spacing, truncate_ellipsis};
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
@@ -415,7 +415,7 @@ impl PresetComparisonOverlay {
             .with_padding(Padding::new(1, 1, 2, 2))
             .with_title(format!("PRESET COMPARISON: {}", pname))
             .with_title_box()
-            .add_empty()
+            .add_empty_n(spacing::ROW)
             .add_single("Parameter        │ Current      │ Preset Default", Left)
             .add_single(
                 "──────────────────┼──────────────┼──────────────────────",
@@ -495,7 +495,7 @@ impl PresetComparisonOverlay {
         );
 
         builder
-            .add_empty()
+            .add_empty_n(spacing::ROW)
             .add_single("Press Enter to Apply Preset     Esc to Close", Left)
             .build_overlay()
     }
@@ -550,11 +550,11 @@ impl ConfigBrowserOverlay {
 
         if configs.is_empty() {
             builder = builder
-                .add_empty()
+                .add_empty_n(spacing::ROW)
                 .add_single("No saved configurations", Left)
-                .add_empty()
+                .add_empty_n(spacing::ROW)
                 .add_single("Press Ctrl+S to save current settings", Left)
-                .add_empty();
+                .add_empty_n(spacing::ROW);
         } else {
             let total = configs.len();
             let start =
@@ -606,7 +606,7 @@ impl ConfigBrowserOverlay {
             }
 
             builder = builder
-                .add_empty()
+                .add_empty_n(spacing::ROW)
                 .add_single("↑/↓: Navigate  Enter: Load  Del: Delete", Left);
         }
 
@@ -638,9 +638,9 @@ impl ConfigSaveOverlay {
             .with_padding(Padding::new(0, 0, 1, 1))
             .with_title("SAVE CONFIGURATION")
             .with_title_box()
-            .add_empty()
+            .add_empty_n(spacing::ROW)
             .add_single(format!("Name: {:<25}", name_input), Left)
-            .add_empty()
+            .add_empty_n(spacing::ROW)
             .add_single("Enter: Save    Esc: Cancel", Left)
             .build_overlay()
     }
@@ -670,9 +670,9 @@ impl DirtyGuardOverlay {
             .with_padding(Padding::new(0, 0, 1, 1))
             .with_title("UNSAVED CHANGES")
             .with_title_box()
-            .add_empty()
+            .add_empty_n(spacing::ROW)
             .add_single("Discard live edits and switch?", Left)
-            .add_empty()
+            .add_empty_n(spacing::ROW)
             .add_single("Enter: Discard & switch    Esc: Cancel", Left)
             .build_overlay()
     }

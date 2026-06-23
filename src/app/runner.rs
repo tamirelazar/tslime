@@ -2031,6 +2031,8 @@ pub fn run_simulation(
             });
         }
 
+        renderer.set_phase_clock(runtime_state.phase_clock);
+
         if args.species_colors_enabled() && sim.config().separate_species_trails {
             let species_trail_maps = sim.trail_maps_for_species_colors();
             let combined: Vec<_> = species_trail_maps
