@@ -12,6 +12,7 @@ use crate::render::charset::{self, Charset};
 use crate::render::dither::{self, DitherMode};
 use crate::render::downsample::Cell as DownsampleCell;
 use crate::render::error_diffusion::ErrorDiffusion;
+use crate::render::motion;
 use crate::render::palette;
 use crate::render::palette::IntensityMapping;
 use crate::render::palette::RgbColor;
@@ -484,7 +485,25 @@ impl FrameBuffer {
     /// Only cells whose override is `Some(…)` are modified; the underlying character and
     /// the existing `bg_color` from a previous `draw_text_overlay` call are preserved for
     /// cells whose override is `None`.
+    ///
+    /// Thin wrapper around [`draw_rich_overlay_dim`] with `dim = 1.0` (no dimming).
     pub fn draw_rich_overlay(&mut self, rich: &[Vec<RichCell>], start_x: usize, start_y: usize) {
+        self.draw_rich_overlay_dim(rich, start_x, start_y, 1.0);
+    }
+
+    /// Like [`draw_rich_overlay`] but with a `dim` factor in `[0.0, 1.0]`.
+    ///
+    /// `dim = 1.0` — full opacity, byte-identical to `draw_rich_overlay`.
+    /// `dim = 0.0` — fg/bg are fully lerped toward the existing cell background.
+    ///
+    /// Only the TrueColor path lerps; the 256-color path is unchanged.
+    pub fn draw_rich_overlay_dim(
+        &mut self,
+        rich: &[Vec<RichCell>],
+        start_x: usize,
+        start_y: usize,
+        dim: f32,
+    ) {
         for (dy, row) in rich.iter().enumerate() {
             let y = start_y + dy;
             if y >= self.height {
@@ -502,13 +521,35 @@ impl FrameBuffer {
                 }
                 if let Some(fg) = fg_override {
                     match self.color_mode {
-                        ColorMode::TrueColor => self.cells[idx].fg_color_rgb = Some(fg),
+                        ColorMode::TrueColor => {
+                            let color = if dim < 1.0 {
+                                if let Some(toward) = self.cells[idx].bg_color_rgb {
+                                    motion::lerp_rgb(fg, toward, 1.0 - dim)
+                                } else {
+                                    fg
+                                }
+                            } else {
+                                fg
+                            };
+                            self.cells[idx].fg_color_rgb = Some(color);
+                        }
                         _ => self.cells[idx].fg_color_256 = Some(palette::rgb_to_256(fg)),
                     }
                 }
                 if let Some(bg) = bg_override {
                     match self.color_mode {
-                        ColorMode::TrueColor => self.cells[idx].bg_color_rgb = Some(bg),
+                        ColorMode::TrueColor => {
+                            let color = if dim < 1.0 {
+                                if let Some(toward) = self.cells[idx].bg_color_rgb {
+                                    motion::lerp_rgb(bg, toward, 1.0 - dim)
+                                } else {
+                                    bg
+                                }
+                            } else {
+                                bg
+                            };
+                            self.cells[idx].bg_color_rgb = Some(color);
+                        }
                         _ => self.cells[idx].bg_color_256 = Some(palette::rgb_to_256(bg)),
                     }
                 }
@@ -4486,5 +4527,40 @@ mod tests {
                 "AA-ineligible charset: Strong and Off must produce identical char"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod dim_tests {
+    use super::*;
+    use crate::render::palette::RgbColor;
+
+    #[test]
+    fn dim_one_is_identity_dim_zero_blanks_fg_to_bg_color() {
+        // dim=1.0 -> fg written as-is; dim=0.0 -> fg lerped fully toward the buffer bg.
+        let mut fb = FrameBuffer::new(2, 1, ColorMode::TrueColor, None);
+        let rich = vec![vec![('A', Some(RgbColor::new(200, 200, 200)), None)]];
+        fb.draw_rich_overlay_dim(&rich, 0, 0, 1.0);
+        assert_eq!(fb.cells[0].fg_color_rgb, Some(RgbColor::new(200, 200, 200)));
+    }
+
+    #[test]
+    fn dim_zero_lerps_fg_to_existing_bg() {
+        // When dim=0.0, fg fully lerped toward existing cell bg.
+        let bg_color = RgbColor::new(10, 10, 10);
+        let mut fb = FrameBuffer::new(2, 1, ColorMode::TrueColor, Some(bg_color));
+        let rich = vec![vec![('A', Some(RgbColor::new(200, 200, 200)), None)]];
+        fb.draw_rich_overlay_dim(&rich, 0, 0, 0.0);
+        assert_eq!(fb.cells[0].fg_color_rgb, Some(bg_color));
+    }
+
+    #[test]
+    fn dim_space_transparency_preserved() {
+        // Space char = transparent, char should not be written.
+        let mut fb = FrameBuffer::new(2, 1, ColorMode::TrueColor, None);
+        fb.cells[0].char = 'X';
+        let rich = vec![vec![(' ', Some(RgbColor::new(100, 100, 100)), None)]];
+        fb.draw_rich_overlay_dim(&rich, 0, 0, 1.0);
+        assert_eq!(fb.cells[0].char, 'X');
     }
 }
