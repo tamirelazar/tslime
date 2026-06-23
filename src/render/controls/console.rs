@@ -383,6 +383,12 @@ pub fn build_console(
     }
 
     // Pad left to constant height.
+    debug_assert!(
+        left.len() <= MAX_VISIBLE_ROWS,
+        "left pane overflow: {} > {}",
+        left.len(),
+        MAX_VISIBLE_ROWS
+    );
     while left.len() < MAX_VISIBLE_ROWS {
         left.push(RowBuf::new(LEFT_W));
     }
@@ -476,6 +482,12 @@ pub fn build_console(
     }
 
     // Pad right to constant height.
+    debug_assert!(
+        right.len() <= MAX_VISIBLE_ROWS,
+        "right pane overflow: {} > {}",
+        right.len(),
+        MAX_VISIBLE_ROWS
+    );
     while right.len() < MAX_VISIBLE_ROWS {
         right.push(RowBuf::new(RIGHT_W));
     }
@@ -621,7 +633,27 @@ mod tests {
             assert_eq!(mk(cat).lines.len(), h0, "category {cat} height differs");
         }
         let w0 = mk(0).lines[0].chars().count();
-        assert!(mk(0).lines.iter().all(|l| l.chars().count() == w0));
+        // Verify all categories have consistent width
+        for cat in 0..6 {
+            let ov = build_console(cat, 0, &fixture_params(cat), &s, acc);
+            assert!(
+                ov.lines.iter().all(|l| l.chars().count() == w0),
+                "cat {cat} width varies"
+            );
+        }
+        // For categories with multiple params, vary focus to exercise numeric-vs-non-numeric
+        // right-pane branching (which has different pre-pad row counts)
+        if fixture_params(0).len() >= 2 {
+            let params_cat0 = fixture_params(0);
+            for focus in 0..params_cat0.len() {
+                let ov = build_console(0, focus, &params_cat0, &s, acc);
+                assert_eq!(ov.lines.len(), h0, "cat 0 focus {focus} height differs");
+                assert!(
+                    ov.lines.iter().all(|l| l.chars().count() == w0),
+                    "cat 0 focus {focus} width varies"
+                );
+            }
+        }
     }
 
     #[test]
