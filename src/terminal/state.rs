@@ -544,6 +544,10 @@ pub struct RuntimeState {
     pub comparison_preset: Preset,
     /// Current category tab in controls overlay.
     pub controls_category_idx: usize,
+    /// Which depth of the Controls surface is showing (Closed / Tuner / Console).
+    pub controls_depth: crate::render::controls::ControlsDepth,
+    /// Index of the focused parameter row within the Controls surface.
+    pub controls_focus: usize,
     /// Time scale multiplier.
     pub time_scale: f32,
     /// Currently active preset.
@@ -774,6 +778,8 @@ impl RuntimeState {
             overlay_state: OverlayState::default(),
             comparison_preset: initial_preset,
             controls_category_idx: 0,
+            controls_depth: crate::render::controls::ControlsDepth::Closed,
+            controls_focus: 0,
             time_scale: cli_config.time_scale,
             current_preset: initial_preset,
             active_source: crate::profile::ProfileSource::StartupCli,
@@ -2063,6 +2069,16 @@ mod tests {
 
         state.cycle_controls_category(false);
         assert_eq!(state.controls_category_idx, 5);
+    }
+
+    #[test]
+    fn runtime_state_starts_closed_focus_zero() {
+        let s = create_test_runtime_state();
+        assert_eq!(
+            s.controls_depth,
+            crate::render::controls::ControlsDepth::Closed
+        );
+        assert_eq!(s.controls_focus, 0);
     }
 
     #[test]
