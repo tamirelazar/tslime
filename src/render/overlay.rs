@@ -2,6 +2,7 @@ use crate::cli::Palette;
 use crate::render::dither::DitherMode;
 use crate::render::palette::RgbColor;
 use crate::render::theme::PanelStyle;
+use crate::render::widgets::{gauge, legend};
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
@@ -973,6 +974,19 @@ mod tests {
 /// Unified dashboard overlay combining stats and environment info in a landscape three-zone layout.
 pub struct DashboardOverlay;
 
+/// Rich colored cells for a gauge bar: `(char, RgbColor)` per cell.
+type GaugeCells = Vec<(char, RgbColor)>;
+
+/// Gauge override entry: `(body_line_index, content_col_offset, cells)`.
+///
+/// Stored during `build_overlay` and consumed by `generate_rich_lines` to apply
+/// threshold-band colors to gauge rows.
+type GaugeOverride = (usize, usize, GaugeCells);
+
+/// Resolved gauge lookup entry used inside `generate_rich_lines`:
+/// `(rendered_line_index, content_col_offset, cells_slice)`.
+type GaugeLookupEntry<'a> = (usize, usize, &'a [(char, RgbColor)]);
+
 impl DashboardOverlay {
     /// Total rendered width of the dashboard window.
     pub const WIDTH: usize = 84;
@@ -982,6 +996,48 @@ impl DashboardOverlay {
     const LEFT_COL: usize = 37;
     /// Right column width within the two-column middle zone.
     const RIGHT_COL: usize = 38;
+
+    /// Fixed body row count for constant-height layout (paused / running must match).
+    ///
+    /// Body rows (between the top/bottom borders, excluding PanelBuilder-added borders):
+    ///   PERFORMANCE header + blank + FPS + blank  = 4
+    ///   ENV|SIM header + blank                    = 2
+    ///   Preset|Trail + Palette|Entropy + Grid|Agents + Term|MaxTrail + Seed|Frames + Init|Time = 6
+    ///   blank + SYSTEM header + blank             = 3
+    ///   CPU|SIMD + Mem|AutoReset + Color|Charset  = 3
+    ///   food (conditional, padded)                = 1
+    ///   extras (conditional, padded)              = 1
+    ///   legend row                                = 1
+    ///   blank + PALETTE header + strip            = 3
+    ///   Total                                     = 24
+    const BODY_ROWS: usize = 24;
+
+    // ── Threshold bands for gauge recoloring ─────────────────────────────────
+    //
+    // FPS (range 0..60, target ≈ 60):
+    //   healthy  ≥ 55  (target-5)  → accent_success
+    //   warn     ≥ 45  (target-15) → accent_warning
+    //   critical < 45              → accent_error
+    //
+    // Trail utilisation (range 0..100 %):
+    //   healthy  < 80 %  → accent_success
+    //   warn     < 95 %  → accent_warning
+    //   critical ≥ 95 %  → accent_error
+    //
+    // Entropy (range 0..8, from calculate_entropy; max_entropy scaled to 8.0):
+    //   healthy  ≥ 3.0  → accent_success   (well-mixed, diverse pattern)
+    //   warn     ≥ 1.5  → accent_warning   (starting to stagnate)
+    //   critical < 1.5  → accent_error     (low entropy = collapsed/uniform)
+    //
+    // CPU % (range 0..100 %):
+    //   healthy  < 50 % → accent_success
+    //   warn     < 80 % → accent_warning
+    //   critical ≥ 80 % → accent_error
+    //
+    // Memory MB (range 0..100 MB):
+    //   healthy  < 50 MB → accent_success
+    //   warn     < 80 MB → accent_warning
+    //   critical ≥ 80 MB → accent_error
 
     /// Calculates entropy of the trail map for complexity analysis.
     pub fn calculate_entropy(trail_map: &[f32], sample_rate: usize) -> f32 {
@@ -1020,17 +1076,6 @@ impl DashboardOverlay {
         } else {
             0.0
         }
-    }
-
-    /// Builds a proportional progress bar string.
-    fn build_progress_bar(value: f32, max: f32, width: usize) -> String {
-        let filled = if max > 0.0 {
-            ((value / max).clamp(0.0, 1.0) * width as f32) as usize
-        } else {
-            0
-        };
-        let empty = width.saturating_sub(filled);
-        format!("{}{}", "█".repeat(filled), "░".repeat(empty))
     }
 
     /// Builds a section header spanning the full content width.
@@ -1107,6 +1152,7 @@ impl DashboardOverlay {
         use TextAlignment::Left;
 
         let cw = Self::CONTENT_WIDTH;
+        let st = panel_style;
 
         let trail_percent = if trail_capacity > 0.0 {
             (trail_sum / trail_capacity * 100.0).min(99.9)
@@ -1115,12 +1161,93 @@ impl DashboardOverlay {
         };
         let elapsed_str = format_elapsed_time(elapsed_seconds);
 
-        // Progress bars
-        let fps_bar = Self::build_progress_bar(fps, 60.0, 32);
-        let trail_bar = Self::build_progress_bar(trail_percent, 100.0, 15);
-        let entropy_bar = Self::build_progress_bar(entropy, 8.0, 15);
-        let cpu_bar = Self::build_progress_bar(cpu_percent, 100.0, 15);
-        let mem_bar = Self::build_progress_bar(memory_mb, 100.0, 15);
+        // ── Threshold-aware fill color selection ──────────────────────────────
+        // Returns the fill color for a gauge based on the metric's threshold bands.
+        // See BODY_ROWS comment block above for full band definitions.
+        let fps_fill_color = if fps >= 55.0 {
+            st.accent_success
+        } else if fps >= 45.0 {
+            st.accent_warning
+        } else {
+            st.accent_error
+        };
+        let trail_fill_color = if trail_percent < 80.0 {
+            st.accent_success
+        } else if trail_percent < 95.0 {
+            st.accent_warning
+        } else {
+            st.accent_error
+        };
+        let entropy_fill_color = if entropy >= 3.0 {
+            st.accent_success
+        } else if entropy >= 1.5 {
+            st.accent_warning
+        } else {
+            st.accent_error
+        };
+        let cpu_fill_color = if cpu_percent < 50.0 {
+            st.accent_success
+        } else if cpu_percent < 80.0 {
+            st.accent_warning
+        } else {
+            st.accent_error
+        };
+        let mem_fill_color = if memory_mb < 50.0 {
+            st.accent_success
+        } else if memory_mb < 80.0 {
+            st.accent_warning
+        } else {
+            st.accent_error
+        };
+
+        // ── Build gauges (width 15) ───────────────────────────────────────────
+        // Each gauge returns Vec<(char, RgbColor)>; we extract chars for the
+        // string lines and store cells for rich_lines coloring.
+        //
+        // gauge() uses accent_active for fill + value tick; we recolor the fill
+        // cells (all '█' + '│') with the threshold color in gauge_rich_overlay.
+        let fps_gauge_cells = gauge(fps, (0.0, 60.0), 60.0, 32, st);
+        let trail_gauge_cells = gauge(trail_percent, (0.0, 100.0), 100.0, 15, st);
+        let entropy_gauge_cells = gauge(entropy, (0.0, 8.0), 8.0, 15, st);
+        let cpu_gauge_cells = gauge(cpu_percent, (0.0, 100.0), 100.0, 15, st);
+        let mem_gauge_cells = gauge(memory_mb, (0.0, 100.0), 100.0, 15, st);
+
+        // Extract plain chars from gauge cells for string rendering
+        let fps_bar: String = fps_gauge_cells.iter().map(|(c, _)| c).collect();
+        let trail_bar: String = trail_gauge_cells.iter().map(|(c, _)| c).collect();
+        let entropy_bar: String = entropy_gauge_cells.iter().map(|(c, _)| c).collect();
+        let cpu_bar: String = cpu_gauge_cells.iter().map(|(c, _)| c).collect();
+        let mem_bar: String = mem_gauge_cells.iter().map(|(c, _)| c).collect();
+
+        // Recolor fill cells (█ and │) with threshold-band color.
+        // The ▲ default tick keeps st.state_default, ░ keeps st.muted.
+        let recolor =
+            |cells: Vec<(char, RgbColor)>, fill_color: RgbColor| -> Vec<(char, RgbColor)> {
+                cells
+                    .into_iter()
+                    .map(|(c, col)| {
+                        if c == '█' || c == '│' {
+                            (c, fill_color)
+                        } else {
+                            (c, col)
+                        }
+                    })
+                    .collect()
+            };
+        let fps_gauge_rich = recolor(fps_gauge_cells, fps_fill_color);
+        let trail_gauge_rich = recolor(trail_gauge_cells, trail_fill_color);
+        let entropy_gauge_rich = recolor(entropy_gauge_cells, entropy_fill_color);
+        let cpu_gauge_rich = recolor(cpu_gauge_cells, cpu_fill_color);
+        let mem_gauge_rich = recolor(mem_gauge_cells, mem_fill_color);
+
+        // ── Legend row cells ──────────────────────────────────────────────────
+        let legend_cells = legend(&[
+            ("█ good", st.accent_success),
+            ("█ warn", st.accent_warning),
+            ("█ crit", st.accent_error),
+            ("▲ default", st.state_default),
+        ]);
+        let legend_str: String = legend_cells.iter().map(|(c, _)| c).collect();
 
         let grid_str = format!("{}×{}", grid_width, grid_height);
         let term_str = format!("{}×{}", term_width, term_height);
@@ -1133,54 +1260,85 @@ impl DashboardOverlay {
                 .to_string()
         });
 
-        // Build line list
-        let mut lines: Vec<String> = Vec::new();
+        // ── Build line list ───────────────────────────────────────────────────
+        // Lines are built in a fixed order. Optional rows (food, extras) are
+        // always emitted (blank when not present) to keep BODY_ROWS constant.
+        let mut lines: Vec<String> = Vec::with_capacity(Self::BODY_ROWS);
+        // Map from body line index → (col_offset, gauge_rich_cells)
+        // col_offset is the offset within the content (not including border/padding).
+        let mut gauge_overrides: Vec<GaugeOverride> = Vec::new();
+        // Map from body line index → (col_offset, legend_cells)
+        let mut legend_overrides: Vec<GaugeOverride> = Vec::new();
 
-        // ── PERFORMANCE ──
+        // ── PERFORMANCE ──                                                 row 0
         lines.push(format!(
             "{:<cw$}",
             Self::build_section_header("PERFORMANCE", cw)
         ));
+        // blank                                                             row 1
         lines.push(format!("{:<cw$}", ""));
-        // FPS label + bar + values (paused-aware)
-        let fps_row = if is_paused {
-            format!("  FPS   {:<32}  PAUSED", "░".repeat(32))
-        } else {
-            format!("  FPS   {}  {:.0}  avg {:.0}", fps_bar, fps, avg_fps)
-        };
-        lines.push(format!("{:<cw$}", fps_row));
+        // FPS row                                                           row 2
+        {
+            let row_idx = lines.len();
+            let fps_row = if is_paused {
+                // Show muted bar when paused (gauge chars but all muted — just use ░)
+                format!("  FPS   {:<32}  PAUSED", "░".repeat(32))
+            } else {
+                format!("  FPS   {}  {:.0}  avg {:.0}", fps_bar, fps, avg_fps)
+            };
+            lines.push(format!("{:<cw$}", fps_row));
+            if !is_paused {
+                // "  FPS   " = 9 chars; gauge starts at col 9 within content
+                gauge_overrides.push((row_idx, 9, fps_gauge_rich));
+            }
+        }
+        // blank                                                             row 3
         lines.push(format!("{:<cw$}", ""));
 
-        // ── ENVIRONMENT (left) ─── | ── SIMULATION (right) ──
+        // ── ENVIRONMENT | SIMULATION ──                                    row 4
         let env_header = Self::build_section_header("ENVIRONMENT", Self::LEFT_COL);
         let sim_header = Self::build_section_header("SIMULATION", Self::RIGHT_COL);
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(&env_header, &sim_header)
         ));
+        // blank                                                             row 5
         lines.push(format!("{:<cw$}", ""));
 
-        // Preset | Trail bar
-        let trail_row = format!("  Trail   {}  {:.1}%", trail_bar, trail_percent);
-        lines.push(format!(
-            "{:<cw$}",
-            Self::build_two_col_row(
-                &format!("  Preset  {:>18}", Self::truncate(preset_name, 18)),
-                &trail_row
-            )
-        ));
+        // Preset | Trail                                                    row 6
+        {
+            let row_idx = lines.len();
+            let trail_row = format!("  Trail   {}  {:.1}%", trail_bar, trail_percent);
+            lines.push(format!(
+                "{:<cw$}",
+                Self::build_two_col_row(
+                    &format!("  Preset  {:>18}", Self::truncate(preset_name, 18)),
+                    &trail_row
+                )
+            ));
+            // Two-col right side starts at LEFT_COL + 3 (" │ ").
+            // Within the right side: "  Trail   " = 10 chars; gauge at right_start + 10
+            let trail_gauge_col = Self::LEFT_COL + 3 + 10;
+            gauge_overrides.push((row_idx, trail_gauge_col, trail_gauge_rich));
+        }
 
-        // Palette | Entropy bar
-        let entropy_row = format!("  Entropy {}  {:.1}", entropy_bar, entropy);
-        lines.push(format!(
-            "{:<cw$}",
-            Self::build_two_col_row(
-                &format!("  Palette {:>18}", Self::truncate(palette_name, 18)),
-                &entropy_row
-            )
-        ));
+        // Palette | Entropy                                                 row 7
+        {
+            let row_idx = lines.len();
+            let entropy_row = format!("  Entropy {}  {:.1}", entropy_bar, entropy);
+            lines.push(format!(
+                "{:<cw$}",
+                Self::build_two_col_row(
+                    &format!("  Palette {:>18}", Self::truncate(palette_name, 18)),
+                    &entropy_row
+                )
+            ));
+            // "  Entropy " = 10 chars
+            let entropy_gauge_col = Self::LEFT_COL + 3 + 10;
+            gauge_overrides.push((row_idx, entropy_gauge_col, entropy_gauge_rich));
+        }
 
-        // Grid | Agents
+        // Grid | Agents                                                     row 8
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(
@@ -1189,7 +1347,7 @@ impl DashboardOverlay {
             )
         ));
 
-        // Term | Max Trail
+        // Term | Max Trail                                                  row 9
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(
@@ -1198,7 +1356,7 @@ impl DashboardOverlay {
             )
         ));
 
-        // Seed | Frames
+        // Seed | Frames                                                     row 10
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(
@@ -1210,7 +1368,7 @@ impl DashboardOverlay {
             )
         ));
 
-        // Init | Time
+        // Init | Time                                                       row 11
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(
@@ -1219,31 +1377,42 @@ impl DashboardOverlay {
             )
         ));
 
-        // ── SYSTEM (full-width header) ──
+        // ── SYSTEM ──                                                      rows 12-14
         lines.push(format!("{:<cw$}", ""));
         lines.push(format!("{:<cw$}", Self::build_section_header("SYSTEM", cw)));
         lines.push(format!("{:<cw$}", ""));
 
-        // CPU bar (left) | SIMD status (right)
-        let cpu_row = format!("  CPU   {}  {:.0}%", cpu_bar, cpu_percent);
-        lines.push(format!(
-            "{:<cw$}",
-            Self::build_two_col_row(
-                &cpu_row,
-                &format!("  SIMD          {:>10}", Self::build_status(simd_enabled))
-            )
-        ));
+        // CPU | SIMD                                                        row 15
+        {
+            let row_idx = lines.len();
+            let cpu_row = format!("  CPU   {}  {:.0}%", cpu_bar, cpu_percent);
+            lines.push(format!(
+                "{:<cw$}",
+                Self::build_two_col_row(
+                    &cpu_row,
+                    &format!("  SIMD          {:>10}", Self::build_status(simd_enabled))
+                )
+            ));
+            // "  CPU   " = 8 chars
+            gauge_overrides.push((row_idx, 8, cpu_gauge_rich));
+        }
 
-        // Mem bar (left) | Auto Reset (right)
-        let mem_label = format!("{:.1} MB", memory_mb);
-        let mem_row = format!("  Mem   {}  {}", mem_bar, mem_label);
-        let auto_reset_right = format!("  Auto Reset    {:>10}", Self::build_status(auto_reset));
-        lines.push(format!(
-            "{:<cw$}",
-            Self::build_two_col_row(&mem_row, &auto_reset_right)
-        ));
+        // Mem | Auto Reset                                                  row 16
+        {
+            let row_idx = lines.len();
+            let mem_label = format!("{:.1} MB", memory_mb);
+            let mem_row = format!("  Mem   {}  {}", mem_bar, mem_label);
+            let auto_reset_right =
+                format!("  Auto Reset    {:>10}", Self::build_status(auto_reset));
+            lines.push(format!(
+                "{:<cw$}",
+                Self::build_two_col_row(&mem_row, &auto_reset_right)
+            ));
+            // "  Mem   " = 8 chars
+            gauge_overrides.push((row_idx, 8, mem_gauge_rich));
+        }
 
-        // Color | Charset (always separate columns)
+        // Color | Charset                                                   row 17
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(
@@ -1252,36 +1421,50 @@ impl DashboardOverlay {
             )
         ));
 
-        // Optional food source row
-        if let Some(food_display) = food_str.as_deref() {
-            lines.push(format!(
-                "{:<cw$}",
+        // Food row (always emitted; blank when no food source)             row 18
+        {
+            let row_str = if let Some(food_display) = food_str.as_deref() {
                 Self::build_two_col_row(
                     &format!("  Food    {:>18}", Self::truncate(food_display, 18)),
-                    ""
+                    "",
                 )
-            ));
+            } else {
+                String::new()
+            };
+            lines.push(format!("{:<cw$}", row_str));
         }
 
-        // Extra info: species/attractors/obstacles (left) | empty (right)
-        if attractor_count > 0 || obstacle_count > 0 || species_count > 1 {
-            #[cfg(feature = "multi-species")]
-            let spc_segment = format!("Spc:{} ", species_count);
-            #[cfg(not(feature = "multi-species"))]
-            let spc_segment = String::new();
-            lines.push(format!(
-                "{:<cw$}",
+        // Extras row (always emitted; blank when no extras)                row 19
+        {
+            let row_str = if attractor_count > 0 || obstacle_count > 0 || species_count > 1 {
+                #[cfg(feature = "multi-species")]
+                let spc_segment = format!("Spc:{} ", species_count);
+                #[cfg(not(feature = "multi-species"))]
+                let spc_segment = String::new();
                 Self::build_two_col_row(
                     &format!(
                         "  {}Att:{} Obs:{}",
                         spc_segment, attractor_count, obstacle_count
                     ),
-                    ""
+                    "",
                 )
-            ));
+            } else {
+                String::new()
+            };
+            lines.push(format!("{:<cw$}", row_str));
         }
 
-        // ── PALETTE strip ──
+        // Legend row                                                        row 20
+        {
+            let row_idx = lines.len();
+            // Indent 2 to align with other content rows
+            let legend_padded = format!("  {}", legend_str);
+            lines.push(format!("{:<cw$}", legend_padded));
+            // Offset 2 for the "  " prefix
+            legend_overrides.push((row_idx, 2, legend_cells));
+        }
+
+        // ── PALETTE ──                                                     rows 21-23
         lines.push(format!("{:<cw$}", ""));
         lines.push(format!(
             "{:<cw$}",
@@ -1291,7 +1474,15 @@ impl DashboardOverlay {
         let palette_strip: String = (0..cw).map(|_| '▄').collect();
         lines.push(format!("{:<cw$}", palette_strip));
 
-        // Build the overlay via PanelBuilder using raw lines
+        debug_assert_eq!(
+            lines.len(),
+            Self::BODY_ROWS,
+            "build_overlay: line count {} != BODY_ROWS {}",
+            lines.len(),
+            Self::BODY_ROWS
+        );
+
+        // ── Assemble overlay ──────────────────────────────────────────────────
         let mut overlay = PanelBuilder::new(cw, None)
             .with_padding(Padding::new(2, 0, 2, 2))
             .with_title("DASHBOARD")
@@ -1308,6 +1499,8 @@ impl DashboardOverlay {
             accent,
             panel_style,
             palette_colors,
+            &gauge_overrides,
+            &legend_overrides,
         ));
         rendered
     }
@@ -1343,19 +1536,39 @@ impl DashboardOverlay {
     }
 
     /// Generates per-cell color overrides for the dashboard rich rendering.
+    ///
+    /// `gauge_overrides` and `legend_overrides` map body line indices
+    /// (0-based in the raw `lines` vec) to `(content_col_offset, cells)` pairs.
+    /// The rendered lines have 1 top-border row prepended by PanelBuilder, so
+    /// body line `b` maps to rendered line `b + 1`.
     fn generate_rich_lines(
         lines: &[String],
         _fps: f32,
         accent: RgbColor,
         panel_style: &PanelStyle,
         palette_colors: &[RgbColor],
+        gauge_overrides: &[GaugeOverride],
+        legend_overrides: &[GaugeOverride],
     ) -> Vec<Vec<RichCell>> {
         let muted = panel_style.muted;
         let text_secondary = panel_style.text_secondary;
 
+        // Build lookups: (rendered_line_idx, content_col_offset, cells_ref)
+        // PanelBuilder build() applies top border (1) + top padding (2) = 3 offset, so body line b → rendered line b+3.
+        // (title_box is a separate RenderedOverlay field, not in lines)
+        let gauge_lookup: Vec<GaugeLookupEntry<'_>> = gauge_overrides
+            .iter()
+            .map(|(body_idx, col_offset, cells)| (body_idx + 3, *col_offset, cells.as_slice()))
+            .collect();
+        let legend_lookup: Vec<GaugeLookupEntry<'_>> = legend_overrides
+            .iter()
+            .map(|(body_idx, col_offset, cells)| (body_idx + 3, *col_offset, cells.as_slice()))
+            .collect();
+
         lines
             .iter()
-            .map(|line| {
+            .enumerate()
+            .map(|(rendered_line_idx, line)| {
                 let chars: Vec<char> = line.chars().collect();
                 let n = chars.len();
                 // Content starts at col 3 (border=1, padding.left=2)
@@ -1379,12 +1592,36 @@ impl DashboardOverlay {
                 let is_palette_strip = content_start < content_end
                     && chars[content_start..content_end].iter().all(|&c| c == '▄');
 
-                // Detect FPS row
+                // Detect FPS row (still needed for digit coloring after the gauge)
                 let is_fps_row = content_start + 5 < n
                     && chars[content_start + 2..].starts_with(&['F', 'P', 'S']);
 
-                // Detect divider row (contains '│' at approx col 40)
-                let divider_col = chars.iter().position(|&c| c == '│');
+                // Detect divider row (contains '│' at approx col 40 — the column separator)
+                // Only the two-col divider; gauge '│' ticks are in gauge cells, not plain '│'.
+                // Find the divider-col '│' that is NOT inside any gauge region on this row.
+                let gauge_ranges_this_row: Vec<(usize, usize)> = gauge_lookup
+                    .iter()
+                    .filter(|(ri, _, _)| *ri == rendered_line_idx)
+                    .map(|(_, col_offset, cells)| {
+                        let abs_start = content_start + col_offset;
+                        (abs_start, abs_start + cells.len())
+                    })
+                    .collect();
+                let divider_col = chars.iter().enumerate().position(|(i, &c)| {
+                    c == '│' && !gauge_ranges_this_row.iter().any(|(s, e)| i >= *s && i < *e)
+                });
+
+                // Check if this row has gauge overrides
+                let gauge_this_row: Option<(usize, &[(char, RgbColor)])> = gauge_lookup
+                    .iter()
+                    .find(|(ri, _, _)| *ri == rendered_line_idx)
+                    .map(|(_, col_offset, cells)| (*col_offset, *cells));
+
+                // Check if this row has legend overrides
+                let legend_this_row: Option<(usize, &[(char, RgbColor)])> = legend_lookup
+                    .iter()
+                    .find(|(ri, _, _)| *ri == rendered_line_idx)
+                    .map(|(_, col_offset, cells)| (*col_offset, *cells));
 
                 if is_palette_strip {
                     // Per-char palette color from sampled gradient
@@ -1418,50 +1655,56 @@ impl DashboardOverlay {
                             (c, fg, None)
                         })
                         .collect()
-                } else if is_fps_row {
+                } else {
+                    // Generic / gauge / legend / FPS row.
+                    // Priority: gauge cells > legend cells > FPS digit > divider > status dots.
                     chars
                         .iter()
                         .enumerate()
                         .map(|(i, &c)| {
-                            let col = i.saturating_sub(content_start);
-                            // FPS value: digits after bar — "  FPS   [bar]  N  avg N"
-                            let fg = if i >= content_start
-                                && i < content_end
-                                && (8..52).contains(&col)
-                                && (c.is_ascii_digit() || c == '.')
-                            {
-                                Some(accent)
-                            } else if matches!(c, '█' | '░')
+                            let content_col = i.saturating_sub(content_start);
+
+                            // Gauge override: apply pre-computed threshold-colored cells.
+                            if let Some((gauge_col, gauge_cells)) = gauge_this_row {
+                                if i >= content_start {
+                                    let gauge_start = content_start + gauge_col;
+                                    let gauge_end = gauge_start + gauge_cells.len();
+                                    if i >= gauge_start && i < gauge_end {
+                                        let g_idx = i - gauge_start;
+                                        return (c, Some(gauge_cells[g_idx].1), None);
+                                    }
+                                }
+                            }
+
+                            // Legend override: apply pre-computed colored cells.
+                            if let Some((leg_col, leg_cells)) = legend_this_row {
+                                if i >= content_start {
+                                    let leg_start = content_start + leg_col;
+                                    let leg_end = leg_start + leg_cells.len();
+                                    if i >= leg_start && i < leg_end {
+                                        let l_idx = i - leg_start;
+                                        return (c, Some(leg_cells[l_idx].1), None);
+                                    }
+                                }
+                            }
+
+                            // FPS value digits (after the gauge bar)
+                            let fg = if is_fps_row
                                 && i >= content_start
                                 && i < content_end
+                                && (41..60).contains(&content_col)
+                                && (c.is_ascii_digit() || c == '.')
                             {
-                                // Progress bar coloring (accent fills, muted empties)
-                                if c == '█' {
-                                    Some(accent)
-                                } else {
-                                    Some(muted)
-                                }
-                            } else {
-                                None
-                            };
-                            (c, fg, None)
-                        })
-                        .collect()
-                } else {
-                    // Generic row: color divider, status dots, progress bars
-                    chars
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &c)| {
-                            let fg = if Some(i) == divider_col {
+                                // FPS value digits appear after the 32-wide gauge bar
+                                // "  FPS   [32 gauge chars]  N  avg N"
+                                // col 0..1 = "  ", col 2..4 = "FPS", col 5..8 = "   ",
+                                // col 9..40 = gauge (32), col 41+ = "  N  avg N"
+                                Some(accent)
+                            } else if Some(i) == divider_col {
                                 Some(muted)
                             } else if c == '◦' {
                                 Some(accent)
                             } else if c == '○' {
-                                Some(muted)
-                            } else if c == '█' && i >= content_start && i < content_end {
-                                Some(accent)
-                            } else if c == '░' && i >= content_start && i < content_end {
                                 Some(muted)
                             } else {
                                 None
@@ -1678,6 +1921,273 @@ mod dashboard_tests {
         assert_eq!(format_elapsed_time(90.0), "1:30");
         assert_eq!(format_elapsed_time(3661.0), "1:01:01");
         assert_eq!(format_elapsed_time(0.0), "0:00");
+    }
+
+    /// Helper: builds a dashboard overlay with a set of representative values.
+    fn build_test_overlay(is_paused: bool) -> super::RenderedOverlay {
+        let palette_colors = make_palette_colors();
+        let accent = RgbColor {
+            r: 57,
+            g: 211,
+            b: 83,
+        };
+        DashboardOverlay::build_overlay(
+            50000,     // agent_count
+            1234567.0, // trail_sum
+            8000000.0, // trail_capacity
+            8.5,       // trail_max
+            5.5,       // entropy
+            50.0,      // fps (warn band: 45 ≤ fps < 55)
+            48.0,      // avg_fps
+            1234,      // frame_count
+            125.5,     // elapsed_seconds
+            400,       // grid_width
+            400,       // grid_height
+            0,         // attractor_count
+            0,         // obstacle_count
+            1,         // species_count
+            12.5,      // memory_mb
+            45.0,      // cpu_percent
+            is_paused,
+            "Organic",
+            "Heat",
+            &palette_colors,
+            120,         // term_width
+            40,          // term_height
+            "Random",    // init_mode
+            "TrueColor", // color_mode
+            "HalfBlock", // charset
+            true,        // simd_enabled
+            0.90,        // _decay_factor
+            22.5,        // _sensor_angle
+            42,          // seed
+            &None,       // food_source
+            0,           // _warmup_frames
+            false,       // auto_reset
+            accent,
+            &GRUVBOX_DARK,
+        )
+    }
+
+    /// UX-win D: gauge glyphs (█ ░ │ ▲) must appear in gauge rows.
+    #[test]
+    fn dashboard_gauges_use_canonical_glyphs() {
+        let rendered = build_test_overlay(false);
+        let all_text: String = rendered.lines.join(
+            "
+",
+        );
+        // The gauge widget uses │ (value tick) and ▲ (default tick).
+        assert!(
+            all_text.contains('│'),
+            "Gauge value-tick │ must appear in dashboard"
+        );
+        assert!(
+            all_text.contains('▲'),
+            "Gauge default-tick ▲ must appear in dashboard"
+        );
+        // Fill and empty chars.
+        assert!(all_text.contains('█'), "Gauge fill █ must appear");
+        assert!(all_text.contains('░'), "Gauge empty ░ must appear");
+    }
+
+    /// UX-win D: body line count must be constant whether paused or running.
+    #[test]
+    fn dashboard_body_is_constant_height_paused_vs_running() {
+        let running = build_test_overlay(false);
+        let paused = build_test_overlay(true);
+        assert_eq!(
+            running.lines.len(),
+            paused.lines.len(),
+            "Dashboard must be constant height paused ({}) vs running ({})",
+            paused.lines.len(),
+            running.lines.len()
+        );
+    }
+
+    /// UX-win D: legend row must be present and contain all four band labels.
+    #[test]
+    fn dashboard_legend_row_present() {
+        let rendered = build_test_overlay(false);
+        let all_text: String = rendered.lines.join(
+            "
+",
+        );
+        assert!(all_text.contains("good"), "Legend must contain 'good'");
+        assert!(all_text.contains("warn"), "Legend must contain 'warn'");
+        assert!(all_text.contains("crit"), "Legend must contain 'crit'");
+        assert!(
+            all_text.contains("default"),
+            "Legend must contain 'default'"
+        );
+    }
+
+    /// UX-win D: gauge rich_lines must apply threshold colors (not uniform accent_active).
+    /// For fps=50 (warn band: 45 ≤ fps < 55), the fill cells should use accent_warning.
+    #[test]
+    fn dashboard_gauge_rich_lines_apply_threshold_colors() {
+        let rendered = build_test_overlay(false);
+        let rich = rendered
+            .rich_lines
+            .as_ref()
+            .expect("rich_lines must be Some");
+        // PanelBuilder build() applies top border (1) + top padding (2) = 3 offset.
+        // Body line 2 (FPS) → rendered line 5. (title_box is a separate RenderedOverlay field)
+        // Content starts at rendered col 3; gauge starts at content_col 9, so rendered col 12.
+        let fps_rich_row = &rich[5];
+        // Find a '█' fill cell in the FPS gauge region (rendered cols 12..44)
+        let fill_cell = fps_rich_row
+            .iter()
+            .enumerate()
+            .find(|(i, (c, fg, _))| *c == '█' && *i >= 12 && fg.is_some());
+        assert!(
+            fill_cell.is_some(),
+            "FPS gauge fill cell must be present in rich row 5; row = {:?}",
+            fps_rich_row.iter().map(|(c, _, _)| c).collect::<String>()
+        );
+        let (_, (_, fill_color, _)) = fill_cell.unwrap();
+        // fps=50 → warn band (45 ≤ fps < 55) → accent_warning
+        assert_eq!(
+            *fill_color,
+            Some(GRUVBOX_DARK.accent_warning),
+            "fps=50 is in warn band; fill should be accent_warning"
+        );
+    }
+    /// UX-win D: gauge fill cells in good band (fps ≥ 55) should use accent_success.
+    #[test]
+    fn dashboard_gauge_rich_lines_good_band_threshold_color() {
+        let palette_colors = make_palette_colors();
+        let accent = RgbColor {
+            r: 57,
+            g: 211,
+            b: 83,
+        };
+        let rendered = DashboardOverlay::build_overlay(
+            50000,
+            1234567.0,
+            8000000.0,
+            8.5,
+            5.5,
+            60.0, // fps in good band (≥ 55)
+            58.0,
+            1234,
+            125.5,
+            400,
+            400,
+            0,
+            0,
+            1,
+            12.5,
+            45.0,
+            false,
+            "Organic",
+            "Heat",
+            &palette_colors,
+            120,
+            40,
+            "Random",
+            "TrueColor",
+            "HalfBlock",
+            true,
+            0.90,
+            22.5,
+            42,
+            &None,
+            0,
+            false,
+            accent,
+            &GRUVBOX_DARK,
+        );
+        let rich = rendered
+            .rich_lines
+            .as_ref()
+            .expect("rich_lines must be Some");
+        let fps_rich_row = &rich[5];
+        // Find a '█' fill cell in the FPS gauge region (rendered cols 12..44), avoiding the tick
+        let fill_cell = fps_rich_row.iter().enumerate().find(|(i, (c, fg, _))| {
+            *c == '█' && *i >= 12 && *i < 40 && fg.is_some() // exclude rightmost cols near tick
+        });
+        assert!(
+            fill_cell.is_some(),
+            "FPS gauge fill cell must be present in good-band row; row = {:?}",
+            fps_rich_row.iter().map(|(c, _, _)| c).collect::<String>()
+        );
+        let (_, (_, fill_color, _)) = fill_cell.unwrap();
+        // fps=60 → good band (≥ 55) → accent_success
+        assert_eq!(
+            *fill_color,
+            Some(GRUVBOX_DARK.accent_success),
+            "fps=60 is in good band; fill should be accent_success"
+        );
+    }
+
+    /// UX-win D: gauge fill cells in crit band (fps < 45) should use accent_error.
+    #[test]
+    fn dashboard_gauge_rich_lines_crit_band_threshold_color() {
+        let palette_colors = make_palette_colors();
+        let accent = RgbColor {
+            r: 57,
+            g: 211,
+            b: 83,
+        };
+        let rendered = DashboardOverlay::build_overlay(
+            50000,
+            1234567.0,
+            8000000.0,
+            8.5,
+            5.5,
+            30.0, // fps in crit band (< 45)
+            28.0,
+            1234,
+            125.5,
+            400,
+            400,
+            0,
+            0,
+            1,
+            12.5,
+            45.0,
+            false,
+            "Organic",
+            "Heat",
+            &palette_colors,
+            120,
+            40,
+            "Random",
+            "TrueColor",
+            "HalfBlock",
+            true,
+            0.90,
+            22.5,
+            42,
+            &None,
+            0,
+            false,
+            accent,
+            &GRUVBOX_DARK,
+        );
+        let rich = rendered
+            .rich_lines
+            .as_ref()
+            .expect("rich_lines must be Some");
+        let fps_rich_row = &rich[5];
+        // Find a '█' fill cell in the FPS gauge region (rendered cols 12..44)
+        let fill_cell = fps_rich_row
+            .iter()
+            .enumerate()
+            .find(|(i, (c, fg, _))| *c == '█' && *i >= 12 && *i < 30 && fg.is_some());
+        assert!(
+            fill_cell.is_some(),
+            "FPS gauge fill cell must be present in crit-band row; row = {:?}",
+            fps_rich_row.iter().map(|(c, _, _)| c).collect::<String>()
+        );
+        let (_, (_, fill_color, _)) = fill_cell.unwrap();
+        // fps=30 → crit band (< 45) → accent_error
+        assert_eq!(
+            *fill_color,
+            Some(GRUVBOX_DARK.accent_error),
+            "fps=30 is in crit band; fill should be accent_error"
+        );
     }
 }
 
