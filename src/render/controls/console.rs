@@ -852,6 +852,8 @@ mod tests {
 
     #[test]
     fn focused_row_has_bg_override() {
+        // focus=2 is intentionally out-of-range (fixture_params(0) has only 2 items)
+        // and clamped to the last item index (1).
         let ov = build_console(
             0,
             2,
@@ -889,6 +891,121 @@ mod tests {
         assert!(
             !combined.contains('▲'),
             "enum detail pane must not show gauge tick marker ▲"
+        );
+    }
+
+    #[test]
+    fn action_param_detail_content() {
+        // Action kind (category 5=SYS, fixture_params(5) has Reset)
+        // Detail should contain the "↵ to run" affordance string.
+        let ov = build_console(
+            5,
+            0,
+            &fixture_params(5),
+            &crate::render::theme::SLIME_DARK,
+            crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+        );
+        let combined: String = ov.lines.concat();
+        assert!(
+            combined.contains("↵ to run"),
+            "action detail should contain '↵ to run' affordance"
+        );
+    }
+
+    #[test]
+    fn cli_readonly_param_detail_content() {
+        // CliReadonly kind (category 4=PRF, fixture_params(4) has Population)
+        // Detail should contain the "restart to change" hint string.
+        let ov = build_console(
+            4,
+            0,
+            &fixture_params(4),
+            &crate::render::theme::SLIME_DARK,
+            crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+        );
+        let combined: String = ov.lines.concat();
+        assert!(
+            combined.contains("restart to change"),
+            "cli-readonly detail should contain 'restart to change' hint"
+        );
+    }
+
+    #[test]
+    fn toggle_param_detail_content_on() {
+        // Toggle kind (category 2=APP, Invert/Reverse are Toggle)
+        // Focus on Invert (first Toggle in the fixture)
+        // When value_text is "on", should show "[ ON  ]" pill.
+        let pv = ParamView {
+            desc: ParamDesc {
+                id: ParamId::Invert,
+                key_hint: "X",
+                label: "Invert",
+                kind: ParamKind::Toggle,
+            },
+            value_text: "on".to_string(),
+            ratio: None,
+            def_ratio: None,
+            state: ParamState::Default,
+        };
+        let ov = build_console(
+            2,
+            0,
+            &[pv],
+            &crate::render::theme::SLIME_DARK,
+            crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+        );
+        let combined: String = ov.lines.concat();
+        assert!(
+            combined.contains("[ ON  ]"),
+            "toggle detail with 'on' value should contain '[ ON  ]' pill"
+        );
+    }
+
+    #[test]
+    fn toggle_param_detail_content_off() {
+        // Toggle kind (category 2=APP, Invert/Reverse are Toggle)
+        // When value_text is "off", should show "[ OFF ]" pill.
+        let pv = ParamView {
+            desc: ParamDesc {
+                id: ParamId::Invert,
+                key_hint: "X",
+                label: "Invert",
+                kind: ParamKind::Toggle,
+            },
+            value_text: "off".to_string(),
+            ratio: None,
+            def_ratio: None,
+            state: ParamState::Default,
+        };
+        let ov = build_console(
+            2,
+            0,
+            &[pv],
+            &crate::render::theme::SLIME_DARK,
+            crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+        );
+        let combined: String = ov.lines.concat();
+        assert!(
+            combined.contains("[ OFF ]"),
+            "toggle detail with 'off' value should contain '[ OFF ]' pill"
+        );
+    }
+
+    #[test]
+    fn numeric_param_has_gauge_bar_char() {
+        // Numeric kind renders a gauge with fill characters (█).
+        // fixture_params(0) has Numeric params with Some(ratio), so gauge is rendered.
+        let ov = build_console(
+            0,
+            0,
+            &fixture_params(0),
+            &crate::render::theme::SLIME_DARK,
+            crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+        );
+        let combined: String = ov.lines.concat();
+        assert!(
+            combined.contains('█'),
+            "numeric detail pane should contain gauge bar fill character █"
         );
     }
 }
