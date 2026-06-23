@@ -37,6 +37,12 @@ pub struct PanelStyle {
     pub muted: RgbColor,
     /// Color for modified/changed parameter markers.
     pub accent_modified: RgbColor,
+    /// CLI error/highlight color (migrated from hardcoded CLI_RED).
+    pub cli_color: RgbColor,
+    /// Focus background color for highlighted rows (migrated from hardcoded FOCUS_BG).
+    pub focus_bg: RgbColor,
+    /// Default state color for ambient instrument indicator (aliased to muted).
+    pub state_default: RgbColor,
     /// Accent color for a healthy FPS readout (currently unused).
     pub accent_fps_good: RgbColor,
     /// Accent color for a degraded FPS readout (currently unused).
@@ -62,6 +68,9 @@ pub const GRUVBOX_DARK: PanelStyle = PanelStyle {
     accent_active: RgbColor::new(0xFA, 0xBD, 0x2F), // #FABD2F - yellow
     muted: RgbColor::new(0x66, 0x5C, 0x54),       // #665C54 - dark4
     accent_modified: RgbColor::new(0xFE, 0x80, 0x19), // #FE8019 - orange
+    cli_color: RgbColor::new(204, 102, 102),      // legacy CLI_RED
+    focus_bg: RgbColor::new(34, 52, 40),          // legacy FOCUS_BG
+    state_default: RgbColor::new(0x66, 0x5C, 0x54), // == muted
     accent_fps_good: RgbColor::new(0x8E, 0xC0, 0x7C), // #8EC07C - bright green
     accent_fps_warn: RgbColor::new(0xD7, 0x99, 0x21), // #D79921 - amber
 };
@@ -88,6 +97,9 @@ pub const SLIME_DARK: PanelStyle = PanelStyle {
     accent_active: RgbColor::new(0x39, 0xD3, 0x53), // #39D353 - electric green
     muted: RgbColor::new(0x24, 0x3A, 0x2C),       // #243A2C - muted green-gray
     accent_modified: RgbColor::new(0xFF, 0xB7, 0x00), // #FFB700 - amber
+    cli_color: RgbColor::new(0xFF, 0x47, 0x57),   // accent_error
+    focus_bg: RgbColor::new(0x18, 0x48, 0x28),    // unfocus_color - dim green
+    state_default: RgbColor::new(0x24, 0x3A, 0x2C), // muted
     accent_fps_good: RgbColor::new(0x39, 0xD3, 0x53), // #39D353 - electric green
     accent_fps_warn: RgbColor::new(0xFF, 0xB7, 0x00), // #FFB700 - amber
 };
@@ -175,6 +187,21 @@ pub const NORD: PanelStyle = PanelStyle {
         g: 135,
         b: 112,
     }, // nord12 — aurora orange
+    cli_color: RgbColor {
+        r: 191,
+        g: 97,
+        b: 106,
+    }, // accent_error (nord11)
+    focus_bg: RgbColor {
+        r: 67,
+        g: 76,
+        b: 94,
+    }, // unfocus_color (nord2)
+    state_default: RgbColor {
+        r: 76,
+        g: 86,
+        b: 106,
+    }, // muted (nord3+4 blend)
     accent_fps_good: RgbColor {
         r: 163,
         g: 190,
@@ -269,6 +296,21 @@ pub const CATPPUCCIN_MOCHA: PanelStyle = PanelStyle {
         g: 179,
         b: 135,
     }, // peach
+    cli_color: RgbColor {
+        r: 243,
+        g: 139,
+        b: 168,
+    }, // accent_error (red)
+    focus_bg: RgbColor {
+        r: 62,
+        g: 53,
+        b: 86,
+    }, // unfocus_color (surface0 with mauve tint)
+    state_default: RgbColor {
+        r: 88,
+        g: 91,
+        b: 112,
+    }, // muted (overlay0)
     accent_fps_good: RgbColor {
         r: 166,
         g: 227,
@@ -363,6 +405,21 @@ pub const TOKYO_NIGHT: PanelStyle = PanelStyle {
         g: 158,
         b: 100,
     }, // orange
+    cli_color: RgbColor {
+        r: 247,
+        g: 118,
+        b: 142,
+    }, // accent_error (red)
+    focus_bg: RgbColor {
+        r: 41,
+        g: 46,
+        b: 66,
+    }, // unfocus_color (bg_dark)
+    state_default: RgbColor {
+        r: 86,
+        g: 95,
+        b: 137,
+    }, // muted (comment)
     accent_fps_good: RgbColor {
         r: 158,
         g: 206,
@@ -428,3 +485,28 @@ pub const ALL_THEMES: [Theme; 5] = [
     Theme::CatppuccinMocha,
     Theme::TokyoNight,
 ];
+
+#[cfg(test)]
+mod token_tests {
+    use super::*;
+
+    #[test]
+    fn gruvbox_dark_has_new_tokens_matching_legacy_consts() {
+        // Legacy hardcoded values being migrated:
+        //   console.rs CLI_RED  = (204,102,102)
+        //   console.rs FOCUS_BG = (34,52,40)
+        //   state_default aliased muted = (102,92,84)
+        assert_eq!(GRUVBOX_DARK.cli_color, RgbColor::new(204, 102, 102));
+        assert_eq!(GRUVBOX_DARK.focus_bg, RgbColor::new(34, 52, 40));
+        assert_eq!(GRUVBOX_DARK.state_default, GRUVBOX_DARK.muted);
+    }
+
+    #[test]
+    fn non_gruvbox_new_tokens_match_theme_aliases() {
+        for style in [SLIME_DARK, NORD, CATPPUCCIN_MOCHA, TOKYO_NIGHT] {
+            assert_eq!(style.focus_bg, style.unfocus_color);
+            assert_eq!(style.cli_color, style.accent_error);
+            assert_eq!(style.state_default, style.muted);
+        }
+    }
+}
