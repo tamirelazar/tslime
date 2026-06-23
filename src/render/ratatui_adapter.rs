@@ -185,10 +185,31 @@ pub fn stamp_caret(
     overlay.rich_lines = Some(rich);
 }
 
+/// Compute the first-visible row index so `selected` stays within the visible window.
+///
+/// Mirrors `ConfigBrowserOverlay::config_browser_window`: pins the selection to the
+/// bottom of the `[start, start + max_visible)` window and clamps so the window never
+/// runs past the end of the list. Replaces `list_scroll_offset` for all callers that
+/// only need the start index (no ratatui).
+pub fn scroll_start(total: usize, selected: usize, max_visible: usize) -> usize {
+    if total <= max_visible || max_visible == 0 {
+        return 0;
+    }
+    let sel = selected.min(total - 1);
+    sel.saturating_sub(max_visible - 1).min(total - max_visible)
+}
+
 /// Option-B config browser: **chrome is the existing `PanelBuilder`** (title box,
-/// block border, footer — pixel-identical to the current app), while the scroll window
-/// is driven by [`list_scroll_offset`] (ratatui `ListState`) instead of hand-rolled math.
-pub fn build_config_browser(configs: &[NamedProfile], selected: usize) -> RenderedOverlay {
+/// block border, footer — pixel-identical to the current app), with hand-rolled
+/// scroll-window math keeping the selection visible.
+///
+/// `active_name` — when `Some(name)`, the row whose `config.name == name` gets a `▶`
+/// prefix to mark it as the currently-loaded config (in addition to the `›` cursor).
+pub fn build_config_browser(
+    configs: &[NamedProfile],
+    selected: usize,
+    active_name: Option<&str>,
+) -> RenderedOverlay {
     use TextAlignment::Left;
 
     let mut builder = PanelBuilder::new(BROWSER_CONTENT_WIDTH, None)
@@ -209,7 +230,7 @@ pub fn build_config_browser(configs: &[NamedProfile], selected: usize) -> Render
 
     let total = configs.len();
     let selected = selected.min(total - 1);
-    let start = list_scroll_offset(total, selected, BROWSER_MAX_VISIBLE);
+    let start = scroll_start(total, selected, BROWSER_MAX_VISIBLE);
     let end = (start + BROWSER_MAX_VISIBLE).min(total);
 
     if start > 0 {
@@ -218,8 +239,13 @@ pub fn build_config_browser(configs: &[NamedProfile], selected: usize) -> Render
         builder = builder.add_empty();
     }
     for (i, c) in configs.iter().enumerate().skip(start).take(end - start) {
-        let marker = if i == selected { "›" } else { " " };
-        builder = builder.add_single(format!("{marker}{}", config_row_text(i, c)), Left);
+        let cursor = if i == selected { "›" } else { " " };
+        let active = if active_name == Some(c.name.as_str()) {
+            "▶"
+        } else {
+            " "
+        };
+        builder = builder.add_single(format!("{cursor}{active}{}", config_row_text(i, c)), Left);
     }
     if end < total {
         builder = builder.add_single(format!("▼ {} below", total - end), Left);
@@ -282,7 +308,7 @@ mod tests {
     #[test]
     fn chrome_dims_and_title_box() {
         let configs = vec![profile("alpha"), profile("beta")];
-        let overlay = build_config_browser(&configs, 0);
+        let overlay = build_config_browser(&configs, 0, None);
         let w = overlay.lines[0].chars().count();
         assert_eq!(w, BROWSER_WIDTH_TOTAL);
         assert!(overlay.lines.iter().all(|l| l.chars().count() == w));
@@ -290,19 +316,28 @@ mod tests {
         assert!(tb.lines.iter().any(|l| l.contains("SAVED CONFIGURATIONS")));
     }
 
-    /// Row format matches the app: `›{n} {name} - {palette} - {pop}k agents`.
+    /// Row format matches the app: `{cursor}{active}{n} {name} - {palette} - {pop}k agents`.
+    /// Exact prefix for selected non-active row is `"› "` (after border + left padding).
     #[test]
     fn row_format_and_marker_match_app() {
         let configs = vec![profile("alpha"), profile("beta")];
-        let overlay = build_config_browser(&configs, 0);
+        let overlay = build_config_browser(&configs, 0, None);
         let text = overlay.lines.join("\n");
+        // Panel wraps lines with border (█) + left padding (2 spaces), so skip 3 chars.
+        // Content format: {cursor}{active}{index} {name} ...
+        let alpha_line = text.lines().find(|l| l.contains("alpha")).unwrap_or("");
+        // Extract content after border and left padding: chars 3..
+        let alpha_content = alpha_line.chars().skip(3).collect::<String>();
         assert!(
-            text.contains("›1 alpha - "),
-            "selected row format wrong:\n{text}"
+            alpha_content.starts_with("› 1 "),
+            "selected alpha row must start with '› 1 ' (after border+padding):\n{alpha_line}\ncontent: {alpha_content}"
         );
+        // Second row (not selected) should have space in cursor slot, then active slot, then index
+        let beta_line = text.lines().find(|l| l.contains("beta")).unwrap_or("");
+        let beta_content = beta_line.chars().skip(3).collect::<String>();
         assert!(
-            text.contains(" 2 beta - "),
-            "second row format wrong:\n{text}"
+            beta_content.starts_with("  2 "),
+            "non-selected beta row must start with '  2 ' (space+space+index, after border+padding):\n{beta_line}\ncontent: {beta_content}"
         );
         // Footer hints present (B1 had dropped these).
         assert!(
@@ -314,7 +349,7 @@ mod tests {
 
     #[test]
     fn empty_state_renders_hint() {
-        let overlay = build_config_browser(&[], 0);
+        let overlay = build_config_browser(&[], 0, None);
         let text = overlay.lines.join("\n");
         assert!(
             text.contains("No saved configurations"),
@@ -322,12 +357,11 @@ mod tests {
         );
     }
 
-    /// The win over hand-rolled code: `ListState` keeps the selection visible and the
-    /// `▲ N above` indicator is derived from its offset — no `config_browser_window`.
+    /// Hand-rolled scroll_start keeps the selection visible — no ratatui ListState.
     #[test]
     fn selection_stays_visible_when_scrolled_past_window() {
         let configs: Vec<_> = (0..30).map(|i| profile(&format!("cfg{i:02}"))).collect();
-        let overlay = build_config_browser(&configs, 29);
+        let overlay = build_config_browser(&configs, 29, None);
         let text = overlay.lines.join("\n");
         assert!(
             text.contains("cfg29"),
@@ -342,6 +376,79 @@ mod tests {
             !text.contains("▼ "),
             "should be at bottom, no below indicator:\n{text}"
         );
+    }
+
+    /// The `▶` marker appears on the row whose name matches `active_name`.
+    #[test]
+    fn active_marker_shown_for_active_config() {
+        let configs = vec![profile("alpha"), profile("beta"), profile("gamma")];
+        // beta is the active config, alpha is selected (cursor).
+        let overlay = build_config_browser(&configs, 0, Some("beta"));
+        let text = overlay.lines.join("\n");
+        // Panel wraps lines with border (█) + left padding (2 spaces), so skip 3 chars.
+        // Content format: {cursor}{active}{index} {name} ...
+
+        // alpha row: selected but NOT active — prefix should be "› " (cursor + space for active slot).
+        let alpha_line = text.lines().find(|l| l.contains("alpha")).unwrap_or("");
+        let alpha_content = alpha_line.chars().skip(3).collect::<String>();
+        assert!(
+            alpha_content.starts_with("› "),
+            "alpha (selected, not active) row prefix must be '› ' (after border+padding):\n{alpha_line}\ncontent: {alpha_content}"
+        );
+        assert!(
+            !alpha_content.contains("▶"),
+            "alpha content should not contain active marker:\n{alpha_content}"
+        );
+
+        // beta row: NOT selected but IS active — prefix should be " ▶" (space for cursor + active marker).
+        let beta_line = text.lines().find(|l| l.contains("beta")).unwrap_or("");
+        let beta_content = beta_line.chars().skip(3).collect::<String>();
+        assert!(
+            beta_content.starts_with(" ▶"),
+            "beta (not selected, active) row prefix must be ' ▶' (after border+padding):\n{beta_line}\ncontent: {beta_content}"
+        );
+
+        // gamma row: neither selected nor active — prefix should be "  " (two spaces).
+        let gamma_line = text.lines().find(|l| l.contains("gamma")).unwrap_or("");
+        let gamma_content = gamma_line.chars().skip(3).collect::<String>();
+        assert!(
+            gamma_content.starts_with("  "),
+            "gamma (not selected, not active) row prefix must be '  ' (after border+padding):\n{gamma_line}\ncontent: {gamma_content}"
+        );
+        assert!(
+            !gamma_content.contains("▶"),
+            "gamma should not have active marker:\n{gamma_content}"
+        );
+    }
+
+    /// When no `active_name` is given, `▶` never appears.
+    #[test]
+    fn no_active_marker_when_active_name_is_none() {
+        let configs: Vec<_> = (0..5).map(|i| profile(&format!("cfg{i}"))).collect();
+        let overlay = build_config_browser(&configs, 2, None);
+        let text = overlay.lines.join("\n");
+        assert!(
+            !text.contains("▶"),
+            "should be no active marker when active_name=None:\n{text}"
+        );
+    }
+
+    /// `scroll_start` unit tests: matches `ConfigBrowserOverlay::config_browser_window` behaviour.
+    #[test]
+    fn scroll_start_matches_overlay_window_helper() {
+        // total <= max_visible: always 0.
+        assert_eq!(scroll_start(5, 0, 9), 0);
+        assert_eq!(scroll_start(5, 4, 9), 0);
+        // Selection within first window: anchored at top.
+        assert_eq!(scroll_start(15, 0, 9), 0);
+        assert_eq!(scroll_start(15, 8, 9), 0);
+        // Selection past first window.
+        assert_eq!(scroll_start(15, 9, 9), 1);
+        assert_eq!(scroll_start(15, 11, 9), 3);
+        // Selection at the end: clamped.
+        assert_eq!(scroll_start(15, 14, 9), 6);
+        // Out-of-range selection clamped.
+        assert_eq!(scroll_start(15, 99, 9), 6);
     }
 
     // The general detached-buffer adapter still round-trips dims (used for future

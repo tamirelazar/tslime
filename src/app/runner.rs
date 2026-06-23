@@ -1876,10 +1876,14 @@ pub fn run_simulation(
                     runtime_state.config_browser_selected_index = runtime_state
                         .config_browser_selected_index
                         .min(configs.len().saturating_sub(1));
-                    // SPIKE (Option B): PanelBuilder chrome, ratatui-driven scroll list.
+                    let active_name = match &runtime_state.active_source {
+                        crate::profile::ProfileSource::SavedConfig(n) => Some(n.as_str()),
+                        _ => None,
+                    };
                     Some(crate::render::ratatui_adapter::build_config_browser(
                         &configs,
                         runtime_state.config_browser_selected_index,
+                        active_name,
                     ))
                 }
                 Err(_) => {
@@ -3101,7 +3105,8 @@ pub fn run_simulation(
                         ControlAction::ShowConfigBrowser => {
                             runtime_state.close_all_overlays();
                             runtime_state.overlay_state.open(OverlayType::ConfigBrowser);
-                            runtime_state.config_browser_selected_index = 0;
+                            // Intentionally do NOT reset config_browser_selected_index here —
+                            // persisting the selection across reopen is UX-win F.
                             runtime_state.on_modal_open();
                         }
                         ControlAction::ShowConfigSaveDialog => {
