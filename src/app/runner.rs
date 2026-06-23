@@ -24,7 +24,6 @@ use crate::render::controls::registry::RegistryCtx;
 use crate::render::dither::DitherMode;
 use crate::render::downsample::downsample;
 use crate::render::grid::{GridRenderer, GridStyle};
-use crate::render::options_overlay::ControlsOverlay;
 use crate::render::overlay::{
     build_notification_panel, ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay,
     DirtyGuardOverlay, KeyboardHintsOverlay, OverlayRenderer, PauseOverlay,
@@ -255,6 +254,434 @@ fn apply_controls_action(
             ControlsDispatch::Passthrough
         }
     }
+}
+
+/// Builds the [`ParamView`] list for the currently-visible parameters of the
+/// active controls category, sourcing every value from live [`RuntimeState`].
+///
+/// Value formatting, gauge ranges, and modified/default detection mirror the
+/// legacy `ControlsOverlay::build_overlay` per-param logic so the new Console
+/// reads identically to the old controls overlay.
+///
+/// `ratio`/`def_ratio` are filled only for [`ParamKind::Numeric`] rows; for all
+/// other kinds they are `None`. `state` is:
+/// - [`ParamState::Cli`] for CLI-readonly rows (Population, Dither),
+/// - [`ParamState::Display`] for display-only rows (Mouse Timeout),
+/// - otherwise [`ParamState::Modified`] / [`ParamState::Default`] by comparing
+///   the live value against `runtime_state.default_values` (float tolerance for
+///   numerics; only the fields present in [`DefaultValues`] can show modified —
+///   params without a tracked default always read as Default, matching the old
+///   overlay's blank marker).
+fn build_param_views(
+    runtime_state: &RuntimeState,
+    ctx: &RegistryCtx,
+    population: usize,
+) -> Vec<crate::render::controls::ParamView> {
+    use crate::render::controls::registry::{visible_params, ParamId, ParamKind};
+    use crate::render::controls::{ParamState, ParamView};
+
+    let defaults = &runtime_state.default_values;
+    // Float-equality tolerance for modified detection (matches old eps choices).
+    let near = |a: f32, b: f32, eps: f32| (a - b).abs() <= eps;
+    // Clamp helper for gauge ratios.
+    let ratio = |v: f32, min: f32, max: f32| ((v - min) / (max - min)).clamp(0.0, 1.0);
+
+    let palette_name = runtime_state
+        .current_palette(&ALL_PALETTES)
+        .name()
+        .to_string();
+    let charset = charset_name(&runtime_state.current_charset()).to_string();
+    let color_aa = runtime_state.current_color_aa().as_label().to_string();
+    let theme = runtime_state.current_theme_name().to_string();
+
+    let shift_name = match runtime_state.palette_shift_speed {
+        PaletteShiftSpeed::Off => "Off",
+        PaletteShiftSpeed::Slow => "Slow",
+        PaletteShiftSpeed::Medium => "Medium",
+        PaletteShiftSpeed::Fast => "Fast",
+    };
+    let mouse_mode_name = match runtime_state.mouse_mode {
+        MouseInteractionMode::Disabled => "Disabled",
+        MouseInteractionMode::Attract => "Attract",
+        MouseInteractionMode::Repel => "Repel",
+    };
+    let terrain_name = match runtime_state.terrain_type {
+        TerrainType::None => "None",
+        TerrainType::Smooth => "Smooth",
+        TerrainType::Turbulent => "Turbulent",
+        TerrainType::Mixed => "Mixed",
+    };
+    let kernel_name = match runtime_state.diffusion_kernel {
+        DiffusionKernel::Mean3x3 => "Mean3x3",
+        DiffusionKernel::Gaussian => "Gaussian",
+    };
+
+    visible_params(runtime_state.controls_category_idx, ctx)
+        .into_iter()
+        .map(|desc| {
+            // (value_text, ratio, def_ratio, state)
+            let (value_text, r, dr, state): (String, Option<f32>, Option<f32>, ParamState) =
+                match desc.id {
+                    // ── SIM ───────────────────────────────────────────────────
+                    ParamId::SensorAngle => {
+                        let v = runtime_state.sensor_angle;
+                        let d = defaults.sensor_angle;
+                        (
+                            format!("{v:.1}°"),
+                            Some(ratio(v, 5.0, 90.0)),
+                            Some(ratio(d, 5.0, 90.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::SensorDistance => {
+                        let v = runtime_state.sensor_distance;
+                        let d = defaults.sensor_distance;
+                        (
+                            format!("{v:.1}px"),
+                            Some(ratio(v, 1.0, 50.0)),
+                            Some(ratio(d, 1.0, 50.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::TurnAngle => {
+                        let v = runtime_state.rotation_angle;
+                        let d = defaults.rotation_angle;
+                        (
+                            format!("{v:.1}°"),
+                            Some(ratio(v, 5.0, 90.0)),
+                            Some(ratio(d, 5.0, 90.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::StepSize => {
+                        let v = runtime_state.step_size;
+                        let d = defaults.step_size;
+                        (
+                            format!("{v:.1}px"),
+                            Some(ratio(v, 0.5, 5.0)),
+                            Some(ratio(d, 0.5, 5.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::Decay => {
+                        let v = runtime_state.decay_factor;
+                        let d = defaults.decay_factor;
+                        (
+                            format!("{v:.3}"),
+                            Some(ratio(v, 0.5, 0.99)),
+                            Some(ratio(d, 0.5, 0.99)),
+                            if near(v, d, 0.001) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::Deposit => {
+                        let v = runtime_state.deposit_amount;
+                        let d = defaults.deposit_amount;
+                        (
+                            format!("{v:.1}×"),
+                            Some(ratio(v, 1.0, 20.0)),
+                            Some(ratio(d, 1.0, 20.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::TimeScale => {
+                        // No tracked default → always Default (matches old blank marker).
+                        let v = runtime_state.time_scale;
+                        (
+                            format!("{v:.1}×"),
+                            Some(ratio(v, 0.5, 4.0)),
+                            Some(ratio(1.0, 0.5, 4.0)),
+                            ParamState::Default,
+                        )
+                    }
+                    // ── ENV ───────────────────────────────────────────────────
+                    ParamId::DiffusionKernel => {
+                        let modified = format!("{:?}", runtime_state.diffusion_kernel)
+                            != format!("{:?}", defaults.diffusion_kernel);
+                        (
+                            kernel_name.to_string(),
+                            None,
+                            None,
+                            if modified {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::DiffusionSigma => {
+                        let v = runtime_state.diffusion_sigma;
+                        let d = defaults.diffusion_sigma;
+                        (
+                            format!("{v:.2}"),
+                            Some(ratio(v, 0.5, 4.0)),
+                            Some(ratio(d, 0.5, 4.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::Wind => {
+                        let modified = format!("{:?}", runtime_state.wind_direction)
+                            != format!("{:?}", defaults.wind_direction);
+                        (
+                            runtime_state.wind_direction.name().to_string(),
+                            None,
+                            None,
+                            if modified {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::TerrainType => {
+                        let modified = format!("{:?}", runtime_state.terrain_type)
+                            != format!("{:?}", defaults.terrain_type);
+                        (
+                            terrain_name.to_string(),
+                            None,
+                            None,
+                            if modified {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::TerrainStrength => {
+                        let v = runtime_state.terrain_strength;
+                        let d = defaults.terrain_strength;
+                        (
+                            format!("{v:.1}×"),
+                            Some(ratio(v, 0.1, 5.0)),
+                            Some(ratio(d, 0.1, 5.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::Attractor => {
+                        let v = runtime_state.attractor_strength;
+                        let d = defaults.attractor_strength;
+                        (
+                            format!("{v:.1}×"),
+                            Some(ratio(v, 0.1, 10.0)),
+                            Some(ratio(d, 0.1, 10.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::MouseMode => {
+                        // No tracked default → always Default (old marker is blank).
+                        (mouse_mode_name.to_string(), None, None, ParamState::Default)
+                    }
+                    ParamId::MouseTimeout => (
+                        format!("{:.1}s", runtime_state.mouse_timeout),
+                        None,
+                        None,
+                        ParamState::Display,
+                    ),
+                    // ── APP ───────────────────────────────────────────────────
+                    ParamId::Theme => (theme.clone(), None, None, ParamState::Default),
+                    ParamId::Palette => (palette_name.clone(), None, None, ParamState::Default),
+                    ParamId::Charset => (charset.clone(), None, None, ParamState::Default),
+                    ParamId::ColorAa => (color_aa.clone(), None, None, ParamState::Default),
+                    ParamId::PaletteShift => {
+                        (shift_name.to_string(), None, None, ParamState::Default)
+                    }
+                    ParamId::Invert => (
+                        if runtime_state.invert_palette {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::Reverse => (
+                        if runtime_state.reverse_palette {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    // ── PST ───────────────────────────────────────────────────
+                    ParamId::Dither => (
+                        runtime_state.dither_mode.name().to_string(),
+                        None,
+                        None,
+                        ParamState::Cli,
+                    ),
+                    ParamId::AutoNormalize => {
+                        let v = runtime_state.auto_normalize;
+                        (
+                            if v { "On" } else { "Off" }.to_string(),
+                            None,
+                            None,
+                            if v != defaults.auto_normalize {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::MotionBlur => {
+                        let v = runtime_state.motion_blur_frames;
+                        (
+                            format!("{v} fr"),
+                            Some((v as f32 / 7.0).clamp(0.0, 1.0)),
+                            Some((defaults.motion_blur_frames as f32 / 7.0).clamp(0.0, 1.0)),
+                            if v != defaults.motion_blur_frames {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::Brightness => {
+                        // Brightness shown as gain; default (1.0×) sits mid-bar.
+                        let v = runtime_state.max_brightness;
+                        let d = defaults.max_brightness;
+                        if runtime_state.auto_normalize {
+                            (
+                                "auto".to_string(),
+                                Some(0.0),
+                                Some(
+                                    (crate::config_defaults::trail::brightness_gain(d) / 2.0)
+                                        .clamp(0.0, 1.0),
+                                ),
+                                if near(v, d, 0.01) {
+                                    ParamState::Default
+                                } else {
+                                    ParamState::Modified
+                                },
+                            )
+                        } else {
+                            let gain = crate::config_defaults::trail::brightness_gain(v);
+                            let def_gain = crate::config_defaults::trail::brightness_gain(d);
+                            (
+                                format!("{gain:.1}×"),
+                                Some((gain / 2.0).clamp(0.0, 1.0)),
+                                Some((def_gain / 2.0).clamp(0.0, 1.0)),
+                                if near(v, d, 0.01) {
+                                    ParamState::Default
+                                } else {
+                                    ParamState::Modified
+                                },
+                            )
+                        }
+                    }
+                    ParamId::TrailAge => {
+                        let value = if runtime_state.trail_age_enabled {
+                            if runtime_state.trail_age_reverse {
+                                format!("On ({} rev)", runtime_state.trail_age_mode.name())
+                            } else {
+                                format!("On ({})", runtime_state.trail_age_mode.name())
+                            }
+                        } else {
+                            "Off".to_string()
+                        };
+                        (value, None, None, ParamState::Default)
+                    }
+                    ParamId::TrailDelta => (
+                        if runtime_state.trail_delta_enabled {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::EdgeGlow => (
+                        if runtime_state.gradient_magnitude_enabled {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    // ── PRF ───────────────────────────────────────────────────
+                    ParamId::FastMode => (
+                        if runtime_state.fast_mode_enabled {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::Population => (
+                        format!("{}k", population / 1000),
+                        None,
+                        None,
+                        ParamState::Cli,
+                    ),
+                    // ── SYS (action rows) ─────────────────────────────────────
+                    ParamId::SaveFrame => ("(PNG)".to_string(), None, None, ParamState::Default),
+                    ParamId::Reset => ("Defaults".to_string(), None, None, ParamState::Default),
+                    ParamId::Randomize => ("Params".to_string(), None, None, ParamState::Default),
+                };
+
+            // Numeric rows keep their ratio pair; everything else clears it.
+            let (ratio, def_ratio) = if desc.kind == ParamKind::Numeric {
+                (r, dr)
+            } else {
+                (None, None)
+            };
+
+            ParamView {
+                desc,
+                value_text,
+                ratio,
+                def_ratio,
+                state,
+            }
+        })
+        .collect()
 }
 
 /// Runs the interactive simulation loop (Live or Screensaver mode).
@@ -916,9 +1343,7 @@ pub fn run_simulation(
             (0, 0)
         };
 
-        // Calculate controls position (centered)
-        let (controls_x, controls_y) =
-            ControlsOverlay::calculate_position(term_width as usize, term_height as usize);
+        // Controls position is computed below from the built overlay's own dims.
 
         // Palette accent colour used for key-binding highlights and title badges.
         let ui_accent = palette_accent_color(
@@ -945,58 +1370,51 @@ pub fn run_simulation(
             (0, 0)
         };
 
-        // Build controls overlay (h key)
-        let controls_lines: Option<RenderedOverlay> =
+        // Build controls overlay (h key). The Controls surface is gated by the
+        // overlay open-state (so esc / CloseOverlays / exclusivity keep working),
+        // while `controls_depth` selects which depth (Console / Tuner) renders.
+        let (controls_lines, controls_x, controls_y): (Option<RenderedOverlay>, usize, usize) =
             if runtime_state.overlay_state.is_open(OverlayType::Controls)
                 && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
             {
-                Some(ControlsOverlay::build_overlay(
+                use crate::render::controls::{build_controls, ControlsDepth};
+                // Defensive: an open surface with a stale `Closed` depth renders Console.
+                let depth = match runtime_state.controls_depth {
+                    ControlsDepth::Closed => ControlsDepth::Console,
+                    other => other,
+                };
+                let ctx = RegistryCtx {
+                    diffusion_gaussian: matches!(
+                        runtime_state.diffusion_kernel,
+                        DiffusionKernel::Gaussian
+                    ),
+                    mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
+                };
+                let params = build_param_views(&runtime_state, &ctx, agent_count);
+                let overlay = build_controls(
+                    depth,
                     runtime_state.controls_category_idx,
-                    runtime_state.sensor_angle,
-                    runtime_state.sensor_distance,
-                    runtime_state.rotation_angle,
-                    runtime_state.step_size,
-                    runtime_state.decay_factor,
-                    runtime_state.deposit_amount,
-                    runtime_state.time_scale,
-                    runtime_state.diffusion_kernel,
-                    runtime_state.diffusion_sigma,
-                    runtime_state.attractor_strength,
-                    match runtime_state.mouse_mode {
-                        MouseInteractionMode::Disabled => "Disabled",
-                        MouseInteractionMode::Attract => "Attract",
-                        MouseInteractionMode::Repel => "Repel",
-                    },
-                    runtime_state.mouse_timeout,
-                    runtime_state.wind_direction,
-                    runtime_state.terrain_type,
-                    runtime_state.terrain_strength,
-                    runtime_state.auto_normalize,
-                    runtime_state.motion_blur_frames,
-                    runtime_state.max_brightness,
-                    runtime_state.fast_mode_enabled,
-                    runtime_state.current_palette(&ALL_PALETTES).name(),
-                    charset_name(&runtime_state.current_charset()),
-                    runtime_state.current_color_aa().as_label(),
-                    runtime_state.palette_shift_speed,
-                    runtime_state.invert_palette,
-                    runtime_state.reverse_palette,
-                    runtime_state.dither_mode.name(),
-                    term_width as usize,
-                    runtime_state.default_values,
-                    agent_count,
-                    ui_accent,
-                    runtime_state.current_theme_name(),
+                    runtime_state.controls_focus,
+                    &params,
                     &runtime_state.panel_style,
-                    runtime_state.shift_held,
-                    runtime_state.trail_age_enabled,
-                    runtime_state.trail_age_mode,
-                    runtime_state.trail_age_reverse,
-                    runtime_state.trail_delta_enabled,
-                    runtime_state.gradient_magnitude_enabled,
-                ))
+                    ui_accent,
+                );
+                // Center the overlay using its own dimensions (Console differs from
+                // the legacy overlay, and Tuner may render nothing → fall back).
+                let (x, y) = match overlay.as_ref() {
+                    Some(ov) => {
+                        let w = ov.lines.first().map(|l| l.chars().count()).unwrap_or(0);
+                        let h = ov.lines.len();
+                        (
+                            (term_width as usize).saturating_sub(w) / 2,
+                            (term_height as usize).saturating_sub(h) / 2,
+                        )
+                    }
+                    None => (0, 0),
+                };
+                (overlay, x, y)
             } else {
-                None
+                (None, 0, 0)
             };
 
         // Build status line (shown when any overlay visible or paused)
@@ -2005,6 +2423,15 @@ pub fn run_simulation(
                         }
                         ControlAction::ToggleControls => {
                             runtime_state.toggle_controls();
+                            // Opening the surface enters the Console depth; closing
+                            // resets it. Tab then cycles Console↔Tuner per the grammar.
+                            if runtime_state.overlay_state.is_open(OverlayType::Controls) {
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Console;
+                            } else {
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Closed;
+                            }
                             if runtime_state.any_overlay_open() {
                                 runtime_state.on_modal_open();
                             } else {
@@ -2014,6 +2441,9 @@ pub fn run_simulation(
                         ControlAction::CloseOverlays => {
                             if runtime_state.any_overlay_open() {
                                 runtime_state.close_all_overlays();
+                                // Closing all overlays also resets the Controls depth.
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Closed;
                                 runtime_state.on_modal_close();
                             }
                             // If no overlays open, Esc does nothing (doesn't quit)
@@ -2021,6 +2451,8 @@ pub fn run_simulation(
                         ControlAction::CycleOptionsCategory => {
                             if !runtime_state.overlay_state.is_open(OverlayType::Controls) {
                                 runtime_state.toggle_controls();
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Console;
                             } else {
                                 runtime_state.cycle_controls_category(true);
                             }
@@ -2028,6 +2460,8 @@ pub fn run_simulation(
                         ControlAction::CycleOptionsCategoryReverse => {
                             if !runtime_state.overlay_state.is_open(OverlayType::Controls) {
                                 runtime_state.toggle_controls();
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Console;
                             } else {
                                 runtime_state.cycle_controls_category(false);
                             }
@@ -3022,6 +3456,73 @@ mod tests {
         ));
         assert_eq!(state.controls_focus, 2);
         assert_eq!(state.controls_category_idx, 0);
+    }
+
+    #[test]
+    fn build_param_views_sim_count_and_default_state() {
+        use crate::render::controls::ParamState;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        state.controls_category_idx = 0; // SIM
+        let views = build_param_views(&state, &ctx, 50_000);
+        // SIM has 7 numeric params, all unmodified at preset defaults.
+        assert_eq!(views.len(), 7);
+        let sensor = &views[0];
+        assert_eq!(sensor.value_text, format!("{:.1}°", state.sensor_angle));
+        assert_eq!(sensor.state, ParamState::Default);
+        assert!(sensor.ratio.is_some(), "numeric param must carry a ratio");
+        assert!(sensor.def_ratio.is_some());
+    }
+
+    #[test]
+    fn build_param_views_modified_numeric_flags_modified() {
+        use crate::render::controls::ParamState;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        state.controls_category_idx = 0;
+        // Push sensor_angle well off its default → must read as Modified.
+        state.sensor_angle = state.default_values.sensor_angle + 20.0;
+        let views = build_param_views(&state, &ctx, 50_000);
+        assert_eq!(views[0].state, ParamState::Modified);
+    }
+
+    #[test]
+    fn build_param_views_population_is_cli() {
+        use crate::render::controls::registry::ParamId;
+        use crate::render::controls::ParamState;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        state.controls_category_idx = 4; // PRF
+        let views = build_param_views(&state, &ctx, 50_000);
+        let pop = views
+            .iter()
+            .find(|v| v.desc.id == ParamId::Population)
+            .expect("Population row present in PRF");
+        assert_eq!(pop.state, ParamState::Cli);
+        assert_eq!(pop.value_text, "50k");
+        assert!(pop.ratio.is_none());
+    }
+
+    #[test]
+    fn build_param_views_mouse_timeout_is_display() {
+        use crate::render::controls::registry::ParamId;
+        use crate::render::controls::ParamState;
+        let mut state = controls_test_state();
+        // Mouse Timeout only appears when mouse is enabled.
+        state.mouse_mode = MouseInteractionMode::Attract;
+        let ctx = RegistryCtx {
+            diffusion_gaussian: false,
+            mouse_enabled: true,
+        };
+        state.controls_category_idx = 1; // ENV
+        let views = build_param_views(&state, &ctx, 50_000);
+        let mt = views
+            .iter()
+            .find(|v| v.desc.id == ParamId::MouseTimeout)
+            .expect("Mouse Timeout row present when mouse enabled");
+        assert_eq!(mt.state, ParamState::Display);
+        assert!(mt.ratio.is_none());
+        assert!(mt.value_text.ends_with('s'));
     }
 
     #[test]
