@@ -110,6 +110,7 @@ pub struct ParamDesc {
 /// Context needed to determine which parameters are currently visible.
 /// Passed to [`visible_params`] and [`locate`] instead of the full `RuntimeState`
 /// to keep the registry testable in isolation.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct RegistryCtx {
     /// Whether the Gaussian diffusion kernel is active (shows Diff Sigma row when true).
     pub diffusion_gaussian: bool,
@@ -221,7 +222,7 @@ pub fn visible_params(category: usize, ctx: &RegistryCtx) -> Vec<ParamDesc> {
             if ctx.mouse_enabled {
                 v.push(ParamDesc {
                     id: ParamId::MouseTimeout,
-                    key_hint: "—",
+                    key_hint: "─",
                     label: "Mouse Timeout",
                     kind: ParamKind::Display,
                 });
@@ -328,7 +329,7 @@ pub fn visible_params(category: usize, ctx: &RegistryCtx) -> Vec<ParamDesc> {
             },
             ParamDesc {
                 id: ParamId::Population,
-                key_hint: "—",
+                key_hint: "─",
                 label: "Population",
                 kind: ParamKind::CliReadonly,
             },
@@ -456,5 +457,18 @@ mod tests {
         assert_eq!(locate(ParamId::StepSize, &ctx), Some((0, 3)));
         // DiffusionSigma not visible when diffusion_gaussian=false
         assert_eq!(locate(ParamId::DiffusionSigma, &ctx), None);
+    }
+
+    #[test]
+    fn locate_diffusion_sigma_when_gaussian_true() {
+        let ctx_gaussian_true = RegistryCtx {
+            diffusion_gaussian: true,
+            mouse_enabled: false,
+        };
+        // ENV category (1) order: DiffusionKernel(0), DiffusionSigma(1), Wind(2), TerrainType(3), ...
+        assert_eq!(
+            locate(ParamId::DiffusionSigma, &ctx_gaussian_true),
+            Some((1, 1))
+        );
     }
 }
