@@ -2178,15 +2178,32 @@ pub fn run_simulation(
                         &key_event,
                     ) {
                         OverlayInputResult::CloseOverlay => {
-                            // Escape on the dirty guard cancels the parked swap.
-                            let was_dirty_guard = runtime_state.overlay_state.active()
-                                == Some(OverlayType::DirtyGuard);
-                            runtime_state.overlay_state.close();
+                            let active = runtime_state.overlay_state.active();
+                            let was_dirty_guard = active == Some(OverlayType::DirtyGuard);
+                            let was_controls = active == Some(OverlayType::Controls);
+                            let was_palette_editor = active == Some(OverlayType::PaletteEditor);
+
+                            // PaletteEditor needs its sub-state cleared on close.
+                            if was_palette_editor {
+                                runtime_state.overlay_state.close_palette_editor();
+                            } else {
+                                runtime_state.overlay_state.close();
+                            }
+
+                            // Reset Controls depth when Controls is closed via toggle/Esc.
+                            if was_controls {
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Closed;
+                            }
+
+                            // DirtyGuard cancel: clear the parked swap.
                             if was_dirty_guard {
                                 runtime_state.pending_swap = None;
-                                runtime_state.on_modal_close();
                                 runtime_state.show_notification("Switch cancelled".to_string());
                             }
+
+                            // Always update chrome state when an overlay closes.
+                            runtime_state.on_modal_close();
                             continue;
                         }
                         OverlayInputResult::Consumed => {
@@ -2734,8 +2751,7 @@ pub fn run_simulation(
                                 runtime_state.on_modal_close();
                             } else {
                                 // No overlays open: Esc clears a sticky error MSG if one
-                                // is the resolved foreground state (Task 21 will audit
-                                // remaining Esc collisions).
+                                // is the resolved foreground state.
                                 let now = runtime_state.phase_clock;
                                 let resolved = crate::render::ambient::resolve(
                                     &runtime_state.ambient_states,

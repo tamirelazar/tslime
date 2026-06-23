@@ -260,4 +260,170 @@ mod tests {
             OverlayInputResult::CloseOverlay
         );
     }
+
+    // ─── UX-win G: dismiss-key consistency ───────────────────────────────────
+
+    /// Esc closes every overlay that supports it (all except PauseBadge/PauseLogo).
+    #[test]
+    fn esc_closes_all_dismissable_overlays() {
+        let esc = make_key(KeyCode::Esc, KeyModifiers::NONE);
+        for overlay in [
+            OverlayType::Controls,
+            OverlayType::Dashboard,
+            OverlayType::KeyboardHints,
+            OverlayType::ConfigBrowser,
+            OverlayType::ConfigSave,
+            OverlayType::DirtyGuard,
+            OverlayType::PresetComparison,
+        ] {
+            let mut state = OverlayState::default();
+            state.open(overlay);
+            let result = OverlayInputManager::handle_input(&state, &esc);
+            // PaletteEditor delegates internally; all others return CloseOverlay.
+            assert_eq!(
+                result,
+                OverlayInputResult::CloseOverlay,
+                "{overlay:?} + Esc should return CloseOverlay"
+            );
+        }
+    }
+
+    /// Pause overlays do NOT close on Esc (they are not user-dismissable modals).
+    #[test]
+    fn esc_does_not_close_pause_overlays() {
+        let esc = make_key(KeyCode::Esc, KeyModifiers::NONE);
+        for overlay in [OverlayType::PauseBadge, OverlayType::PauseLogo] {
+            let mut state = OverlayState::default();
+            state.open(overlay);
+            let result = OverlayInputManager::handle_input(&state, &esc);
+            // Pause overlays don't close on Esc — the key is not consumed either.
+            assert_ne!(
+                result,
+                OverlayInputResult::CloseOverlay,
+                "{overlay:?} + Esc must NOT return CloseOverlay"
+            );
+        }
+    }
+
+    /// PaletteEditor Esc is delegated to the internal handler (returns NotHandled
+    /// so the runner's PaletteEditor block can do its mode-aware close logic).
+    #[test]
+    fn esc_on_palette_editor_is_delegated() {
+        let mut state = OverlayState::default();
+        state.open(OverlayType::PaletteEditor);
+        let esc = make_key(KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(
+            OverlayInputManager::handle_input(&state, &esc),
+            OverlayInputResult::NotHandled,
+            "PaletteEditor Esc must be delegated (NotHandled), not CloseOverlay"
+        );
+    }
+
+    /// Each overlay's opening toggle key re-closes it.
+    #[test]
+    fn toggle_key_re_closes_controls() {
+        let mut state = OverlayState::default();
+        state.open(OverlayType::Controls);
+        for c in ['h', 'H'] {
+            let k = make_key(KeyCode::Char(c), KeyModifiers::NONE);
+            assert_eq!(
+                OverlayInputManager::handle_input(&state, &k),
+                OverlayInputResult::CloseOverlay,
+                "'{c}' should re-close Controls"
+            );
+        }
+    }
+
+    /// Dashboard dual-key: both `\` and `|` re-close when Dashboard is open.
+    #[test]
+    fn dashboard_dual_toggle_both_reclose() {
+        let mut state = OverlayState::default();
+        state.open(OverlayType::Dashboard);
+        for c in ['\\', '|'] {
+            let k = make_key(KeyCode::Char(c), KeyModifiers::NONE);
+            assert_eq!(
+                OverlayInputManager::handle_input(&state, &k),
+                OverlayInputResult::CloseOverlay,
+                "'{c}' should re-close Dashboard"
+            );
+        }
+    }
+
+    /// KeyboardHints `?` re-closes when open.
+    #[test]
+    fn keyboard_hints_toggle_recloses() {
+        let mut state = OverlayState::default();
+        state.open(OverlayType::KeyboardHints);
+        let k = make_key(KeyCode::Char('?'), KeyModifiers::NONE);
+        assert_eq!(
+            OverlayInputManager::handle_input(&state, &k),
+            OverlayInputResult::CloseOverlay
+        );
+    }
+
+    /// ConfigBrowser Ctrl+L/B re-closes when open; plain l/b pass through.
+    #[test]
+    fn config_browser_toggle_recloses_ctrl_only() {
+        let mut state = OverlayState::default();
+        state.open(OverlayType::ConfigBrowser);
+        for c in ['l', 'L', 'b', 'B'] {
+            let ctrl = make_key(KeyCode::Char(c), KeyModifiers::CONTROL);
+            assert_eq!(
+                OverlayInputManager::handle_input(&state, &ctrl),
+                OverlayInputResult::CloseOverlay,
+                "Ctrl+{c} should re-close ConfigBrowser"
+            );
+            // Plain key must NOT close (it's not the toggle key)
+            let plain = make_key(KeyCode::Char(c), KeyModifiers::NONE);
+            assert_ne!(
+                OverlayInputManager::handle_input(&state, &plain),
+                OverlayInputResult::CloseOverlay,
+                "plain '{c}' must not re-close ConfigBrowser"
+            );
+        }
+    }
+
+    /// ConfigSave Ctrl+S re-closes when open.
+    #[test]
+    fn config_save_toggle_recloses() {
+        let mut state = OverlayState::default();
+        state.open(OverlayType::ConfigSave);
+        let ctrl_s = make_key(KeyCode::Char('s'), KeyModifiers::CONTROL);
+        assert_eq!(
+            OverlayInputManager::handle_input(&state, &ctrl_s),
+            OverlayInputResult::CloseOverlay
+        );
+    }
+
+    /// Esc when no overlay is open returns NotHandled (passes to error-MSG dismiss logic).
+    #[test]
+    fn esc_with_no_overlay_is_not_handled() {
+        let state = OverlayState::default();
+        let esc = make_key(KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(
+            OverlayInputManager::handle_input(&state, &esc),
+            OverlayInputResult::NotHandled,
+            "Esc with no overlay open must be NotHandled (reaches sticky-error dismiss)"
+        );
+    }
+
+    /// Space (pause) is never consumed by the overlay input manager — it always passes through.
+    #[test]
+    fn space_never_consumed_by_overlay_manager() {
+        let space = make_key(KeyCode::Char(' '), KeyModifiers::NONE);
+        for overlay in [
+            OverlayType::Controls,
+            OverlayType::Dashboard,
+            OverlayType::KeyboardHints,
+        ] {
+            let mut state = OverlayState::default();
+            state.open(overlay);
+            let result = OverlayInputManager::handle_input(&state, &space);
+            assert_ne!(
+                result,
+                OverlayInputResult::Consumed,
+                "Space must never be Consumed ({overlay:?} open)"
+            );
+        }
+    }
 }

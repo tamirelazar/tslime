@@ -1141,7 +1141,11 @@ impl RuntimeState {
     }
 
     /// Closes all open overlay windows.
+    ///
+    /// Also resets PaletteEditor sub-state so no stale `palette_editor` Option
+    /// survives a programmatic close (e.g. preset swap, config save/load/reset).
     pub fn close_all_overlays(&mut self) {
+        self.overlay_state.palette_editor = None;
         self.overlay_state.close();
     }
 
@@ -2079,6 +2083,27 @@ mod tests {
 
         assert!(!state.overlay_state.is_open(OverlayType::Controls));
         assert!(!state.overlay_state.is_open(OverlayType::Dashboard));
+        assert!(!state.any_overlay_open());
+    }
+
+    #[test]
+    fn test_close_all_overlays_clears_palette_editor_sub_state() {
+        use crate::render::palette_editor::PaletteEditorState;
+
+        let mut state = create_test_runtime_state();
+
+        // Simulate opening the palette editor (sets both active overlay and sub-state).
+        state
+            .overlay_state
+            .open_palette_editor(PaletteEditorState::new(&Palette::Forest));
+        assert!(state.overlay_state.is_palette_editor_open());
+        assert!(state.overlay_state.palette_editor.is_some());
+
+        // close_all_overlays must clear both the active flag and the sub-state.
+        state.close_all_overlays();
+
+        assert!(!state.overlay_state.is_palette_editor_open());
+        assert!(state.overlay_state.palette_editor.is_none());
         assert!(!state.any_overlay_open());
     }
 
