@@ -190,9 +190,7 @@ fn other_overlay_open(state: &RuntimeState) -> bool {
         // Controls itself is not a competitor.
         Some(OverlayType::Controls) => false,
         // Non-interactive badges never block controls interaction.
-        Some(OverlayType::PauseBadge)
-        | Some(OverlayType::PauseLogo)
-        | Some(OverlayType::Notification) => false,
+        Some(OverlayType::PauseBadge) | Some(OverlayType::PauseLogo) => false,
         // Any other interactive overlay (Help, Dashboard, ConfigBrowser,
         // ConfigSave, DirtyGuard, PresetComparison, KeyboardHints,
         // PaletteEditor) competes for the foreground.
@@ -3712,7 +3710,6 @@ pub fn run_simulation(
             timer.fps_adjusted_notification = false;
         }
 
-        runtime_state.update_notifications();
         timer.tick();
     }
 

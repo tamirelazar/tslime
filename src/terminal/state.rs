@@ -643,8 +643,6 @@ pub struct RuntimeState {
     pub intensity_mapping_index: usize,
     /// Saved palette name (if loaded from saved palette).
     pub saved_palette_name: Option<String>,
-    /// Current notification message with timestamp and severity level.
-    pub notification: Option<(String, std::time::Instant, NotificationLevel)>,
     /// Frame counter for entropy collapse detection.
     pub collapse_frame_counter: usize,
     /// Frame counter for stagnation collapse detection (a near-static pattern
@@ -862,7 +860,6 @@ impl RuntimeState {
             intensity_mapping: crate::render::palette::IntensityMapping::linear(),
             intensity_mapping_index: 0,
             saved_palette_name: None,
-            notification: None,
             collapse_frame_counter: 0,
             stagnation_frame_counter: 0,
             prev_trail_sample: Vec::new(),
@@ -1835,27 +1832,6 @@ impl RuntimeState {
         self.push_msg(level, message);
     }
 
-    /// Updates notification state (clears expired notifications).
-    pub fn update_notifications(&mut self) {
-        if let Some((_, time, _)) = self.notification {
-            if time.elapsed().as_secs() >= 3 {
-                self.notification = None;
-            }
-        }
-    }
-
-    /// Returns the current notification message if any.
-    pub fn current_notification(&self) -> Option<&String> {
-        self.notification.as_ref().map(|(msg, _, _)| msg)
-    }
-
-    /// Returns the current notification message and level if any.
-    pub fn current_notification_full(&self) -> Option<(&str, NotificationLevel)> {
-        self.notification
-            .as_ref()
-            .map(|(msg, _, level)| (msg.as_str(), *level))
-    }
-
     /// Cycles to the next UI theme.
     pub fn cycle_theme(&mut self) {
         self.theme_index = (self.theme_index + 1) % ALL_THEMES.len();
@@ -2244,12 +2220,8 @@ mod tests {
             false,
             false,
         );
-        // show_notification now delegates to push_msg (ambient MSG).
-        // current_notification() returns None — toasts live in ambient_states.
-        assert_eq!(state.current_notification(), None);
+        // show_notification delegates to push_msg — toasts live in ambient_states.
         state.show_notification("test".to_string());
-        // MSG is in ambient_states, not notification field
-        assert_eq!(state.current_notification(), None);
         let has_msg = state
             .ambient_states
             .iter()
