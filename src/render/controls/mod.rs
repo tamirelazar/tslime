@@ -7,6 +7,9 @@ pub use registry::{ParamDesc, ParamId, ParamKind};
 pub mod value;
 pub use value::{gauge, heatmap_slider, sparkline};
 
+pub mod console;
+pub use console::{build_console, ParamState, ParamView};
+
 /// Which depth of the Controls surface is showing.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum ControlsDepth {
