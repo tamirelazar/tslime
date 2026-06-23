@@ -105,6 +105,27 @@ pub fn legend(entries: &[(&str, RgbColor)]) -> Vec<(char, RgbColor)> {
     cells
 }
 
+/// Truncates `s` to at most `max` visible characters (Unicode scalar values).
+///
+/// Returns `s` unchanged when its char count is already within `max`. When it
+/// exceeds `max`, takes the first `max - 1` chars and appends the single-char
+/// ellipsis `…` so the total visible width equals exactly `max`.
+///
+/// `max` must be at least 1; passing 0 returns an empty string.
+pub fn truncate_ellipsis(s: &str, max: usize) -> String {
+    if max == 0 {
+        return String::new();
+    }
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max {
+        s.to_string()
+    } else {
+        let mut result: String = chars[..max - 1].iter().collect();
+        result.push('…');
+        result
+    }
+}
+
 fn normalize(value: f32, (lo, hi): (f32, f32)) -> f32 {
     if !value.is_finite() || !lo.is_finite() || !hi.is_finite() || hi <= lo {
         return 0.0;
@@ -239,6 +260,22 @@ mod kit_tests {
     #[test]
     fn separator_is_one_muted_divider() {
         assert_eq!(separator(&GRUVBOX_DARK), ('─', GRUVBOX_DARK.muted));
+    }
+
+    #[test]
+    fn truncate_adds_ellipsis_only_when_cut() {
+        assert_eq!(truncate_ellipsis("hello", 10), "hello");
+        assert_eq!(truncate_ellipsis("hello world", 8), "hello w…");
+    }
+
+    #[test]
+    fn truncate_ellipsis_zero_max_is_empty() {
+        assert_eq!(truncate_ellipsis("hello", 0), "");
+    }
+
+    #[test]
+    fn truncate_ellipsis_exact_fit_unchanged() {
+        assert_eq!(truncate_ellipsis("hello", 5), "hello");
     }
 
     #[test]

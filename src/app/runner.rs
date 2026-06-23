@@ -1519,7 +1519,10 @@ pub fn run_simulation(
             .is_open(OverlayType::KeyboardHints)
             && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
         {
-            Some(KeyboardHintsOverlay::build_overlay(ui_accent))
+            Some(KeyboardHintsOverlay::build_overlay(
+                ui_accent,
+                &runtime_state.panel_style,
+            ))
         } else {
             None
         };

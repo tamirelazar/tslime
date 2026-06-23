@@ -2,7 +2,7 @@ use crate::cli::Palette;
 use crate::render::dither::DitherMode;
 use crate::render::palette::RgbColor;
 use crate::render::theme::PanelStyle;
-use crate::render::widgets::{gauge, legend};
+use crate::render::widgets::{gauge, legend, truncate_ellipsis};
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
@@ -187,7 +187,7 @@ impl KeyboardHintsOverlay {
     const CONTENT_WIDTH: usize = 74; // 88 - 2(border) - 6(pad-L) - 6(pad-R)
 
     /// Builds the keyboard hints overlay content.
-    pub fn build_overlay(accent: RgbColor) -> RenderedOverlay {
+    pub fn build_overlay(accent: RgbColor, st: &PanelStyle) -> RenderedOverlay {
         use TextAlignment::Left;
 
         let thin_sep = "─".repeat(Self::CONTENT_WIDTH);
@@ -280,12 +280,16 @@ impl KeyboardHintsOverlay {
                 Left,
             )
             .build_overlay();
-        overlay.rich_lines = Some(Self::generate_rich_lines(&overlay.lines, accent));
+        overlay.rich_lines = Some(Self::generate_rich_lines(&overlay.lines, accent, st));
         overlay
     }
 
     /// Generates per-cell colour data: keybind tokens coloured with the accent colour.
-    fn generate_rich_lines(lines: &[String], accent: RgbColor) -> Vec<Vec<RichCell>> {
+    fn generate_rich_lines(
+        lines: &[String],
+        accent: RgbColor,
+        st: &PanelStyle,
+    ) -> Vec<Vec<RichCell>> {
         // Layout constants: 1 border + 6 padding = content starts at char index 7.
         const CONTENT_START: usize = 7;
         let col_width = Self::CONTENT_WIDTH / 2; // 37
@@ -336,16 +340,11 @@ impl KeyboardHintsOverlay {
                         continue;
                     }
 
-                    // Dev-only entries: muted gray for the whole column.
+                    // Dev-only entries: muted for the whole column (token-based).
                     if col_text.contains("(dev)") {
-                        let gray = RgbColor {
-                            r: 128,
-                            g: 128,
-                            b: 128,
-                        };
                         for (i, &c) in col_chars.iter().enumerate() {
                             if c != ' ' {
-                                rich[col_start + i] = (c, Some(gray), None);
+                                rich[col_start + i] = (c, Some(st.muted), None);
                             }
                         }
                         continue;
@@ -586,10 +585,14 @@ impl ConfigBrowserOverlay {
                     .map(|p| p.name())
                     .unwrap_or("?");
                 let pop = config.overrides.population.unwrap_or(0) / 1000;
-                let line = format!(
-                    "{}{} {} - {} - {}k agents",
-                    selected_marker, num, name, palette, pop,
-                );
+                let suffix = format!(" - {} - {}k agents", palette, pop);
+                // Derive name budget from the column width, subtracting the
+                // fixed overhead: marker(1) + num digits + space(1) + suffix.
+                let num_digits = num.to_string().len();
+                let overhead = 1 + num_digits + 1 + suffix.chars().count();
+                let name_budget = Self::CONTENT_WIDTH.saturating_sub(overhead).max(4);
+                let truncated_name = truncate_ellipsis(name, name_budget);
+                let line = format!("{}{} {}{}", selected_marker, num, truncated_name, suffix,);
                 builder = builder.add_single(line, Left);
             }
 
@@ -1312,7 +1315,7 @@ impl DashboardOverlay {
             lines.push(format!(
                 "{:<cw$}",
                 Self::build_two_col_row(
-                    &format!("  Preset  {:>18}", Self::truncate(preset_name, 18)),
+                    &format!("  Preset  {:>18}", truncate_ellipsis(preset_name, 18)),
                     &trail_row
                 )
             ));
@@ -1329,7 +1332,7 @@ impl DashboardOverlay {
             lines.push(format!(
                 "{:<cw$}",
                 Self::build_two_col_row(
-                    &format!("  Palette {:>18}", Self::truncate(palette_name, 18)),
+                    &format!("  Palette {:>18}", truncate_ellipsis(palette_name, 18)),
                     &entropy_row
                 )
             ));
@@ -1360,7 +1363,7 @@ impl DashboardOverlay {
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(
-                &format!("  Seed    {:>18}", Self::truncate(&seed_str, 18)),
+                &format!("  Seed    {:>18}", truncate_ellipsis(&seed_str, 18)),
                 &format!(
                     "  Frames        {:>10}",
                     Self::format_count(frame_count as usize)
@@ -1416,8 +1419,8 @@ impl DashboardOverlay {
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(
-                &format!("  Color   {:>18}", Self::truncate(color_mode, 18)),
-                &format!("  Charset       {:>10}", Self::truncate(charset, 10))
+                &format!("  Color   {:>18}", truncate_ellipsis(color_mode, 18)),
+                &format!("  Charset       {:>10}", truncate_ellipsis(charset, 10))
             )
         ));
 
@@ -1425,7 +1428,7 @@ impl DashboardOverlay {
         {
             let row_str = if let Some(food_display) = food_str.as_deref() {
                 Self::build_two_col_row(
-                    &format!("  Food    {:>18}", Self::truncate(food_display, 18)),
+                    &format!("  Food    {:>18}", truncate_ellipsis(food_display, 18)),
                     "",
                 )
             } else {
@@ -1503,19 +1506,6 @@ impl DashboardOverlay {
             &legend_overrides,
         ));
         rendered
-    }
-
-    fn truncate(s: &str, max: usize) -> &str {
-        let len = s.chars().count();
-        if len <= max {
-            s
-        } else {
-            // Find the byte offset of the `max`-th character boundary
-            match s.char_indices().nth(max) {
-                Some((byte_pos, _)) => &s[..byte_pos],
-                None => s,
-            }
-        }
     }
 
     fn format_count(n: usize) -> String {
@@ -2340,7 +2330,10 @@ mod status_line_tests {
 
     #[test]
     fn test_keyboard_hints_lists_frame_and_chrome() {
-        let overlay = KeyboardHintsOverlay::build_overlay(RgbColor::new(255, 255, 255));
+        let overlay = KeyboardHintsOverlay::build_overlay(
+            RgbColor::new(255, 255, 255),
+            &crate::render::theme::GRUVBOX_DARK,
+        );
         let joined = overlay.lines.join("\n");
         assert!(joined.contains("Window frame"), "missing window-frame hint");
         assert!(joined.contains("( / )"), "missing window-frame keybind");
@@ -2350,11 +2343,14 @@ mod status_line_tests {
 
     #[test]
     fn test_keyboard_hints_overlay_format() {
-        let hints_lines = KeyboardHintsOverlay::build_overlay(RgbColor {
-            r: 180,
-            g: 220,
-            b: 100,
-        });
+        let hints_lines = KeyboardHintsOverlay::build_overlay(
+            RgbColor {
+                r: 180,
+                g: 220,
+                b: 100,
+            },
+            &crate::render::theme::GRUVBOX_DARK,
+        );
 
         // Solid-block borders
         for line in &hints_lines.lines {
@@ -2384,7 +2380,10 @@ mod status_line_tests {
 
     #[test]
     fn test_keyboard_hints_controls_depth_grammar() {
-        let overlay = KeyboardHintsOverlay::build_overlay(RgbColor::new(255, 255, 255));
+        let overlay = KeyboardHintsOverlay::build_overlay(
+            RgbColor::new(255, 255, 255),
+            &crate::render::theme::GRUVBOX_DARK,
+        );
         let joined = overlay.lines.join("\n");
 
         // New grammar: Tab toggles depth (Tuner ⇄ Console)
@@ -2410,6 +2409,85 @@ mod status_line_tests {
             !joined.contains("Tab        Cycle category"),
             "Tab should no longer cycle category"
         );
+    }
+
+    #[test]
+    fn test_keyboard_hints_dev_entry_uses_muted_token() {
+        // Dev-only entries (containing "(dev)") must use st.muted for the
+        // right column, not a hardcoded gray, so the color adapts across themes.
+        //
+        // The row in question has two columns:
+        //   left:  "( / )      Window frame"   → keybind colored with accent
+        //   right: "{ }        Dither (dev)"   → all non-space chars colored muted
+        let accent = RgbColor::new(200, 100, 50);
+        let gruvbox = crate::render::theme::GRUVBOX_DARK;
+        let overlay = KeyboardHintsOverlay::build_overlay(accent, &gruvbox);
+        let rich_lines = overlay
+            .rich_lines
+            .expect("KeyboardHints must have rich_lines");
+
+        let dev_row_idx = overlay
+            .lines
+            .iter()
+            .position(|l| l.contains("(dev)"))
+            .expect("hints must contain a (dev) row");
+
+        let rich = &rich_lines[dev_row_idx];
+        // Content starts at index 7 (border + padding). The right column
+        // starts at CONTENT_START + col_width = 7 + 37 = 44.
+        const RIGHT_COL_START: usize = 7 + 37;
+        let right_colored: Vec<RgbColor> = rich
+            .iter()
+            .skip(RIGHT_COL_START)
+            .filter(|(c, fg, _)| *c != ' ' && *c != '█' && fg.is_some())
+            .filter_map(|(_, fg, _)| *fg)
+            .collect();
+
+        assert!(
+            !right_colored.is_empty(),
+            "dev right column must have colored non-space cells"
+        );
+        for color in &right_colored {
+            assert_eq!(
+                *color, gruvbox.muted,
+                "dev entry right column must equal st.muted, got {:?}",
+                color
+            );
+            // Verify token-based: not the old hardcoded gray.
+            assert_ne!(
+                *color,
+                RgbColor::new(128, 128, 128),
+                "dev entry must not use hardcoded gray (128,128,128)"
+            );
+        }
+        // Ensure accent ≠ muted so the test is discriminating.
+        assert_ne!(
+            gruvbox.muted, accent,
+            "test accent must differ from gruvbox.muted"
+        );
+    }
+
+    #[test]
+    fn test_keyboard_hints_key_tokens_use_accent() {
+        // Key tokens (the keybind portion of each row) must be colored with the accent.
+        let accent = RgbColor::new(200, 100, 50);
+        let st = crate::render::theme::GRUVBOX_DARK;
+        let overlay = KeyboardHintsOverlay::build_overlay(accent, &st);
+        let rich_lines = overlay
+            .rich_lines
+            .expect("KeyboardHints must have rich_lines");
+
+        // Find a keybind row, e.g. one containing "Space" for Pause/Resume.
+        let space_row = overlay
+            .lines
+            .iter()
+            .position(|l| l.contains("Space") && l.contains("Pause"))
+            .expect("hints must contain Space/Pause row");
+        let rich = &rich_lines[space_row];
+        // The "Space" key text starts after the border+padding (7 chars in).
+        // Verify at least one cell in that row has the accent color.
+        let has_accent = rich.iter().any(|(_, fg, _)| *fg == Some(accent));
+        assert!(has_accent, "key token 'Space' must be colored with accent");
     }
 
     #[test]
