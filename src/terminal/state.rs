@@ -1807,14 +1807,28 @@ impl RuntimeState {
         self.max_brightness = rng.gen_range(10.0..40.0);
     }
 
+    /// Pushes a [`crate::render::ambient::AmbientState::Msg`] onto the ambient
+    /// states vec, replacing any existing MSG so messages don't stack unbounded.
+    ///
+    /// At most one active MSG is kept. The duration is determined by `level`
+    /// via [`crate::render::ambient::msg`].
+    pub fn push_msg(&mut self, level: NotificationLevel, text: String) {
+        let now = self.phase_clock;
+        // Remove any existing Msg entries so messages don't stack unbounded.
+        self.ambient_states
+            .retain(|s| !matches!(s, crate::render::ambient::AmbientState::Msg { .. }));
+        self.ambient_states
+            .push(crate::render::ambient::msg(level, text, now));
+    }
+
     /// Shows a temporary notification message at Info level.
     pub fn show_notification(&mut self, message: String) {
-        self.notification = Some((message, std::time::Instant::now(), NotificationLevel::Info));
+        self.push_msg(NotificationLevel::Info, message);
     }
 
     /// Shows a temporary notification with an explicit severity level.
     pub fn show_notification_with_level(&mut self, message: String, level: NotificationLevel) {
-        self.notification = Some((message, std::time::Instant::now(), level));
+        self.push_msg(level, message);
     }
 
     /// Updates notification state (clears expired notifications).
@@ -2205,11 +2219,20 @@ mod tests {
             false,
             false,
         );
+        // show_notification now delegates to push_msg (ambient MSG).
+        // current_notification() returns None — toasts live in ambient_states.
         assert_eq!(state.current_notification(), None);
         state.show_notification("test".to_string());
-        assert_eq!(state.current_notification(), Some(&"test".to_string()));
-        state.update_notifications();
-        assert_eq!(state.current_notification(), Some(&"test".to_string()));
+        // MSG is in ambient_states, not notification field
+        assert_eq!(state.current_notification(), None);
+        let has_msg = state
+            .ambient_states
+            .iter()
+            .any(|s| matches!(s, crate::render::ambient::AmbientState::Msg { .. }));
+        assert!(
+            has_msg,
+            "show_notification should push a Msg into ambient_states"
+        );
     }
 
     #[test]

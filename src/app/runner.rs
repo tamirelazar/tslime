@@ -26,9 +26,8 @@ use crate::render::dither::DitherMode;
 use crate::render::downsample::downsample;
 use crate::render::grid::{GridRenderer, GridStyle};
 use crate::render::overlay::{
-    build_notification_panel, ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay,
-    DirtyGuardOverlay, KeyboardHintsOverlay, OverlayRenderer, PauseOverlay,
-    PresetComparisonOverlay, RenderedOverlay,
+    ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay, DirtyGuardOverlay,
+    KeyboardHintsOverlay, OverlayRenderer, PauseOverlay, PresetComparisonOverlay, RenderedOverlay,
 };
 use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
 use crate::render::palette_editor::{
@@ -1681,19 +1680,10 @@ pub fn run_simulation(
         #[allow(clippy::type_complexity)]
         let status_data: Option<(String, usize, Vec<(usize, RgbColor)>)> = None;
 
-        let notification_overlay: Option<RenderedOverlay> = runtime_state
-            .current_notification_full()
-            .map(|(msg, level)| build_notification_panel(msg, level, &runtime_state.panel_style));
-        let notification_data = notification_overlay.as_ref().map(|overlay| {
-            let outer_w = overlay.lines.first().map_or(0, |l| l.chars().count());
-            let notif_x = if outer_w < term_width as usize {
-                (term_width as usize - outer_w) / 2
-            } else {
-                0
-            };
-            let notif_y = (term_height as usize).saturating_sub(5);
-            (overlay, notif_x, notif_y)
-        });
+        // Legacy notification path removed — all toasts now route through
+        // ambient MSG (push_msg). notification_data kept as None for callers
+        // that still reference it.
+        let notification_data: Option<(&RenderedOverlay, usize, usize)> = None;
 
         // Dashboard overlay (merged stats + info)
         let entropy = DashboardOverlay::calculate_entropy(&blended_trail_buffer, 100);
@@ -2677,8 +2667,36 @@ pub fn run_simulation(
                                 runtime_state.controls_depth =
                                     crate::render::controls::ControlsDepth::Closed;
                                 runtime_state.on_modal_close();
+                            } else {
+                                // No overlays open: Esc clears a sticky error MSG if one
+                                // is the resolved foreground state (Task 21 will audit
+                                // remaining Esc collisions).
+                                let now = runtime_state.phase_clock;
+                                let resolved = crate::render::ambient::resolve(
+                                    &runtime_state.ambient_states,
+                                    now,
+                                );
+                                let is_sticky_error = matches!(
+                                    resolved,
+                                    AmbientState::Msg {
+                                        level: crate::terminal::state::NotificationLevel::Error,
+                                        sticky: true,
+                                        ..
+                                    }
+                                );
+                                if is_sticky_error {
+                                    runtime_state.ambient_states.retain(|s| {
+                                        !matches!(
+                                            s,
+                                            AmbientState::Msg {
+                                                level: crate::terminal::state::NotificationLevel::Error,
+                                                sticky: true,
+                                                ..
+                                            }
+                                        )
+                                    });
+                                }
                             }
-                            // If no overlays open, Esc does nothing (doesn't quit)
                         }
                         ControlAction::CycleOptionsCategory => {
                             // Only reached when the overlay is CLOSED: open it into Console depth.

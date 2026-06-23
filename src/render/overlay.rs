@@ -695,6 +695,7 @@ pub fn format_notification(text: &str, level: NotificationLevel) -> String {
 /// The panel shows:
 /// - Line 1: `"{icon}  {message}"` with icon in the level's accent color
 /// - Border characters colored with the theme's accent color for the notification level
+#[allow(dead_code)]
 pub fn build_notification_panel(
     msg: &str,
     level: NotificationLevel,

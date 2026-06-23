@@ -357,7 +357,12 @@ pub fn build_ambient(
         }
 
         // ── MSG: notification ─────────────────────────────────────────────────
-        AmbientState::Msg { level, text, .. } => {
+        AmbientState::Msg {
+            level,
+            text,
+            sticky,
+            ..
+        } => {
             // row 1: icon + text
             {
                 let mut row = RowBuf::new_matte(w, st.status_bar_bg);
@@ -369,8 +374,16 @@ pub fn build_ambient(
                 row.put(2 + icon_w + 1, &msg, Some(color), None);
                 bufs.push(row);
             }
-            // rows 2-4: blank
-            for _ in 0..3 {
+            // row 2: dismiss hint for sticky errors; blank otherwise
+            {
+                let mut row = RowBuf::new_matte(w, st.status_bar_bg);
+                if *sticky && matches!(level, NotificationLevel::Error) {
+                    row.put(2, "Esc to dismiss", Some(st.muted), None);
+                }
+                bufs.push(row);
+            }
+            // rows 3-4: blank
+            for _ in 0..2 {
                 bufs.push(RowBuf::new_matte(w, st.status_bar_bg));
             }
         }
@@ -393,6 +406,36 @@ pub fn build_ambient(
         lines,
         title_box: None,
         rich_lines: Some(rich_lines),
+    }
+}
+
+/// Construct a [`AmbientState::Msg`] with the correct per-level duration.
+///
+/// - `Info` / `Success` → 3 seconds.
+/// - `Warning` → 6 seconds.
+/// - `Error` → sticky (`until = f32::INFINITY`).
+///
+/// `now` should be `runtime_state.phase_clock`.
+pub fn msg(level: NotificationLevel, text: String, now: f32) -> AmbientState {
+    match level {
+        NotificationLevel::Info | NotificationLevel::Success => AmbientState::Msg {
+            level,
+            text,
+            sticky: false,
+            until: now + 3.0,
+        },
+        NotificationLevel::Warning => AmbientState::Msg {
+            level,
+            text,
+            sticky: false,
+            until: now + 6.0,
+        },
+        NotificationLevel::Error => AmbientState::Msg {
+            level,
+            text,
+            sticky: true,
+            until: f32::INFINITY,
+        },
     }
 }
 
@@ -713,5 +756,65 @@ mod tune_tests {
         // gauge glyphs: filled bar, value marker, and default tick.
         assert!(combined.contains('█'), "gauge filled bar");
         assert!(combined.contains('▲'), "gauge default tick");
+    }
+}
+
+#[cfg(test)]
+mod msg_tests {
+    use super::*;
+    #[test]
+    fn error_is_sticky() {
+        let m = AmbientState::Msg {
+            level: NotificationLevel::Error,
+            text: "x".into(),
+            sticky: true,
+            until: f32::INFINITY,
+        };
+        // never expires under resolve
+        let states = vec![AmbientState::Base, m];
+        assert!(matches!(resolve(&states, 1e9), AmbientState::Msg { .. }));
+    }
+    #[test]
+    fn success_expires_after_3s() {
+        let states = vec![
+            AmbientState::Base,
+            AmbientState::Msg {
+                level: NotificationLevel::Success,
+                text: "s".into(),
+                sticky: false,
+                until: 3.0,
+            },
+        ];
+        assert!(matches!(resolve(&states, 3.5), AmbientState::Base));
+    }
+    #[test]
+    fn msg_constructor_info_expires_in_3s() {
+        let m = msg(NotificationLevel::Info, "hi".into(), 0.0);
+        if let AmbientState::Msg { sticky, until, .. } = m {
+            assert!(!sticky);
+            assert!((until - 3.0).abs() < 1e-6);
+        } else {
+            panic!("expected Msg");
+        }
+    }
+    #[test]
+    fn msg_constructor_warning_expires_in_6s() {
+        let m = msg(NotificationLevel::Warning, "warn".into(), 0.0);
+        if let AmbientState::Msg { sticky, until, .. } = m {
+            assert!(!sticky);
+            assert!((until - 6.0).abs() < 1e-6);
+        } else {
+            panic!("expected Msg");
+        }
+    }
+    #[test]
+    fn msg_constructor_error_is_sticky() {
+        let m = msg(NotificationLevel::Error, "err".into(), 0.0);
+        if let AmbientState::Msg { sticky, until, .. } = m {
+            assert!(sticky);
+            assert_eq!(until, f32::INFINITY);
+        } else {
+            panic!("expected Msg");
+        }
     }
 }
