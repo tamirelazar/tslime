@@ -280,7 +280,11 @@ pub fn visible_params(category: usize, ctx: &RegistryCtx) -> Vec<ParamDesc> {
                 id: ParamId::Dither,
                 key_hint: "d/D",
                 label: "Dither (dev)",
-                kind: ParamKind::CliReadonly,
+                // Display (inert, muted): matches the old "(dev)" row semantics.
+                // It is technically live-adjustable via {/} when dither is
+                // unlocked, but is surfaced as a read-only display value here —
+                // not CLI-readonly (which would falsely read "restart to change").
+                kind: ParamKind::Display,
             },
             ParamDesc {
                 id: ParamId::AutoNormalize,
@@ -370,8 +374,8 @@ pub fn visible_params(category: usize, ctx: &RegistryCtx) -> Vec<ParamDesc> {
 /// where one exists); toggles are sign-independent.
 ///
 /// Returns `None` for parameters that have no adjust action — display-only
-/// rows ([`ParamId::MouseTimeout`]), CLI-readonly rows ([`ParamId::Population`],
-/// [`ParamId::Dither`]), and action rows ([`ParamId::SaveFrame`],
+/// rows ([`ParamId::MouseTimeout`], [`ParamId::Dither`]), CLI-readonly rows
+/// ([`ParamId::Population`]), and action rows ([`ParamId::SaveFrame`],
 /// [`ParamId::Reset`], [`ParamId::Randomize`], handled via activation instead).
 ///
 /// [`ControlAction`]: crate::terminal::state::ControlAction

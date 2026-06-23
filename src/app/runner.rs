@@ -173,9 +173,44 @@ enum ControlsDispatch {
     Redispatch(ControlAction),
 }
 
+/// Returns `true` when a *competing* (interactive, non-Controls) overlay is the
+/// foreground overlay.
+///
+/// Overlays are mutually exclusive (`OverlayState` holds a single active slot),
+/// so "another overlay is open" is simply: the active overlay is `Some(x)` where
+/// `x` is neither `Controls` nor a non-interactive badge.
+///
+/// Used to suppress controls-interaction meta-actions (`Tab`/arrows/`Enter`)
+/// while e.g. the Dashboard is open, so they don't silently flip controls depth
+/// or mutate the simulation behind an overlay that doesn't render controls. The
+/// spec-mandated auto-promote-from-Closed behaviour (←→/Tab with NO overlay
+/// open) is preserved because that case has no active overlay at all.
+fn other_overlay_open(state: &RuntimeState) -> bool {
+    match state.overlay_state.active() {
+        // Controls itself is not a competitor.
+        Some(OverlayType::Controls) => false,
+        // Non-interactive badges never block controls interaction.
+        Some(OverlayType::PauseBadge)
+        | Some(OverlayType::PauseLogo)
+        | Some(OverlayType::Notification) => false,
+        // Any other interactive overlay (Help, Dashboard, ConfigBrowser,
+        // ConfigSave, DirtyGuard, PresetComparison, KeyboardHints,
+        // PaletteEditor) competes for the foreground.
+        Some(_) => true,
+        None => false,
+    }
+}
+
 /// Applies the controls-overlay interaction actions (depth toggle, focus
 /// movement, focused adjust/activate) to [`RuntimeState`], and performs
 /// in-category focus retargeting for plain per-param hotkeys.
+///
+/// The five interaction meta-actions (`ToggleControlsDepth`, `ControlsFocusNext`,
+/// `ControlsFocusPrev`, `ControlsAdjustFocused`, `ControlsActivateFocused`) only
+/// act when Controls is the foreground overlay OR no competing overlay is open
+/// (see [`other_overlay_open`]); otherwise they `Passthrough` without mutating
+/// depth/focus or auto-promoting, so e.g. arrows don't silently tweak the
+/// simulation behind the Dashboard.
 ///
 /// Returns:
 /// - [`ControlsDispatch::Handled`] when the action was a pure state mutation.
@@ -194,6 +229,16 @@ fn apply_controls_action(
 
     let category = state.controls_category_idx;
 
+    // Gate controls-interaction meta-actions behind the active overlay. We act
+    // only when Controls is the foreground overlay, OR no competing overlay is
+    // open (the latter preserves the spec's auto-promote-from-Closed behaviour
+    // for ←→/Tab when nothing is open). When a competing overlay (e.g. the
+    // Dashboard) is foreground, the five interaction meta-actions and the
+    // open-case category clamp are suppressed (Passthrough, no depth/focus
+    // mutation, no auto-promote).
+    let may_interact =
+        state.overlay_state.is_open(OverlayType::Controls) || !other_overlay_open(state);
+
     // Defensive clamp: if a conditional row disappeared (e.g. Gaussian toggled
     // off removes Diff Sigma; mouse disabled removes Mouse Timeout) the focus
     // index can be stale. Correct it before any action so that navigation and
@@ -205,6 +250,9 @@ fn apply_controls_action(
 
     match action {
         ControlAction::ToggleControlsDepth => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
             state.controls_depth = match state.controls_depth {
                 ControlsDepth::Closed => ControlsDepth::Console,
                 ControlsDepth::Console => ControlsDepth::Tuner,
@@ -213,6 +261,9 @@ fn apply_controls_action(
             ControlsDispatch::Handled
         }
         ControlAction::ControlsFocusNext => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
             let len = registry::visible_params(category, ctx).len();
             if len > 0 {
                 state.controls_focus = (state.controls_focus + 1).min(len - 1);
@@ -220,10 +271,16 @@ fn apply_controls_action(
             ControlsDispatch::Handled
         }
         ControlAction::ControlsFocusPrev => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
             state.controls_focus = state.controls_focus.saturating_sub(1);
             ControlsDispatch::Handled
         }
         ControlAction::ControlsAdjustFocused(sign) => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
             // Auto-promote: a focused adjust from Closed opens the Tuner first.
             if state.controls_depth == ControlsDepth::Closed {
                 state.controls_depth = ControlsDepth::Tuner;
@@ -239,6 +296,9 @@ fn apply_controls_action(
             }
         }
         ControlAction::ControlsActivateFocused => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
             let params = registry::visible_params(category, ctx);
             let Some(desc) = params.get(state.controls_focus.min(params.len().saturating_sub(1)))
             else {
@@ -299,8 +359,8 @@ fn apply_controls_action(
 ///
 /// `ratio`/`def_ratio` are filled only for [`ParamKind::Numeric`] rows; for all
 /// other kinds they are `None`. `state` is:
-/// - [`ParamState::Cli`] for CLI-readonly rows (Population, Dither),
-/// - [`ParamState::Display`] for display-only rows (Mouse Timeout),
+/// - [`ParamState::Cli`] for CLI-readonly rows (Population),
+/// - [`ParamState::Display`] for display-only rows (Mouse Timeout, Dither),
 /// - otherwise [`ParamState::Modified`] / [`ParamState::Default`] by comparing
 ///   the live value against `runtime_state.default_values` (float tolerance for
 ///   numerics; only the fields present in [`DefaultValues`] can show modified —
@@ -581,7 +641,9 @@ fn build_param_views(
                         runtime_state.dither_mode.name().to_string(),
                         None,
                         None,
-                        ParamState::Cli,
+                        // Display (muted), not Cli (red "restart to change") —
+                        // matches the old "(dev)" row semantics.
+                        ParamState::Display,
                     ),
                     ParamId::AutoNormalize => {
                         let v = runtime_state.auto_normalize;
@@ -3470,6 +3532,47 @@ mod tests {
             }
             _ => panic!("expected Redispatch(AdjustSensorAngle(1.0))"),
         }
+    }
+
+    #[test]
+    fn controls_adjust_suppressed_when_competing_overlay_open() {
+        use crate::overlay::OverlayType;
+        use crate::render::controls::ControlsDepth;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // A competing overlay (Dashboard) is the foreground, Controls is closed.
+        state.overlay_state.open(OverlayType::Dashboard);
+        state.controls_depth = ControlsDepth::Closed;
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        // ←→ adjust must NOT auto-promote or redispatch; it passes through.
+        assert!(matches!(
+            apply_controls_action(&mut state, &ControlAction::ControlsAdjustFocused(1.0), &ctx),
+            ControlsDispatch::Passthrough
+        ));
+        // Depth must remain Closed (no silent auto-promote / sim mutation).
+        assert_eq!(state.controls_depth, ControlsDepth::Closed);
+    }
+
+    #[test]
+    fn controls_adjust_auto_promotes_when_no_overlay_open() {
+        use crate::render::controls::ControlsDepth;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // No overlay open at all → spec-mandated auto-promote-from-Closed.
+        assert!(!state.overlay_state.any_open());
+        state.controls_depth = ControlsDepth::Closed;
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        // SIM[0] = SensorAngle: forward adjust auto-promotes to Tuner and
+        // redispatches the real AdjustSensorAngle(+1.0).
+        match apply_controls_action(&mut state, &ControlAction::ControlsAdjustFocused(1.0), &ctx) {
+            ControlsDispatch::Redispatch(ControlAction::AdjustSensorAngle(d)) => {
+                assert_eq!(d, 1.0)
+            }
+            _ => panic!("expected Redispatch(AdjustSensorAngle(1.0))"),
+        }
+        assert_eq!(state.controls_depth, ControlsDepth::Tuner);
     }
 
     #[test]

@@ -7,9 +7,11 @@
 //! - Both panes padded to `MAX_VISIBLE_ROWS` so total panel height is constant for all
 //!   category and focus combinations (satisfies spec M6).
 //!
-//! Full kind-aware detail rendering is deferred to Task 10; this module provides the
-//! chrome skeleton + constant dims. The right-hand detail pane shows a minimal value
-//! summary that Task 10 will replace with richer content per [`ParamKind`].
+//! The right-hand detail pane is kind-aware: it renders per-[`ParamKind`] content
+//! (numeric gauge + min/▲def/max ticks, enum value + cycle hint, toggle pill,
+//! action affordance, CLI-readonly "restart to change" copy, display-only muted
+//! value) plus a derived description line. Both panes are padded to a constant
+//! row count so the overall panel dimensions never change with category or focus.
 
 use crate::render::controls::registry::{ParamDesc, ParamKind, CATEGORY_NAMES};
 use crate::render::palette::RgbColor;
@@ -39,7 +41,7 @@ const RIGHT_W: usize = CW - RIGHT_AT;
 /// SIM=7, APP=7, PST=7 (three-way tie).  ENV with both conditional rows
 /// (DiffusionSigma + MouseTimeout) reaches 8. We use 8 as the constant body
 /// height so the panel size is stable even when those conditionals flip on.
-pub const MAX_VISIBLE_ROWS: usize = 8;
+pub(crate) const MAX_VISIBLE_ROWS: usize = 8;
 
 /// Background color for the focused row in the left list.
 const FOCUS_BG: RgbColor = RgbColor {
@@ -433,11 +435,12 @@ pub fn build_console(
                     _ => Some(style.text_primary),
                 };
                 valrow.put(0, &pv.value_text, val_col, None);
+                // A Numeric param never carries ParamState::Display, so it is
+                // folded into the "default" label to keep the match exhaustive.
                 let state_label = match pv.state {
-                    ParamState::Default => "default",
                     ParamState::Modified => "modified",
                     ParamState::Cli => "cli-only",
-                    ParamState::Display => "display",
+                    ParamState::Default | ParamState::Display => "default",
                 };
                 valrow.put(14, state_label, Some(state_color(pv.state, style)), None);
             }
