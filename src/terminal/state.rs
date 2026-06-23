@@ -766,6 +766,11 @@ pub struct RuntimeState {
     pub glyph: crate::render::charset::GlyphConfig,
     /// Monotonic seconds for overlay motion (breath, eases). Advanced each frame by dt.
     pub phase_clock: f32,
+    /// Ambient instrument surface states (Task 13+). Always contains a `Base`
+    /// sentinel at index 0; `Tune`/`Msg` entries override it while live. The
+    /// runner resolves the highest-priority live entry each frame via
+    /// [`crate::render::ambient::resolve`].
+    pub ambient_states: Vec<crate::render::ambient::AmbientState>,
 }
 
 impl RuntimeState {
@@ -913,6 +918,7 @@ impl RuntimeState {
             palette_cycle: crate::render::palette::PaletteCycle::default(),
             glyph: crate::render::charset::GlyphConfig::default(),
             phase_clock: 0.0,
+            ambient_states: vec![crate::render::ambient::AmbientState::Base],
         }
     }
 

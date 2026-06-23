@@ -372,6 +372,23 @@ fn build_param_views(
     ctx: &RegistryCtx,
     population: usize,
 ) -> Vec<crate::render::controls::ParamView> {
+    build_param_views_for_category(
+        runtime_state,
+        runtime_state.controls_category_idx,
+        ctx,
+        population,
+    )
+}
+
+/// Like [`build_param_views`] but for an explicit `category` index rather than
+/// the live `controls_category_idx`. Used by TUNE surfacing to build the view
+/// for an adjusted param that may live in any category.
+fn build_param_views_for_category(
+    runtime_state: &RuntimeState,
+    category: usize,
+    ctx: &RegistryCtx,
+    population: usize,
+) -> Vec<crate::render::controls::ParamView> {
     use crate::render::controls::registry::{visible_params, ParamId, ParamKind};
     use crate::render::controls::{ParamState, ParamView};
 
@@ -411,7 +428,7 @@ fn build_param_views(
         DiffusionKernel::Gaussian => "Gaussian",
     };
 
-    visible_params(runtime_state.controls_category_idx, ctx)
+    visible_params(category, ctx)
         .into_iter()
         .map(|desc| {
             // (value_text, ratio, def_ratio, state)
@@ -779,6 +796,52 @@ fn build_param_views(
             }
         })
         .collect()
+}
+
+
+/// Build a [`TuneView`] for the parameter a just-dispatched [`ControlAction`]
+/// adjusted, sourcing the value/range/default/state from the same registry +
+/// [`build_param_views_for_category`] path the Controls surface uses.
+///
+/// Returns `None` when the action is not a single-param adjust (overlay/global
+/// actions), or when the param has no gauge-able view (action rows like
+/// Save/Reset/Randomize, or display-only rows). Numeric params surface a real
+/// gauge; Enum/Toggle params surface a flat marker (normalized 0 with the
+/// formatted value text carrying the meaning).
+fn tune_view_for_action(
+    runtime_state: &RuntimeState,
+    action: &ControlAction,
+    ctx: &RegistryCtx,
+    population: usize,
+) -> Option<crate::render::ambient::TuneView> {
+    use crate::render::controls::registry::{self, ParamId};
+
+    let id = registry::param_id_for_action(action)?;
+    // Action rows are MSG/activation events, not tunable params.
+    if matches!(id, ParamId::SaveFrame | ParamId::Reset | ParamId::Randomize) {
+        return None;
+    }
+
+    let (category, idx) = registry::locate(id, ctx)?;
+    let views = build_param_views_for_category(runtime_state, category, ctx, population);
+    let pv = views.get(idx)?;
+
+    // Numeric rows carry normalized ratio/def_ratio for the gauge; non-numeric
+    // rows have none — surface them at the bottom of the gauge with the value
+    // text carrying the state. Gauge values are already normalized to [0, 1].
+    let (value, default) = match (pv.ratio, pv.def_ratio) {
+        (Some(r), Some(d)) => (r, d),
+        _ => (0.0, 0.0),
+    };
+
+    Some(crate::render::ambient::TuneView {
+        label: pv.desc.label.to_string(),
+        value_text: pv.value_text.clone(),
+        value,
+        range: (0.0, 1.0),
+        default,
+        state: pv.state,
+    })
 }
 
 /// Runs the interactive simulation loop (Live or Screensaver mode).
@@ -1556,13 +1619,54 @@ pub fn run_simulation(
             accent: ui_accent,
             is_paused: runtime_state.is_paused,
         };
+        // Resolve the highest-priority live ambient state for this frame. Drop
+        // expired non-sticky entries first so the Vec stays small; the Base
+        // sentinel always survives (it never expires).
+        {
+            let now = runtime_state.phase_clock;
+            runtime_state
+                .ambient_states
+                .retain(|s| crate::render::ambient::ambient_state_is_live(s, now));
+            if !runtime_state
+                .ambient_states
+                .iter()
+                .any(|s| matches!(s, AmbientState::Base))
+            {
+                runtime_state.ambient_states.push(AmbientState::Base);
+            }
+        }
         let ambient_overlay_built: Option<RenderedOverlay> = if show_status {
-            let ambient_strip = build_ambient(
-                &AmbientState::Base,
+            let now = runtime_state.phase_clock;
+            let resolved =
+                crate::render::ambient::resolve(&runtime_state.ambient_states, now).clone();
+            let mut ambient_strip = build_ambient(
+                &resolved,
                 term_width as usize,
                 &runtime_state.panel_style,
                 &ambient_base_status,
+                now,
             );
+            // TUNE surfaces/settles: ease the strip's dim from 0 → 1 over the
+            // last 0.3s before `until` (settle) and the first 0.3s after it
+            // surfaces. We approximate with a settle ease: full opacity while
+            // far from expiry, easing toward BASE as `now` approaches `until`.
+            if let AmbientState::Tune { until, .. } = &resolved {
+                use crate::render::motion::{dim_overlay, ease_in_out};
+                const EASE_SECS: f32 = 0.3;
+                let remaining = until - now;
+                let dim = if remaining >= EASE_SECS {
+                    1.0
+                } else if remaining <= 0.0 {
+                    0.0
+                } else {
+                    ease_in_out((remaining / EASE_SECS).clamp(0.0, 1.0))
+                };
+                if dim < 1.0 {
+                    if let Some(rich) = ambient_strip.rich_lines.as_mut() {
+                        dim_overlay(rich, dim, runtime_state.panel_style.status_bar_bg);
+                    }
+                }
+            }
             Some(ambient_strip)
         } else {
             None
@@ -3119,6 +3223,44 @@ pub fn run_simulation(
                         | ControlAction::ControlsAdjustFocused(_)
                         | ControlAction::ControlsActivateFocused => {}
                     }
+
+                    // ── TUNE surfacing (Task 13) ─────────────────────────────
+                    // When the dispatched action adjusted a single sim/render
+                    // param, surface it in the ambient TUNE state (debounced):
+                    // each adjust refreshes the hold so rapid adjusts extend it,
+                    // then it eases back to BASE. This REPLACES any on-adjust
+                    // toast (none existed — param adjusts only notify at bounds).
+                    if let Some(tune) =
+                        tune_view_for_action(&runtime_state, &action, &registry_ctx, agent_count)
+                    {
+                        use crate::render::ambient::bump_tune;
+                        const TUNE_HOLD_SECS: f32 = 2.5;
+                        let now = runtime_state.phase_clock;
+                        // Find an existing live Tune entry to debounce; otherwise
+                        // push a fresh one. Keep a single Tune entry at most.
+                        let existing = runtime_state
+                            .ambient_states
+                            .iter_mut()
+                            .find(|s| matches!(s, AmbientState::Tune { .. }));
+                        match existing {
+                            Some(slot) => {
+                                // Refresh the focused param, then debounce the
+                                // hold window via bump_tune (rapid adjusts extend
+                                // `until`).
+                                *slot = AmbientState::Tune {
+                                    param: tune,
+                                    until: now,
+                                };
+                                bump_tune(slot, now, TUNE_HOLD_SECS);
+                            }
+                            None => {
+                                runtime_state.ambient_states.push(AmbientState::Tune {
+                                    param: tune,
+                                    until: now + TUNE_HOLD_SECS,
+                                });
+                            }
+                        }
+                    }
                 }
                 Event::Mouse(mouse_event) => {
                     if runtime_state.mouse_mode == MouseInteractionMode::Disabled {
@@ -3503,6 +3645,40 @@ mod tests {
             diffusion_gaussian: false,
             mouse_enabled: false,
         }
+    }
+
+    #[test]
+    fn tune_view_for_numeric_adjust_is_some_with_gauge() {
+        let state = controls_test_state();
+        let ctx = controls_test_ctx();
+        let tv = tune_view_for_action(
+            &state,
+            &ControlAction::AdjustSensorAngle(1.0),
+            &ctx,
+            50_000,
+        )
+        .expect("sensor-angle adjust must surface a TuneView");
+        assert_eq!(tv.label, "Sensor Angle");
+        assert_eq!(tv.range, (0.0, 1.0)); // normalized gauge
+        assert!((0.0..=1.0).contains(&tv.value));
+        assert!(!tv.value_text.is_empty());
+    }
+
+    #[test]
+    fn tune_view_for_non_param_action_is_none() {
+        let state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // TogglePause has no registry ParamId → no TUNE surfacing.
+        assert!(tune_view_for_action(&state, &ControlAction::TogglePause, &ctx, 0).is_none());
+    }
+
+    #[test]
+    fn tune_view_for_action_rows_is_none() {
+        let state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // Action rows (Save/Reset/Randomize) are MSG/activation events, not TUNE.
+        assert!(tune_view_for_action(&state, &ControlAction::ResetToDefaults, &ctx, 0).is_none());
+        assert!(tune_view_for_action(&state, &ControlAction::SaveFrameToPng, &ctx, 0).is_none());
     }
 
     #[test]

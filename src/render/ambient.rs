@@ -16,6 +16,7 @@
 use crate::render::palette::RgbColor;
 use crate::render::panel::{RenderedOverlay, RichCell};
 use crate::render::theme::PanelStyle;
+use crate::render::motion::{breath, lerp_rgb};
 use crate::render::widgets::{gauge, swatch, value_state, ParamState, RowBuf};
 use crate::terminal::state::NotificationLevel;
 
@@ -76,11 +77,16 @@ impl Default for BaseStatus {
 pub struct TuneView {
     /// Short human-readable label, e.g. `"Sensor Angle"`.
     pub label: String,
-    /// Current parameter value.
+    /// Pre-formatted display value (e.g. `"45.0°"`, `"On"`, `"Forest"`). The
+    /// caller formats this from the same source as the Controls param views so
+    /// the TUNE row reads identically.
+    pub value_text: String,
+    /// Normalized gauge position in `[0, 1]` for the value marker.
     pub value: f32,
-    /// `(min, max)` range for the gauge.
+    /// `(min, max)` range for the gauge. With normalized `value`/`default`
+    /// callers pass `(0.0, 1.0)`.
     pub range: (f32, f32),
-    /// Default value; shown as a reference marker on the gauge.
+    /// Normalized default position in `[0, 1]`; shown as a reference marker.
     pub default: f32,
     /// Functional state (drives color selection via L2 tokens).
     pub state: ParamState,
@@ -118,7 +124,10 @@ pub enum AmbientState {
 // ── Resolution ────────────────────────────────────────────────────────────────
 
 /// Returns `true` when the entry is still live at `now`.
-fn is_live(state: &AmbientState, now: f32) -> bool {
+///
+/// Public so the runner can prune expired non-sticky entries each frame while
+/// keeping the always-live `Base` sentinel.
+pub fn ambient_state_is_live(state: &AmbientState, now: f32) -> bool {
     match state {
         AmbientState::Base => true,
         AmbientState::Tune { until, .. } => now <= *until,
@@ -152,9 +161,21 @@ fn priority(state: &AmbientState) -> u8 {
 pub fn resolve(states: &[AmbientState], now: f32) -> &AmbientState {
     states
         .iter()
-        .filter(|s| is_live(s, now))
+        .filter(|s| ambient_state_is_live(s, now))
         .max_by_key(|s| priority(s))
         .expect("resolve: states slice must contain at least one entry (Base sentinel)")
+}
+
+/// Debounce/refresh the hold window of an active [`AmbientState::Tune`].
+///
+/// When `active` is a `Tune`, sets `until = now + hold` so each fresh adjust
+/// extends the surfacing window (rapid adjusts keep the gauge live). When
+/// `active` is any other variant this is a no-op — the caller is responsible
+/// for replacing it with a fresh `Tune` first.
+pub fn bump_tune(active: &mut AmbientState, now: f32, hold: f32) {
+    if let AmbientState::Tune { until, .. } = active {
+        *until = now + hold;
+    }
 }
 
 // ── Renderer ──────────────────────────────────────────────────────────────────
@@ -171,6 +192,7 @@ pub fn resolve(states: &[AmbientState], now: f32) -> &AmbientState {
 /// - `width`  — terminal width in columns.
 /// - `st`     — the active [`PanelStyle`] for colour tokens. No hardcoded RGB.
 /// - `base`   — status context for the BASE arm; ignored for TUNE and MSG arms.
+/// - `now`    — monotonic phase clock (seconds); drives the TUNE breath pulse.
 ///
 /// Returns a [`RenderedOverlay`] with `title_box = None` and `rich_lines`
 /// populated. The `lines` field carries the plain-text representation.
@@ -179,6 +201,7 @@ pub fn build_ambient(
     width: usize,
     st: &PanelStyle,
     base: &BaseStatus,
+    now: f32,
 ) -> RenderedOverlay {
     let w = width.max(STRIP_W);
     let mut bufs: Vec<RowBuf> = Vec::with_capacity(STRIP_H);
@@ -287,30 +310,44 @@ pub fn build_ambient(
 
         // ── TUNE: parameter-focus gauge ───────────────────────────────────────
         AmbientState::Tune { param, .. } => {
-            // row 1: label
+            // Subtle breathing pulse on the accent so the focused param feels
+            // "live" while held. Stays within [1-depth, 1] (see motion::breath).
+            let pulse = breath(now, 4.0, 0.15);
+            let pulsed_accent = lerp_rgb(st.status_bar_bg, st.accent_active, pulse);
+
+            // row 1: label  ·  value
             {
                 let mut row = RowBuf::new_matte(w, st.status_bar_bg);
                 let lbl: String = param.label.chars().take(20).collect();
                 let lbl_cells = value_state(&lbl, param.state, st);
-                row.put_cells(2, &lbl_cells, None);
+                let mut col = 2usize;
+                row.put_cells(col, &lbl_cells, None);
+                col += lbl.chars().count();
+                row.put(col, "   ", None, None);
+                col += 3;
+                let val: String = param.value_text.chars().take(16).collect();
+                let val_cells = value_state(&val, param.state, st);
+                row.put_cells(col, &val_cells, None);
                 bufs.push(row);
             }
-            // row 2: gauge
+            // row 2: gauge (value marker + default tick), accent breathing
             {
                 let mut row = RowBuf::new_matte(w, st.status_bar_bg);
                 let gauge_w = (w.saturating_sub(4)).min(60);
-                let g = gauge(param.value, param.range, param.default, gauge_w, st);
+                let mut g = gauge(param.value, param.range, param.default, gauge_w, st);
+                // Apply the breath pulse to the accent cells (filled bar + value
+                // marker) so the gauge gently pulses without touching the muted
+                // track or the default tick.
+                for cell in g.iter_mut() {
+                    if cell.1 == st.accent_active {
+                        cell.1 = pulsed_accent;
+                    }
+                }
                 row.put_cells(2, &g, None);
                 bufs.push(row);
             }
-            // row 3: value text
-            {
-                let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-                let val = format!("{:.3}", param.value);
-                let val_cells = value_state(&val, param.state, st);
-                row.put_cells(2, &val_cells, None);
-                bufs.push(row);
-            }
+            // row 3: blank spacer
+            bufs.push(RowBuf::new_matte(w, st.status_bar_bg));
             // row 4: hint
             {
                 let mut row = RowBuf::new_matte(w, st.status_bar_bg);
@@ -378,6 +415,7 @@ mod ambient_tests {
     fn tune_stub() -> TuneView {
         TuneView {
             label: "Stub Param".to_string(),
+            value_text: "0.5".to_string(),
             value: 0.5,
             range: (0.0, 1.0),
             default: 0.5,
@@ -443,7 +481,7 @@ mod ambient_tests {
     #[test]
     fn build_ambient_base_emits_strip_h_rows() {
         let st = crate::render::theme::GRUVBOX_DARK;
-        let ov = build_ambient(&AmbientState::Base, STRIP_W, &st, &BaseStatus::default());
+        let ov = build_ambient(&AmbientState::Base, STRIP_W, &st, &BaseStatus::default(), 0.0);
         assert_eq!(ov.lines.len(), STRIP_H);
         assert_eq!(ov.rich_lines.unwrap().len(), STRIP_H);
     }
@@ -455,7 +493,7 @@ mod ambient_tests {
             param: tune_stub(),
             until: 100.0,
         };
-        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default());
+        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default(), 0.0);
         assert_eq!(ov.lines.len(), STRIP_H);
         assert_eq!(ov.rich_lines.unwrap().len(), STRIP_H);
     }
@@ -469,7 +507,7 @@ mod ambient_tests {
             sticky: true,
             until: f32::INFINITY,
         };
-        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default());
+        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default(), 0.0);
         assert_eq!(ov.lines.len(), STRIP_H);
         assert_eq!(ov.rich_lines.unwrap().len(), STRIP_H);
     }
@@ -511,7 +549,7 @@ mod ambient_tests {
             param: tune_stub(),
             until: 100.0,
         };
-        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default());
+        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default(), 0.0);
         let combined: String = ov.lines.concat();
         assert!(
             combined.contains("Stub Param"),
@@ -528,7 +566,7 @@ mod ambient_tests {
             sticky: false,
             until: 10.0,
         };
-        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default());
+        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default(), 0.0);
         let combined: String = ov.lines.concat();
         assert!(combined.contains("saved"), "MSG should render text");
         assert!(combined.contains('✓'), "Success MSG should render ✓ icon");
@@ -574,8 +612,8 @@ mod ambient_tests {
         // Use a wide terminal so ? help is rendered (requires ≥100 cols)
         let width = 120;
 
-        let ov_gruvbox = build_ambient(&AmbientState::Base, width, &gruvbox, &base);
-        let ov_nord = build_ambient(&AmbientState::Base, width, &nord, &base);
+        let ov_gruvbox = build_ambient(&AmbientState::Base, width, &gruvbox, &base, 0.0);
+        let ov_nord = build_ambient(&AmbientState::Base, width, &nord, &base, 0.0);
 
         let colors_gruvbox = collect_fg_colors(&ov_gruvbox.rich_lines.unwrap());
         let colors_nord = collect_fg_colors(&ov_nord.rich_lines.unwrap());
@@ -608,5 +646,66 @@ mod ambient_tests {
             "Nord BASE should use nord.accent_success for ↺: {:?}",
             colors_nord
         );
+    }
+}
+
+#[cfg(test)]
+mod tune_tests {
+    use super::*;
+
+    fn tune_stub() -> TuneView {
+        TuneView {
+            label: "Stub Param".to_string(),
+            value_text: "0.5".to_string(),
+            value: 0.5,
+            range: (0.0, 1.0),
+            default: 0.5,
+            state: ParamState::Default,
+        }
+    }
+
+    #[test]
+    fn rapid_adjust_extends_hold() {
+        let mut active = AmbientState::Tune {
+            param: tune_stub(),
+            until: 2.5,
+        };
+        bump_tune(&mut active, /*now*/ 2.0, /*hold*/ 2.5); // adjust again at t=2.0
+        if let AmbientState::Tune { until, .. } = active {
+            assert!((until - 4.5).abs() < 1e-6); // 2.0 + 2.5
+        } else {
+            panic!("expected Tune");
+        }
+    }
+
+    #[test]
+    fn bump_tune_no_op_on_non_tune() {
+        // bump_tune only refreshes a Tune; on Base/Msg it leaves the state alone.
+        let mut base = AmbientState::Base;
+        bump_tune(&mut base, 10.0, 2.5);
+        assert!(matches!(base, AmbientState::Base));
+    }
+
+    #[test]
+    fn build_ambient_tune_contains_value_and_gauge() {
+        let st = crate::render::theme::GRUVBOX_DARK;
+        let state = AmbientState::Tune {
+            param: TuneView {
+                label: "Sensor Angle".to_string(),
+                value_text: "45.0°".to_string(),
+                value: 0.5,
+                range: (0.0, 1.0),
+                default: 0.3,
+                state: ParamState::Modified,
+            },
+            until: 100.0,
+        };
+        let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default(), 0.0);
+        let combined: String = ov.lines.concat();
+        assert!(combined.contains("Sensor Angle"), "TUNE renders label");
+        assert!(combined.contains("45.0°"), "TUNE renders formatted value");
+        // gauge glyphs: filled bar, value marker, and default tick.
+        assert!(combined.contains('█'), "gauge filled bar");
+        assert!(combined.contains('▲'), "gauge default tick");
     }
 }
