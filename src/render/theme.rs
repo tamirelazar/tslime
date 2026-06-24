@@ -47,6 +47,10 @@ pub struct PanelStyle {
     pub accent_fps_good: RgbColor,
     /// Accent color for a degraded FPS readout (currently unused).
     pub accent_fps_warn: RgbColor,
+    /// "Element under the hand" highlight — a lighter, hue-warmed nudge of
+    /// `accent_active`. Used by field-plate IGNITION (live option, active toggle,
+    /// caret, RULE marker).
+    pub accent_ignite: RgbColor,
 }
 
 /// Gruvbox Dark-inspired panel style.
@@ -73,6 +77,7 @@ pub const GRUVBOX_DARK: PanelStyle = PanelStyle {
     state_default: RgbColor::new(0x66, 0x5C, 0x54), // == muted
     accent_fps_good: RgbColor::new(0x8E, 0xC0, 0x7C), // #8EC07C - bright green
     accent_fps_warn: RgbColor::new(0xD7, 0x99, 0x21), // #D79921 - amber
+    accent_ignite: RgbColor::new(0xFF, 0xD7, 0x5F), // brighter warm yellow
 };
 
 /// Slime Mold Dark — a bioluminescent palette inspired by Physarum polycephalum.
@@ -102,6 +107,7 @@ pub const SLIME_DARK: PanelStyle = PanelStyle {
     state_default: RgbColor::new(0x24, 0x3A, 0x2C), // muted
     accent_fps_good: RgbColor::new(0x39, 0xD3, 0x53), // #39D353 - electric green
     accent_fps_warn: RgbColor::new(0xFF, 0xB7, 0x00), // #FFB700 - amber
+    accent_ignite: RgbColor::new(0x7C, 0xF0, 0x8C), // lifted green
 };
 
 /// Nord — Arctic, origin-aligned color palette.
@@ -212,6 +218,11 @@ pub const NORD: PanelStyle = PanelStyle {
         g: 203,
         b: 139,
     }, // aurora yellow
+    accent_ignite: RgbColor {
+        r: 170,
+        g: 224,
+        b: 224,
+    }, // lifted frost
 };
 
 /// Catppuccin Mocha — a warm dark lavender theme.
@@ -321,6 +332,11 @@ pub const CATPPUCCIN_MOCHA: PanelStyle = PanelStyle {
         g: 226,
         b: 175,
     }, // yellow
+    accent_ignite: RgbColor {
+        r: 228,
+        g: 190,
+        b: 255,
+    }, // lifted mauve
 };
 
 /// Tokyo Night — deep indigo nights and neon city lights.
@@ -430,6 +446,11 @@ pub const TOKYO_NIGHT: PanelStyle = PanelStyle {
         g: 175,
         b: 104,
     }, // yellow
+    accent_ignite: RgbColor {
+        r: 212,
+        g: 180,
+        b: 255,
+    }, // lifted purple
 };
 
 impl Default for PanelStyle {
@@ -485,6 +506,28 @@ pub const ALL_THEMES: [Theme; 5] = [
     Theme::CatppuccinMocha,
     Theme::TokyoNight,
 ];
+
+#[cfg(test)]
+mod ignite_tests {
+    use super::*;
+
+    #[test]
+    fn every_theme_defines_a_distinct_ignite() {
+        for st in [
+            GRUVBOX_DARK,
+            SLIME_DARK,
+            NORD,
+            CATPPUCCIN_MOCHA,
+            TOKYO_NIGHT,
+        ] {
+            // Ignition must differ from the base accent so "under the hand" reads.
+            assert_ne!(
+                st.accent_ignite, st.accent_active,
+                "accent_ignite must differ from accent_active"
+            );
+        }
+    }
+}
 
 #[cfg(test)]
 mod token_tests {
