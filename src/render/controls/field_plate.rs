@@ -6,6 +6,7 @@
 //! ships) uses only ASCII + box-drawing + block-element ranges, which every
 //! mainstream terminal renders single-width — so nothing shears.
 
+use crate::render::controls::registry::ParamId;
 use crate::render::palette::Palette;
 
 /// Glyph-rendering profile. Authored art is downgraded through the active one.
@@ -187,6 +188,61 @@ pub(crate) fn parse_palette_opt(name: &str) -> Option<Palette> {
     })
 }
 
+/// One parameter's specimen art + reading caption.
+#[allow(dead_code)]
+pub struct FieldPlate {
+    /// Authored ASCII-art specimen; may contain `«»` and `⟦⟧` authoring markers.
+    pub art: &'static str,
+    /// Short reading text (1-2 lines) displayed below the art.
+    pub caption: &'static str,
+}
+
+/// The authored field plate for `id`, or `None` for params not yet authored.
+/// 9 authored this batch; the remaining ~38 fall back to the kind-aware detail.
+#[allow(dead_code)]
+pub fn field_plate(id: ParamId) -> Option<FieldPlate> {
+    let (art, caption) = match id {
+        ParamId::SensorAngle => (
+            "  SENSE · sample 3 points\n\n       ╱·░▒▓\n  █──→  ·░▒▓   fwd\n       ╲·░▒▓\n\n  5° │─«▲»──────│ 90°",
+            "L/R sensors splay this wide.\nnarrow = networks · wide = chaos",
+        ),
+        ParamId::Decay => (
+            "  DECAY · trail kept / frame\n\n  now\n  █▓▓▒▒▒░░░░·· · ·  ·\n                older →\n  .50 │───────«▲»─│ .99\n        .88  «.90»  .92",
+            "one deposit, aging left to right.\nlow = ghostly · high = long-lived",
+        ),
+        ParamId::DiffusionKernel => (
+            "  DIFFUSE · cell bleeds out\n\n  ⟦opt:mean⟧[ MEAN 3×3 ]⟦⟧    ⟦opt:gauss⟧gauss 5×5⟦⟧\n     ▒▓█▓▒          ·░▒▓▒░·\n     sharp·fast     soft·organic\n  ⟦caret⟧\n  ◂ ▸ flip       active = caret",
+            "how a cell bleeds to neighbours.\ncrisp box vs. soft organic bloom",
+        ),
+        ParamId::Wind => (
+            "  FORCE · drift bias, all agents\n      ↖   ↑   ↗\n        ╲ │ ╱     drift\n  ←──── █ ──→   ░▒▓→\n        ╱ │ ╲\n      ↙   ↓   ↘\n  ⟦opt:east⟧[ E → ]⟦⟧   · center = Off",
+            "constant force on every agent.\npick a bearing · center = Off",
+        ),
+        ParamId::Palette => (
+            "  RENDER · trail pigment\n\n  rail  ⟦slime⟧▒▓█⟦⟧ ⟦organic⟧▒▓█⟦⟧ ⟦heat⟧▒▓█⟦⟧ ⟦ocean⟧▒▓█⟦⟧\n  focus «‹» ⟦heat⟧·░▒▓█⟦⟧ «›»  «HEAT»\n  ◂ ▸ scroll",
+            "the trail's pigment.\neach swatch is that palette's own ramp",
+        ),
+        ParamId::IntensityMapping => (
+            "  RENDER · brightness curve\n\n  ⟦opt:lin⟧lin⟦⟧  ⟦opt:log⟧log⟦⟧  ⟦opt:exp⟧exp⟦⟧  ⟦opt:pow⟧pow⟦⟧  ⟦opt:sqrt⟧sqrt⟦⟧\n      ▃▅▆▇████\n  ·░░▒▒▓▓██   mapped ramp\n  ◂ ▸ pick curve",
+            "brightness response curve.\nlog lifts dim trails into view",
+        ),
+        ParamId::TrailDelta => (
+            "  RENDER · show only change\n\n  ⟦opt:on⟧● on⟦⟧    ⟦opt:off⟧○ off⟦⟧\n\n  full field       changed only\n  ░▒▓▓▒░           ·  ▒    ·",
+            "lights only cells that changed.\noff = full field · on = motion only",
+        ),
+        ParamId::Population => (
+            "  AGENTS · set at launch\n\n  ·░▒▓ population ▓▒░·\n\n  · ◌ ░ ▒ ◉ ● ◉ ▒ ░ ◌ ·\n  density at this count",
+            "agent count, fixed at launch.\nthe field's grain at this scale",
+        ),
+        ParamId::Reset => (
+            "  SYS · params → defaults\n\n\n       «[  RESET  ]»  ↵\n",
+            "returns every param to preset.\na quiet, deliberate action",
+        ),
+        _ => return None,
+    };
+    Some(FieldPlate { art, caption })
+}
+
 /// Visible column count of an art line, ignoring the consumed authoring markers
 /// (`«` `»` and `⟦…⟧`). Trailing spaces are not counted.
 pub(crate) fn visible_width(line: &str) -> usize {
@@ -265,6 +321,63 @@ mod tests {
         let (out, w) = dedent_and_measure("    ab\n    cde");
         assert_eq!(out, "ab\ncde");
         assert_eq!(w, 3);
+    }
+
+    #[test]
+    fn nine_params_are_authored() {
+        use crate::render::controls::registry::ParamId::*;
+        for id in [
+            SensorAngle,
+            Decay,
+            DiffusionKernel,
+            Wind,
+            Palette,
+            IntensityMapping,
+            TrailDelta,
+            Population,
+            Reset,
+        ] {
+            assert!(field_plate(id).is_some(), "{id:?} should be authored");
+        }
+        assert!(field_plate(crate::render::controls::registry::ParamId::TurnAngle).is_none());
+    }
+
+    /// Every authored plate must render Safe-clean: each glyph (excluding the
+    /// consumed markers) downgrades to a single-width safe-range glyph.
+    #[test]
+    fn authored_plates_are_safe_clean() {
+        use crate::render::controls::registry::ParamId::*;
+        for id in [
+            SensorAngle,
+            Decay,
+            DiffusionKernel,
+            Wind,
+            Palette,
+            IntensityMapping,
+            TrailDelta,
+            Population,
+            Reset,
+        ] {
+            let plate = field_plate(id).unwrap();
+            // strip markers, then check each remaining glyph
+            let mut chars = plate.art.chars().peekable();
+            while let Some(c) = chars.next() {
+                match c {
+                    '«' | '»' | '\n' => {}
+                    '⟦' => {
+                        for c2 in chars.by_ref() {
+                            if c2 == '⟧' {
+                                break;
+                            }
+                        }
+                    }
+                    _ => {
+                        let m = map_glyph(c, Profile::Safe);
+                        assert!(is_safe_width1(m), "{id:?}: {c:?} -> {m:?} not safe-width-1");
+                    }
+                }
+            }
+        }
     }
 
     #[test]
