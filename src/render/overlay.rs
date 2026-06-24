@@ -7,8 +7,8 @@ use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
 pub use crate::render::panel::{
-    BorderConfig, ColumnLayout, Padding, PanelBuilder, PanelRow, PanelSize, RenderedOverlay,
-    RenderedTitleBox, RichCell, TextAlignment, TitleAlignment,
+    footer_hints, BorderConfig, ColumnLayout, Padding, PanelBuilder, PanelRow, PanelSize,
+    RenderedOverlay, RenderedTitleBox, RichCell, TextAlignment, TitleAlignment,
 };
 
 // --- OverlayConfig ---
@@ -547,7 +547,10 @@ impl PresetComparisonOverlay {
 
         builder
             .add_empty_n(spacing::ROW)
-            .add_single("Press Enter to Apply Preset     Esc to Close", Left)
+            .add_single(
+                footer_hints(&[("↵", "apply preset"), ("esc", "close")]),
+                Left,
+            )
             .build_overlay()
     }
 
@@ -656,12 +659,21 @@ impl ConfigBrowserOverlay {
                 builder = builder.add_empty();
             }
 
-            builder = builder
-                .add_empty_n(spacing::ROW)
-                .add_single("↑/↓: Navigate  Enter: Load  Del: Delete", Left);
+            builder = builder.add_empty_n(spacing::ROW).add_single(
+                footer_hints(&[
+                    ("↑↓", "navigate"),
+                    ("↵", "load"),
+                    ("del", "delete"),
+                    ("esc", "cancel"),
+                ]),
+                Left,
+            );
+            return builder.build_overlay();
         }
 
-        builder.add_single("Esc: Cancel", Left).build_overlay()
+        builder
+            .add_single(footer_hints(&[("esc", "cancel")]), Left)
+            .build_overlay()
     }
 
     /// Calculates center position for the browser overlay.
@@ -692,7 +704,7 @@ impl ConfigSaveOverlay {
             .add_empty_n(spacing::ROW)
             .add_single(format!("Name: {:<25}", name_input), Left)
             .add_empty_n(spacing::ROW)
-            .add_single("Enter: Save    Esc: Cancel", Left)
+            .add_single(footer_hints(&[("↵", "save"), ("esc", "cancel")]), Left)
             .build_overlay()
     }
 
@@ -724,7 +736,10 @@ impl DirtyGuardOverlay {
             .add_empty_n(spacing::ROW)
             .add_single("Discard live edits and switch?", Left)
             .add_empty_n(spacing::ROW)
-            .add_single("Enter: Discard & switch    Esc: Cancel", Left)
+            .add_single(
+                footer_hints(&[("↵", "discard & switch"), ("esc", "cancel")]),
+                Left,
+            )
             .build_overlay()
     }
 
@@ -2948,10 +2963,21 @@ impl ExpandedChromeOverlay {
     /// shortcuts are shown. `_width` is reserved for future truncation logic.
     pub fn build_footer_keybinds(is_modal_open: bool, _width: usize) -> String {
         if is_modal_open {
-            "  \u{2191}\u{2193} navigate \u{00B7} enter select \u{00B7} esc close".to_string()
+            format!(
+                "  {}",
+                footer_hints(&[("↑↓", "navigate"), ("↵", "select"), ("esc", "close")])
+            )
         } else {
-            "  q quit \u{00B7} h help \u{00B7} space pause \u{00B7} c cycle palette \u{00B7} \\ dashboard"
-                .to_string()
+            format!(
+                "  {}",
+                footer_hints(&[
+                    ("q", "quit"),
+                    ("h", "help"),
+                    ("space", "pause"),
+                    ("c", "cycle palette"),
+                    ("\\", "dashboard"),
+                ])
+            )
         }
     }
 }

@@ -5,7 +5,9 @@ use crate::render::palette::{
     interpolate_gradient, oklch_to_rgb, oklch_to_srgb, srgb_to_oklch, GradientStop, OklchColor,
     RgbColor,
 };
-use crate::render::panel::{Padding, PanelBuilder, RenderedOverlay, RichCell, TextAlignment};
+use crate::render::panel::{
+    footer_hints, Padding, PanelBuilder, RenderedOverlay, RichCell, TextAlignment,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Number of colors in the palette gradient.
@@ -1011,7 +1013,7 @@ impl PaletteEditorOverlay {
             .add_single(name_str, TextAlignment::Left)
             .add_empty()
             .add_single(
-                "  Enter: Save    Esc: Cancel".to_string(),
+                format!("  {}", footer_hints(&[("↵", "save"), ("esc", "cancel")])),
                 TextAlignment::Left,
             )
             .build_overlay();
@@ -1067,13 +1069,14 @@ impl PaletteEditorOverlay {
             }
         }
 
+        let hint = if saved_palettes.is_empty() {
+            footer_hints(&[("esc", "cancel")])
+        } else {
+            footer_hints(&[("↑↓", "navigate"), ("↵", "load"), ("esc", "cancel")])
+        };
         builder
             .add_empty()
-            .add_single(
-                "  ↑/↓: Select  Enter: Load".to_string(),
-                TextAlignment::Left,
-            )
-            .add_single("  Esc: Cancel".to_string(), TextAlignment::Left)
+            .add_single(format!("  {hint}"), TextAlignment::Left)
             .build_overlay()
     }
 

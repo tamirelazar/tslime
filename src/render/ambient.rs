@@ -15,7 +15,7 @@
 
 use crate::render::motion::{breath, lerp_rgb};
 use crate::render::palette::RgbColor;
-use crate::render::panel::{RenderedOverlay, RichCell};
+use crate::render::panel::{footer_hints, RenderedOverlay, RichCell};
 use crate::render::theme::PanelStyle;
 use crate::render::widgets::{gauge, swatch, value_state, ParamState, RowBuf};
 use crate::terminal::state::NotificationLevel;
@@ -367,10 +367,13 @@ fn tune_content_rows(w: usize, st: &PanelStyle, param: &TuneView, now: f32) -> V
         row.put_cells(2, &g, None);
         rows.push(row);
     }
-    // row: hint
+    // row: hint. Numeric/enum/toggle params adjust with ←→; the param-kind
+    // distinction (e.g. "↵ run" for actions) is handled in a later batch — for
+    // now every tune hint shares the unified grammar + a visible exit.
     {
         let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-        row.put(2, "←→ tune", Some(st.muted), None);
+        let hint = footer_hints(&[("←→", "tune"), ("↑↓", "pick"), ("esc", "close")]);
+        row.put(2, &hint, Some(st.muted), None);
         rows.push(row);
     }
     rows
@@ -398,7 +401,12 @@ fn msg_content_rows(
     {
         let mut row = RowBuf::new_matte(w, st.status_bar_bg);
         if sticky && matches!(level, NotificationLevel::Error) {
-            row.put(2, "Esc to dismiss", Some(st.muted), None);
+            row.put(
+                2,
+                &footer_hints(&[("esc", "dismiss")]),
+                Some(st.muted),
+                None,
+            );
         }
         rows.push(row);
     }

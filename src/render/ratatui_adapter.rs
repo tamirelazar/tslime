@@ -6,7 +6,9 @@
 //! the editable field caret is handled by [`stamp_caret`] + `tui-input`.
 
 use crate::config_manager::NamedProfile;
-use crate::render::panel::{Padding, PanelBuilder, RenderedOverlay, RichCell, TextAlignment};
+use crate::render::panel::{
+    footer_hints, Padding, PanelBuilder, RenderedOverlay, RichCell, TextAlignment,
+};
 use crate::render::theme::PanelStyle;
 
 /// Inner content width (`56 - 2 border - 2*2 padding`).
@@ -99,7 +101,7 @@ pub fn build_config_browser(
             .add_empty()
             .add_single("Press Ctrl+S to save current settings", Left)
             .add_empty()
-            .add_single("Esc: Cancel", Left)
+            .add_single(footer_hints(&[("esc", "cancel")]), Left)
             .build_overlay();
     }
 
@@ -130,8 +132,15 @@ pub fn build_config_browser(
 
     builder
         .add_empty()
-        .add_single("↑/↓: Navigate  Enter: Load  Del: Delete", Left)
-        .add_single("Esc: Cancel", Left)
+        .add_single(
+            footer_hints(&[
+                ("↑↓", "navigate"),
+                ("↵", "load"),
+                ("del", "delete"),
+                ("esc", "cancel"),
+            ]),
+            Left,
+        )
         .build_overlay()
 }
 
@@ -158,7 +167,7 @@ pub fn build_config_save(value: &str, cursor: usize, style: &PanelStyle) -> Rend
         .add_empty()
         .add_single(&name_line, Left)
         .add_empty()
-        .add_single("Enter: Save    Esc: Cancel", Left)
+        .add_single(footer_hints(&[("↵", "save"), ("esc", "cancel")]), Left)
         .build_overlay();
 
     stamp_caret(&mut overlay, LABEL, SAVE_FIELD_WIDTH, cursor, style);
@@ -214,12 +223,9 @@ mod tests {
             beta_content.starts_with("  2 "),
             "non-selected beta row must start with '  2 ' (space+space+index, after border+padding):\n{beta_line}\ncontent: {beta_content}"
         );
-        // Footer hints present (B1 had dropped these).
-        assert!(
-            text.contains("↑/↓: Navigate"),
-            "nav footer missing:\n{text}"
-        );
-        assert!(text.contains("Esc: Cancel"), "esc footer missing:\n{text}");
+        // Footer hints present (B1 had dropped these). Unified instrument-voice grammar.
+        assert!(text.contains("↑↓ navigate"), "nav footer missing:\n{text}");
+        assert!(text.contains("esc cancel"), "esc footer missing:\n{text}");
     }
 
     #[test]
