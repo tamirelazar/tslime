@@ -1022,7 +1022,7 @@ impl TerminalRenderer {
         // Composited last: the ambient strip paints over the bottom rows, above all other overlays.
         if let Some((overlay, x, y)) = ambient_overlay {
             if let Some(ref rich) = overlay.rich_lines {
-                buffer.draw_rich_overlay_dim(rich, x, y, 1.0, true);
+                buffer.draw_rich_overlay_solid(rich, x, y, true);
             }
         }
 
@@ -1382,7 +1382,7 @@ impl TerminalRenderer {
         // Composited last: the ambient strip paints over the bottom rows, above all other overlays.
         if let Some((overlay, x, y)) = ambient_overlay {
             if let Some(ref rich) = overlay.rich_lines {
-                buffer.draw_rich_overlay_dim(rich, x, y, 1.0, true);
+                buffer.draw_rich_overlay_solid(rich, x, y, true);
             }
         }
 
