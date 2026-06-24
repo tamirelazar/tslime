@@ -10,6 +10,8 @@ pub use value::{gauge, heatmap_slider, sparkline};
 pub mod console;
 pub use console::{build_console, ParamState, ParamView};
 
+pub mod field_plate;
+
 pub mod tuner;
 pub use tuner::build_tuner;
 
