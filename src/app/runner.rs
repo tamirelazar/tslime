@@ -19,7 +19,7 @@ use crate::food_image::FOOD_IMAGE_PNG;
 use crate::overlay::{OverlayInputManager, OverlayInputResult, OverlayType};
 use crate::palette_manager;
 use crate::render::adaptive_brightness::AdaptiveBrightness;
-use crate::render::ambient::{build_ambient, AmbientState, BaseStatus};
+use crate::render::ambient::{AmbientState, BaseStatus};
 use crate::render::charset::Charset;
 use crate::render::controls::registry::RegistryCtx;
 use crate::render::dither::DitherMode;
@@ -651,7 +651,36 @@ fn build_param_views_for_category(
                         None,
                         ParamState::Default,
                     ),
+                    ParamId::StatusLine => (
+                        if runtime_state.show_status_bar {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::WindowFrame => (
+                        format!("{:?}", runtime_state.window_frame),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::Chrome => (
+                        format!("{:?}", runtime_state.chrome_style),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
                     // ── PST ───────────────────────────────────────────────────
+                    ParamId::IntensityMapping => (
+                        runtime_state.intensity_mapping_name().to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
                     ParamId::Dither => (
                         runtime_state.dither_mode.name().to_string(),
                         None,
@@ -825,9 +854,9 @@ fn tune_view_for_action(
     // Numeric rows carry normalized ratio/def_ratio for the gauge; non-numeric
     // rows have none — surface them at the bottom of the gauge with the value
     // text carrying the state. Gauge values are already normalized to [0, 1].
-    let (value, default) = match (pv.ratio, pv.def_ratio) {
-        (Some(r), Some(d)) => (r, d),
-        _ => (0.0, 0.0),
+    let (value, default, show_gauge) = match (pv.ratio, pv.def_ratio) {
+        (Some(r), Some(d)) => (r, d, true),
+        _ => (0.0, 0.0, false),
     };
 
     Some(crate::render::ambient::TuneView {
@@ -837,6 +866,7 @@ fn tune_view_for_action(
         range: (0.0, 1.0),
         default,
         state: pv.state,
+        show_gauge,
     })
 }
 
@@ -1085,6 +1115,135 @@ pub fn run_simulation(
     };
     let mut blended_trail_buffer: Vec<f32> = Vec::new();
 
+    // Resize the sim render buffers to new dimensions. Must run on EVERY change to
+    // render dims — terminal resize AND chrome-mode change — or `blur_field`'s
+    // `src.len() == width*height` invariant breaks (e.g. F10 into Fullscreen grows
+    // the sim while the buffers stay windowed-sized → panic in antialiasing.rs).
+    fn resize_render_frames(
+        downsampled: &mut crate::render::downsample::DownsampledFrame,
+        aux: &mut crate::render::downsample::AuxFrame,
+        w: usize,
+        h: usize,
+    ) {
+        *downsampled = crate::render::downsample::DownsampledFrame::new(w, h);
+        aux.width = w;
+        aux.height = h;
+        aux.cells = vec![crate::render::downsample::AuxCell::default(); w * h];
+    }
+
+    // Resolve the ambient surface overlay + its screen position for this frame.
+    //   • Controls Tuner depth → the focused param renders as a persistent
+    //     centered modal (the interactive tuner surface).
+    //   • Controls Console depth → ambient hidden (the console IS the surface).
+    //   • A live TUNE/MSG event (controls closed) → a transient centered modal.
+    //   • Otherwise, when the always-on status line is enabled, a compact base row
+    //     docks at the bottom interior of the frame (skipped in Expanded chrome,
+    //     whose legacy footer already serves that role). Pause renders nothing
+    //     extra here — the pause screen already presents its own surface.
+    //   • Default: nothing (clean frame).
+    // Shared by the main render path and the pause re-render path.
+    fn compute_ambient_overlay(
+        runtime_state: &RuntimeState,
+        base_status: &crate::render::ambient::BaseStatus,
+        window: &crate::render::window::Window,
+        term_width: usize,
+        term_height: usize,
+        agent_count: usize,
+    ) -> Option<(crate::render::panel::RenderedOverlay, usize, usize)> {
+        use crate::render::ambient::{build_ambient_modal, build_base_row, resolve, AmbientState};
+        use crate::render::window::FallbackMode;
+        use crate::simulation::config::ChromeStyle;
+
+        let now = runtime_state.phase_clock;
+        let controls_open = runtime_state.overlay_state.is_open(OverlayType::Controls)
+            && !runtime_state.overlay_state.is_open(OverlayType::Dashboard);
+        let mode = ambient_mode(controls_open, runtime_state.controls_depth);
+        let st = &runtime_state.panel_style;
+        let accent = base_status.accent;
+
+        let center = |ov: &crate::render::panel::RenderedOverlay| {
+            let w = ov.lines.first().map(|l| l.chars().count()).unwrap_or(0);
+            let h = ov.lines.len();
+            (
+                term_width.saturating_sub(w) / 2,
+                term_height.saturating_sub(h) / 2,
+            )
+        };
+
+        match mode {
+            // Console open: the console is the full surface; no ambient overlay.
+            AmbientMode::Hidden => None,
+            // Tuner depth: render the focused param as a persistent centered modal.
+            AmbientMode::Tuner => {
+                let ctx = RegistryCtx {
+                    diffusion_gaussian: matches!(
+                        runtime_state.diffusion_kernel,
+                        DiffusionKernel::Gaussian
+                    ),
+                    mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
+                };
+                let params = build_param_views(runtime_state, &ctx, agent_count);
+                let idx = runtime_state
+                    .controls_focus
+                    .min(params.len().saturating_sub(1));
+                let pv = params.get(idx)?;
+                let (value, default, show_gauge) = match (pv.ratio, pv.def_ratio) {
+                    (Some(r), Some(d)) => (r, d, true),
+                    _ => (0.0, 0.0, false),
+                };
+                let tune = AmbientState::Tune {
+                    param: crate::render::ambient::TuneView {
+                        label: pv.desc.label.to_string(),
+                        value_text: pv.value_text.clone(),
+                        value,
+                        range: (0.0, 1.0),
+                        default,
+                        state: pv.state,
+                        show_gauge,
+                    },
+                    until: f32::MAX,
+                };
+                let ov = build_ambient_modal(&tune, st, accent, now);
+                let (x, y) = center(&ov);
+                Some((ov, x, y))
+            }
+            // Controls closed: live TUNE/MSG event → transient centered modal;
+            // else optional always-on base row.
+            AmbientMode::Normal => {
+                let resolved = resolve(&runtime_state.ambient_states, now).clone();
+                if matches!(
+                    resolved,
+                    AmbientState::Tune { .. } | AmbientState::Msg { .. }
+                ) {
+                    let ov = build_ambient_modal(&resolved, st, accent, now);
+                    let (x, y) = center(&ov);
+                    return Some((ov, x, y));
+                }
+                if !runtime_state.show_status_bar {
+                    return None;
+                }
+                let (bx, by, bw) = if matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
+                {
+                    (0usize, term_height.saturating_sub(1), term_width)
+                } else {
+                    let l = window.compute_rects(term_width, term_height);
+                    if matches!(l.fallback, FallbackMode::Fullscreen) {
+                        (0usize, term_height.saturating_sub(1), term_width)
+                    } else {
+                        (l.sim_x, l.sim_y + l.sim_h.saturating_sub(1), l.sim_w)
+                    }
+                };
+                // Expanded chrome's legacy footer already occupies the bottom row.
+                if matches!(runtime_state.chrome_style, ChromeStyle::Expanded) {
+                    None
+                } else {
+                    let ov = build_base_row(bw, st, base_status);
+                    Some((ov, bx, by))
+                }
+            }
+        }
+    }
+
     #[cfg(feature = "audio")]
     let mut choir: Option<crate::audio::Choir> = if args.choir {
         match crate::audio::Choir::try_new(args.choir_volume.clamp(0.0, 1.0)) {
@@ -1235,14 +1394,12 @@ pub fn run_simulation(
                     grid.initialize(term_width as usize, term_height as usize);
                 }
                 // Resize frame buffers to sim render dimensions (may differ in windowed mode)
-                downsampled_frame =
-                    crate::render::downsample::DownsampledFrame::new(new_render_w, new_render_h);
-                aux_frame.width = new_render_w;
-                aux_frame.height = new_render_h;
-                aux_frame.cells = vec![
-                    crate::render::downsample::AuxCell::default();
-                    new_render_w * new_render_h
-                ];
+                resize_render_frames(
+                    &mut downsampled_frame,
+                    &mut aux_frame,
+                    new_render_w,
+                    new_render_h,
+                );
             }
         }
 
@@ -1589,16 +1746,16 @@ pub fn run_simulation(
                 (None, 0, 0)
             };
 
-        // In windowed mode the expanded chrome footer replaces the status bar.
-        // Only show the ambient strip in fullscreen mode, or when explicitly
-        // enabled via `show_status_bar`. Gate removed (Task 12): always-on at rest.
-        let show_status = {
-            use crate::simulation::config::ChromeStyle;
-            matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
-                || runtime_state.show_status_bar
-        };
+        // Ambient surface model (redesign):
+        //   • Default (always_on = false): clean sim frame at rest. The ambient
+        //     surface appears only as a CENTERED MODAL on a live event — TUNE,
+        //     MSG (notification), or pause — then dismisses back to the clean frame.
+        //   • always_on (show_status_bar = true): a compact single-row BASE status
+        //     line is docked at the bottom interior of the frame, in addition to
+        //     the event modals. Consistent across Minimal/Fullscreen; in Expanded
+        //     the legacy footer already serves as the status line.
 
-        // Task 12: Build ambient BASE surface (replaces legacy single-row status_data in MAIN path).
+        // Build ambient BASE status context (used by the compact base row).
         let dither_label = match runtime_state.dither_mode {
             crate::render::dither::DitherMode::None => None,
             crate::render::dither::DitherMode::Ordered { intensity, .. } => {
@@ -1636,101 +1793,16 @@ pub fn run_simulation(
                 runtime_state.ambient_states.push(AmbientState::Base);
             }
         }
-        let ambient_overlay_built: Option<RenderedOverlay> = if show_status {
-            let controls_open = runtime_state.overlay_state.is_open(OverlayType::Controls)
-                && !runtime_state.overlay_state.is_open(OverlayType::Dashboard);
-            let mode = ambient_mode(controls_open, runtime_state.controls_depth);
-
-            match mode {
-                // Console open: ambient hidden (M1: hide — Console is the full surface).
-                AmbientMode::Hidden => None,
-                // Tuner open: persistent TUNE for the currently focused param.
-                AmbientMode::Tuner => {
-                    let now = runtime_state.phase_clock;
-                    let ctx = RegistryCtx {
-                        diffusion_gaussian: matches!(
-                            runtime_state.diffusion_kernel,
-                            DiffusionKernel::Gaussian
-                        ),
-                        mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
-                    };
-                    let params = build_param_views(&runtime_state, &ctx, agent_count);
-                    if let Some(pv) = params.get(
-                        runtime_state
-                            .controls_focus
-                            .min(params.len().saturating_sub(1)),
-                    ) {
-                        let (value, default) = match (pv.ratio, pv.def_ratio) {
-                            (Some(r), Some(d)) => (r, d),
-                            _ => (0.0, 0.0),
-                        };
-                        let tune_view = crate::render::ambient::TuneView {
-                            label: pv.desc.label.to_string(),
-                            value_text: pv.value_text.clone(),
-                            value,
-                            range: (0.0, 1.0),
-                            default,
-                            state: pv.state,
-                        };
-                        let persistent_tune = AmbientState::Tune {
-                            param: tune_view,
-                            until: f32::MAX,
-                        };
-                        Some(build_ambient(
-                            &persistent_tune,
-                            term_width as usize,
-                            &runtime_state.panel_style,
-                            &ambient_base_status,
-                            now,
-                        ))
-                    } else {
-                        None
-                    }
-                }
-                // Closed (no controls open): normal BASE/MSG resolution.
-                AmbientMode::Normal => {
-                    let now = runtime_state.phase_clock;
-                    let resolved =
-                        crate::render::ambient::resolve(&runtime_state.ambient_states, now).clone();
-                    let mut ambient_strip = build_ambient(
-                        &resolved,
-                        term_width as usize,
-                        &runtime_state.panel_style,
-                        &ambient_base_status,
-                        now,
-                    );
-                    // TUNE surfaces/settles: ease the strip's dim from 0 → 1 over the
-                    // last 0.3s before `until` (settle) and the first 0.3s after it
-                    // surfaces. We approximate with a settle ease: full opacity while
-                    // far from expiry, easing toward BASE as `now` approaches `until`.
-                    if let AmbientState::Tune { until, .. } = &resolved {
-                        use crate::render::motion::{dim_overlay, ease_in_out};
-                        const EASE_SECS: f32 = 0.3;
-                        let remaining = until - now;
-                        let dim = if remaining >= EASE_SECS {
-                            1.0
-                        } else if remaining <= 0.0 {
-                            0.0
-                        } else {
-                            ease_in_out((remaining / EASE_SECS).clamp(0.0, 1.0))
-                        };
-                        if dim < 1.0 {
-                            if let Some(rich) = ambient_strip.rich_lines.as_mut() {
-                                dim_overlay(rich, dim, runtime_state.panel_style.status_bar_bg);
-                            }
-                        }
-                    }
-                    Some(ambient_strip)
-                }
-            }
-        } else {
-            None
-        };
-        // STRIP_H = 6 rows; bottom-dock at term_height - STRIP_H.
-        let ambient_y = (term_height as usize).saturating_sub(6);
-        let ambient_data = ambient_overlay_built
-            .as_ref()
-            .map(|v| (v, 0usize, ambient_y));
+        // Resolve the ambient surface (event modal / optional base row / nothing).
+        let ambient_overlay_built = compute_ambient_overlay(
+            &runtime_state,
+            &ambient_base_status,
+            &window,
+            term_width as usize,
+            term_height as usize,
+            agent_count,
+        );
+        let ambient_data = ambient_overlay_built.as_ref().map(|(v, x, y)| (v, *x, *y));
 
         // Legacy single-row status_data: only used by the PAUSE path renderer (see below).
         // In the MAIN path we pass None — the ambient strip takes its place.
@@ -2974,9 +3046,13 @@ pub fn run_simulation(
                             if current_auto_normalize {
                                 // Auto-normalize drives the white-point from the
                                 // adaptive peak, so the manual control is inert.
-                                runtime_state.show_notification(
+                                // Warning level so it outranks the tuner that the
+                                // adjust surfaces — the inert gauge alone would
+                                // mislead; this message explains why.
+                                runtime_state.show_notification_with_level(
                                     "Brightness is auto-normalized (press B to disable)"
                                         .to_string(),
+                                    crate::terminal::state::NotificationLevel::Warning,
                                 );
                             } else {
                                 let at_bound = runtime_state.adjust_max_brightness(delta);
@@ -3058,6 +3134,17 @@ pub fn run_simulation(
                         ControlAction::ToggleReversePalette => {
                             runtime_state.toggle_reverse_palette();
                             renderer.set_reverse_palette(runtime_state.reverse_palette);
+                        }
+                        ControlAction::ToggleStatusBar => {
+                            runtime_state.show_status_bar = !runtime_state.show_status_bar;
+                            runtime_state.show_notification(format!(
+                                "Status line: {}",
+                                if runtime_state.show_status_bar {
+                                    "on"
+                                } else {
+                                    "off"
+                                }
+                            ));
                         }
                         ControlAction::CycleIntensityMapping => {
                             runtime_state.cycle_intensity_mapping(false);
@@ -3258,6 +3345,13 @@ pub fn run_simulation(
                                         Some(l)
                                     }
                                 };
+                            // Resize render buffers to match the new chrome's sim dims
+                            // BEFORE moving `layout` into the renderer (else blur_field panics).
+                            let (rw, rh) = layout
+                                .as_ref()
+                                .map(|l| (l.sim_w, l.sim_h))
+                                .unwrap_or((term_width as usize, term_height as usize));
+                            resize_render_frames(&mut downsampled_frame, &mut aux_frame, rw, rh);
                             renderer.set_window_layout(layout);
                             runtime_state.show_notification(format!(
                                 "Chrome: {:?}",
@@ -3279,12 +3373,28 @@ pub fn run_simulation(
                                 } else {
                                     Some(l)
                                 };
+                                let (rw, rh) = layout
+                                    .as_ref()
+                                    .map(|l| (l.sim_w, l.sim_h))
+                                    .unwrap_or((term_width as usize, term_height as usize));
+                                resize_render_frames(
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    rw,
+                                    rh,
+                                );
                                 renderer.set_window_layout(layout);
                             } else {
                                 // Switch to fullscreen
                                 runtime_state.chrome_style = ChromeStyle::Fullscreen;
                                 runtime_state.chrome_state =
                                     crate::terminal::state::ChromeState::Minimal;
+                                resize_render_frames(
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    term_width as usize,
+                                    term_height as usize,
+                                );
                                 renderer.set_window_layout(None);
                             }
                         }
@@ -3330,33 +3440,18 @@ pub fn run_simulation(
                     if let Some(tune) =
                         tune_view_for_action(&runtime_state, &action, &registry_ctx, agent_count)
                     {
-                        use crate::render::ambient::bump_tune;
                         const TUNE_HOLD_SECS: f32 = 2.5;
                         let now = runtime_state.phase_clock;
-                        // Find an existing live Tune entry to debounce; otherwise
-                        // push a fresh one. Keep a single Tune entry at most.
-                        let existing = runtime_state
-                            .ambient_states
-                            .iter_mut()
-                            .find(|s| matches!(s, AmbientState::Tune { .. }));
-                        match existing {
-                            Some(slot) => {
-                                // Refresh the focused param, then debounce the
-                                // hold window via bump_tune (rapid adjusts extend
-                                // `until`).
-                                *slot = AmbientState::Tune {
-                                    param: tune,
-                                    until: now,
-                                };
-                                bump_tune(slot, now, TUNE_HOLD_SECS);
-                            }
-                            None => {
-                                runtime_state.ambient_states.push(AmbientState::Tune {
-                                    param: tune,
-                                    until: now + TUNE_HOLD_SECS,
-                                });
-                            }
-                        }
+                        // Surface the focused param (debounced) and drop the
+                        // redundant value-echo Info toast the handler pushed so
+                        // the tuner is always the visible feedback. Relevant
+                        // Warning/Error messages survive and momentarily win.
+                        crate::render::ambient::surface_tune(
+                            &mut runtime_state.ambient_states,
+                            tune,
+                            now,
+                            TUNE_HOLD_SECS,
+                        );
                     }
                 }
                 Event::Mouse(mouse_event) => {
@@ -3506,13 +3601,8 @@ pub fn run_simulation(
                     (None, 0, 0)
                 };
 
-            // Pause path: build ambient strip (same logic as main path, unified).
-            // Replaces the legacy build_status_line call (Task 15).
-            let show_status_pause = {
-                use crate::simulation::config::ChromeStyle;
-                matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
-                    || runtime_state.show_status_bar
-            };
+            // Pause re-render path: resolve the ambient surface with the same
+            // shared logic as the main path (pause → centered modal, etc.).
             let pause_dither_label = match runtime_state.dither_mode {
                 crate::render::dither::DitherMode::None => None,
                 crate::render::dither::DitherMode::Ordered { intensity, .. } => {
@@ -3534,72 +3624,14 @@ pub fn run_simulation(
                 accent: ui_accent,
                 is_paused: runtime_state.is_paused,
             };
-            let pause_ambient_overlay: Option<RenderedOverlay> = if show_status_pause {
-                let controls_open = runtime_state.overlay_state.is_open(OverlayType::Controls)
-                    && !runtime_state.overlay_state.is_open(OverlayType::Dashboard);
-                let mode = ambient_mode(controls_open, runtime_state.controls_depth);
-                match mode {
-                    AmbientMode::Hidden => None,
-                    AmbientMode::Tuner => {
-                        let now = runtime_state.phase_clock;
-                        let ctx = RegistryCtx {
-                            diffusion_gaussian: matches!(
-                                runtime_state.diffusion_kernel,
-                                DiffusionKernel::Gaussian
-                            ),
-                            mouse_enabled: runtime_state.mouse_mode
-                                != MouseInteractionMode::Disabled,
-                        };
-                        let params = build_param_views(&runtime_state, &ctx, sim.agent_count());
-                        if let Some(pv) = params.get(
-                            runtime_state
-                                .controls_focus
-                                .min(params.len().saturating_sub(1)),
-                        ) {
-                            let (value, default) = match (pv.ratio, pv.def_ratio) {
-                                (Some(r), Some(d)) => (r, d),
-                                _ => (0.0, 0.0),
-                            };
-                            let tune_view = crate::render::ambient::TuneView {
-                                label: pv.desc.label.to_string(),
-                                value_text: pv.value_text.clone(),
-                                value,
-                                range: (0.0, 1.0),
-                                default,
-                                state: pv.state,
-                            };
-                            let persistent_tune = AmbientState::Tune {
-                                param: tune_view,
-                                until: f32::MAX,
-                            };
-                            Some(build_ambient(
-                                &persistent_tune,
-                                term_width as usize,
-                                &runtime_state.panel_style,
-                                &pause_base_status,
-                                now,
-                            ))
-                        } else {
-                            None
-                        }
-                    }
-                    AmbientMode::Normal => {
-                        let now = runtime_state.phase_clock;
-                        let resolved =
-                            crate::render::ambient::resolve(&runtime_state.ambient_states, now)
-                                .clone();
-                        Some(build_ambient(
-                            &resolved,
-                            term_width as usize,
-                            &runtime_state.panel_style,
-                            &pause_base_status,
-                            now,
-                        ))
-                    }
-                }
-            } else {
-                None
-            };
+            let pause_ambient_overlay = compute_ambient_overlay(
+                &runtime_state,
+                &pause_base_status,
+                &window,
+                term_width as usize,
+                term_height as usize,
+                sim.agent_count(),
+            );
             #[allow(clippy::type_complexity)]
             let status_data: Option<(
                 String,
@@ -3640,9 +3672,7 @@ pub fn run_simulation(
                     None,
                     None,
                     None,
-                    pause_ambient_overlay
-                        .as_ref()
-                        .map(|v| (v, 0usize, (term_height as usize).saturating_sub(6))),
+                    pause_ambient_overlay.as_ref().map(|(v, x, y)| (v, *x, *y)),
                     Some(&runtime_state.panel_style),
                     runtime_state.overlay_state.active(),
                     runtime_state.pause_style,
@@ -3672,9 +3702,7 @@ pub fn run_simulation(
                     None,
                     None,
                     None,
-                    pause_ambient_overlay
-                        .as_ref()
-                        .map(|v| (v, 0usize, (term_height as usize).saturating_sub(6))),
+                    pause_ambient_overlay.as_ref().map(|(v, x, y)| (v, *x, *y)),
                     Some(&runtime_state.panel_style),
                     runtime_state.overlay_state.active(),
                     runtime_state.pause_style,

@@ -41,10 +41,12 @@ const RIGHT_W: usize = CW - RIGHT_AT;
 
 /// Maximum visible parameter count across ALL categories (including conditionals).
 ///
-/// SIM=7, APP=7, PST=7 (three-way tie).  ENV with both conditional rows
-/// (DiffusionSigma + MouseTimeout) reaches 8. We use 8 as the constant body
-/// height so the panel size is stable even when those conditionals flip on.
-pub(crate) const MAX_VISIBLE_ROWS: usize = 8;
+/// SIM=7, ENV=8 (with both conditional rows: DiffusionSigma + MouseTimeout),
+/// PST=8 (with IntensityMapping), APP=10 (the largest: + WindowFrame + Chrome).
+/// We size the constant body height to the largest category so the panel size is
+/// stable across categories and when conditional rows flip on; sparser categories
+/// pad with blank rows (the established constant-height design).
+pub(crate) const MAX_VISIBLE_ROWS: usize = 10;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -519,7 +521,31 @@ pub fn build_console(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::controls::registry::{ParamDesc, ParamId, ParamKind};
+    use crate::render::controls::registry::{
+        visible_params, ParamDesc, ParamId, ParamKind, RegistryCtx, CATEGORY_NAMES,
+    };
+
+    /// No category may exceed [`MAX_VISIBLE_ROWS`] — the console pads both panes
+    /// to that constant, and `build_console` `debug_assert!`s on overflow (it
+    /// panicked when APP grew past the cap). Worst case: all conditional rows on.
+    #[test]
+    fn no_category_exceeds_max_visible_rows() {
+        let ctx = RegistryCtx {
+            diffusion_gaussian: true, // surfaces DiffusionSigma
+            mouse_enabled: true,      // surfaces MouseTimeout
+        };
+        for (cat, name) in CATEGORY_NAMES.iter().enumerate() {
+            let n = visible_params(cat, &ctx).len();
+            assert!(
+                n <= MAX_VISIBLE_ROWS,
+                "category {} ({}) has {} rows > MAX_VISIBLE_ROWS ({})",
+                cat,
+                name,
+                n,
+                MAX_VISIBLE_ROWS
+            );
+        }
+    }
 
     /// Minimal fixture: one or two params per category, enough to drive layout.
     fn fixture_params(cat: usize) -> Vec<ParamView> {

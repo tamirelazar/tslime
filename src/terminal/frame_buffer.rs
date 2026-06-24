@@ -488,7 +488,7 @@ impl FrameBuffer {
     ///
     /// Thin wrapper around [`draw_rich_overlay_dim`] with `dim = 1.0` (no dimming).
     pub fn draw_rich_overlay(&mut self, rich: &[Vec<RichCell>], start_x: usize, start_y: usize) {
-        self.draw_rich_overlay_dim(rich, start_x, start_y, 1.0);
+        self.draw_rich_overlay_dim(rich, start_x, start_y, 1.0, false);
     }
 
     /// Like [`draw_rich_overlay`] but with a `dim` factor in `[0.0, 1.0]`.
@@ -503,6 +503,7 @@ impl FrameBuffer {
         start_x: usize,
         start_y: usize,
         dim: f32,
+        solid: bool,
     ) {
         for (dy, row) in rich.iter().enumerate() {
             let y = start_y + dy;
@@ -515,8 +516,10 @@ impl FrameBuffer {
                     break;
                 }
                 let idx = y * self.width + x;
-                // Write character (space = transparent, let sim show through)
-                if ch != ' ' {
+                // Write character. By default space = transparent (let sim show
+                // through); `solid` forces opacity by writing the space too, so a
+                // bordered modal reads as a filled box rather than a colored mask.
+                if ch != ' ' || solid {
                     self.cells[idx].char = ch;
                 }
                 if let Some(fg) = fg_override {
@@ -2417,6 +2420,7 @@ impl FrameBuffer {
         footer_keybinds: &str,
         accent: crate::render::palette::RgbColor,
         text: crate::render::palette::RgbColor,
+        dim: crate::render::palette::RgbColor,
     ) {
         if sim_h < 4 {
             return;
@@ -2487,13 +2491,12 @@ impl FrameBuffer {
             }
         }
 
-        let dim_text = crate::render::palette::RgbColor::new(102, 92, 84);
         write_row(
             &mut self.cells,
             sim_y + sim_h - 1,
             sim_x,
             footer_keybinds,
-            dim_text,
+            dim,
             sim_w,
             bw,
         );
@@ -4540,7 +4543,7 @@ mod dim_tests {
         // dim=1.0 -> fg written as-is; dim=0.0 -> fg lerped fully toward the buffer bg.
         let mut fb = FrameBuffer::new(2, 1, ColorMode::TrueColor, None);
         let rich = vec![vec![('A', Some(RgbColor::new(200, 200, 200)), None)]];
-        fb.draw_rich_overlay_dim(&rich, 0, 0, 1.0);
+        fb.draw_rich_overlay_dim(&rich, 0, 0, 1.0, false);
         assert_eq!(fb.cells[0].fg_color_rgb, Some(RgbColor::new(200, 200, 200)));
     }
 
@@ -4550,7 +4553,7 @@ mod dim_tests {
         let bg_color = RgbColor::new(10, 10, 10);
         let mut fb = FrameBuffer::new(2, 1, ColorMode::TrueColor, Some(bg_color));
         let rich = vec![vec![('A', Some(RgbColor::new(200, 200, 200)), None)]];
-        fb.draw_rich_overlay_dim(&rich, 0, 0, 0.0);
+        fb.draw_rich_overlay_dim(&rich, 0, 0, 0.0, false);
         assert_eq!(fb.cells[0].fg_color_rgb, Some(bg_color));
     }
 
@@ -4560,7 +4563,7 @@ mod dim_tests {
         let mut fb = FrameBuffer::new(2, 1, ColorMode::TrueColor, None);
         fb.cells[0].char = 'X';
         let rich = vec![vec![(' ', Some(RgbColor::new(100, 100, 100)), None)]];
-        fb.draw_rich_overlay_dim(&rich, 0, 0, 1.0);
+        fb.draw_rich_overlay_dim(&rich, 0, 0, 1.0, false);
         assert_eq!(fb.cells[0].char, 'X');
     }
 }

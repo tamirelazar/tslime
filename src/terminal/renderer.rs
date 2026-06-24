@@ -744,8 +744,9 @@ impl TerminalRenderer {
                     snap.chrome_state == ChromeState::ModalPane,
                     layout.sim_w,
                 );
-                // Dim text color for footer secondary row
-                let text_color = RgbColor::new(168, 153, 132);
+                // Dim text color for footer secondary row — theme-driven so it
+                // stays on-palette across all themes (was a hardcoded Gruvbox gray).
+                let text_color = footer_st.text_secondary;
                 buffer.draw_expanded_chrome(
                     layout.sim_x,
                     layout.sim_y,
@@ -757,6 +758,7 @@ impl TerminalRenderer {
                     &footer_keys,
                     accent,
                     text_color,
+                    footer_st.muted,
                 );
             }
             // Apply fade-out alpha when chrome is collapsing.
@@ -1009,7 +1011,7 @@ impl TerminalRenderer {
         // Composited last: the ambient strip paints over the bottom rows, above all other overlays.
         if let Some((overlay, x, y)) = ambient_overlay {
             if let Some(ref rich) = overlay.rich_lines {
-                buffer.draw_rich_overlay_dim(rich, x, y, 1.0);
+                buffer.draw_rich_overlay_dim(rich, x, y, 1.0, true);
             }
         }
 
@@ -1449,7 +1451,7 @@ impl TerminalRenderer {
         // Composited last: the ambient strip paints over the bottom rows, above all other overlays.
         if let Some((overlay, x, y)) = ambient_overlay {
             if let Some(ref rich) = overlay.rich_lines {
-                buffer.draw_rich_overlay_dim(rich, x, y, 1.0);
+                buffer.draw_rich_overlay_dim(rich, x, y, 1.0, true);
             }
         }
 

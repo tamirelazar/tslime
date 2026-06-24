@@ -90,6 +90,10 @@ pub struct TuneView {
     pub default: f32,
     /// Functional state (drives color selection via L2 tokens).
     pub state: ParamState,
+    /// Whether to render the value gauge. `true` for numeric params (the gauge
+    /// is meaningful); `false` for enum/toggle params, where the value lives in
+    /// `value_text` and an empty gauge would misleadingly read as "minimum".
+    pub show_gauge: bool,
 }
 
 /// State of the ambient instrument surface.
@@ -178,6 +182,46 @@ pub fn bump_tune(active: &mut AmbientState, now: f32, hold: f32) {
     }
 }
 
+/// Surface a focused-param `param` in the ambient `states`, debouncing any
+/// existing `Tune`.
+///
+/// Changing a parameter must ALWAYS reveal its tuner. The redundant `Info`-level
+/// value-echo toast that param-adjust handlers push (e.g. `"Motion blur: 3"`)
+/// would otherwise outrank the `Tune` and hide it — the tuner already shows the
+/// value + gauge, so that echo is pure double-feedback. We drop live `Info` Msgs
+/// here. Higher-relevance Msgs (`Warning`/`Error`) are preserved: they remain
+/// "specifically relevant enough" to momentarily hide the tuner while live.
+///
+/// At most one `Tune` entry is kept (an existing one is refreshed + debounced
+/// via [`bump_tune`]); otherwise a fresh `Tune` is pushed.
+pub fn surface_tune(states: &mut Vec<AmbientState>, param: TuneView, now: f32, hold: f32) {
+    // Drop the redundant value-echo (Info) toast so it can't outrank the tuner.
+    states.retain(|s| {
+        !matches!(
+            s,
+            AmbientState::Msg {
+                level: NotificationLevel::Info,
+                ..
+            }
+        )
+    });
+    match states
+        .iter_mut()
+        .find(|s| matches!(s, AmbientState::Tune { .. }))
+    {
+        Some(slot) => {
+            *slot = AmbientState::Tune { param, until: now };
+            bump_tune(slot, now, hold);
+        }
+        None => {
+            states.push(AmbientState::Tune {
+                param,
+                until: now + hold,
+            });
+        }
+    }
+}
+
 // ── Renderer ──────────────────────────────────────────────────────────────────
 
 /// Build the ambient instrument overlay for `state`.
@@ -196,6 +240,192 @@ pub fn bump_tune(active: &mut AmbientState, now: f32, hold: f32) {
 ///
 /// Returns a [`RenderedOverlay`] with `title_box = None` and `rich_lines`
 /// populated. The `lines` field carries the plain-text representation.
+/// Content width of the centered ambient modal interior (excludes border).
+const MODAL_INNER_W: usize = 56;
+
+/// Build the single BASE status row (preset · time · swatch · palette · pop …
+/// right-aligned undo/redo/paused/help), filling `w` columns. No border.
+fn base_content_row(w: usize, st: &PanelStyle, base: &BaseStatus) -> RowBuf {
+    let mut row = RowBuf::new_matte(w, st.status_bar_bg);
+    let mut col = 2usize;
+
+    // preset name
+    row.put(col, &base.preset_name, Some(st.text_primary), None);
+    col += base.preset_name.chars().count();
+
+    // separator
+    row.put(col, "  ◦  ", Some(st.muted), None);
+    col += 5;
+
+    // time scale
+    row.put(col, &base.time_scale_text, Some(st.text_primary), None);
+    col += base.time_scale_text.chars().count();
+
+    // palette swatch + name (if space)
+    if w >= 52 {
+        row.put(col, "  ◦  ", Some(st.muted), None);
+        col += 5;
+        let sw = swatch(base.accent);
+        let sw_w = sw.len();
+        row.put_cells(col, &sw, None);
+        col += sw_w;
+        row.put(col, "  ", None, None);
+        col += 2;
+        row.put(col, &base.palette_name, Some(st.text_primary), None);
+        col += base.palette_name.chars().count() + 2;
+    }
+
+    // population (if space)
+    if let Some(pop) = base.population {
+        if w >= 68 {
+            let pop_str = format!("◦  {}k  ", pop / 1000);
+            row.put(col, &pop_str, Some(st.muted), None);
+            col += pop_str.chars().count();
+        }
+    }
+
+    // dither label (if present + space)
+    if let Some(ref dither) = base.dither_label {
+        if w >= 60 {
+            let d_str = format!("◦  {}  ", dither);
+            row.put(col, &d_str, Some(st.muted), None);
+            col += d_str.chars().count();
+        }
+    }
+
+    // Right-side indicators: undo / redo / paused / ? help
+    let mut right_parts: Vec<(String, RgbColor)> = Vec::new();
+
+    if base.can_undo || base.can_redo {
+        let undo_char = if base.can_undo { "↺" } else { "·" };
+        let redo_char = if base.can_redo { "↻" } else { "·" };
+        right_parts.push((undo_char.to_string(), st.accent_success));
+        right_parts.push((" ".to_string(), st.text_primary));
+        right_parts.push((redo_char.to_string(), st.accent_info));
+        right_parts.push(("  ".to_string(), st.text_primary));
+    }
+
+    if base.is_paused {
+        right_parts.push(("⏸ PAUSED  ".to_string(), st.accent_warning));
+    }
+
+    if w >= 100 {
+        right_parts.push(("?".to_string(), st.accent_info));
+        right_parts.push((" help  ".to_string(), st.muted));
+    }
+
+    // Place right-side indicators right-aligned
+    let right_chars: usize = right_parts.iter().map(|(s, _)| s.chars().count()).sum();
+    let right_start = w.saturating_sub(right_chars);
+
+    if right_start > col {
+        let mut rc = right_start;
+        for (text, color) in &right_parts {
+            row.put(rc, text, Some(*color), None);
+            rc += text.chars().count();
+        }
+    }
+
+    row
+}
+
+/// Build the TUNE content rows (label · value, gauge, hint), each `w` wide.
+fn tune_content_rows(w: usize, st: &PanelStyle, param: &TuneView, now: f32) -> Vec<RowBuf> {
+    // Subtle breathing pulse on the accent so the focused param feels
+    // "live" while held. Stays within [1-depth, 1] (see motion::breath).
+    let pulse = breath(now, 4.0, 0.15);
+    let pulsed_accent = lerp_rgb(st.status_bar_bg, st.accent_active, pulse);
+    let mut rows = Vec::with_capacity(3);
+
+    // row: label   value
+    {
+        let mut row = RowBuf::new_matte(w, st.status_bar_bg);
+        let lbl: String = param.label.chars().take(20).collect();
+        let lbl_cells = value_state(&lbl, param.state, st);
+        let mut col = 2usize;
+        row.put_cells(col, &lbl_cells, None);
+        col += lbl.chars().count();
+        row.put(col, "   ", None, None);
+        col += 3;
+        let val: String = param.value_text.chars().take(16).collect();
+        let val_cells = value_state(&val, param.state, st);
+        row.put_cells(col, &val_cells, None);
+        rows.push(row);
+    }
+    // row: gauge (value marker + default tick), accent breathing. Numeric params
+    // only — enum/toggle params skip it (the value text carries the meaning and
+    // an empty gauge would read as "minimum").
+    if param.show_gauge {
+        let mut row = RowBuf::new_matte(w, st.status_bar_bg);
+        let gauge_w = (w.saturating_sub(4)).min(60);
+        let mut g = gauge(param.value, param.range, param.default, gauge_w, st);
+        for cell in g.iter_mut() {
+            if cell.1 == st.accent_active {
+                cell.1 = pulsed_accent;
+            }
+        }
+        row.put_cells(2, &g, None);
+        rows.push(row);
+    }
+    // row: hint
+    {
+        let mut row = RowBuf::new_matte(w, st.status_bar_bg);
+        row.put(2, "←→ tune", Some(st.muted), None);
+        rows.push(row);
+    }
+    rows
+}
+
+/// Build the MSG content rows (icon + text, optional dismiss hint), each `w` wide.
+fn msg_content_rows(
+    w: usize,
+    st: &PanelStyle,
+    level: NotificationLevel,
+    text: &str,
+    sticky: bool,
+) -> Vec<RowBuf> {
+    let mut rows = Vec::with_capacity(2);
+    {
+        let mut row = RowBuf::new_matte(w, st.status_bar_bg);
+        let color = level_color(level, st);
+        let icon = level.icon();
+        row.put(2, icon, Some(color), None);
+        let icon_w = icon.chars().count();
+        let msg: String = text.chars().take(w.saturating_sub(icon_w + 4)).collect();
+        row.put(2 + icon_w + 1, &msg, Some(color), None);
+        rows.push(row);
+    }
+    {
+        let mut row = RowBuf::new_matte(w, st.status_bar_bg);
+        if sticky && matches!(level, NotificationLevel::Error) {
+            row.put(2, "Esc to dismiss", Some(st.muted), None);
+        }
+        rows.push(row);
+    }
+    rows
+}
+
+/// Build the PAUSE content rows (icon + label, resume hint), each `w` wide.
+fn pause_content_rows(w: usize, st: &PanelStyle) -> Vec<RowBuf> {
+    let mut rows = Vec::with_capacity(2);
+    {
+        let mut row = RowBuf::new_matte(w, st.status_bar_bg);
+        row.put(2, "⏸  Paused", Some(st.accent_warning), None);
+        rows.push(row);
+    }
+    {
+        let mut row = RowBuf::new_matte(w, st.status_bar_bg);
+        row.put(2, "space to resume", Some(st.muted), None);
+        rows.push(row);
+    }
+    rows
+}
+
+/// Full-width strip renderer: top border line, state content, bottom margin —
+/// always exactly `STRIP_H` rows. The live render path now uses the compact
+/// [`build_base_row`] (always-on status) and the centered [`build_ambient_modal`]
+/// (TUNE/MSG/pause) instead; this reference renderer is retained as the canonical
+/// exercise of the shared `*_content_row(s)` helpers under test.
 pub fn build_ambient(
     state: &AmbientState,
     width: usize,
@@ -206,7 +436,7 @@ pub fn build_ambient(
     let w = width.max(STRIP_W);
     let mut bufs: Vec<RowBuf> = Vec::with_capacity(STRIP_H);
 
-    // ── row 0: dim top-border line ────────────────────────────────────────────
+    // row 0: dim top-border line
     {
         let mut border = RowBuf::new_matte(w, st.status_bar_bg);
         for c in 0..w {
@@ -215,181 +445,23 @@ pub fn build_ambient(
         bufs.push(border);
     }
 
-    match state {
-        // ── BASE: idle status ─────────────────────────────────────────────────
-        AmbientState::Base => {
-            // ── row 1: preset · time_scale · swatch · palette ─────────────────
-            {
-                let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-                let mut col = 2usize;
-
-                // preset name
-                row.put(col, &base.preset_name, Some(st.text_primary), None);
-                col += base.preset_name.chars().count();
-
-                // separator
-                row.put(col, "  ◦  ", Some(st.muted), None);
-                col += 5;
-
-                // time scale
-                row.put(col, &base.time_scale_text, Some(st.text_primary), None);
-                col += base.time_scale_text.chars().count();
-
-                // palette swatch + name (if space)
-                if w >= 52 {
-                    row.put(col, "  ◦  ", Some(st.muted), None);
-                    col += 5;
-                    let sw = swatch(base.accent);
-                    let sw_w = sw.len();
-                    row.put_cells(col, &sw, None);
-                    col += sw_w;
-                    row.put(col, "  ", None, None);
-                    col += 2;
-                    row.put(col, &base.palette_name, Some(st.text_primary), None);
-                    col += base.palette_name.chars().count() + 2;
-                }
-
-                // population (if space)
-                if let Some(pop) = base.population {
-                    if w >= 68 {
-                        let pop_str = format!("◦  {}k  ", pop / 1000);
-                        row.put(col, &pop_str, Some(st.muted), None);
-                        col += pop_str.chars().count();
-                    }
-                }
-
-                // dither label (if present + space)
-                if let Some(ref dither) = base.dither_label {
-                    if w >= 60 {
-                        let d_str = format!("◦  {}  ", dither);
-                        row.put(col, &d_str, Some(st.muted), None);
-                        col += d_str.chars().count();
-                    }
-                }
-
-                // Right-side indicators: undo / redo / paused / ? help
-                let mut right_parts: Vec<(String, RgbColor)> = Vec::new();
-
-                if base.can_undo || base.can_redo {
-                    let undo_char = if base.can_undo { "↺" } else { "·" };
-                    let redo_char = if base.can_redo { "↻" } else { "·" };
-                    right_parts.push((undo_char.to_string(), st.accent_success));
-                    right_parts.push((" ".to_string(), st.text_primary));
-                    right_parts.push((redo_char.to_string(), st.accent_info));
-                    right_parts.push(("  ".to_string(), st.text_primary));
-                }
-
-                if base.is_paused {
-                    right_parts.push(("⏸ PAUSED  ".to_string(), st.accent_warning));
-                }
-
-                if w >= 100 {
-                    right_parts.push(("?".to_string(), st.accent_info));
-                    right_parts.push((" help  ".to_string(), st.muted));
-                }
-
-                // Place right-side indicators right-aligned
-                let right_chars: usize = right_parts.iter().map(|(s, _)| s.chars().count()).sum();
-                let right_start = w.saturating_sub(right_chars);
-
-                if right_start > col {
-                    let mut rc = right_start;
-                    for (text, color) in &right_parts {
-                        row.put(rc, text, Some(*color), None);
-                        rc += text.chars().count();
-                    }
-                }
-
-                bufs.push(row);
-            }
-            // ── rows 2-4: blank content rows ─────────────────────────────────
-            for _ in 0..3 {
-                bufs.push(RowBuf::new_matte(w, st.status_bar_bg));
-            }
-        }
-
-        // ── TUNE: parameter-focus gauge ───────────────────────────────────────
-        AmbientState::Tune { param, .. } => {
-            // Subtle breathing pulse on the accent so the focused param feels
-            // "live" while held. Stays within [1-depth, 1] (see motion::breath).
-            let pulse = breath(now, 4.0, 0.15);
-            let pulsed_accent = lerp_rgb(st.status_bar_bg, st.accent_active, pulse);
-
-            // row 1: label  ·  value
-            {
-                let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-                let lbl: String = param.label.chars().take(20).collect();
-                let lbl_cells = value_state(&lbl, param.state, st);
-                let mut col = 2usize;
-                row.put_cells(col, &lbl_cells, None);
-                col += lbl.chars().count();
-                row.put(col, "   ", None, None);
-                col += 3;
-                let val: String = param.value_text.chars().take(16).collect();
-                let val_cells = value_state(&val, param.state, st);
-                row.put_cells(col, &val_cells, None);
-                bufs.push(row);
-            }
-            // row 2: gauge (value marker + default tick), accent breathing
-            {
-                let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-                let gauge_w = (w.saturating_sub(4)).min(60);
-                let mut g = gauge(param.value, param.range, param.default, gauge_w, st);
-                // Apply the breath pulse to the accent cells (filled bar + value
-                // marker) so the gauge gently pulses without touching the muted
-                // track or the default tick.
-                for cell in g.iter_mut() {
-                    if cell.1 == st.accent_active {
-                        cell.1 = pulsed_accent;
-                    }
-                }
-                row.put_cells(2, &g, None);
-                bufs.push(row);
-            }
-            // row 3: blank spacer
-            bufs.push(RowBuf::new_matte(w, st.status_bar_bg));
-            // row 4: hint
-            {
-                let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-                row.put(2, "←→ tune", Some(st.muted), None);
-                bufs.push(row);
-            }
-        }
-
-        // ── MSG: notification ─────────────────────────────────────────────────
+    // Content rows (1..=3 depending on state), padded out below to STRIP_H-1.
+    let mut content: Vec<RowBuf> = match state {
+        AmbientState::Base => vec![base_content_row(w, st, base)],
+        AmbientState::Tune { param, .. } => tune_content_rows(w, st, param, now),
         AmbientState::Msg {
             level,
             text,
             sticky,
             ..
-        } => {
-            // row 1: icon + text
-            {
-                let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-                let color = level_color(*level, st);
-                let icon = level.icon();
-                row.put(2, icon, Some(color), None);
-                let icon_w = icon.chars().count();
-                let msg: String = text.chars().take(w.saturating_sub(icon_w + 4)).collect();
-                row.put(2 + icon_w + 1, &msg, Some(color), None);
-                bufs.push(row);
-            }
-            // row 2: dismiss hint for sticky errors; blank otherwise
-            {
-                let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-                if *sticky && matches!(level, NotificationLevel::Error) {
-                    row.put(2, "Esc to dismiss", Some(st.muted), None);
-                }
-                bufs.push(row);
-            }
-            // rows 3-4: blank
-            for _ in 0..2 {
-                bufs.push(RowBuf::new_matte(w, st.status_bar_bg));
-            }
-        }
-    }
+        } => msg_content_rows(w, st, *level, text, *sticky),
+    };
+    bufs.append(&mut content);
 
-    // ── row 5: bottom margin ──────────────────────────────────────────────────
+    // Pad to STRIP_H-1 content rows, then the bottom margin row.
+    while bufs.len() < STRIP_H - 1 {
+        bufs.push(RowBuf::new_matte(w, st.status_bar_bg));
+    }
     bufs.push(RowBuf::new_matte(w, st.status_bar_bg));
 
     debug_assert_eq!(
@@ -398,10 +470,102 @@ pub fn build_ambient(
         "build_ambient must always emit STRIP_H rows"
     );
 
-    // ── Assemble ──────────────────────────────────────────────────────────────
     let lines: Vec<String> = bufs.iter().map(|b| b.text()).collect();
     let rich_lines: Vec<Vec<RichCell>> = bufs.into_iter().map(|b| b.into_rich()).collect();
+    RenderedOverlay {
+        lines,
+        title_box: None,
+        rich_lines: Some(rich_lines),
+    }
+}
 
+/// Build the compact, single-row BASE status line at `width` columns (no
+/// border). Docked at the bottom interior of the window frame when the
+/// always-on status line is enabled.
+pub fn build_base_row(width: usize, st: &PanelStyle, base: &BaseStatus) -> RenderedOverlay {
+    let row = base_content_row(width, st, base);
+    let line = row.text();
+    let rich = row.into_rich();
+    RenderedOverlay {
+        lines: vec![line],
+        title_box: None,
+        rich_lines: Some(vec![rich]),
+    }
+}
+
+/// A horizontal modal border row (`left` + `mid`×inner + `right`), `inner+2`
+/// wide, tinted with `accent` over the theme's status background.
+fn modal_border_row(
+    left: &str,
+    mid: &str,
+    right: &str,
+    inner: usize,
+    accent: RgbColor,
+    st: &PanelStyle,
+) -> RowBuf {
+    let mut row = RowBuf::new_matte(inner + 2, st.status_bar_bg);
+    row.put(0, left, Some(accent), None);
+    for c in 1..=inner {
+        row.put(c, mid, Some(accent), None);
+    }
+    row.put(inner + 1, right, Some(accent), None);
+    row
+}
+
+/// Build the ambient surface as a bordered, centered modal for the TUNE / MSG /
+/// pause states. Width is fixed at `MODAL_INNER_W + 2`; height varies with the
+/// state's content (plus one blank padding row top and bottom).
+///
+/// The border uses solid-block glyphs (`█ ▀ ▄`) that fill the cell to its edges
+/// — matching the Dashboard/Controls panels — and is tinted with the active
+/// palette `accent` so the modal reads as part of the themed UI, not a separate
+/// chrome layer. The interior is matted with the theme's `status_bar_bg`.
+pub fn build_ambient_modal(
+    state: &AmbientState,
+    st: &PanelStyle,
+    accent: RgbColor,
+    now: f32,
+) -> RenderedOverlay {
+    let inner = MODAL_INNER_W;
+
+    // Resolve the content rows for this modal. A resting Base state only reaches
+    // here when paused, so render the pause card.
+    let content: Vec<RowBuf> = match state {
+        AmbientState::Tune { param, .. } => tune_content_rows(inner, st, param, now),
+        AmbientState::Msg {
+            level,
+            text,
+            sticky,
+            ..
+        } => msg_content_rows(inner, st, *level, text, *sticky),
+        AmbientState::Base => pause_content_rows(inner, st),
+    };
+
+    // Assemble: solid-block top border, blank pad, content, blank pad, bottom
+    // border. Half-block top (▀) / bottom (▄) lines reach the cell edges so the
+    // modal has no empty ring; full-block (█) corners and sides frame it.
+    let mut bufs: Vec<RowBuf> = Vec::with_capacity(content.len() + 4);
+    bufs.push(modal_border_row("█", "▀", "█", inner, accent, st));
+    let mut inner_rows: Vec<RowBuf> = Vec::with_capacity(content.len() + 2);
+    inner_rows.push(RowBuf::new_matte(inner, st.status_bar_bg));
+    inner_rows.extend(content);
+    inner_rows.push(RowBuf::new_matte(inner, st.status_bar_bg));
+    for r in inner_rows {
+        let cells = r.into_rich();
+        let mut line = RowBuf::new_matte(inner + 2, st.status_bar_bg);
+        line.put(0, "█", Some(accent), None);
+        // blit content cells at column 1
+        for (i, (ch, fg, _bg)) in cells.into_iter().enumerate() {
+            let mut tmp = [0u8; 4];
+            line.put(1 + i, ch.encode_utf8(&mut tmp), fg, None);
+        }
+        line.put(inner + 1, "█", Some(accent), None);
+        bufs.push(line);
+    }
+    bufs.push(modal_border_row("█", "▄", "█", inner, accent, st));
+
+    let lines: Vec<String> = bufs.iter().map(|b| b.text()).collect();
+    let rich_lines: Vec<Vec<RichCell>> = bufs.into_iter().map(|b| b.into_rich()).collect();
     RenderedOverlay {
         lines,
         title_box: None,
@@ -411,8 +575,11 @@ pub fn build_ambient(
 
 /// Construct a [`AmbientState::Msg`] with the correct per-level duration.
 ///
-/// - `Info` / `Success` → 3 seconds.
-/// - `Warning` → 6 seconds.
+/// Durations are deliberately short — the message renders as a centered modal
+/// over the sim, so it must clear quickly rather than linger in the eyeline.
+///
+/// - `Info` / `Success` → 1.5 seconds.
+/// - `Warning` → 2.5 seconds.
 /// - `Error` → sticky (`until = f32::INFINITY`).
 ///
 /// `now` should be `runtime_state.phase_clock`.
@@ -422,13 +589,13 @@ pub fn msg(level: NotificationLevel, text: String, now: f32) -> AmbientState {
             level,
             text,
             sticky: false,
-            until: now + 3.0,
+            until: now + 1.5,
         },
         NotificationLevel::Warning => AmbientState::Msg {
             level,
             text,
             sticky: false,
-            until: now + 6.0,
+            until: now + 2.5,
         },
         NotificationLevel::Error => AmbientState::Msg {
             level,
@@ -463,6 +630,7 @@ mod ambient_tests {
             range: (0.0, 1.0),
             default: 0.5,
             state: ParamState::Default,
+            show_gauge: true,
         }
     }
 
@@ -559,6 +727,60 @@ mod ambient_tests {
         let ov = build_ambient(&state, STRIP_W, &st, &BaseStatus::default(), 0.0);
         assert_eq!(ov.lines.len(), STRIP_H);
         assert_eq!(ov.rich_lines.unwrap().len(), STRIP_H);
+    }
+
+    // ── New windowed builders: compact base row + centered modal ───────────────
+
+    #[test]
+    fn build_base_row_is_single_row_at_width() {
+        let st = crate::render::theme::GRUVBOX_DARK;
+        let ov = build_base_row(80, &st, &BaseStatus::default());
+        assert_eq!(ov.lines.len(), 1, "base row must be exactly one line");
+        assert_eq!(ov.lines[0].chars().count(), 80, "base row fills its width");
+        assert_eq!(ov.rich_lines.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn build_ambient_modal_is_bordered_box() {
+        let st = crate::render::theme::GRUVBOX_DARK;
+        let state = AmbientState::Msg {
+            level: NotificationLevel::Info,
+            text: "saved".into(),
+            sticky: false,
+            until: 10.0,
+        };
+        let accent = crate::render::palette::RgbColor::new(255, 128, 0);
+        let ov = build_ambient_modal(&state, &st, accent, 0.0);
+        let top = &ov.lines[0];
+        let bottom = ov.lines.last().unwrap();
+        // All rows share a fixed modal width (inner + 2 borders).
+        let w = MODAL_INNER_W + 2;
+        assert!(ov.lines.iter().all(|l| l.chars().count() == w));
+        // Solid-block borders reach the cell edges (no thin box-drawing ring).
+        assert!(top.starts_with('█') && top.ends_with('█'), "top border");
+        assert!(top[3..top.len() - 3].contains('▀'), "top half-block fill");
+        assert!(
+            bottom.starts_with('█') && bottom.ends_with('█'),
+            "bottom border"
+        );
+        assert!(
+            bottom[3..bottom.len() - 3].contains('▄'),
+            "bottom half-block fill"
+        );
+        // Interior rows are side-bordered with full blocks.
+        assert!(ov.lines[1..ov.lines.len() - 1]
+            .iter()
+            .all(|l| l.starts_with('█') && l.ends_with('█')));
+    }
+
+    #[test]
+    fn build_ambient_modal_pause_card_from_base() {
+        let st = crate::render::theme::GRUVBOX_DARK;
+        let accent = crate::render::palette::RgbColor::new(255, 128, 0);
+        // A Base state rendered as a modal is the pause card.
+        let ov = build_ambient_modal(&AmbientState::Base, &st, accent, 0.0);
+        let joined = ov.lines.join("\n");
+        assert!(joined.contains("Paused"), "pause card shows Paused");
     }
 
     // ── Additional resolve edge cases ─────────────────────────────────────────
@@ -710,6 +932,7 @@ mod tune_tests {
             range: (0.0, 1.0),
             default: 0.5,
             state: ParamState::Default,
+            show_gauge: true,
         }
     }
 
@@ -725,6 +948,115 @@ mod tune_tests {
         } else {
             panic!("expected Tune");
         }
+    }
+
+    #[test]
+    fn surface_tune_pushes_when_absent() {
+        let mut states = vec![AmbientState::Base];
+        surface_tune(&mut states, tune_stub(), 1.0, 2.5);
+        assert_eq!(
+            states
+                .iter()
+                .filter(|s| matches!(s, AmbientState::Tune { .. }))
+                .count(),
+            1,
+            "a fresh Tune is pushed"
+        );
+    }
+
+    #[test]
+    fn surface_tune_debounces_existing_tune() {
+        let mut states = vec![
+            AmbientState::Base,
+            AmbientState::Tune {
+                param: tune_stub(),
+                until: 2.0,
+            },
+        ];
+        surface_tune(&mut states, tune_stub(), 3.0, 2.5);
+        // Still exactly one Tune, hold extended to now+hold.
+        let tunes: Vec<_> = states
+            .iter()
+            .filter_map(|s| match s {
+                AmbientState::Tune { until, .. } => Some(*until),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tunes.len(), 1, "no duplicate Tune");
+        assert!((tunes[0] - 5.5).abs() < 1e-6, "hold refreshed to now+hold");
+    }
+
+    #[test]
+    fn surface_tune_drops_redundant_info_echo() {
+        // The value-echo Info toast must not survive to outrank the tuner.
+        let mut states = vec![
+            AmbientState::Base,
+            AmbientState::Msg {
+                level: NotificationLevel::Info,
+                text: "Motion blur: 3".into(),
+                sticky: false,
+                until: 100.0,
+            },
+        ];
+        surface_tune(&mut states, tune_stub(), 1.0, 2.5);
+        assert!(
+            !states.iter().any(|s| matches!(s, AmbientState::Msg { .. })),
+            "redundant Info echo dropped"
+        );
+        // The tuner now wins resolution.
+        assert!(matches!(resolve(&states, 1.0), AmbientState::Tune { .. }));
+    }
+
+    #[test]
+    fn surface_tune_keeps_relevant_warning() {
+        // A Warning is "relevant enough" — it survives and outranks the tuner.
+        let mut states = vec![
+            AmbientState::Base,
+            AmbientState::Msg {
+                level: NotificationLevel::Warning,
+                text: "Brightness is auto-normalized".into(),
+                sticky: false,
+                until: 100.0,
+            },
+        ];
+        surface_tune(&mut states, tune_stub(), 1.0, 2.5);
+        assert!(
+            states.iter().any(|s| matches!(
+                s,
+                AmbientState::Msg {
+                    level: NotificationLevel::Warning,
+                    ..
+                }
+            )),
+            "relevant Warning preserved"
+        );
+        assert!(matches!(resolve(&states, 1.0), AmbientState::Msg { .. }));
+    }
+
+    #[test]
+    fn enum_param_omits_gauge_row() {
+        // A non-numeric param (show_gauge=false) renders label+hint but no gauge
+        // bar, so an empty gauge can't read as "minimum value".
+        let st = crate::render::theme::GRUVBOX_DARK;
+        let mut enum_view = tune_stub();
+        enum_view.label = "Intensity".into();
+        enum_view.value_text = "Exponential".into();
+        enum_view.show_gauge = false;
+        let state = AmbientState::Tune {
+            param: enum_view,
+            until: 100.0,
+        };
+        let ov = build_ambient_modal(&state, &st, RgbColor::new(255, 128, 0), 0.0);
+        let combined: String = ov.lines.concat();
+        assert!(combined.contains("Intensity"), "enum renders label");
+        assert!(combined.contains("Exponential"), "enum renders value text");
+        assert!(combined.contains("←→ tune"), "enum keeps the tune hint");
+        // The gauge default tick (▲) and filled bar (█ outside the modal border)
+        // must not appear in the interior content. Borders use █, so check the ▲.
+        assert!(
+            !combined.contains('▲'),
+            "enum param must not render a gauge tick"
+        );
     }
 
     #[test]
@@ -746,6 +1078,7 @@ mod tune_tests {
                 range: (0.0, 1.0),
                 default: 0.3,
                 state: ParamState::Modified,
+                show_gauge: true,
             },
             until: 100.0,
         };
@@ -788,21 +1121,21 @@ mod msg_tests {
         assert!(matches!(resolve(&states, 3.5), AmbientState::Base));
     }
     #[test]
-    fn msg_constructor_info_expires_in_3s() {
+    fn msg_constructor_info_expires_in_1p5s() {
         let m = msg(NotificationLevel::Info, "hi".into(), 0.0);
         if let AmbientState::Msg { sticky, until, .. } = m {
             assert!(!sticky);
-            assert!((until - 3.0).abs() < 1e-6);
+            assert!((until - 1.5).abs() < 1e-6);
         } else {
             panic!("expected Msg");
         }
     }
     #[test]
-    fn msg_constructor_warning_expires_in_6s() {
+    fn msg_constructor_warning_expires_in_2p5s() {
         let m = msg(NotificationLevel::Warning, "warn".into(), 0.0);
         if let AmbientState::Msg { sticky, until, .. } = m {
             assert!(!sticky);
-            assert!((until - 6.0).abs() < 1e-6);
+            assert!((until - 2.5).abs() < 1e-6);
         } else {
             panic!("expected Msg");
         }

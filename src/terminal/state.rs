@@ -355,6 +355,8 @@ pub enum ControlAction {
     ToggleInvertPalette,
     /// Toggle reversed palette.
     ToggleReversePalette,
+    /// Toggle the always-on status line (ambient base row).
+    ToggleStatusBar,
     /// Cycle to next intensity mapping.
     CycleIntensityMapping,
     /// Cycle to previous intensity mapping.

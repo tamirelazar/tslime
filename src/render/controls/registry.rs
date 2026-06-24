@@ -67,8 +67,16 @@ pub enum ParamId {
     Invert,
     /// Reverse parameter.
     Reverse,
+    /// Always-on status line (ambient base row) toggle.
+    StatusLine,
+    /// Window frame style (None / Accented / Glow / Frame).
+    WindowFrame,
+    /// Window chrome mode (Minimal / Expanded / Fullscreen).
+    Chrome,
     /// Dither parameter.
     Dither,
+    /// Intensity (tone) mapping curve.
+    IntensityMapping,
     /// Auto-normalize parameter.
     AutoNormalize,
     /// Motion blur parameter.
@@ -273,9 +281,33 @@ pub fn visible_params(category: usize, ctx: &RegistryCtx) -> Vec<ParamDesc> {
                 label: "Reverse",
                 kind: ParamKind::Toggle,
             },
+            ParamDesc {
+                id: ParamId::StatusLine,
+                key_hint: "←→",
+                label: "Status Line",
+                kind: ParamKind::Toggle,
+            },
+            ParamDesc {
+                id: ParamId::WindowFrame,
+                key_hint: ")/(",
+                label: "Frame",
+                kind: ParamKind::Enum,
+            },
+            ParamDesc {
+                id: ParamId::Chrome,
+                key_hint: "F10",
+                label: "Chrome",
+                kind: ParamKind::Enum,
+            },
         ],
         // ── Category 3: PST — Post-Processing ────────────────────────────────
         3 => vec![
+            ParamDesc {
+                id: ParamId::IntensityMapping,
+                key_hint: "m/M",
+                label: "Intensity",
+                kind: ParamKind::Enum,
+            },
             ParamDesc {
                 id: ParamId::Dither,
                 key_hint: "d/D",
@@ -435,9 +467,26 @@ pub fn action_for(id: ParamId, sign: f32) -> Option<crate::terminal::state::Cont
         }
         ParamId::ColorAa => A::CycleColorAa,
         ParamId::PaletteShift => A::CyclePaletteShiftSpeed,
+        ParamId::IntensityMapping => {
+            if reverse {
+                A::CycleIntensityMappingReverse
+            } else {
+                A::CycleIntensityMapping
+            }
+        }
+        ParamId::WindowFrame => {
+            if reverse {
+                A::CycleWindowFrameReverse
+            } else {
+                A::CycleWindowFrame
+            }
+        }
+        // Chrome cycles forward-only (3 states; wraps). No reverse action exists.
+        ParamId::Chrome => A::CycleChrome,
         // ── Toggle (sign-independent) ────────────────────────────────────────
         ParamId::Invert => A::ToggleInvertPalette,
         ParamId::Reverse => A::ToggleReversePalette,
+        ParamId::StatusLine => A::ToggleStatusBar,
         ParamId::AutoNormalize => A::ToggleAutoNormalize,
         ParamId::TrailAge => A::ToggleTrailAge,
         ParamId::TrailDelta => A::ToggleTrailDelta,
@@ -496,8 +545,12 @@ pub fn param_id_for_action(action: &crate::terminal::state::ControlAction) -> Op
         A::CycleCharset | A::CycleCharsetReverse => ParamId::Charset,
         A::CycleColorAa => ParamId::ColorAa,
         A::CyclePaletteShiftSpeed => ParamId::PaletteShift,
+        A::CycleIntensityMapping | A::CycleIntensityMappingReverse => ParamId::IntensityMapping,
+        A::CycleWindowFrame | A::CycleWindowFrameReverse => ParamId::WindowFrame,
+        A::CycleChrome => ParamId::Chrome,
         A::ToggleInvertPalette => ParamId::Invert,
         A::ToggleReversePalette => ParamId::Reverse,
+        A::ToggleStatusBar => ParamId::StatusLine,
         A::ToggleAutoNormalize => ParamId::AutoNormalize,
         A::CycleMotionBlur => ParamId::MotionBlur,
         A::AdjustMaxBrightness(_) => ParamId::Brightness,
@@ -682,6 +735,45 @@ mod tests {
             Some(ControlAction::RandomizeParams)
         );
         assert_eq!(activate_action_for(ParamId::SensorAngle), None);
+    }
+
+    #[test]
+    fn orphan_enum_params_are_now_tunable() {
+        use crate::terminal::state::ControlAction as A;
+        // Intensity mapping, window frame, and chrome were notification-only;
+        // they now map to actions (so a keybind surfaces a tuner) and round-trip
+        // back to their ParamId.
+        assert_eq!(
+            action_for(ParamId::IntensityMapping, 1.0),
+            Some(A::CycleIntensityMapping)
+        );
+        assert_eq!(
+            action_for(ParamId::IntensityMapping, -1.0),
+            Some(A::CycleIntensityMappingReverse)
+        );
+        assert_eq!(
+            action_for(ParamId::WindowFrame, 1.0),
+            Some(A::CycleWindowFrame)
+        );
+        assert_eq!(
+            action_for(ParamId::WindowFrame, -1.0),
+            Some(A::CycleWindowFrameReverse)
+        );
+        // Chrome cycles forward-only (no reverse action).
+        assert_eq!(action_for(ParamId::Chrome, 1.0), Some(A::CycleChrome));
+        assert_eq!(action_for(ParamId::Chrome, -1.0), Some(A::CycleChrome));
+
+        // Reverse direction: actions resolve back to the ParamId so in-category
+        // focus retargeting + TUNE surfacing fire.
+        assert_eq!(
+            param_id_for_action(&A::CycleIntensityMapping),
+            Some(ParamId::IntensityMapping)
+        );
+        assert_eq!(
+            param_id_for_action(&A::CycleWindowFrame),
+            Some(ParamId::WindowFrame)
+        );
+        assert_eq!(param_id_for_action(&A::CycleChrome), Some(ParamId::Chrome));
     }
 
     #[test]
