@@ -105,8 +105,8 @@ pub fn capture_overrides(
         brightness: Some(brightness_gain),
         diffusion_kernel: Some(sim_config.diffusion_kernel),
         diffusion_sigma: Some(sim_config.diffusion_sigma),
-        // sim levers not round-trippable via apply (restart-only) — drop per Phase B spec
-        time_scale: None,
+        // sim levers — time_scale is live-editable via +/- keys so capture the live value.
+        time_scale: Some(rs.time_scale),
         // population: capture for display (config-browser "Nk agents") only; a
         // restart-only lever (not live-applied). Mirrors old from_runtime: first_species.count.
         population: Some(sim_config.total_population()),
@@ -166,6 +166,7 @@ pub fn capture_overrides(
         min_sim_size: Some(sim_config.min_sim_size),
         min_frame_size: Some(sim_config.min_frame_size),
         respawn_interval: None,
+        respawn_config: Some(sim_config.respawn_config),
         decay_gamma: Some(rs.decay_gamma),
         diffuse_weight: Some(rs.diffuse_weight),
         deposit_curve: Some(rs.deposit_curve),
@@ -1364,5 +1365,34 @@ food_path = "assets/tslime_logo.png"
         // Dropped fields are ignored, real fields still land.
         assert_eq!(cf.presets[0].name, "Mossy Roots");
         assert_eq!(cf.presets[0].overrides.population, Some(50000));
+    }
+
+    #[test]
+    fn time_scale_captured_from_live_runtime_state() {
+        // capture_overrides must emit Some(time_scale), not None, so that a non-default
+        // time_scale is preserved through save → load → resolve.
+        let mut rs = create_test_runtime_state();
+        rs.time_scale = 2.5;
+
+        let overrides = capture_overrides(
+            &SimConfig::default(),
+            Palette::Organic,
+            Charset::HalfBlock,
+            &rs,
+        );
+
+        assert_eq!(
+            overrides.time_scale,
+            Some(2.5),
+            "capture_overrides must capture the live time_scale, not hardcode None"
+        );
+
+        // Verify it round-trips through resolve().
+        let p = resolved(&overrides);
+        assert!(
+            (p.sim.time_scale - 2.5).abs() < 1e-6,
+            "time_scale must survive round-trip through resolve (got {})",
+            p.sim.time_scale
+        );
     }
 }

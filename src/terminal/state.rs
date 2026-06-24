@@ -280,10 +280,10 @@ pub enum ControlAction {
     TogglePause,
     /// Restart simulation with new seed.
     Restart,
-    /// Apply a preset configuration.
-    SetPreset(Preset),
-    /// Show preset comparison overlay.
-    ComparePreset(Preset),
+    /// Resolve a number-row quick-key (`1`-`7`) against the merged keybind map.
+    QuickKey(char),
+    /// Resolve a shifted number key for A/B comparison (carries the base digit).
+    CompareQuickKey(char),
     /// Adjust simulation speed.
     AdjustTimeScale(f32),
     /// Cycle to next color palette.
@@ -504,6 +504,22 @@ impl DefaultValues {
     /// Create default values from a preset.
     pub fn from_preset(preset: Preset) -> Self {
         let config = SimConfig::from(preset);
+        let auto_normalize = crate::render_art_defaults::RenderArtDefaults::from(preset)
+            .auto_normalize
+            .unwrap_or(false);
+        Self::from_sim_config(&config, auto_normalize)
+    }
+
+    /// Create default values from a saved config (resolves its overrides).
+    pub fn from_config(profile: &crate::config_manager::NamedProfile) -> Self {
+        match profile.overrides.resolve() {
+            Ok(p) => Self::from_sim_config(&p.sim, p.render.auto_normalize),
+            Err(_) => Self::from_preset(Preset::Organic),
+        }
+    }
+
+    /// Shared core: build display defaults from a resolved `SimConfig`.
+    pub(crate) fn from_sim_config(config: &SimConfig, auto_normalize: bool) -> Self {
         Self {
             sensor_angle: config.sensor_angle,
             sensor_distance: config.sensor_distance,
@@ -532,13 +548,20 @@ impl DefaultValues {
             },
             terrain_type: config.terrain,
             terrain_strength: config.terrain_strength,
-            auto_normalize: crate::render_art_defaults::RenderArtDefaults::from(preset)
-                .auto_normalize
-                .unwrap_or(false),
+            auto_normalize,
             motion_blur_frames: 0,
             max_brightness: config.max_brightness,
         }
     }
+}
+
+/// What the A/B comparison overlay compares the live state against.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ComparisonTarget {
+    /// A built-in preset.
+    Preset(Preset),
+    /// A saved config (carries its resolved overrides + label).
+    Config(Box<crate::config_manager::NamedProfile>),
 }
 
 #[derive(Debug, Clone)]
@@ -551,8 +574,8 @@ pub struct RuntimeState {
     /// Centralized open/close state for all overlays (controls, hints,
     /// dashboard, config browser/save, preset comparison, palette editor).
     pub overlay_state: OverlayState,
-    /// Preset being compared against.
-    pub comparison_preset: Preset,
+    /// Target being compared against in the A/B overlay.
+    pub comparison_target: ComparisonTarget,
     /// Current category tab in controls overlay.
     pub controls_category_idx: usize,
     /// Which depth of the Controls surface is showing (Closed / Tuner / Console).
@@ -792,7 +815,7 @@ impl RuntimeState {
             is_paused: false,
             pause_just_toggled: false,
             overlay_state: OverlayState::default(),
-            comparison_preset: initial_preset,
+            comparison_target: ComparisonTarget::Preset(initial_preset),
             controls_category_idx: 0,
             controls_depth: crate::render::controls::ControlsDepth::Closed,
             controls_focus: 0,
@@ -1122,15 +1145,15 @@ impl RuntimeState {
         self.overlay_state.toggle(OverlayType::KeyboardHints);
     }
 
-    /// Toggles the preset comparison overlay.
-    pub fn toggle_preset_comparison(&mut self, preset: Preset) {
+    /// Toggles the comparison overlay against the given target.
+    pub fn toggle_comparison(&mut self, target: ComparisonTarget) {
         if self.overlay_state.is_open(OverlayType::PresetComparison)
-            && self.comparison_preset == preset
+            && self.comparison_target == target
         {
             self.overlay_state.close();
         } else {
             self.overlay_state.open(OverlayType::PresetComparison);
-            self.comparison_preset = preset;
+            self.comparison_target = target;
         }
     }
 
@@ -2344,9 +2367,9 @@ mod tests {
         state.toggle_keyboard_hints();
         assert!(!state.overlay_state.is_open(OverlayType::KeyboardHints));
 
-        state.toggle_preset_comparison(Preset::Network);
+        state.toggle_comparison(ComparisonTarget::Preset(Preset::Network));
         assert!(state.overlay_state.is_open(OverlayType::PresetComparison));
-        state.toggle_preset_comparison(Preset::Network);
+        state.toggle_comparison(ComparisonTarget::Preset(Preset::Network));
         assert!(!state.overlay_state.is_open(OverlayType::PresetComparison));
 
         assert!(!state.any_overlay_open());
@@ -3009,6 +3032,36 @@ mod tests {
             ControlAction::ControlsAdjustFocused(1.0),
             ControlAction::ControlsActivateFocused,
         ];
+    }
+
+    #[test]
+    fn default_values_from_config_resolves_overrides() {
+        use crate::config_manager::NamedProfile;
+        use crate::profile_overrides::ProfileOverrides;
+        let ov = ProfileOverrides {
+            sensor_angle: Some(33.0),
+            ..Default::default()
+        };
+        let profile = NamedProfile {
+            name: "t".to_string(),
+            description: None,
+            overrides: ov,
+        };
+        let dv = DefaultValues::from_config(&profile);
+        assert!((dv.sensor_angle - 33.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn toggle_comparison_sets_target_and_toggles_off() {
+        let mut rs = create_test_runtime_state();
+        rs.toggle_comparison(ComparisonTarget::Preset(Preset::Network));
+        assert!(rs.overlay_state.is_open(OverlayType::PresetComparison));
+        assert_eq!(
+            rs.comparison_target,
+            ComparisonTarget::Preset(Preset::Network)
+        );
+        rs.toggle_comparison(ComparisonTarget::Preset(Preset::Network));
+        assert!(!rs.overlay_state.is_open(OverlayType::PresetComparison));
     }
 }
 

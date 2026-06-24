@@ -69,7 +69,9 @@ lowercase increases and uppercase (Shift) decreases.
 |---|---|
 | `Space` | Pause / resume |
 | `r` | Restart |
-| `1`–`7` | Select preset (`Shift+1`–`7` to compare against current) |
+| `1`–`3` | Switch preset (Organic / Constellation / Vinescii) |
+| `4`–`7` | Custom binds — set in `~/.config/tslime/keybinds.toml` |
+| `Shift+1`–`7` | Compare bound preset/config (A/B) |
 | `8` | Randomize parameters |
 | `0` | Reset to defaults |
 | `+` / `-` | Time scale |
@@ -134,6 +136,26 @@ The Controls panel opens into the Console study view (full master-detail interfa
 | `Esc` | Close the panel |
 
 Note: The per-parameter hotkeys (`a`/`A`, `j`/`J`, `t`/`T`, etc. from the Simulation and Appearance tables above) continue to work anywhere and take precedence. Arrow keys provide keyboard-driven alternatives to the focused-param hotkey while the panel is open.
+
+### Custom Keybinds
+
+Customize quick-keys `1`–`7` by creating a `~/.config/tslime/keybinds.toml` file with the following format:
+
+```toml
+[[keybind]]
+key = "4"
+preset = "fire"
+
+[[keybind]]
+key = "5"
+config = "my-night-config"
+```
+
+- **Keys**: Bind to any digit `1`–`7`. Keys `1`–`3` default to Organic, Constellation, and Vinescii; user entries override.
+- **Targets**: Bind to either a `preset` (any of the 30 named presets) or a `config` (any saved configuration from `Ctrl+S`).
+- **Comparison**: Press `Shift+1` through `Shift+7` to compare the bound preset or config against the current settings (A/B mode).
+- **Invalid entries**: Silently ignored; the app launches normally and skips unparseable lines.
+- **Live bindings**: The `?` overlay shows current key bindings and their targets.
 
 ## Gallery
 

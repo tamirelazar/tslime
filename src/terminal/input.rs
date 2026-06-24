@@ -5,7 +5,7 @@
 
 use crate::cli::Palette;
 use crate::render::charset::Charset;
-use crate::simulation::config::{preset_for_compare_key, preset_for_set_key, Preset};
+use crate::simulation::config::{compare_key_digit, Preset};
 use crate::terminal::state::ControlAction;
 pub use crate::terminal::state::MousePosition;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, MouseEventKind};
@@ -134,11 +134,9 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char(' ') => ControlAction::TogglePause,
         KeyCode::Char('p') | KeyCode::Char('P') => ControlAction::ShowPaletteEditor,
         KeyCode::Char('r') | KeyCode::Char('R') => ControlAction::Restart,
-        KeyCode::Char(c) if preset_for_set_key(c).is_some() => {
-            ControlAction::SetPreset(preset_for_set_key(c).expect("guard ensures Some"))
-        }
-        KeyCode::Char(c) if preset_for_compare_key(c).is_some() => {
-            ControlAction::ComparePreset(preset_for_compare_key(c).expect("guard ensures Some"))
+        KeyCode::Char(c) if ('1'..='7').contains(&c) => ControlAction::QuickKey(c),
+        KeyCode::Char(c) if compare_key_digit(c).is_some() => {
+            ControlAction::CompareQuickKey(compare_key_digit(c).expect("guard ensures Some"))
         }
         KeyCode::Char('8') => ControlAction::RandomizeParams,
         KeyCode::Char('9') => ControlAction::CycleTheme,
@@ -520,5 +518,25 @@ mod tests {
             k(KeyCode::Char('}')),
             ControlAction::AdjustDitherIntensity(0.1)
         );
+    }
+
+    #[test]
+    fn number_row_emits_quick_key_actions() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let ev = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE);
+        assert!(matches!(
+            handle_key_event(&ev),
+            ControlAction::QuickKey('1')
+        ));
+        let ev = KeyEvent::new(KeyCode::Char('!'), KeyModifiers::SHIFT);
+        assert!(matches!(
+            handle_key_event(&ev),
+            ControlAction::CompareQuickKey('1')
+        ));
+        let ev = KeyEvent::new(KeyCode::Char('4'), KeyModifiers::NONE);
+        assert!(matches!(
+            handle_key_event(&ev),
+            ControlAction::QuickKey('4')
+        ));
     }
 }

@@ -187,8 +187,40 @@ impl KeyboardHintsOverlay {
     const CONTENT_WIDTH: usize = 74; // 88 - 2(border) - 6(pad-L) - 6(pad-R)
 
     /// Builds the keyboard hints overlay content.
-    pub fn build_overlay(accent: RgbColor, st: &PanelStyle) -> RenderedOverlay {
+    pub fn build_overlay(
+        accent: RgbColor,
+        st: &PanelStyle,
+        user_binds: &std::collections::HashMap<char, crate::keybind_manager::BindTarget>,
+    ) -> RenderedOverlay {
+        use crate::keybind_manager::BindTarget;
         use TextAlignment::Left;
+
+        let label_for = |c: char| -> String {
+            match user_binds.get(&c) {
+                Some(BindTarget::Preset(p)) => p.name().to_string(),
+                Some(BindTarget::Config(name)) => {
+                    let truncated: String = name.chars().take(10).collect();
+                    format!("cfg:{truncated}")
+                }
+                None => match crate::simulation::config::preset_for_set_key(c) {
+                    Some(p) => p.name().to_string(),
+                    None => "unbound".to_string(),
+                },
+            }
+        };
+        let keys_line1 = format!(
+            "1:{} 2:{} 3:{}",
+            label_for('1'),
+            label_for('2'),
+            label_for('3')
+        );
+        let keys_line2 = format!(
+            "4:{} 5:{} 6:{} 7:{}",
+            label_for('4'),
+            label_for('5'),
+            label_for('6'),
+            label_for('7')
+        );
 
         let thin_sep = "─".repeat(Self::CONTENT_WIDTH);
 
@@ -205,18 +237,10 @@ impl KeyboardHintsOverlay {
                 Left,
             )
             .add_two_col("r          Restart", "Ctrl+L     Load config", Left, Left)
-            .add_two_col(
-                "1 \u{2013} 7      Select preset",
-                "Ctrl+Z     Undo",
-                Left,
-                Left,
-            )
-            .add_two_col(
-                "Shift+1\u{2013}7  Compare preset",
-                "Ctrl+Y     Redo",
-                Left,
-                Left,
-            )
+            .add_two_col("Ctrl+Z     Undo", "Ctrl+Y     Redo", Left, Left)
+            .add_single(keys_line1, Left)
+            .add_single(keys_line2, Left)
+            .add_single("Shift+1-7  Compare bound key", Left)
             .add_two_col(
                 "p          Palette editor",
                 "q / Esc    Quit / close",
@@ -404,19 +428,46 @@ impl PresetComparisonOverlay {
     /// Builds the comparison overlay showing modified parameters.
     pub fn build_overlay(
         current: &crate::terminal::control::RuntimeState,
-        preset: Preset,
+        target: &crate::terminal::state::ComparisonTarget,
     ) -> RenderedOverlay {
+        use crate::terminal::state::ComparisonTarget;
         use TextAlignment::Left;
 
-        let defaults = crate::terminal::control::DefaultValues::from_preset(preset);
-        let pname = preset_name(preset);
+        let (label, defaults, col_header) = match target {
+            ComparisonTarget::Preset(p) => (
+                preset_name(*p).to_string(),
+                crate::terminal::control::DefaultValues::from_preset(*p),
+                "Preset Default",
+            ),
+            ComparisonTarget::Config(np) => {
+                let (lbl, dv) = match np.overrides.resolve() {
+                    Ok(p) => (
+                        np.name.clone(),
+                        crate::terminal::control::DefaultValues::from_sim_config(
+                            &p.sim,
+                            p.render.auto_normalize,
+                        ),
+                    ),
+                    Err(_) => (
+                        format!("{} (unresolved)", np.name),
+                        crate::terminal::control::DefaultValues::from_preset(
+                            crate::simulation::config::Preset::Organic,
+                        ),
+                    ),
+                };
+                (lbl, dv, "Config Default")
+            }
+        };
 
         let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
             .with_padding(Padding::new(1, 1, 2, 2))
-            .with_title(format!("PRESET COMPARISON: {}", pname))
+            .with_title(format!("COMPARISON: {}", label))
             .with_title_box()
             .add_empty_n(spacing::ROW)
-            .add_single("Parameter        │ Current      │ Preset Default", Left)
+            .add_single(
+                format!("Parameter        │ Current      │ {}", col_header),
+                Left,
+            )
             .add_single(
                 "──────────────────┼──────────────┼──────────────────────",
                 Left,
@@ -678,9 +729,13 @@ impl DirtyGuardOverlay {
     }
 
     /// Calculates center position for the guard dialog.
+    ///
+    /// The overlay is 7 visible rows tall: 6 main-panel lines (top border + 4 content
+    /// rows + bottom border) plus 1 title-box line drawn one row above. Subtracting 7
+    /// keeps the dialog vertically centred.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::TOTAL_WIDTH)) / 2;
-        let y = (term_height.saturating_sub(5)) / 2;
+        let y = (term_height.saturating_sub(7)) / 2;
         (x, y)
     }
 }
@@ -2263,11 +2318,54 @@ mod status_line_tests {
         assert!(status.contains("1.0×"));
     }
 
+    fn overlay_to_string(overlay: &RenderedOverlay) -> String {
+        overlay.lines.join("\n")
+    }
+
+    #[test]
+    fn keyboard_hints_show_live_binds() {
+        use crate::keybind_manager::BindTarget;
+        use crate::simulation::config::Preset;
+        use std::collections::HashMap;
+        let mut binds = HashMap::new();
+        binds.insert('4', BindTarget::Preset(Preset::Fire));
+        let overlay = KeyboardHintsOverlay::build_overlay(
+            RgbColor::new(255, 255, 255),
+            &crate::render::theme::GRUVBOX_DARK,
+            &binds,
+        );
+        let text = overlay_to_string(&overlay);
+        assert!(text.contains("Fire"), "user bind name shown");
+        assert!(
+            text.contains("unbound"),
+            "an empty 4-7 slot shows 'unbound'"
+        );
+    }
+
+    #[test]
+    fn keyboard_hints_utf8_config_truncation() {
+        use crate::keybind_manager::BindTarget;
+        use std::collections::HashMap;
+        let mut binds = HashMap::new();
+        // Multi-byte UTF-8 name longer than 10 bytes; byte index 10 falls
+        // inside a 3-byte UTF-8 char, triggering panic if byte-sliced
+        binds.insert('4', BindTarget::Config("abc日本語設定テスト".to_string()));
+        // Should not panic on multi-byte UTF-8 char boundary
+        let overlay = KeyboardHintsOverlay::build_overlay(
+            RgbColor::new(255, 255, 255),
+            &crate::render::theme::GRUVBOX_DARK,
+            &binds,
+        );
+        let text = overlay_to_string(&overlay);
+        assert!(text.contains("cfg:"), "config label present");
+    }
+
     #[test]
     fn test_keyboard_hints_lists_frame_and_chrome() {
         let overlay = KeyboardHintsOverlay::build_overlay(
             RgbColor::new(255, 255, 255),
             &crate::render::theme::GRUVBOX_DARK,
+            &std::collections::HashMap::new(),
         );
         let joined = overlay.lines.join("\n");
         assert!(joined.contains("Window frame"), "missing window-frame hint");
@@ -2285,6 +2383,7 @@ mod status_line_tests {
                 b: 100,
             },
             &crate::render::theme::GRUVBOX_DARK,
+            &std::collections::HashMap::new(),
         );
 
         // Solid-block borders
@@ -2318,6 +2417,7 @@ mod status_line_tests {
         let overlay = KeyboardHintsOverlay::build_overlay(
             RgbColor::new(255, 255, 255),
             &crate::render::theme::GRUVBOX_DARK,
+            &std::collections::HashMap::new(),
         );
         let joined = overlay.lines.join("\n");
 
@@ -2356,7 +2456,11 @@ mod status_line_tests {
         //   right: "{ }        Dither (dev)"   → all non-space chars colored muted
         let accent = RgbColor::new(200, 100, 50);
         let gruvbox = crate::render::theme::GRUVBOX_DARK;
-        let overlay = KeyboardHintsOverlay::build_overlay(accent, &gruvbox);
+        let overlay = KeyboardHintsOverlay::build_overlay(
+            accent,
+            &gruvbox,
+            &std::collections::HashMap::new(),
+        );
         let rich_lines = overlay
             .rich_lines
             .expect("KeyboardHints must have rich_lines");
@@ -2407,7 +2511,8 @@ mod status_line_tests {
         // Key tokens (the keybind portion of each row) must be colored with the accent.
         let accent = RgbColor::new(200, 100, 50);
         let st = crate::render::theme::GRUVBOX_DARK;
-        let overlay = KeyboardHintsOverlay::build_overlay(accent, &st);
+        let overlay =
+            KeyboardHintsOverlay::build_overlay(accent, &st, &std::collections::HashMap::new());
         let rich_lines = overlay
             .rich_lines
             .expect("KeyboardHints must have rich_lines");
@@ -2443,7 +2548,10 @@ mod status_line_tests {
         );
         state.sensor_angle = 90.0; // Changed from default
 
-        let lines = PresetComparisonOverlay::build_overlay(&state, Preset::Organic);
+        let lines = PresetComparisonOverlay::build_overlay(
+            &state,
+            &crate::terminal::state::ComparisonTarget::Preset(Preset::Organic),
+        );
         assert!(!lines.lines.is_empty());
         let content_lines = lines
             .lines

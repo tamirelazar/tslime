@@ -558,12 +558,24 @@ impl From<Preset> for PresetSimDefaults {
             // (moves to RenderArtDefaults). Sim levers: deposit_curve, deposit_scale,
             // decay_gamma (config.rs:744-762)
             Preset::Mold => Self {
-                // Wider sensor (22.5°) + high rotation (60°) hold a *contained*
-                // branching colony under Bounce: agents fold back at the walls into
-                // internal veins instead of condensing onto one wall-hugging filament
-                // (the old 15°/30° collapse) or wrapping toroidally (the seamless-edge
-                // character of the earlier Wrap retune). decay 0.90 keeps persistence
-                // without runaway accumulation; headless coverage holds ~0.40 @1500f.
+                // Wider sensor (22.5°) + high rotation (60°) under Bounce keep a
+                // *contained* branching colony whose veins fold back at the walls.
+                // But Bounce alone accumulates a wall-parallel trail that, given enough
+                // frames, condenses ALL agents onto one wall-hugging filament (the
+                // sensor/rotation/decay retunes only delayed it — at ~6000f the colony
+                // collapsed to a single edge filament, edge:interior trail ratio >30x).
+                // The structural fix is trail-dependent respawn: every 90 frames
+                // an agent sitting in high-trail (i.e. the bright wall line) is
+                // scattered back into the field, with probability scaling on the
+                // NORMALIZED trail value `x = (trail * trail_rescale).clamp(0, 1)`
+                // so `max_probability_multiplier` is a real cap (raw trail is
+                // unbounded — without normalization the multiplier is meaningless
+                // and the brightest cells scatter ~100% regardless of the knob).
+                // rescale 0.0033 keeps healthy veins (raw ~120) well below
+                // saturation while a collapse wall (raw ~300+) saturates to x=1;
+                // base 0.0067 × mult 150 = 1.0 max probability there. Headless
+                // probe: edge:interior trail holds ~2.0-2.4 with full coverage out
+                // to 40000f, where decay 0.90 alone collapses to ~7.5 by ~1500f.
                 sensor_angle: 22.5,
                 rotation_angle: 60.0,
                 decay_factor: 0.90,
@@ -574,6 +586,13 @@ impl From<Preset> for PresetSimDefaults {
                 deposit_curve: DepositCurve::Sqrt,
                 deposit_scale: 1.5,
                 decay_gamma: 0.8,
+                respawn_config: RespawnConfig {
+                    interval: 90,
+                    base_probability: 0.0067,
+                    trail_dependent: true,
+                    max_probability_multiplier: 150.0,
+                    trail_rescale: 0.0033,
+                },
                 species_configs: vec![SpeciesConfig {
                     name: "default".to_string(),
                     count: 50_000,
@@ -912,6 +931,13 @@ mod tests {
         assert_eq!(s.deposit_curve, DepositCurve::Sqrt);
         assert_eq!(s.deposit_scale, 1.5);
         // afterglow is NOT a field of PresetSimDefaults (moved to render layer).
+        // Anti-collapse respawn is the structural fix — guard its tuning so a
+        // refactor can't silently reset it to Default (interval 0 = disabled).
+        assert_eq!(s.respawn_config.interval, 90);
+        assert!(s.respawn_config.trail_dependent);
+        assert_eq!(s.respawn_config.base_probability, 0.0067);
+        assert_eq!(s.respawn_config.max_probability_multiplier, 150.0);
+        assert_eq!(s.respawn_config.trail_rescale, 0.0033);
     }
 
     #[test]

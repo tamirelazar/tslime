@@ -870,6 +870,21 @@ fn tune_view_for_action(
     })
 }
 
+/// Resolves a quick-key press to a bind target.
+///
+/// User binds (from `~/.config/tslime/keybinds.toml`) take precedence over
+/// built-in preset defaults. Returns `None` when the key has no binding.
+fn resolve_bind(
+    c: char,
+    user_binds: &std::collections::HashMap<char, crate::keybind_manager::BindTarget>,
+) -> Option<crate::keybind_manager::BindTarget> {
+    use crate::keybind_manager::BindTarget;
+    if let Some(t) = user_binds.get(&c) {
+        return Some(t.clone());
+    }
+    crate::simulation::config::preset_for_set_key(c).map(BindTarget::Preset)
+}
+
 /// Runs the interactive simulation loop (Live or Screensaver mode).
 ///
 /// Handles terminal setup, input processing, simulation updates, and rendering
@@ -1348,6 +1363,58 @@ pub fn run_simulation(
         Ok(())
     }
 
+    // Dirty-guard-or-swap: the single place that decides between parking a swap
+    // behind the dirty guard and applying it immediately. Returns true when it
+    // swapped now (clean path), false when it parked (dirty path). Callers that
+    // need clean-path-only side effects (e.g. zeroing hue) branch on the bool.
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_swap(
+        pending: PendingSwap,
+        rs: &mut RuntimeState,
+        renderer: &mut TerminalRenderer,
+        sim: &mut Simulation,
+        timer: &mut FrameTimer,
+        grid_renderer: &mut Option<crate::render::grid::GridRenderer>,
+        window: &mut crate::render::window::Window,
+        downsampled_frame: &mut crate::render::downsample::DownsampledFrame,
+        aux_frame: &mut crate::render::downsample::AuxFrame,
+        term_size: (usize, usize),
+        current_auto_normalize: &mut bool,
+        adaptive_brightness: &mut AdaptiveBrightness,
+        normalize_window: usize,
+    ) -> io::Result<bool> {
+        if rs.is_dirty(
+            sim.config(),
+            rs.live_palette.clone(),
+            rs.live_charset.clone(),
+        ) {
+            rs.pending_swap = Some(pending);
+            rs.close_all_overlays();
+            rs.overlay_state.open(OverlayType::DirtyGuard);
+            rs.on_modal_open();
+            Ok(false)
+        } else {
+            do_swap(
+                pending,
+                rs,
+                renderer,
+                sim,
+                timer,
+                grid_renderer,
+                window,
+                downsampled_frame,
+                aux_frame,
+                term_size,
+            )?;
+            *current_auto_normalize = rs.auto_normalize;
+            *adaptive_brightness =
+                AdaptiveBrightness::new(normalize_window, *current_auto_normalize);
+            Ok(true)
+        }
+    }
+
+    let user_binds = crate::keybind_manager::load_keybinds();
+
     loop {
         if is_shutdown_requested() {
             break;
@@ -1620,7 +1687,7 @@ pub fn run_simulation(
         {
             Some(PresetComparisonOverlay::build_overlay(
                 &runtime_state,
-                runtime_state.comparison_preset,
+                &runtime_state.comparison_target,
             ))
         } else {
             None
@@ -1676,6 +1743,7 @@ pub fn run_simulation(
             Some(KeyboardHintsOverlay::build_overlay(
                 ui_accent,
                 &runtime_state.panel_style,
+                &user_binds,
             ))
         } else {
             None
@@ -2420,38 +2488,27 @@ pub fn run_simulation(
                     {
                         use crossterm::event::KeyCode;
                         if key_event.code == KeyCode::Enter {
-                            let preset = runtime_state.comparison_preset;
+                            use crate::terminal::state::ComparisonTarget;
+                            let pending = match &runtime_state.comparison_target {
+                                ComparisonTarget::Preset(p) => PendingSwap::Preset(*p),
+                                ComparisonTarget::Config(np) => PendingSwap::Config(np.clone()),
+                            };
                             runtime_state.overlay_state.close();
-                            // Gate on dirty state like every other swap trigger.
-                            if runtime_state.is_dirty(
-                                sim.config(),
-                                runtime_state.live_palette.clone(),
-                                runtime_state.live_charset.clone(),
-                            ) {
-                                runtime_state.pending_swap = Some(PendingSwap::Preset(preset));
-                                runtime_state.close_all_overlays();
-                                runtime_state.overlay_state.open(OverlayType::DirtyGuard);
-                                runtime_state.on_modal_open();
-                            } else {
-                                do_swap(
-                                    PendingSwap::Preset(preset),
-                                    &mut runtime_state,
-                                    &mut renderer,
-                                    sim,
-                                    &mut timer,
-                                    &mut grid_renderer,
-                                    &mut window,
-                                    &mut downsampled_frame,
-                                    &mut aux_frame,
-                                    (term_width as usize, term_height as usize),
-                                )?;
-                                // Clean preset swap may default auto_normalize ON.
-                                current_auto_normalize = runtime_state.auto_normalize;
-                                adaptive_brightness = AdaptiveBrightness::new(
-                                    args.normalize_window,
-                                    current_auto_normalize,
-                                );
-                            }
+                            dispatch_swap(
+                                pending,
+                                &mut runtime_state,
+                                &mut renderer,
+                                sim,
+                                &mut timer,
+                                &mut grid_renderer,
+                                &mut window,
+                                &mut downsampled_frame,
+                                &mut aux_frame,
+                                (term_width as usize, term_height as usize),
+                                &mut current_auto_normalize,
+                                &mut adaptive_brightness,
+                                args.normalize_window,
+                            )?;
                             continue;
                         }
                         // Note: Other keys are blocked by centralized handler
@@ -2495,36 +2552,21 @@ pub fn run_simulation(
                                     });
                                 runtime_state.overlay_state.close();
                                 if let Some(config) = selected_config {
-                                    if runtime_state.is_dirty(
-                                        sim.config(),
-                                        runtime_state.live_palette.clone(),
-                                        runtime_state.live_charset.clone(),
-                                    ) {
-                                        runtime_state.pending_swap =
-                                            Some(PendingSwap::Config(Box::new(config)));
-                                        runtime_state.close_all_overlays();
-                                        runtime_state.overlay_state.open(OverlayType::DirtyGuard);
-                                        runtime_state.on_modal_open();
-                                    } else {
-                                        do_swap(
-                                            PendingSwap::Config(Box::new(config)),
-                                            &mut runtime_state,
-                                            &mut renderer,
-                                            sim,
-                                            &mut timer,
-                                            &mut grid_renderer,
-                                            &mut window,
-                                            &mut downsampled_frame,
-                                            &mut aux_frame,
-                                            (term_width as usize, term_height as usize),
-                                        )?;
-                                        // Clean config load may default auto_normalize ON.
-                                        current_auto_normalize = runtime_state.auto_normalize;
-                                        adaptive_brightness = AdaptiveBrightness::new(
-                                            args.normalize_window,
-                                            current_auto_normalize,
-                                        );
-                                    }
+                                    dispatch_swap(
+                                        PendingSwap::Config(Box::new(config)),
+                                        &mut runtime_state,
+                                        &mut renderer,
+                                        sim,
+                                        &mut timer,
+                                        &mut grid_renderer,
+                                        &mut window,
+                                        &mut downsampled_frame,
+                                        &mut aux_frame,
+                                        (term_width as usize, term_height as usize),
+                                        &mut current_auto_normalize,
+                                        &mut adaptive_brightness,
+                                        args.normalize_window,
+                                    )?;
                                 }
                                 continue;
                             }
@@ -2665,20 +2707,9 @@ pub fn run_simulation(
                             );
                             sim.reset(runtime_state.original_seed, init_mode);
                         }
-                        ControlAction::SetPreset(preset) => {
-                            // Dirty live edits → park the swap behind the guard;
-                            // clean → swap immediately via the single executor.
-                            if runtime_state.is_dirty(
-                                sim.config(),
-                                runtime_state.live_palette.clone(),
-                                runtime_state.live_charset.clone(),
-                            ) {
-                                runtime_state.pending_swap = Some(PendingSwap::Preset(preset));
-                                runtime_state.close_all_overlays();
-                                runtime_state.overlay_state.open(OverlayType::DirtyGuard);
-                                runtime_state.on_modal_open();
-                            } else {
-                                do_swap(
+                        ControlAction::QuickKey(c) => match resolve_bind(c, &user_binds) {
+                            Some(crate::keybind_manager::BindTarget::Preset(preset)) => {
+                                dispatch_swap(
                                     PendingSwap::Preset(preset),
                                     &mut runtime_state,
                                     &mut renderer,
@@ -2689,21 +2720,68 @@ pub fn run_simulation(
                                     &mut downsampled_frame,
                                     &mut aux_frame,
                                     (term_width as usize, term_height as usize),
-                                )?;
-                                // Clean preset swap may default auto_normalize ON.
-                                current_auto_normalize = runtime_state.auto_normalize;
-                                adaptive_brightness = AdaptiveBrightness::new(
+                                    &mut current_auto_normalize,
+                                    &mut adaptive_brightness,
                                     args.normalize_window,
-                                    current_auto_normalize,
-                                );
+                                )?;
                             }
-                        }
-                        ControlAction::ComparePreset(preset) => {
-                            runtime_state.toggle_preset_comparison(preset);
-                            if runtime_state.any_overlay_open() {
-                                runtime_state.on_modal_open();
-                            } else {
-                                runtime_state.on_modal_close();
+                            Some(crate::keybind_manager::BindTarget::Config(name)) => {
+                                match config_manager::load_config(&name) {
+                                    Ok(config) => {
+                                        dispatch_swap(
+                                            PendingSwap::Config(Box::new(config)),
+                                            &mut runtime_state,
+                                            &mut renderer,
+                                            sim,
+                                            &mut timer,
+                                            &mut grid_renderer,
+                                            &mut window,
+                                            &mut downsampled_frame,
+                                            &mut aux_frame,
+                                            (term_width as usize, term_height as usize),
+                                            &mut current_auto_normalize,
+                                            &mut adaptive_brightness,
+                                            args.normalize_window,
+                                        )?;
+                                    }
+                                    Err(e) => {
+                                        runtime_state.show_notification(format!(
+                                            "Failed to load '{name}': {e}"
+                                        ));
+                                    }
+                                }
+                            }
+                            None => {
+                                runtime_state.show_notification(format!(
+                                    "Key {c} unbound — set in ~/.config/tslime/keybinds.toml"
+                                ));
+                            }
+                        },
+                        ControlAction::CompareQuickKey(c) => {
+                            use crate::keybind_manager::BindTarget;
+                            use crate::terminal::state::ComparisonTarget;
+                            let target = match resolve_bind(c, &user_binds) {
+                                Some(BindTarget::Preset(p)) => Some(ComparisonTarget::Preset(p)),
+                                Some(BindTarget::Config(name)) => {
+                                    match config_manager::load_config(&name) {
+                                        Ok(np) => Some(ComparisonTarget::Config(Box::new(np))),
+                                        Err(e) => {
+                                            runtime_state.show_notification(format!(
+                                                "Failed to load '{name}': {e}"
+                                            ));
+                                            None
+                                        }
+                                    }
+                                }
+                                None => None,
+                            };
+                            if let Some(target) = target {
+                                runtime_state.toggle_comparison(target);
+                                if runtime_state.any_overlay_open() {
+                                    runtime_state.on_modal_open();
+                                } else {
+                                    runtime_state.on_modal_close();
+                                }
                             }
                         }
                         ControlAction::AdjustTimeScale(delta) => {
@@ -3166,36 +3244,23 @@ pub fn run_simulation(
                             ));
                         }
                         ControlAction::ResetToDefaults => {
-                            // Dirty live edits → park behind the guard; clean → reset now.
-                            if runtime_state.is_dirty(
-                                sim.config(),
-                                runtime_state.live_palette.clone(),
-                                runtime_state.live_charset.clone(),
-                            ) {
-                                runtime_state.pending_swap = Some(PendingSwap::Reset);
-                                runtime_state.close_all_overlays();
-                                runtime_state.overlay_state.open(OverlayType::DirtyGuard);
-                                runtime_state.on_modal_open();
-                            } else {
-                                do_swap(
-                                    PendingSwap::Reset,
-                                    &mut runtime_state,
-                                    &mut renderer,
-                                    sim,
-                                    &mut timer,
-                                    &mut grid_renderer,
-                                    &mut window,
-                                    &mut downsampled_frame,
-                                    &mut aux_frame,
-                                    (term_width as usize, term_height as usize),
-                                )?;
-                                // Reset-specific loop-local side effects.
+                            let applied = dispatch_swap(
+                                PendingSwap::Reset,
+                                &mut runtime_state,
+                                &mut renderer,
+                                sim,
+                                &mut timer,
+                                &mut grid_renderer,
+                                &mut window,
+                                &mut downsampled_frame,
+                                &mut aux_frame,
+                                (term_width as usize, term_height as usize),
+                                &mut current_auto_normalize,
+                                &mut adaptive_brightness,
+                                args.normalize_window,
+                            )?;
+                            if applied {
                                 hue_offset = 0.0;
-                                current_auto_normalize = runtime_state.auto_normalize;
-                                adaptive_brightness = AdaptiveBrightness::new(
-                                    args.normalize_window,
-                                    current_auto_normalize,
-                                );
                             }
                         }
                         ControlAction::ToggleDashboard => {
@@ -4299,6 +4364,30 @@ mod tests {
             ambient_mode(false, ControlsDepth::Tuner),
             AmbientMode::Normal,
             "ambient must be Normal when controls are not open"
+        );
+    }
+}
+
+#[cfg(test)]
+mod keybind_resolution_tests {
+    use super::resolve_bind;
+    use crate::keybind_manager::BindTarget;
+    use crate::simulation::config::Preset;
+    use std::collections::HashMap;
+
+    #[test]
+    fn user_bind_overrides_builtin_default() {
+        let mut m = HashMap::new();
+        m.insert('1', BindTarget::Preset(Preset::Fire));
+        assert_eq!(
+            resolve_bind('1', &m),
+            Some(BindTarget::Preset(Preset::Fire))
+        );
+        assert_eq!(resolve_bind('5', &m), None);
+        m.insert('5', BindTarget::Config("mynight".to_string()));
+        assert_eq!(
+            resolve_bind('5', &m),
+            Some(BindTarget::Config("mynight".to_string()))
         );
     }
 }
