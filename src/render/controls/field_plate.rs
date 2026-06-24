@@ -213,9 +213,11 @@ fn cell_color(
     }
 }
 
-/// Render one dedented art line into a `width`-wide `RowBuf`, placing the block
-/// at horizontal offset `off`. Markers are consumed (not placed). The `opt:`/
-/// `caret` markers render as plain content here; Task 6 adds option lighting.
+/// Returns (rendered row, Some(span) if this line lit an option run).
+/// A `⟦caret⟧`-only line fills `╴` (→ `_` in Safe) across `caret_span` in
+/// `accent_ignite`. A `⟦opt:tag⟧…⟦⟧` run is lit (IGNITION) when `live_select`
+/// (lowercased) contains `tag` (lowercased); unmatched options render as ANNOTATION.
+#[allow(clippy::too_many_arguments)]
 fn render_one(
     line: &str,
     off: usize,
@@ -223,11 +225,27 @@ fn render_one(
     st: &PanelStyle,
     base_palette: Palette,
     width: usize,
-) -> RowBuf {
+    live_select: Option<&str>,
+    caret_span: Option<(usize, usize)>,
+) -> (RowBuf, Option<(usize, usize)>) {
+    let trimmed = line.trim();
+    if trimmed == "⟦caret⟧" {
+        let mut row = RowBuf::new(width);
+        if let Some((s, e)) = caret_span {
+            for c in s..e {
+                row.put_cells(c, &[(map_glyph('╴', profile), st.accent_ignite)], None);
+            }
+        }
+        return (row, None);
+    }
+
     let mut row = RowBuf::new(width);
     let mut col = off;
     let mut ignite = false;
     let mut pal_override: Option<Palette> = None;
+    let mut opt_lit = false; // inside a matched ⟦opt:..⟧ run
+    let mut lit_span: Option<(usize, usize)> = None;
+    let mut lit_start = 0usize;
     let mut chars = line.chars().peekable();
     while let Some(ch) = chars.next() {
         match ch {
@@ -247,25 +265,39 @@ fn render_one(
                     }
                     name.push(c2);
                 }
-                // ⟦⟧ closes a run; ⟦opt:..⟧/⟦caret⟧ handled in Task 6 (ignored here).
-                pal_override = if name.is_empty() || name.starts_with("opt:") || name == "caret" {
-                    None
+                if let Some(tag) = name.strip_prefix("opt:") {
+                    let matched = live_select
+                        .map(|v| v.to_ascii_lowercase().contains(&tag.to_ascii_lowercase()))
+                        .unwrap_or(false);
+                    opt_lit = matched;
+                    if matched {
+                        lit_start = col;
+                    }
+                } else if name.is_empty() {
+                    // run close
+                    if opt_lit {
+                        lit_span = Some((lit_start, col));
+                    }
+                    opt_lit = false;
+                    pal_override = None;
+                } else if name == "caret" {
+                    // handled above as a whole line; ignore inline
                 } else {
-                    parse_palette_opt(&name)
-                };
+                    pal_override = parse_palette_opt(&name);
+                }
                 continue;
             }
             _ => {}
         }
-        let color = cell_color(ch, ignite, pal_override.clone(), st, base_palette.clone());
+        let lit = ignite || opt_lit;
+        let color = cell_color(ch, lit, pal_override.clone(), st, base_palette.clone());
         let glyph = map_glyph(ch, profile);
         if let Some(c) = color {
             row.put_cells(col, &[(glyph, c)], None);
         }
-        // (no color = blank space, leave default)
         col += 1;
     }
-    row
+    (row, lit_span)
 }
 
 /// Build the detail-pane rows for a field plate: centered specimen art, a blank
@@ -277,21 +309,28 @@ pub fn render_art(
     profile: Profile,
     st: &PanelStyle,
     base_palette: Palette,
-    _live_select: Option<&str>,
+    live_select: Option<&str>,
     width: usize,
 ) -> Vec<RowBuf> {
     let (ded, bw) = dedent_and_measure(art);
     let off = width.saturating_sub(bw) / 2;
     let mut rows: Vec<RowBuf> = Vec::new();
+    let mut caret_span: Option<(usize, usize)> = None;
     for line in ded.lines() {
-        rows.push(render_one(
+        let (row, span) = render_one(
             line,
             off,
             profile,
             st,
             base_palette.clone(),
             width,
-        ));
+            live_select,
+            caret_span,
+        );
+        if span.is_some() {
+            caret_span = span;
+        }
+        rows.push(row);
     }
     if !caption.is_empty() {
         rows.push(RowBuf::new(width));
@@ -543,5 +582,50 @@ mod tests {
         assert!(shade_brightness('/').is_none());
         assert!(is_structural('╱'));
         assert!(!is_structural('█'));
+    }
+
+    #[test]
+    fn live_option_lights_matching_run() {
+        let s = st();
+        let art = "  ⟦opt:mean⟧[ MEAN ]⟦⟧   ⟦opt:gauss⟧gauss⟦⟧\n  ⟦caret⟧";
+        // live value "Gaussian" -> gauss run lit, mean run not.
+        let mut rows = render_art(
+            art,
+            "",
+            Profile::Safe,
+            &s,
+            Palette::Heat,
+            Some("Gaussian"),
+            40,
+        );
+        let opt_row = rows.remove(0).into_rich();
+        // 'g' from "gauss" is ignited; 'M' from "MEAN" is annotation (text_secondary).
+        let g = opt_row.iter().find(|(ch, _, _)| *ch == 'g');
+        let m = opt_row.iter().find(|(ch, _, _)| *ch == 'M');
+        assert_eq!(g.and_then(|(_, fg, _)| *fg), Some(s.accent_ignite));
+        assert_eq!(m.and_then(|(_, fg, _)| *fg), Some(s.text_secondary));
+        // caret row drew at least one '_' in accent_ignite under the gauss span.
+        let caret = rows.remove(0).into_rich();
+        assert!(caret
+            .iter()
+            .any(|(ch, fg, _)| *ch == '_' && *fg == Some(s.accent_ignite)));
+    }
+
+    #[test]
+    fn live_option_other_value_lights_other_run() {
+        let s = st();
+        let art = "  ⟦opt:mean⟧[ MEAN ]⟦⟧   ⟦opt:gauss⟧gauss⟦⟧";
+        let mut rows = render_art(
+            art,
+            "",
+            Profile::Safe,
+            &s,
+            Palette::Heat,
+            Some("Mean 3x3"),
+            40,
+        );
+        let opt_row = rows.remove(0).into_rich();
+        let m = opt_row.iter().find(|(ch, _, _)| *ch == 'M');
+        assert_eq!(m.and_then(|(_, fg, _)| *fg), Some(s.accent_ignite));
     }
 }
