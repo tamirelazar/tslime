@@ -45,7 +45,7 @@ pub mod error_diffusion;
 pub mod gradients;
 /// Background grid rendering.
 pub mod grid;
-/// Motion math helpers (lerp, eases, breath, dim/crossfade/clip).
+/// Motion math helpers (lerp, breath).
 pub mod motion;
 /// Color palette definitions and conversions.
 pub mod palette;
