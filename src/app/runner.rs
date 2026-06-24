@@ -1159,7 +1159,6 @@ pub fn run_simulation(
             && !runtime_state.overlay_state.is_open(OverlayType::Dashboard);
         let mode = ambient_mode(controls_open, runtime_state.controls_depth);
         let st = &runtime_state.panel_style;
-        let accent = base_status.accent;
 
         let center = |ov: &crate::render::panel::RenderedOverlay| {
             let w = ov.lines.first().map(|l| l.chars().count()).unwrap_or(0);
@@ -1203,7 +1202,7 @@ pub fn run_simulation(
                     },
                     until: f32::MAX,
                 };
-                let ov = build_ambient_modal(&tune, st, accent, now);
+                let ov = build_ambient_modal(&tune, st, now);
                 let (x, y) = center(&ov);
                 Some((ov, x, y))
             }
@@ -1215,7 +1214,7 @@ pub fn run_simulation(
                     resolved,
                     AmbientState::Tune { .. } | AmbientState::Msg { .. }
                 ) {
-                    let ov = build_ambient_modal(&resolved, st, accent, now);
+                    let ov = build_ambient_modal(&resolved, st, now);
                     let (x, y) = center(&ov);
                     return Some((ov, x, y));
                 }

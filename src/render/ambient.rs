@@ -494,21 +494,15 @@ pub fn build_base_row(width: usize, st: &PanelStyle, base: &BaseStatus) -> Rende
 }
 
 /// A horizontal modal border row (`left` + `mid`×inner + `right`), `inner+2`
-/// wide, tinted with `accent` over the theme's status background.
-fn modal_border_row(
-    left: &str,
-    mid: &str,
-    right: &str,
-    inner: usize,
-    accent: RgbColor,
-    st: &PanelStyle,
-) -> RowBuf {
-    let mut row = RowBuf::new_matte(inner + 2, st.status_bar_bg);
-    row.put(0, left, Some(accent), None);
+/// wide, tinted with the theme's `border_color` over the panel `bg_color` — so
+/// the modal frame + interior match the Controls/Dashboard panels exactly.
+fn modal_border_row(left: &str, mid: &str, right: &str, inner: usize, st: &PanelStyle) -> RowBuf {
+    let mut row = RowBuf::new_matte(inner + 2, st.bg_color);
+    row.put(0, left, Some(st.border_color), None);
     for c in 1..=inner {
-        row.put(c, mid, Some(accent), None);
+        row.put(c, mid, Some(st.border_color), None);
     }
-    row.put(inner + 1, right, Some(accent), None);
+    row.put(inner + 1, right, Some(st.border_color), None);
     row
 }
 
@@ -517,15 +511,11 @@ fn modal_border_row(
 /// state's content (plus one blank padding row top and bottom).
 ///
 /// The border uses solid-block glyphs (`█ ▀ ▄`) that fill the cell to its edges
-/// — matching the Dashboard/Controls panels — and is tinted with the active
-/// palette `accent` so the modal reads as part of the themed UI, not a separate
-/// chrome layer. The interior is matted with the theme's `status_bar_bg`.
-pub fn build_ambient_modal(
-    state: &AmbientState,
-    st: &PanelStyle,
-    accent: RgbColor,
-    now: f32,
-) -> RenderedOverlay {
+/// — matching the Dashboard/Controls panels — and is tinted with the theme's
+/// `border_color`. The interior is matted with the panel `bg_color`, so the
+/// modal's frame outline and background read identically to the Controls
+/// console rather than as a separate chrome layer.
+pub fn build_ambient_modal(state: &AmbientState, st: &PanelStyle, now: f32) -> RenderedOverlay {
     let inner = MODAL_INNER_W;
 
     // Resolve the content rows for this modal. A resting Base state only reaches
@@ -545,24 +535,24 @@ pub fn build_ambient_modal(
     // border. Half-block top (▀) / bottom (▄) lines reach the cell edges so the
     // modal has no empty ring; full-block (█) corners and sides frame it.
     let mut bufs: Vec<RowBuf> = Vec::with_capacity(content.len() + 4);
-    bufs.push(modal_border_row("█", "▀", "█", inner, accent, st));
+    bufs.push(modal_border_row("█", "▀", "█", inner, st));
     let mut inner_rows: Vec<RowBuf> = Vec::with_capacity(content.len() + 2);
-    inner_rows.push(RowBuf::new_matte(inner, st.status_bar_bg));
+    inner_rows.push(RowBuf::new_matte(inner, st.bg_color));
     inner_rows.extend(content);
-    inner_rows.push(RowBuf::new_matte(inner, st.status_bar_bg));
+    inner_rows.push(RowBuf::new_matte(inner, st.bg_color));
     for r in inner_rows {
         let cells = r.into_rich();
-        let mut line = RowBuf::new_matte(inner + 2, st.status_bar_bg);
-        line.put(0, "█", Some(accent), None);
+        let mut line = RowBuf::new_matte(inner + 2, st.bg_color);
+        line.put(0, "█", Some(st.border_color), None);
         // blit content cells at column 1
         for (i, (ch, fg, _bg)) in cells.into_iter().enumerate() {
             let mut tmp = [0u8; 4];
             line.put(1 + i, ch.encode_utf8(&mut tmp), fg, None);
         }
-        line.put(inner + 1, "█", Some(accent), None);
+        line.put(inner + 1, "█", Some(st.border_color), None);
         bufs.push(line);
     }
-    bufs.push(modal_border_row("█", "▄", "█", inner, accent, st));
+    bufs.push(modal_border_row("█", "▄", "█", inner, st));
 
     let lines: Vec<String> = bufs.iter().map(|b| b.text()).collect();
     let rich_lines: Vec<Vec<RichCell>> = bufs.into_iter().map(|b| b.into_rich()).collect();
@@ -749,8 +739,7 @@ mod ambient_tests {
             sticky: false,
             until: 10.0,
         };
-        let accent = crate::render::palette::RgbColor::new(255, 128, 0);
-        let ov = build_ambient_modal(&state, &st, accent, 0.0);
+        let ov = build_ambient_modal(&state, &st, 0.0);
         let top = &ov.lines[0];
         let bottom = ov.lines.last().unwrap();
         // All rows share a fixed modal width (inner + 2 borders).
@@ -776,11 +765,41 @@ mod ambient_tests {
     #[test]
     fn build_ambient_modal_pause_card_from_base() {
         let st = crate::render::theme::GRUVBOX_DARK;
-        let accent = crate::render::palette::RgbColor::new(255, 128, 0);
         // A Base state rendered as a modal is the pause card.
-        let ov = build_ambient_modal(&AmbientState::Base, &st, accent, 0.0);
+        let ov = build_ambient_modal(&AmbientState::Base, &st, 0.0);
         let joined = ov.lines.join("\n");
         assert!(joined.contains("Paused"), "pause card shows Paused");
+    }
+
+    #[test]
+    fn build_ambient_modal_frame_and_bg_match_controls_panel() {
+        // The modal frame outline + background must use the same theme tokens as
+        // the Controls/Dashboard panels (border_color over bg_color), NOT the
+        // palette accent over status_bar_bg.
+        let st = crate::render::theme::GRUVBOX_DARK;
+        let state = AmbientState::Msg {
+            level: NotificationLevel::Info,
+            text: "saved".into(),
+            sticky: false,
+            until: 10.0,
+        };
+        let ov = build_ambient_modal(&state, &st, 0.0);
+        let rich = ov.rich_lines.expect("modal has rich lines");
+
+        // Every block-glyph border cell is tinted with border_color (frame),
+        // and every cell — border and interior — is matted with bg_color.
+        for row in &rich {
+            for (ch, fg, bg) in row {
+                if matches!(ch, '█' | '▀' | '▄') {
+                    assert_eq!(*fg, Some(st.border_color), "frame glyph uses border_color");
+                }
+                assert_eq!(
+                    *bg,
+                    Some(st.bg_color),
+                    "modal interior matted with bg_color"
+                );
+            }
+        }
     }
 
     // ── Additional resolve edge cases ─────────────────────────────────────────
@@ -1046,7 +1065,7 @@ mod tune_tests {
             param: enum_view,
             until: 100.0,
         };
-        let ov = build_ambient_modal(&state, &st, RgbColor::new(255, 128, 0), 0.0);
+        let ov = build_ambient_modal(&state, &st, 0.0);
         let combined: String = ov.lines.concat();
         assert!(combined.contains("Intensity"), "enum renders label");
         assert!(combined.contains("Exponential"), "enum renders value text");
