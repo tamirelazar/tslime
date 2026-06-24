@@ -484,7 +484,24 @@ impl FrameBuffer {
     /// Only cells whose override is `Some(…)` are modified; the underlying character and
     /// the existing `bg_color` from a previous `draw_text_overlay` call are preserved for
     /// cells whose override is `None`.
+    ///
+    /// Thin wrapper around [`draw_rich_overlay_solid`] with `solid = false`.
     pub fn draw_rich_overlay(&mut self, rich: &[Vec<RichCell>], start_x: usize, start_y: usize) {
+        self.draw_rich_overlay_solid(rich, start_x, start_y, false);
+    }
+
+    /// Like [`draw_rich_overlay`] but with a `solid` flag controlling space cells.
+    ///
+    /// `solid = false` — space chars are transparent (the sim shows through).
+    /// `solid = true` — space chars are written too, so a bordered modal reads
+    /// as a filled box rather than a colored mask.
+    pub fn draw_rich_overlay_solid(
+        &mut self,
+        rich: &[Vec<RichCell>],
+        start_x: usize,
+        start_y: usize,
+        solid: bool,
+    ) {
         for (dy, row) in rich.iter().enumerate() {
             let y = start_y + dy;
             if y >= self.height {
@@ -496,8 +513,10 @@ impl FrameBuffer {
                     break;
                 }
                 let idx = y * self.width + x;
-                // Write character (space = transparent, let sim show through)
-                if ch != ' ' {
+                // Write character. By default space = transparent (let sim show
+                // through); `solid` forces opacity by writing the space too, so a
+                // bordered modal reads as a filled box rather than a colored mask.
+                if ch != ' ' || solid {
                     self.cells[idx].char = ch;
                 }
                 if let Some(fg) = fg_override {
@@ -2376,6 +2395,7 @@ impl FrameBuffer {
         footer_keybinds: &str,
         accent: crate::render::palette::RgbColor,
         text: crate::render::palette::RgbColor,
+        dim: crate::render::palette::RgbColor,
     ) {
         if sim_h < 4 {
             return;
@@ -2446,13 +2466,12 @@ impl FrameBuffer {
             }
         }
 
-        let dim_text = crate::render::palette::RgbColor::new(102, 92, 84);
         write_row(
             &mut self.cells,
             sim_y + sim_h - 1,
             sim_x,
             footer_keybinds,
-            dim_text,
+            dim,
             sim_w,
             bw,
         );
@@ -4520,5 +4539,39 @@ mod tests {
             Some(crate::render::palette::RgbColor { r: 255, g: 0, b: 0 }),
             1,
         );
+    }
+}
+
+#[cfg(test)]
+mod rich_overlay_tests {
+    use super::*;
+    use crate::render::palette::RgbColor;
+
+    #[test]
+    fn writes_fg_override_as_is() {
+        let mut fb = FrameBuffer::new(2, 1, ColorMode::TrueColor, None);
+        let rich = vec![vec![('A', Some(RgbColor::new(200, 200, 200)), None)]];
+        fb.draw_rich_overlay_solid(&rich, 0, 0, false);
+        assert_eq!(fb.cells[0].fg_color_rgb, Some(RgbColor::new(200, 200, 200)));
+    }
+
+    #[test]
+    fn solid_false_leaves_space_transparent() {
+        // Space char = transparent when not solid; existing char is preserved.
+        let mut fb = FrameBuffer::new(2, 1, ColorMode::TrueColor, None);
+        fb.cells[0].char = 'X';
+        let rich = vec![vec![(' ', Some(RgbColor::new(100, 100, 100)), None)]];
+        fb.draw_rich_overlay_solid(&rich, 0, 0, false);
+        assert_eq!(fb.cells[0].char, 'X');
+    }
+
+    #[test]
+    fn solid_true_writes_space() {
+        // Space char is written when solid, masking the underlying cell.
+        let mut fb = FrameBuffer::new(2, 1, ColorMode::TrueColor, None);
+        fb.cells[0].char = 'X';
+        let rich = vec![vec![(' ', Some(RgbColor::new(100, 100, 100)), None)]];
+        fb.draw_rich_overlay_solid(&rich, 0, 0, true);
+        assert_eq!(fb.cells[0].char, ' ');
     }
 }

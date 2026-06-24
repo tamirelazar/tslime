@@ -17,8 +17,8 @@ use crate::render::dither::DitherMode;
 use crate::render::downsample::{downsample, DownsampledFrame};
 use crate::render::grid::{GridRenderer, GridStyle};
 use crate::render::overlay::{
-    build_notification_panel, ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay,
-    KeyboardHintsOverlay, PauseOverlay, PresetComparisonOverlay, RenderedOverlay,
+    ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay, KeyboardHintsOverlay, PauseOverlay,
+    PresetComparisonOverlay, RenderedOverlay,
 };
 use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
 use crate::render::palette_editor::{

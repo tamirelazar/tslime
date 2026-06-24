@@ -451,6 +451,14 @@ impl PanelBuilder {
         self
     }
 
+    /// Adds `n` empty rows — use with `spacing::TIGHT`, `spacing::ROW`, or `spacing::SECTION`.
+    pub fn add_empty_n(mut self, n: usize) -> Self {
+        for _ in 0..n {
+            self.rows.push(PanelRow::Empty);
+        }
+        self
+    }
+
     /// Adds a horizontal separator row.
     pub fn add_separator(mut self) -> Self {
         self.rows.push(PanelRow::Separator);

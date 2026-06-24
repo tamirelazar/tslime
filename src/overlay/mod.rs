@@ -44,8 +44,6 @@ pub enum OverlayType {
     PauseBadge,
     /// Pause logo overlay.
     PauseLogo,
-    /// Notification toast overlay.
-    Notification,
 }
 
 impl OverlayType {
@@ -73,7 +71,6 @@ impl OverlayType {
             OverlayType::PauseBadge => 1,
             OverlayType::Controls => 2,
             OverlayType::Dashboard => 3,
-            OverlayType::Notification => 4,
             OverlayType::Help => 10,
             OverlayType::ConfigBrowser => 10,
             OverlayType::ConfigSave => 10,
@@ -147,8 +144,6 @@ pub struct OverlayCollection<'a> {
     pub controls: Option<(&'a RenderedOverlay, usize, usize)>,
     /// Dashboard overlay.
     pub dashboard: Option<(&'a RenderedOverlay, usize, usize)>,
-    /// Notification overlay.
-    pub notification: Option<(&'a RenderedOverlay, usize, usize)>,
     /// Config browser overlay.
     pub config_browser: Option<(&'a RenderedOverlay, usize, usize)>,
     /// Config save overlay.
@@ -186,11 +181,6 @@ impl<'a> OverlayCollection<'a> {
                 OverlayType::Dashboard,
                 self.dashboard,
                 OverlayType::Dashboard.z_order(),
-            ),
-            (
-                OverlayType::Notification,
-                self.notification,
-                OverlayType::Notification.z_order(),
             ),
             (
                 OverlayType::ConfigBrowser,

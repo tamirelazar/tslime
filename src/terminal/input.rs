@@ -154,11 +154,17 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('D') => ControlAction::CycleDitherMode,
         KeyCode::Char('m') => ControlAction::CycleIntensityMapping,
         KeyCode::Char('M') => ControlAction::CycleIntensityMappingReverse,
-        KeyCode::Char('[') | KeyCode::Char('{') => ControlAction::AdjustDitherIntensity(-0.1),
-        KeyCode::Char(']') | KeyCode::Char('}') => ControlAction::AdjustDitherIntensity(0.1),
+        KeyCode::Char('[') => ControlAction::CycleOptionsCategoryReverse,
+        KeyCode::Char(']') => ControlAction::CycleOptionsCategory,
+        KeyCode::Char('{') => ControlAction::AdjustDitherIntensity(-0.1),
+        KeyCode::Char('}') => ControlAction::AdjustDitherIntensity(0.1),
         KeyCode::Char('q') | KeyCode::Char('Q') => ControlAction::Quit,
-        KeyCode::Tab => ControlAction::CycleOptionsCategory,
-        KeyCode::BackTab => ControlAction::CycleOptionsCategoryReverse,
+        KeyCode::Tab => ControlAction::ToggleControlsDepth,
+        KeyCode::Left => ControlAction::ControlsAdjustFocused(-1.0),
+        KeyCode::Right => ControlAction::ControlsAdjustFocused(1.0),
+        KeyCode::Up => ControlAction::ControlsFocusPrev,
+        KeyCode::Down => ControlAction::ControlsFocusNext,
+        KeyCode::Enter => ControlAction::ControlsActivateFocused,
         KeyCode::Char('A') | KeyCode::Char('a') => {
             if key_event.modifiers.contains(KeyModifiers::SHIFT) {
                 ControlAction::AdjustSensorAngle(-1.0)
@@ -491,6 +497,27 @@ mod tests {
             state: KeyEventState::empty(),
         };
         assert_eq!(handle_key_event(&ev), ControlAction::CycleColorAa);
+    }
+
+    #[test]
+    fn tab_toggles_depth_and_arrows_map() {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        let k = |c: KeyCode| {
+            handle_key_event(&KeyEvent {
+                code: c,
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::empty(),
+            })
+        };
+        assert_eq!(k(KeyCode::Tab), ControlAction::ToggleControlsDepth);
+        assert_eq!(k(KeyCode::Left), ControlAction::ControlsAdjustFocused(-1.0));
+        assert_eq!(k(KeyCode::Up), ControlAction::ControlsFocusPrev);
+        assert_eq!(k(KeyCode::Char(']')), ControlAction::CycleOptionsCategory);
+        assert_eq!(
+            k(KeyCode::Char('}')),
+            ControlAction::AdjustDitherIntensity(0.1)
+        );
     }
 
     #[test]

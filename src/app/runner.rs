@@ -19,15 +19,15 @@ use crate::food_image::FOOD_IMAGE_PNG;
 use crate::overlay::{OverlayInputManager, OverlayInputResult, OverlayType};
 use crate::palette_manager;
 use crate::render::adaptive_brightness::AdaptiveBrightness;
+use crate::render::ambient::{AmbientState, BaseStatus};
 use crate::render::charset::Charset;
+use crate::render::controls::registry::RegistryCtx;
 use crate::render::dither::DitherMode;
 use crate::render::downsample::downsample;
 use crate::render::grid::{GridRenderer, GridStyle};
-use crate::render::options_overlay::ControlsOverlay;
 use crate::render::overlay::{
-    build_notification_panel, ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay,
-    DirtyGuardOverlay, KeyboardHintsOverlay, OverlayRenderer, PauseOverlay,
-    PresetComparisonOverlay, RenderedOverlay,
+    ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay, DirtyGuardOverlay,
+    KeyboardHintsOverlay, OverlayRenderer, PauseOverlay, PresetComparisonOverlay, RenderedOverlay,
 };
 use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
 use crate::render::palette_editor::{
@@ -147,6 +147,719 @@ fn check_auto_reset(
 /// e.g. Windows) are ignored so a single keystroke does not double-fire.
 fn screensaver_exit_on_key(mode: &Mode, key_event: &crossterm::event::KeyEvent) -> bool {
     *mode == Mode::Screensaver && key_event.kind == crossterm::event::KeyEventKind::Press
+}
+
+/// Outcome of [`apply_controls_action`].
+///
+/// Controls-overlay interaction is split into a pure state mutation (focus,
+/// depth) and an optional "real" [`ControlAction`] that must be re-dispatched
+/// through the main action match (because adjusting the focused parameter is
+/// exactly the same as pressing its hotkey, which can touch the simulation,
+/// renderer, timer, etc. that live in the run loop).
+enum ControlsDispatch {
+    /// The action was not a controls-overlay action; let the main match handle it.
+    Passthrough,
+    /// The action was fully handled by mutating [`RuntimeState`]; nothing else to do.
+    Handled,
+    /// Re-dispatch this real [`ControlAction`] through the main action match.
+    Redispatch(ControlAction),
+}
+
+/// Returns `true` when a *competing* (interactive, non-Controls) overlay is the
+/// foreground overlay.
+///
+/// Overlays are mutually exclusive (`OverlayState` holds a single active slot),
+/// so "another overlay is open" is simply: the active overlay is `Some(x)` where
+/// `x` is neither `Controls` nor a non-interactive badge.
+///
+/// Used to suppress controls-interaction meta-actions (`Tab`/arrows/`Enter`)
+/// while e.g. the Dashboard is open, so they don't silently flip controls depth
+/// or mutate the simulation behind an overlay that doesn't render controls. The
+/// spec-mandated auto-promote-from-Closed behaviour (←→/Tab with NO overlay
+/// open) is preserved because that case has no active overlay at all.
+fn other_overlay_open(state: &RuntimeState) -> bool {
+    match state.overlay_state.active() {
+        // Controls itself is not a competitor.
+        Some(OverlayType::Controls) => false,
+        // Non-interactive badges never block controls interaction.
+        Some(OverlayType::PauseBadge) | Some(OverlayType::PauseLogo) => false,
+        // Any other interactive overlay (Help, Dashboard, ConfigBrowser,
+        // ConfigSave, DirtyGuard, PresetComparison, KeyboardHints,
+        // PaletteEditor) competes for the foreground.
+        Some(_) => true,
+        None => false,
+    }
+}
+
+/// Applies the controls-overlay interaction actions (depth toggle, focus
+/// movement, focused adjust/activate) to [`RuntimeState`], and performs
+/// in-category focus retargeting for plain per-param hotkeys.
+///
+/// The five interaction meta-actions (`ToggleControlsDepth`, `ControlsFocusNext`,
+/// `ControlsFocusPrev`, `ControlsAdjustFocused`, `ControlsActivateFocused`) only
+/// act when Controls is the foreground overlay OR no competing overlay is open
+/// (see [`other_overlay_open`]); otherwise they `Passthrough` without mutating
+/// depth/focus or auto-promoting, so e.g. arrows don't silently tweak the
+/// simulation behind the Dashboard.
+///
+/// Returns:
+/// - [`ControlsDispatch::Handled`] when the action was a pure state mutation.
+/// - [`ControlsDispatch::Redispatch`] with the real action to re-run (focused
+///   adjust/activate resolve to the focused parameter's hotkey action).
+/// - [`ControlsDispatch::Passthrough`] otherwise (the main match handles it),
+///   after retargeting focus if the hotkey's parameter is in the current
+///   category.
+fn apply_controls_action(
+    state: &mut RuntimeState,
+    action: &ControlAction,
+    ctx: &RegistryCtx,
+) -> ControlsDispatch {
+    use crate::render::controls::registry;
+    use crate::render::controls::ControlsDepth;
+
+    let category = state.controls_category_idx;
+
+    // Gate controls-interaction meta-actions behind the active overlay. We act
+    // only when Controls is the foreground overlay, OR no competing overlay is
+    // open (the latter preserves the spec's auto-promote-from-Closed behaviour
+    // for ←→/Tab when nothing is open). When a competing overlay (e.g. the
+    // Dashboard) is foreground, the five interaction meta-actions and the
+    // open-case category clamp are suppressed (Passthrough, no depth/focus
+    // mutation, no auto-promote).
+    let may_interact =
+        state.overlay_state.is_open(OverlayType::Controls) || !other_overlay_open(state);
+
+    // Defensive clamp: if a conditional row disappeared (e.g. Gaussian toggled
+    // off removes Diff Sigma; mouse disabled removes Mouse Timeout) the focus
+    // index can be stale. Correct it before any action so that navigation and
+    // adjust always land on a real row.
+    let visible_len = registry::visible_params(category, ctx).len();
+    if visible_len > 0 {
+        state.controls_focus = state.controls_focus.min(visible_len - 1);
+    }
+
+    match action {
+        ControlAction::ToggleControlsDepth => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
+            state.controls_depth = match state.controls_depth {
+                ControlsDepth::Closed => ControlsDepth::Console,
+                ControlsDepth::Console => ControlsDepth::Tuner,
+                ControlsDepth::Tuner => ControlsDepth::Console,
+            };
+            ControlsDispatch::Handled
+        }
+        ControlAction::ControlsFocusNext => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
+            let len = registry::visible_params(category, ctx).len();
+            if len > 0 {
+                state.controls_focus = (state.controls_focus + 1).min(len - 1);
+            }
+            ControlsDispatch::Handled
+        }
+        ControlAction::ControlsFocusPrev => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
+            state.controls_focus = state.controls_focus.saturating_sub(1);
+            ControlsDispatch::Handled
+        }
+        ControlAction::ControlsAdjustFocused(sign) => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
+            // Auto-promote: a focused adjust from Closed opens the Tuner first.
+            if state.controls_depth == ControlsDepth::Closed {
+                state.controls_depth = ControlsDepth::Tuner;
+            }
+            let params = registry::visible_params(category, ctx);
+            let Some(desc) = params.get(state.controls_focus.min(params.len().saturating_sub(1)))
+            else {
+                return ControlsDispatch::Handled;
+            };
+            match registry::action_for(desc.id, *sign) {
+                Some(real) => ControlsDispatch::Redispatch(real),
+                None => ControlsDispatch::Handled,
+            }
+        }
+        ControlAction::ControlsActivateFocused => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
+            let params = registry::visible_params(category, ctx);
+            let Some(desc) = params.get(state.controls_focus.min(params.len().saturating_sub(1)))
+            else {
+                return ControlsDispatch::Handled;
+            };
+            match registry::activate_action_for(desc.id) {
+                Some(real) => ControlsDispatch::Redispatch(real),
+                None => ControlsDispatch::Handled,
+            }
+        }
+        // Category cycling: when the controls overlay is open, cycle the category
+        // here and clamp focus to the new category's visible row count, then
+        // return Handled so the runner's match arm is skipped (no double-cycle).
+        // When the overlay is closed, return Passthrough so the runner's arm can
+        // open the overlay and set depth=Console.
+        ControlAction::CycleOptionsCategory => {
+            if state.overlay_state.is_open(OverlayType::Controls) {
+                state.cycle_controls_category(true);
+                let new_len = registry::visible_params(state.controls_category_idx, ctx).len();
+                state.controls_focus = state.controls_focus.min(new_len.saturating_sub(1));
+                ControlsDispatch::Handled
+            } else {
+                ControlsDispatch::Passthrough
+            }
+        }
+        ControlAction::CycleOptionsCategoryReverse => {
+            if state.overlay_state.is_open(OverlayType::Controls) {
+                state.cycle_controls_category(false);
+                let new_len = registry::visible_params(state.controls_category_idx, ctx).len();
+                state.controls_focus = state.controls_focus.min(new_len.saturating_sub(1));
+                ControlsDispatch::Handled
+            } else {
+                ControlsDispatch::Passthrough
+            }
+        }
+        // Any other action: if it's a per-param hotkey whose parameter is in the
+        // CURRENT category, retarget focus to it (silent cross-category rule:
+        // parameters in other categories never change focus or category).
+        other => {
+            if let Some(id) = registry::param_id_for_action(other) {
+                if let Some((cat, idx)) = registry::locate(id, ctx) {
+                    if cat == category {
+                        state.controls_focus = idx;
+                    }
+                }
+            }
+            ControlsDispatch::Passthrough
+        }
+    }
+}
+
+/// Builds the [`ParamView`] list for the currently-visible parameters of the
+/// active controls category, sourcing every value from live [`RuntimeState`].
+///
+/// Value formatting, gauge ranges, and modified/default detection follow the
+/// same logic as [`build_param_views`] / the controls module so the Console
+/// reads identically to the old controls overlay.
+///
+/// `ratio`/`def_ratio` are filled only for [`ParamKind::Numeric`] rows; for all
+/// other kinds they are `None`. `state` is:
+/// - [`ParamState::Cli`] for CLI-readonly rows (Population),
+/// - [`ParamState::Display`] for display-only rows (Mouse Timeout, Dither),
+/// - otherwise [`ParamState::Modified`] / [`ParamState::Default`] by comparing
+///   the live value against `runtime_state.default_values` (float tolerance for
+///   numerics; only the fields present in [`DefaultValues`] can show modified —
+///   params without a tracked default always read as Default, matching the old
+///   overlay's blank marker).
+fn build_param_views(
+    runtime_state: &RuntimeState,
+    ctx: &RegistryCtx,
+    population: usize,
+) -> Vec<crate::render::controls::ParamView> {
+    build_param_views_for_category(
+        runtime_state,
+        runtime_state.controls_category_idx,
+        ctx,
+        population,
+    )
+}
+
+/// Like [`build_param_views`] but for an explicit `category` index rather than
+/// the live `controls_category_idx`. Used by TUNE surfacing to build the view
+/// for an adjusted param that may live in any category.
+fn build_param_views_for_category(
+    runtime_state: &RuntimeState,
+    category: usize,
+    ctx: &RegistryCtx,
+    population: usize,
+) -> Vec<crate::render::controls::ParamView> {
+    use crate::render::controls::registry::{visible_params, ParamId, ParamKind};
+    use crate::render::controls::{ParamState, ParamView};
+
+    let defaults = &runtime_state.default_values;
+    // Float-equality tolerance for modified detection (matches old eps choices).
+    let near = |a: f32, b: f32, eps: f32| (a - b).abs() <= eps;
+    // Clamp helper for gauge ratios.
+    let ratio = |v: f32, min: f32, max: f32| ((v - min) / (max - min)).clamp(0.0, 1.0);
+
+    let palette_name = runtime_state
+        .current_palette(&ALL_PALETTES)
+        .name()
+        .to_string();
+    let charset = charset_name(&runtime_state.current_charset()).to_string();
+    let color_aa = runtime_state.current_color_aa().as_label().to_string();
+    let theme = runtime_state.current_theme_name().to_string();
+
+    let shift_name = match runtime_state.palette_shift_speed {
+        PaletteShiftSpeed::Off => "Off",
+        PaletteShiftSpeed::Slow => "Slow",
+        PaletteShiftSpeed::Medium => "Medium",
+        PaletteShiftSpeed::Fast => "Fast",
+    };
+    let mouse_mode_name = match runtime_state.mouse_mode {
+        MouseInteractionMode::Disabled => "Disabled",
+        MouseInteractionMode::Attract => "Attract",
+        MouseInteractionMode::Repel => "Repel",
+    };
+    let terrain_name = match runtime_state.terrain_type {
+        TerrainType::None => "None",
+        TerrainType::Smooth => "Smooth",
+        TerrainType::Turbulent => "Turbulent",
+        TerrainType::Mixed => "Mixed",
+    };
+    let kernel_name = match runtime_state.diffusion_kernel {
+        DiffusionKernel::Mean3x3 => "Mean3x3",
+        DiffusionKernel::Gaussian => "Gaussian",
+    };
+
+    visible_params(category, ctx)
+        .into_iter()
+        .map(|desc| {
+            // (value_text, ratio, def_ratio, state)
+            let (value_text, r, dr, state): (String, Option<f32>, Option<f32>, ParamState) =
+                match desc.id {
+                    // ── SIM ───────────────────────────────────────────────────
+                    ParamId::SensorAngle => {
+                        let v = runtime_state.sensor_angle;
+                        let d = defaults.sensor_angle;
+                        (
+                            format!("{v:.1}°"),
+                            Some(ratio(v, 5.0, 90.0)),
+                            Some(ratio(d, 5.0, 90.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::SensorDistance => {
+                        let v = runtime_state.sensor_distance;
+                        let d = defaults.sensor_distance;
+                        (
+                            format!("{v:.1}px"),
+                            Some(ratio(v, 1.0, 50.0)),
+                            Some(ratio(d, 1.0, 50.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::TurnAngle => {
+                        let v = runtime_state.rotation_angle;
+                        let d = defaults.rotation_angle;
+                        (
+                            format!("{v:.1}°"),
+                            Some(ratio(v, 5.0, 90.0)),
+                            Some(ratio(d, 5.0, 90.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::StepSize => {
+                        let v = runtime_state.step_size;
+                        let d = defaults.step_size;
+                        (
+                            format!("{v:.1}px"),
+                            Some(ratio(v, 0.5, 5.0)),
+                            Some(ratio(d, 0.5, 5.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::Decay => {
+                        let v = runtime_state.decay_factor;
+                        let d = defaults.decay_factor;
+                        (
+                            format!("{v:.3}"),
+                            Some(ratio(v, 0.5, 0.99)),
+                            Some(ratio(d, 0.5, 0.99)),
+                            if near(v, d, 0.001) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::Deposit => {
+                        let v = runtime_state.deposit_amount;
+                        let d = defaults.deposit_amount;
+                        (
+                            format!("{v:.1}×"),
+                            Some(ratio(v, 1.0, 20.0)),
+                            Some(ratio(d, 1.0, 20.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::TimeScale => {
+                        // No tracked default → always Default (matches old blank marker).
+                        let v = runtime_state.time_scale;
+                        (
+                            format!("{v:.1}×"),
+                            Some(ratio(v, 0.5, 4.0)),
+                            Some(ratio(1.0, 0.5, 4.0)),
+                            ParamState::Default,
+                        )
+                    }
+                    // ── ENV ───────────────────────────────────────────────────
+                    ParamId::DiffusionKernel => {
+                        let modified = format!("{:?}", runtime_state.diffusion_kernel)
+                            != format!("{:?}", defaults.diffusion_kernel);
+                        (
+                            kernel_name.to_string(),
+                            None,
+                            None,
+                            if modified {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::DiffusionSigma => {
+                        let v = runtime_state.diffusion_sigma;
+                        let d = defaults.diffusion_sigma;
+                        (
+                            format!("{v:.2}"),
+                            Some(ratio(v, 0.5, 4.0)),
+                            Some(ratio(d, 0.5, 4.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::Wind => {
+                        let modified = format!("{:?}", runtime_state.wind_direction)
+                            != format!("{:?}", defaults.wind_direction);
+                        (
+                            runtime_state.wind_direction.name().to_string(),
+                            None,
+                            None,
+                            if modified {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::TerrainType => {
+                        let modified = format!("{:?}", runtime_state.terrain_type)
+                            != format!("{:?}", defaults.terrain_type);
+                        (
+                            terrain_name.to_string(),
+                            None,
+                            None,
+                            if modified {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::TerrainStrength => {
+                        let v = runtime_state.terrain_strength;
+                        let d = defaults.terrain_strength;
+                        (
+                            format!("{v:.1}×"),
+                            Some(ratio(v, 0.1, 5.0)),
+                            Some(ratio(d, 0.1, 5.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::Attractor => {
+                        let v = runtime_state.attractor_strength;
+                        let d = defaults.attractor_strength;
+                        (
+                            format!("{v:.1}×"),
+                            Some(ratio(v, 0.1, 10.0)),
+                            Some(ratio(d, 0.1, 10.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::MouseMode => {
+                        // No tracked default → always Default (old marker is blank).
+                        (mouse_mode_name.to_string(), None, None, ParamState::Default)
+                    }
+                    ParamId::MouseTimeout => (
+                        format!("{:.1}s", runtime_state.mouse_timeout),
+                        None,
+                        None,
+                        ParamState::Display,
+                    ),
+                    // ── APP ───────────────────────────────────────────────────
+                    ParamId::Theme => (theme.clone(), None, None, ParamState::Default),
+                    ParamId::Palette => (palette_name.clone(), None, None, ParamState::Default),
+                    ParamId::Charset => (charset.clone(), None, None, ParamState::Default),
+                    ParamId::ColorAa => (color_aa.clone(), None, None, ParamState::Default),
+                    ParamId::PaletteShift => {
+                        (shift_name.to_string(), None, None, ParamState::Default)
+                    }
+                    ParamId::Invert => (
+                        if runtime_state.invert_palette {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::Reverse => (
+                        if runtime_state.reverse_palette {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::StatusLine => (
+                        if runtime_state.show_status_bar {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::WindowFrame => (
+                        format!("{:?}", runtime_state.window_frame),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::Chrome => (
+                        format!("{:?}", runtime_state.chrome_style),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    // ── PST ───────────────────────────────────────────────────
+                    ParamId::IntensityMapping => (
+                        runtime_state.intensity_mapping_name().to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::Dither => (
+                        runtime_state.dither_mode.name().to_string(),
+                        None,
+                        None,
+                        // Display (muted), not Cli (red "restart to change") —
+                        // matches the old "(dev)" row semantics.
+                        ParamState::Display,
+                    ),
+                    ParamId::AutoNormalize => {
+                        let v = runtime_state.auto_normalize;
+                        (
+                            if v { "On" } else { "Off" }.to_string(),
+                            None,
+                            None,
+                            if v != defaults.auto_normalize {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::MotionBlur => {
+                        let v = runtime_state.motion_blur_frames;
+                        (
+                            format!("{v} fr"),
+                            Some((v as f32 / 7.0).clamp(0.0, 1.0)),
+                            Some((defaults.motion_blur_frames as f32 / 7.0).clamp(0.0, 1.0)),
+                            if v != defaults.motion_blur_frames {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::Brightness => {
+                        // Brightness shown as gain; default (1.0×) sits mid-bar.
+                        let v = runtime_state.max_brightness;
+                        let d = defaults.max_brightness;
+                        if runtime_state.auto_normalize {
+                            (
+                                "auto".to_string(),
+                                Some(0.0),
+                                Some(
+                                    (crate::config_defaults::trail::brightness_gain(d) / 2.0)
+                                        .clamp(0.0, 1.0),
+                                ),
+                                if near(v, d, 0.01) {
+                                    ParamState::Default
+                                } else {
+                                    ParamState::Modified
+                                },
+                            )
+                        } else {
+                            let gain = crate::config_defaults::trail::brightness_gain(v);
+                            let def_gain = crate::config_defaults::trail::brightness_gain(d);
+                            (
+                                format!("{gain:.1}×"),
+                                Some((gain / 2.0).clamp(0.0, 1.0)),
+                                Some((def_gain / 2.0).clamp(0.0, 1.0)),
+                                if near(v, d, 0.01) {
+                                    ParamState::Default
+                                } else {
+                                    ParamState::Modified
+                                },
+                            )
+                        }
+                    }
+                    ParamId::TrailAge => {
+                        let value = if runtime_state.trail_age_enabled {
+                            if runtime_state.trail_age_reverse {
+                                format!("On ({} rev)", runtime_state.trail_age_mode.name())
+                            } else {
+                                format!("On ({})", runtime_state.trail_age_mode.name())
+                            }
+                        } else {
+                            "Off".to_string()
+                        };
+                        (value, None, None, ParamState::Default)
+                    }
+                    ParamId::TrailDelta => (
+                        if runtime_state.trail_delta_enabled {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::EdgeGlow => (
+                        if runtime_state.gradient_magnitude_enabled {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    // ── PRF ───────────────────────────────────────────────────
+                    ParamId::FastMode => (
+                        if runtime_state.fast_mode_enabled {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::Population => (
+                        format!("{}k", population / 1000),
+                        None,
+                        None,
+                        ParamState::Cli,
+                    ),
+                    // ── SYS (action rows) ─────────────────────────────────────
+                    ParamId::SaveFrame => ("(PNG)".to_string(), None, None, ParamState::Default),
+                    ParamId::Reset => ("Defaults".to_string(), None, None, ParamState::Default),
+                    ParamId::Randomize => ("Params".to_string(), None, None, ParamState::Default),
+                };
+
+            // Numeric rows keep their ratio pair; everything else clears it.
+            let (ratio, def_ratio) = if desc.kind == ParamKind::Numeric {
+                (r, dr)
+            } else {
+                (None, None)
+            };
+
+            ParamView {
+                desc,
+                value_text,
+                ratio,
+                def_ratio,
+                state,
+            }
+        })
+        .collect()
+}
+
+/// Build a [`TuneView`] for the parameter a just-dispatched [`ControlAction`]
+/// adjusted, sourcing the value/range/default/state from the same registry +
+/// [`build_param_views_for_category`] path the Controls surface uses.
+///
+/// Returns `None` when the action is not a single-param adjust (overlay/global
+/// actions), or when the param has no gauge-able view (action rows like
+/// Save/Reset/Randomize, or display-only rows). Numeric params surface a real
+/// gauge; Enum/Toggle params surface a flat marker (normalized 0 with the
+/// formatted value text carrying the meaning).
+fn tune_view_for_action(
+    runtime_state: &RuntimeState,
+    action: &ControlAction,
+    ctx: &RegistryCtx,
+    population: usize,
+) -> Option<crate::render::ambient::TuneView> {
+    use crate::render::controls::registry::{self, ParamId};
+
+    let id = registry::param_id_for_action(action)?;
+    // Action rows are MSG/activation events, not tunable params.
+    if matches!(id, ParamId::SaveFrame | ParamId::Reset | ParamId::Randomize) {
+        return None;
+    }
+
+    let (category, idx) = registry::locate(id, ctx)?;
+    let views = build_param_views_for_category(runtime_state, category, ctx, population);
+    let pv = views.get(idx)?;
+
+    // Numeric rows carry normalized ratio/def_ratio for the gauge; non-numeric
+    // rows have none — surface them at the bottom of the gauge with the value
+    // text carrying the state. Gauge values are already normalized to [0, 1].
+    let (value, default, show_gauge) = match (pv.ratio, pv.def_ratio) {
+        (Some(r), Some(d)) => (r, d, true),
+        _ => (0.0, 0.0, false),
+    };
+
+    Some(crate::render::ambient::TuneView {
+        label: pv.desc.label.to_string(),
+        value_text: pv.value_text.clone(),
+        value,
+        range: (0.0, 1.0),
+        default,
+        state: pv.state,
+        show_gauge,
+    })
 }
 
 /// Resolves a quick-key press to a bind target.
@@ -409,6 +1122,134 @@ pub fn run_simulation(
     };
     let mut blended_trail_buffer: Vec<f32> = Vec::new();
 
+    // Resize the sim render buffers to new dimensions. Must run on EVERY change to
+    // render dims — terminal resize AND chrome-mode change — or `blur_field`'s
+    // `src.len() == width*height` invariant breaks (e.g. F10 into Fullscreen grows
+    // the sim while the buffers stay windowed-sized → panic in antialiasing.rs).
+    fn resize_render_frames(
+        downsampled: &mut crate::render::downsample::DownsampledFrame,
+        aux: &mut crate::render::downsample::AuxFrame,
+        w: usize,
+        h: usize,
+    ) {
+        *downsampled = crate::render::downsample::DownsampledFrame::new(w, h);
+        aux.width = w;
+        aux.height = h;
+        aux.cells = vec![crate::render::downsample::AuxCell::default(); w * h];
+    }
+
+    // Resolve the ambient surface overlay + its screen position for this frame.
+    //   • Controls Tuner depth → the focused param renders as a persistent
+    //     centered modal (the interactive tuner surface).
+    //   • Controls Console depth → ambient hidden (the console IS the surface).
+    //   • A live TUNE/MSG event (controls closed) → a transient centered modal.
+    //   • Otherwise, when the always-on status line is enabled, a compact base row
+    //     docks at the bottom interior of the frame (skipped in Expanded chrome,
+    //     whose legacy footer already serves that role). Pause renders nothing
+    //     extra here — the pause screen already presents its own surface.
+    //   • Default: nothing (clean frame).
+    // Shared by the main render path and the pause re-render path.
+    fn compute_ambient_overlay(
+        runtime_state: &RuntimeState,
+        base_status: &crate::render::ambient::BaseStatus,
+        window: &crate::render::window::Window,
+        term_width: usize,
+        term_height: usize,
+        agent_count: usize,
+    ) -> Option<(crate::render::panel::RenderedOverlay, usize, usize)> {
+        use crate::render::ambient::{build_ambient_modal, build_base_row, resolve, AmbientState};
+        use crate::render::window::FallbackMode;
+        use crate::simulation::config::ChromeStyle;
+
+        let now = runtime_state.phase_clock;
+        let controls_open = runtime_state.overlay_state.is_open(OverlayType::Controls)
+            && !runtime_state.overlay_state.is_open(OverlayType::Dashboard);
+        let mode = ambient_mode(controls_open, runtime_state.controls_depth);
+        let st = &runtime_state.panel_style;
+
+        let center = |ov: &crate::render::panel::RenderedOverlay| {
+            let w = ov.lines.first().map(|l| l.chars().count()).unwrap_or(0);
+            let h = ov.lines.len();
+            (
+                term_width.saturating_sub(w) / 2,
+                term_height.saturating_sub(h) / 2,
+            )
+        };
+
+        match mode {
+            // Console open: the console is the full surface; no ambient overlay.
+            AmbientMode::Hidden => None,
+            // Tuner depth: render the focused param as a persistent centered modal.
+            AmbientMode::Tuner => {
+                let ctx = RegistryCtx {
+                    diffusion_gaussian: matches!(
+                        runtime_state.diffusion_kernel,
+                        DiffusionKernel::Gaussian
+                    ),
+                    mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
+                };
+                let params = build_param_views(runtime_state, &ctx, agent_count);
+                let idx = runtime_state
+                    .controls_focus
+                    .min(params.len().saturating_sub(1));
+                let pv = params.get(idx)?;
+                let (value, default, show_gauge) = match (pv.ratio, pv.def_ratio) {
+                    (Some(r), Some(d)) => (r, d, true),
+                    _ => (0.0, 0.0, false),
+                };
+                let tune = AmbientState::Tune {
+                    param: crate::render::ambient::TuneView {
+                        label: pv.desc.label.to_string(),
+                        value_text: pv.value_text.clone(),
+                        value,
+                        range: (0.0, 1.0),
+                        default,
+                        state: pv.state,
+                        show_gauge,
+                    },
+                    until: f32::MAX,
+                };
+                let ov = build_ambient_modal(&tune, st, now);
+                let (x, y) = center(&ov);
+                Some((ov, x, y))
+            }
+            // Controls closed: live TUNE/MSG event → transient centered modal;
+            // else optional always-on base row.
+            AmbientMode::Normal => {
+                let resolved = resolve(&runtime_state.ambient_states, now).clone();
+                if matches!(
+                    resolved,
+                    AmbientState::Tune { .. } | AmbientState::Msg { .. }
+                ) {
+                    let ov = build_ambient_modal(&resolved, st, now);
+                    let (x, y) = center(&ov);
+                    return Some((ov, x, y));
+                }
+                if !runtime_state.show_status_bar {
+                    return None;
+                }
+                let (bx, by, bw) = if matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
+                {
+                    (0usize, term_height.saturating_sub(1), term_width)
+                } else {
+                    let l = window.compute_rects(term_width, term_height);
+                    if matches!(l.fallback, FallbackMode::Fullscreen) {
+                        (0usize, term_height.saturating_sub(1), term_width)
+                    } else {
+                        (l.sim_x, l.sim_y + l.sim_h.saturating_sub(1), l.sim_w)
+                    }
+                };
+                // Expanded chrome's legacy footer already occupies the bottom row.
+                if matches!(runtime_state.chrome_style, ChromeStyle::Expanded) {
+                    None
+                } else {
+                    let ov = build_base_row(bw, st, base_status);
+                    Some((ov, bx, by))
+                }
+            }
+        }
+    }
+
     #[cfg(feature = "audio")]
     let mut choir: Option<crate::audio::Choir> = if args.choir {
         match crate::audio::Choir::try_new(args.choir_volume.clamp(0.0, 1.0)) {
@@ -611,14 +1452,12 @@ pub fn run_simulation(
                     grid.initialize(term_width as usize, term_height as usize);
                 }
                 // Resize frame buffers to sim render dimensions (may differ in windowed mode)
-                downsampled_frame =
-                    crate::render::downsample::DownsampledFrame::new(new_render_w, new_render_h);
-                aux_frame.width = new_render_w;
-                aux_frame.height = new_render_h;
-                aux_frame.cells = vec![
-                    crate::render::downsample::AuxCell::default();
-                    new_render_w * new_render_h
-                ];
+                resize_render_frames(
+                    &mut downsampled_frame,
+                    &mut aux_frame,
+                    new_render_w,
+                    new_render_h,
+                );
             }
         }
 
@@ -634,6 +1473,7 @@ pub fn run_simulation(
 
         // Clamp dt to avoid UI animation jumps during lag spikes (max 0.1s / 10 FPS)
         let dt = dt.min(0.1);
+        runtime_state.advance_phase(dt);
 
         // Fixed simulation timestep, decoupled from frame-write jitter. A blocked
         // write (e.g. terminal back-pressure while holding a key) inflates wall `dt`
@@ -787,9 +1627,9 @@ pub fn run_simulation(
         );
 
         // Narrow live reads instead of cloning the whole SimConfig (which carries heap Vecs
-        // including obstacle masks). DiffusionKernel is Copy; species colors are the only Vec
-        // consumers, collected once here and reused at both render sites.
-        let current_diffusion_kernel = sim.config().diffusion_kernel;
+        // including obstacle masks). Species colors are the only Vec consumers, collected once
+        // here and reused at both render sites. (DiffusionKernel is read directly via sim.config()
+        // where needed — the old local was removed in Task 15 with build_status_line.)
         let current_species_rgb: Vec<crate::render::palette::RgbColor> =
             extract_species_rgb_colors(sim.config());
 
@@ -875,9 +1715,7 @@ pub fn run_simulation(
             (0, 0)
         };
 
-        // Calculate controls position (centered)
-        let (controls_x, controls_y) =
-            ControlsOverlay::calculate_position(term_width as usize, term_height as usize);
+        // Controls position is computed below from the built overlay's own dims.
 
         // Palette accent colour used for key-binding highlights and title badges.
         let ui_accent = palette_accent_color(
@@ -894,7 +1732,11 @@ pub fn run_simulation(
             .is_open(OverlayType::KeyboardHints)
             && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
         {
-            Some(KeyboardHintsOverlay::build_overlay(ui_accent, &user_binds))
+            Some(KeyboardHintsOverlay::build_overlay(
+                ui_accent,
+                &runtime_state.panel_style,
+                &user_binds,
+            ))
         } else {
             None
         };
@@ -904,107 +1746,132 @@ pub fn run_simulation(
             (0, 0)
         };
 
-        // Build controls overlay (h key)
-        let controls_lines: Option<RenderedOverlay> =
+        // Build controls overlay (h key). The Controls surface is gated by the
+        // overlay open-state (so esc / CloseOverlays / exclusivity keep working),
+        // while `controls_depth` selects which depth (Console / Tuner) renders.
+        //
+        // Task 15: Tuner depth is now handled entirely by the ambient strip (see
+        // ambient_overlay_built below). Only Console depth renders a separate
+        // composite here; Tuner returns (None, 0, 0) so the bottom rows belong
+        // exclusively to the ambient strip.
+        let (controls_lines, controls_x, controls_y): (Option<RenderedOverlay>, usize, usize) =
             if runtime_state.overlay_state.is_open(OverlayType::Controls)
                 && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
             {
-                Some(ControlsOverlay::build_overlay(
-                    runtime_state.controls_category_idx,
-                    runtime_state.sensor_angle,
-                    runtime_state.sensor_distance,
-                    runtime_state.rotation_angle,
-                    runtime_state.step_size,
-                    runtime_state.decay_factor,
-                    runtime_state.deposit_amount,
-                    runtime_state.time_scale,
-                    runtime_state.diffusion_kernel,
-                    runtime_state.diffusion_sigma,
-                    runtime_state.attractor_strength,
-                    match runtime_state.mouse_mode {
-                        MouseInteractionMode::Disabled => "Disabled",
-                        MouseInteractionMode::Attract => "Attract",
-                        MouseInteractionMode::Repel => "Repel",
-                    },
-                    runtime_state.mouse_timeout,
-                    runtime_state.wind_direction,
-                    runtime_state.terrain_type,
-                    runtime_state.terrain_strength,
-                    runtime_state.auto_normalize,
-                    runtime_state.motion_blur_frames,
-                    runtime_state.max_brightness,
-                    runtime_state.fast_mode_enabled,
-                    runtime_state.current_palette(&ALL_PALETTES).name(),
-                    charset_name(&runtime_state.current_charset()),
-                    runtime_state.current_color_aa().as_label(),
-                    runtime_state.palette_shift_speed,
-                    runtime_state.invert_palette,
-                    runtime_state.reverse_palette,
-                    runtime_state.dither_mode.name(),
-                    term_width as usize,
-                    runtime_state.default_values,
-                    agent_count,
-                    ui_accent,
-                    runtime_state.current_theme_name(),
-                    &runtime_state.panel_style,
-                    runtime_state.shift_held,
-                    runtime_state.trail_age_enabled,
-                    runtime_state.trail_age_mode,
-                    runtime_state.trail_age_reverse,
-                    runtime_state.trail_delta_enabled,
-                    runtime_state.gradient_magnitude_enabled,
-                ))
+                use crate::render::controls::{build_controls, ControlsDepth};
+                // Defensive: an open surface with a stale `Closed` depth renders Console.
+                let depth = match runtime_state.controls_depth {
+                    ControlsDepth::Closed => ControlsDepth::Console,
+                    other => other,
+                };
+                // Tuner depth: ambient strip owns the bottom rows — no separate composite.
+                if depth == ControlsDepth::Tuner {
+                    (None, 0, 0)
+                } else {
+                    let ctx = RegistryCtx {
+                        diffusion_gaussian: matches!(
+                            runtime_state.diffusion_kernel,
+                            DiffusionKernel::Gaussian
+                        ),
+                        mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
+                    };
+                    let params = build_param_views(&runtime_state, &ctx, agent_count);
+                    let truecolor = matches!(color_mode, ColorMode::TrueColor);
+                    let overlay = build_controls(
+                        depth,
+                        runtime_state.controls_category_idx,
+                        runtime_state.controls_focus,
+                        &params,
+                        &runtime_state.panel_style,
+                        ui_accent,
+                        truecolor,
+                        term_width as usize,
+                    );
+                    // Console → centered on screen.
+                    let (x, y) = match overlay.as_ref() {
+                        Some(ov) => {
+                            let w = ov.lines.first().map(|l| l.chars().count()).unwrap_or(0);
+                            let h = ov.lines.len();
+                            (
+                                (term_width as usize).saturating_sub(w) / 2,
+                                (term_height as usize).saturating_sub(h) / 2,
+                            )
+                        }
+                        None => (0, 0),
+                    };
+                    (overlay, x, y)
+                }
             } else {
-                None
+                (None, 0, 0)
             };
 
-        // Build status line (shown when any overlay visible or paused)
-        let diffusion_kernel_name = match runtime_state.diffusion_kernel {
-            DiffusionKernel::Mean3x3 => "Mean3x3",
-            DiffusionKernel::Gaussian => "Gaussian",
+        // Ambient surface model (redesign):
+        //   • Default (always_on = false): clean sim frame at rest. The ambient
+        //     surface appears only as a CENTERED MODAL on a live event — TUNE,
+        //     MSG (notification), or pause — then dismisses back to the clean frame.
+        //   • always_on (show_status_bar = true): a compact single-row BASE status
+        //     line is docked at the bottom interior of the frame, in addition to
+        //     the event modals. Consistent across Minimal/Fullscreen; in Expanded
+        //     the legacy footer already serves as the status line.
+
+        // Build ambient BASE status context (used by the compact base row).
+        let dither_label = match runtime_state.dither_mode {
+            crate::render::dither::DitherMode::None => None,
+            crate::render::dither::DitherMode::Ordered { intensity, .. } => {
+                Some(format!("D {:.1}×", intensity))
+            }
+            crate::render::dither::DitherMode::ErrorDiffusion { .. } => Some("ED".to_string()),
+            crate::render::dither::DitherMode::Hybrid { intensity, .. } => {
+                Some(format!("H {:.1}×", intensity))
+            }
         };
-        let (status_line, status_colors) = OverlayRenderer::build_status_line(
-            runtime_state.is_paused,
-            runtime_state.current_preset,
-            runtime_state.time_scale,
-            current_palette.clone(),
-            runtime_state.dither_mode,
+        let ambient_base_status = BaseStatus {
+            preset_name: preset_name(runtime_state.current_preset).to_string(),
+            palette_name: palette_name(current_palette.clone()).to_string(),
+            time_scale_text: format!("{:.1}×", runtime_state.time_scale),
+            population: Some(agent_count),
+            dither_label,
+            can_undo: !runtime_state.undo_stack.is_empty(),
+            can_redo: !runtime_state.redo_stack.is_empty(),
+            accent: ui_accent,
+            is_paused: runtime_state.is_paused,
+        };
+        // Resolve the highest-priority live ambient state for this frame. Drop
+        // expired non-sticky entries first so the Vec stays small; the Base
+        // sentinel always survives (it never expires).
+        {
+            let now = runtime_state.phase_clock;
+            runtime_state
+                .ambient_states
+                .retain(|s| crate::render::ambient::ambient_state_is_live(s, now));
+            if !runtime_state
+                .ambient_states
+                .iter()
+                .any(|s| matches!(s, AmbientState::Base))
+            {
+                runtime_state.ambient_states.push(AmbientState::Base);
+            }
+        }
+        // Resolve the ambient surface (event modal / optional base row / nothing).
+        let ambient_overlay_built = compute_ambient_overlay(
+            &runtime_state,
+            &ambient_base_status,
+            &window,
             term_width as usize,
-            Some(agent_count),
-            Some(diffusion_kernel_name),
-            !runtime_state.undo_stack.is_empty(),
-            !runtime_state.redo_stack.is_empty(),
-            Some(ui_accent),
+            term_height as usize,
+            agent_count,
         );
-        let status_x = OverlayRenderer::status_line_x(&status_line, term_width as usize);
-        // In windowed mode the expanded chrome footer replaces the status bar.
-        // Only show the legacy status bar in fullscreen mode, or when explicitly
-        // enabled via `show_status_bar`.
-        let show_status = {
-            use crate::simulation::config::ChromeStyle;
-            matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
-                || runtime_state.show_status_bar
-        };
-        let status_data =
-            if show_status && (runtime_state.any_overlay_open() || runtime_state.is_paused) {
-                Some((status_line, status_x, status_colors))
-            } else {
-                None
-            };
+        let ambient_data = ambient_overlay_built.as_ref().map(|(v, x, y)| (v, *x, *y));
 
-        let notification_overlay: Option<RenderedOverlay> = runtime_state
-            .current_notification_full()
-            .map(|(msg, level)| build_notification_panel(msg, level, &runtime_state.panel_style));
-        let notification_data = notification_overlay.as_ref().map(|overlay| {
-            let outer_w = overlay.lines.first().map_or(0, |l| l.chars().count());
-            let notif_x = if outer_w < term_width as usize {
-                (term_width as usize - outer_w) / 2
-            } else {
-                0
-            };
-            let notif_y = (term_height as usize).saturating_sub(5);
-            (overlay, notif_x, notif_y)
-        });
+        // Legacy single-row status_data: only used by the PAUSE path renderer (see below).
+        // In the MAIN path we pass None — the ambient strip takes its place.
+        #[allow(clippy::type_complexity)]
+        let status_data: Option<(String, usize, Vec<(usize, RgbColor)>)> = None;
+
+        // Legacy notification path removed — all toasts now route through
+        // ambient MSG (push_msg). notification_data kept as None for callers
+        // that still reference it.
+        let notification_data: Option<(&RenderedOverlay, usize, usize)> = None;
 
         // Dashboard overlay (merged stats + info)
         let entropy = DashboardOverlay::calculate_entropy(&blended_trail_buffer, 100);
@@ -1142,9 +2009,14 @@ pub fn run_simulation(
                     runtime_state.config_browser_selected_index = runtime_state
                         .config_browser_selected_index
                         .min(configs.len().saturating_sub(1));
-                    Some(ConfigBrowserOverlay::build_overlay(
+                    let active_name = match &runtime_state.active_source {
+                        crate::profile::ProfileSource::SavedConfig(n) => Some(n.as_str()),
+                        _ => None,
+                    };
+                    Some(crate::render::ratatui_adapter::build_config_browser(
                         &configs,
                         runtime_state.config_browser_selected_index,
+                        active_name,
                     ))
                 }
                 Err(_) => {
@@ -1167,8 +2039,11 @@ pub fn run_simulation(
             if runtime_state.overlay_state.is_open(OverlayType::ConfigSave)
                 && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
             {
-                Some(ConfigSaveOverlay::build_overlay(
-                    &runtime_state.config_save_name_input,
+                // SPIKE: tui_input-backed field with a rendered caret (was append-only).
+                Some(crate::render::ratatui_adapter::build_config_save(
+                    runtime_state.config_save_name_input.value(),
+                    runtime_state.config_save_name_input.cursor(),
+                    &runtime_state.panel_style,
                 ))
             } else {
                 None
@@ -1286,6 +2161,8 @@ pub fn run_simulation(
             });
         }
 
+        renderer.set_phase_clock(runtime_state.phase_clock);
+
         if args.species_colors_enabled() && sim.config().separate_species_trails {
             let species_trail_maps = sim.trail_maps_for_species_colors();
             let combined: Vec<_> = species_trail_maps
@@ -1332,6 +2209,7 @@ pub fn run_simulation(
                 palette_editor_overlay
                     .as_ref()
                     .map(|v| (v, palette_editor_x, palette_editor_y)),
+                ambient_data,
                 Some(&runtime_state.panel_style),
                 runtime_state.overlay_state.active(),
                 runtime_state.pause_style,
@@ -1375,6 +2253,7 @@ pub fn run_simulation(
                 palette_editor_overlay
                     .as_ref()
                     .map(|v| (v, palette_editor_x, palette_editor_y)),
+                ambient_data,
                 Some(&runtime_state.panel_style),
                 runtime_state.overlay_state.active(),
                 runtime_state.pause_style,
@@ -1429,15 +2308,32 @@ pub fn run_simulation(
                         &key_event,
                     ) {
                         OverlayInputResult::CloseOverlay => {
-                            // Escape on the dirty guard cancels the parked swap.
-                            let was_dirty_guard = runtime_state.overlay_state.active()
-                                == Some(OverlayType::DirtyGuard);
-                            runtime_state.overlay_state.close();
+                            let active = runtime_state.overlay_state.active();
+                            let was_dirty_guard = active == Some(OverlayType::DirtyGuard);
+                            let was_controls = active == Some(OverlayType::Controls);
+                            let was_palette_editor = active == Some(OverlayType::PaletteEditor);
+
+                            // PaletteEditor needs its sub-state cleared on close.
+                            if was_palette_editor {
+                                runtime_state.overlay_state.close_palette_editor();
+                            } else {
+                                runtime_state.overlay_state.close();
+                            }
+
+                            // Reset Controls depth when Controls is closed via toggle/Esc.
+                            if was_controls {
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Closed;
+                            }
+
+                            // DirtyGuard cancel: clear the parked swap.
                             if was_dirty_guard {
                                 runtime_state.pending_swap = None;
-                                runtime_state.on_modal_close();
                                 runtime_state.show_notification("Switch cancelled".to_string());
                             }
+
+                            // Always update chrome state when an overlay closes.
+                            runtime_state.on_modal_close();
                             continue;
                         }
                         OverlayInputResult::Consumed => {
@@ -1493,23 +2389,50 @@ pub fn run_simulation(
                     // Handle config save dialog input
                     if runtime_state.overlay_state.is_open(OverlayType::ConfigSave) {
                         use crossterm::event::{KeyCode, KeyModifiers};
+                        use tui_input::InputRequest;
+                        // Map crossterm keys → tui_input requests ourselves (tui-input's
+                        // own crossterm backend is disabled to avoid version coupling).
+                        let input = &mut runtime_state.config_save_name_input;
                         match key_event.code {
                             KeyCode::Char(c)
                                 if !key_event.modifiers.contains(KeyModifiers::CONTROL) =>
                             {
-                                if runtime_state.config_save_name_input.len() < 26 {
-                                    runtime_state.config_save_name_input.push(c);
+                                if input.value().chars().count() < 26 {
+                                    input.handle(InputRequest::InsertChar(c));
                                 }
                                 continue;
                             }
                             KeyCode::Backspace => {
-                                runtime_state.config_save_name_input.pop();
+                                input.handle(InputRequest::DeletePrevChar);
+                                continue;
+                            }
+                            KeyCode::Delete => {
+                                input.handle(InputRequest::DeleteNextChar);
+                                continue;
+                            }
+                            KeyCode::Left => {
+                                input.handle(InputRequest::GoToPrevChar);
+                                continue;
+                            }
+                            KeyCode::Right => {
+                                input.handle(InputRequest::GoToNextChar);
+                                continue;
+                            }
+                            KeyCode::Home => {
+                                input.handle(InputRequest::GoToStart);
+                                continue;
+                            }
+                            KeyCode::End => {
+                                input.handle(InputRequest::GoToEnd);
                                 continue;
                             }
                             KeyCode::Enter => {
-                                if !runtime_state.config_save_name_input.is_empty() {
+                                if !runtime_state.config_save_name_input.value().is_empty() {
                                     let named_profile = config_manager::NamedProfile {
-                                        name: runtime_state.config_save_name_input.clone(),
+                                        name: runtime_state
+                                            .config_save_name_input
+                                            .value()
+                                            .to_string(),
                                         description: None,
                                         overrides: config_manager::capture_overrides(
                                             sim.config(),
@@ -1526,11 +2449,12 @@ pub fn run_simulation(
                                             let msg = match warning {
                                                 Some(w) => format!(
                                                     "Config '{}' saved ({})",
-                                                    runtime_state.config_save_name_input, w
+                                                    runtime_state.config_save_name_input.value(),
+                                                    w
                                                 ),
                                                 None => format!(
                                                     "Config '{}' saved successfully",
-                                                    runtime_state.config_save_name_input
+                                                    runtime_state.config_save_name_input.value()
                                                 ),
                                             };
                                             runtime_state.show_notification(msg);
@@ -1737,7 +2661,23 @@ pub fn run_simulation(
                         break;
                     }
 
-                    let action = handle_key_event(&key_event);
+                    let mut action = handle_key_event(&key_event);
+                    // Build the registry visibility context from current runtime state.
+                    let registry_ctx = RegistryCtx {
+                        diffusion_gaussian: matches!(
+                            runtime_state.diffusion_kernel,
+                            DiffusionKernel::Gaussian
+                        ),
+                        mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
+                    };
+                    // Controls-overlay interaction is intercepted first. Focused
+                    // adjust/activate resolve to a real action that is then
+                    // re-dispatched through the same match below (one hop).
+                    match apply_controls_action(&mut runtime_state, &action, &registry_ctx) {
+                        ControlsDispatch::Handled => continue,
+                        ControlsDispatch::Redispatch(real) => action = real,
+                        ControlsDispatch::Passthrough => {}
+                    }
                     match action {
                         ControlAction::Quit => {
                             should_exit = true;
@@ -1922,6 +2862,15 @@ pub fn run_simulation(
                         }
                         ControlAction::ToggleControls => {
                             runtime_state.toggle_controls();
+                            // Opening the surface enters the Console depth; closing
+                            // resets it. Tab then cycles Console↔Tuner per the grammar.
+                            if runtime_state.overlay_state.is_open(OverlayType::Controls) {
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Console;
+                            } else {
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Closed;
+                            }
                             if runtime_state.any_overlay_open() {
                                 runtime_state.on_modal_open();
                             } else {
@@ -1931,22 +2880,58 @@ pub fn run_simulation(
                         ControlAction::CloseOverlays => {
                             if runtime_state.any_overlay_open() {
                                 runtime_state.close_all_overlays();
+                                // Closing all overlays also resets the Controls depth.
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Closed;
                                 runtime_state.on_modal_close();
+                            } else {
+                                // No overlays open: Esc clears a sticky error MSG if one
+                                // is the resolved foreground state.
+                                let now = runtime_state.phase_clock;
+                                let resolved = crate::render::ambient::resolve(
+                                    &runtime_state.ambient_states,
+                                    now,
+                                );
+                                let is_sticky_error = matches!(
+                                    resolved,
+                                    AmbientState::Msg {
+                                        level: crate::terminal::state::NotificationLevel::Error,
+                                        sticky: true,
+                                        ..
+                                    }
+                                );
+                                if is_sticky_error {
+                                    runtime_state.ambient_states.retain(|s| {
+                                        !matches!(
+                                            s,
+                                            AmbientState::Msg {
+                                                level: crate::terminal::state::NotificationLevel::Error,
+                                                sticky: true,
+                                                ..
+                                            }
+                                        )
+                                    });
+                                }
                             }
-                            // If no overlays open, Esc does nothing (doesn't quit)
                         }
                         ControlAction::CycleOptionsCategory => {
+                            // Only reached when the overlay is CLOSED: open it into Console depth.
+                            // The open-overlay case (cycle category + clamp focus) is handled earlier
+                            // in apply_controls_action, which returns Handled so this arm is skipped.
                             if !runtime_state.overlay_state.is_open(OverlayType::Controls) {
                                 runtime_state.toggle_controls();
-                            } else {
-                                runtime_state.cycle_controls_category(true);
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Console;
                             }
                         }
                         ControlAction::CycleOptionsCategoryReverse => {
+                            // Only reached when the overlay is CLOSED: open it into Console depth.
+                            // The open-overlay case (cycle category + clamp focus) is handled earlier
+                            // in apply_controls_action, which returns Handled so this arm is skipped.
                             if !runtime_state.overlay_state.is_open(OverlayType::Controls) {
                                 runtime_state.toggle_controls();
-                            } else {
-                                runtime_state.cycle_controls_category(false);
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Console;
                             }
                         }
                         ControlAction::AdjustSensorAngle(delta) => {
@@ -2126,9 +3111,13 @@ pub fn run_simulation(
                             if current_auto_normalize {
                                 // Auto-normalize drives the white-point from the
                                 // adaptive peak, so the manual control is inert.
-                                runtime_state.show_notification(
+                                // Warning level so it outranks the tuner that the
+                                // adjust surfaces — the inert gauge alone would
+                                // mislead; this message explains why.
+                                runtime_state.show_notification_with_level(
                                     "Brightness is auto-normalized (press B to disable)"
                                         .to_string(),
+                                    crate::terminal::state::NotificationLevel::Warning,
                                 );
                             } else {
                                 let at_bound = runtime_state.adjust_max_brightness(delta);
@@ -2211,6 +3200,17 @@ pub fn run_simulation(
                             runtime_state.toggle_reverse_palette();
                             renderer.set_reverse_palette(runtime_state.reverse_palette);
                         }
+                        ControlAction::ToggleStatusBar => {
+                            runtime_state.show_status_bar = !runtime_state.show_status_bar;
+                            runtime_state.show_notification(format!(
+                                "Status line: {}",
+                                if runtime_state.show_status_bar {
+                                    "on"
+                                } else {
+                                    "off"
+                                }
+                            ));
+                        }
                         ControlAction::CycleIntensityMapping => {
                             runtime_state.cycle_intensity_mapping(false);
                             runtime_state.show_notification(format!(
@@ -2263,13 +3263,14 @@ pub fn run_simulation(
                         ControlAction::ShowConfigBrowser => {
                             runtime_state.close_all_overlays();
                             runtime_state.overlay_state.open(OverlayType::ConfigBrowser);
-                            runtime_state.config_browser_selected_index = 0;
+                            // Intentionally do NOT reset config_browser_selected_index here —
+                            // persisting the selection across reopen is UX-win F.
                             runtime_state.on_modal_open();
                         }
                         ControlAction::ShowConfigSaveDialog => {
                             runtime_state.close_all_overlays();
                             runtime_state.overlay_state.open(OverlayType::ConfigSave);
-                            runtime_state.config_save_name_input.clear();
+                            runtime_state.config_save_name_input.reset();
                             runtime_state.on_modal_open();
                         }
                         ControlAction::RandomizeParams => {
@@ -2396,6 +3397,13 @@ pub fn run_simulation(
                                         Some(l)
                                     }
                                 };
+                            // Resize render buffers to match the new chrome's sim dims
+                            // BEFORE moving `layout` into the renderer (else blur_field panics).
+                            let (rw, rh) = layout
+                                .as_ref()
+                                .map(|l| (l.sim_w, l.sim_h))
+                                .unwrap_or((term_width as usize, term_height as usize));
+                            resize_render_frames(&mut downsampled_frame, &mut aux_frame, rw, rh);
                             renderer.set_window_layout(layout);
                             runtime_state.show_notification(format!(
                                 "Chrome: {:?}",
@@ -2417,12 +3425,28 @@ pub fn run_simulation(
                                 } else {
                                     Some(l)
                                 };
+                                let (rw, rh) = layout
+                                    .as_ref()
+                                    .map(|l| (l.sim_w, l.sim_h))
+                                    .unwrap_or((term_width as usize, term_height as usize));
+                                resize_render_frames(
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    rw,
+                                    rh,
+                                );
                                 renderer.set_window_layout(layout);
                             } else {
                                 // Switch to fullscreen
                                 runtime_state.chrome_style = ChromeStyle::Fullscreen;
                                 runtime_state.chrome_state =
                                     crate::terminal::state::ChromeState::Minimal;
+                                resize_render_frames(
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    term_width as usize,
+                                    term_height as usize,
+                                );
                                 renderer.set_window_layout(None);
                             }
                         }
@@ -2448,6 +3472,38 @@ pub fn run_simulation(
                             }
                         }
                         ControlAction::None => {}
+                        // Controls-overlay interaction actions are intercepted by
+                        // `apply_controls_action` above (they either mutate state
+                        // and `continue`, or re-dispatch a real action), so they
+                        // never reach this match. These arms keep it exhaustive.
+                        ControlAction::ToggleControlsDepth
+                        | ControlAction::ControlsFocusNext
+                        | ControlAction::ControlsFocusPrev
+                        | ControlAction::ControlsAdjustFocused(_)
+                        | ControlAction::ControlsActivateFocused => {}
+                    }
+
+                    // ── TUNE surfacing (Task 13) ─────────────────────────────
+                    // When the dispatched action adjusted a single sim/render
+                    // param, surface it in the ambient TUNE state (debounced):
+                    // each adjust refreshes the hold so rapid adjusts extend it,
+                    // then it eases back to BASE. This REPLACES any on-adjust
+                    // toast (none existed — param adjusts only notify at bounds).
+                    if let Some(tune) =
+                        tune_view_for_action(&runtime_state, &action, &registry_ctx, agent_count)
+                    {
+                        const TUNE_HOLD_SECS: f32 = 2.5;
+                        let now = runtime_state.phase_clock;
+                        // Surface the focused param (debounced) and drop the
+                        // redundant value-echo Info toast the handler pushed so
+                        // the tuner is always the visible feedback. Relevant
+                        // Warning/Error messages survive and momentarily win.
+                        crate::render::ambient::surface_tune(
+                            &mut runtime_state.ambient_states,
+                            tune,
+                            now,
+                            TUNE_HOLD_SECS,
+                        );
                     }
                 }
                 Event::Mouse(mouse_event) => {
@@ -2597,36 +3653,43 @@ pub fn run_simulation(
                     (None, 0, 0)
                 };
 
-            // Build status line
-            let diffusion_kernel_name = match current_diffusion_kernel {
-                DiffusionKernel::Mean3x3 => "Mean3x3",
-                DiffusionKernel::Gaussian => "Gaussian",
+            // Pause re-render path: resolve the ambient surface with the same
+            // shared logic as the main path (pause → centered modal, etc.).
+            let pause_dither_label = match runtime_state.dither_mode {
+                crate::render::dither::DitherMode::None => None,
+                crate::render::dither::DitherMode::Ordered { intensity, .. } => {
+                    Some(format!("D {:.1}×", intensity))
+                }
+                crate::render::dither::DitherMode::ErrorDiffusion { .. } => Some("ED".to_string()),
+                crate::render::dither::DitherMode::Hybrid { intensity, .. } => {
+                    Some(format!("H {:.1}×", intensity))
+                }
             };
-            let (status_line, status_colors) = OverlayRenderer::build_status_line(
-                runtime_state.is_paused,
-                runtime_state.current_preset,
-                runtime_state.time_scale,
-                current_palette.clone(),
-                runtime_state.dither_mode,
+            let pause_base_status = BaseStatus {
+                preset_name: preset_name(runtime_state.current_preset).to_string(),
+                palette_name: palette_name(current_palette.clone()).to_string(),
+                time_scale_text: format!("{:.1}×", runtime_state.time_scale),
+                population: Some(sim.agent_count()),
+                dither_label: pause_dither_label,
+                can_undo: !runtime_state.undo_stack.is_empty(),
+                can_redo: !runtime_state.redo_stack.is_empty(),
+                accent: ui_accent,
+                is_paused: runtime_state.is_paused,
+            };
+            let pause_ambient_overlay = compute_ambient_overlay(
+                &runtime_state,
+                &pause_base_status,
+                &window,
                 term_width as usize,
-                Some(sim.agent_count()),
-                Some(diffusion_kernel_name),
-                !runtime_state.undo_stack.is_empty(),
-                !runtime_state.redo_stack.is_empty(),
-                Some(ui_accent),
+                term_height as usize,
+                sim.agent_count(),
             );
-            let status_x = OverlayRenderer::status_line_x(&status_line, term_width as usize);
-            // Suppress status bar in windowed mode unless explicitly enabled.
-            let show_status_pause = {
-                use crate::simulation::config::ChromeStyle;
-                matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
-                    || runtime_state.show_status_bar
-            };
-            let status_data = if show_status_pause {
-                Some((status_line, status_x, status_colors))
-            } else {
-                None
-            };
+            #[allow(clippy::type_complexity)]
+            let status_data: Option<(
+                String,
+                usize,
+                Vec<(usize, crate::render::palette::RgbColor)>,
+            )> = None;
 
             // Re-render with updated pause state
             if args.species_colors_enabled() && sim.config().separate_species_trails {
@@ -2661,6 +3724,7 @@ pub fn run_simulation(
                     None,
                     None,
                     None,
+                    pause_ambient_overlay.as_ref().map(|(v, x, y)| (v, *x, *y)),
                     Some(&runtime_state.panel_style),
                     runtime_state.overlay_state.active(),
                     runtime_state.pause_style,
@@ -2690,6 +3754,7 @@ pub fn run_simulation(
                     None,
                     None,
                     None,
+                    pause_ambient_overlay.as_ref().map(|(v, x, y)| (v, *x, *y)),
                     Some(&runtime_state.panel_style),
                     runtime_state.overlay_state.active(),
                     runtime_state.pause_style,
@@ -2725,7 +3790,6 @@ pub fn run_simulation(
             timer.fps_adjusted_notification = false;
         }
 
-        runtime_state.update_notifications();
         timer.tick();
     }
 
@@ -2795,6 +3859,40 @@ pub fn get_terminal_size() -> (usize, usize) {
     }
 }
 
+/// Which bottom-surface mode the ambient strip should take this frame.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum AmbientMode {
+    /// Console overlay is open — hide the ambient strip (M1).
+    Hidden,
+    /// Controls are at Tuner depth — show the persistent TUNE surface.
+    Tuner,
+    /// Controls closed or not open — BASE/MSG normal resolution.
+    Normal,
+}
+
+/// Resolve which ambient mode applies for this frame.
+///
+/// `controls_open` — true when the Controls overlay is open and Dashboard is not.
+/// `controls_depth` — the current depth within the controls panel.
+///
+/// The `Closed`-while-open defensive case (controls reported open but depth is
+/// `Closed`) maps to `Hidden` (treats it as Console), preserving prior behaviour.
+fn ambient_mode(
+    controls_open: bool,
+    controls_depth: crate::render::controls::ControlsDepth,
+) -> AmbientMode {
+    use crate::render::controls::ControlsDepth;
+    if controls_open {
+        match controls_depth {
+            ControlsDepth::Closed => AmbientMode::Hidden,
+            ControlsDepth::Console => AmbientMode::Hidden,
+            ControlsDepth::Tuner => AmbientMode::Tuner,
+        }
+    } else {
+        AmbientMode::Normal
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2807,6 +3905,344 @@ mod tests {
             kind,
             state: KeyEventState::NONE,
         }
+    }
+
+    fn controls_test_state() -> RuntimeState {
+        use crate::cli::PauseStyle;
+        use crate::simulation::config::SimConfig;
+        RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            MouseInteractionMode::Disabled,
+            3.0,
+            &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
+        )
+    }
+
+    fn controls_test_ctx() -> RegistryCtx {
+        RegistryCtx {
+            diffusion_gaussian: false,
+            mouse_enabled: false,
+        }
+    }
+
+    #[test]
+    fn tune_view_for_numeric_adjust_is_some_with_gauge() {
+        let state = controls_test_state();
+        let ctx = controls_test_ctx();
+        let tv = tune_view_for_action(&state, &ControlAction::AdjustSensorAngle(1.0), &ctx, 50_000)
+            .expect("sensor-angle adjust must surface a TuneView");
+        assert_eq!(tv.label, "Sensor Angle");
+        assert_eq!(tv.range, (0.0, 1.0)); // normalized gauge
+        assert!((0.0..=1.0).contains(&tv.value));
+        assert!(!tv.value_text.is_empty());
+    }
+
+    #[test]
+    fn tune_view_for_non_param_action_is_none() {
+        let state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // TogglePause has no registry ParamId → no TUNE surfacing.
+        assert!(tune_view_for_action(&state, &ControlAction::TogglePause, &ctx, 0).is_none());
+    }
+
+    #[test]
+    fn tune_view_for_action_rows_is_none() {
+        let state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // Action rows (Save/Reset/Randomize) are MSG/activation events, not TUNE.
+        assert!(tune_view_for_action(&state, &ControlAction::ResetToDefaults, &ctx, 0).is_none());
+        assert!(tune_view_for_action(&state, &ControlAction::SaveFrameToPng, &ctx, 0).is_none());
+    }
+
+    #[test]
+    fn controls_depth_toggle_cycles_console_tuner() {
+        use crate::render::controls::ControlsDepth;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        assert_eq!(state.controls_depth, ControlsDepth::Closed);
+
+        // Closed -> Console
+        assert!(matches!(
+            apply_controls_action(&mut state, &ControlAction::ToggleControlsDepth, &ctx),
+            ControlsDispatch::Handled
+        ));
+        assert_eq!(state.controls_depth, ControlsDepth::Console);
+
+        // Console -> Tuner
+        apply_controls_action(&mut state, &ControlAction::ToggleControlsDepth, &ctx);
+        assert_eq!(state.controls_depth, ControlsDepth::Tuner);
+
+        // Tuner -> Console
+        apply_controls_action(&mut state, &ControlAction::ToggleControlsDepth, &ctx);
+        assert_eq!(state.controls_depth, ControlsDepth::Console);
+    }
+
+    #[test]
+    fn controls_focus_next_clamps_to_last_visible() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // SIM category (index 0) has 7 params; focus must clamp at 6.
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        for _ in 0..20 {
+            apply_controls_action(&mut state, &ControlAction::ControlsFocusNext, &ctx);
+        }
+        assert_eq!(state.controls_focus, 6);
+
+        for _ in 0..20 {
+            apply_controls_action(&mut state, &ControlAction::ControlsFocusPrev, &ctx);
+        }
+        assert_eq!(state.controls_focus, 0);
+    }
+
+    #[test]
+    fn controls_adjust_focused_redispatches_real_action() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // SIM[0] = SensorAngle. A forward adjust must re-dispatch AdjustSensorAngle(+1.0).
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        match apply_controls_action(&mut state, &ControlAction::ControlsAdjustFocused(1.0), &ctx) {
+            ControlsDispatch::Redispatch(ControlAction::AdjustSensorAngle(d)) => {
+                assert_eq!(d, 1.0)
+            }
+            _ => panic!("expected Redispatch(AdjustSensorAngle(1.0))"),
+        }
+    }
+
+    #[test]
+    fn controls_adjust_suppressed_when_competing_overlay_open() {
+        use crate::overlay::OverlayType;
+        use crate::render::controls::ControlsDepth;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // A competing overlay (Dashboard) is the foreground, Controls is closed.
+        state.overlay_state.open(OverlayType::Dashboard);
+        state.controls_depth = ControlsDepth::Closed;
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        // ←→ adjust must NOT auto-promote or redispatch; it passes through.
+        assert!(matches!(
+            apply_controls_action(&mut state, &ControlAction::ControlsAdjustFocused(1.0), &ctx),
+            ControlsDispatch::Passthrough
+        ));
+        // Depth must remain Closed (no silent auto-promote / sim mutation).
+        assert_eq!(state.controls_depth, ControlsDepth::Closed);
+    }
+
+    #[test]
+    fn controls_adjust_auto_promotes_when_no_overlay_open() {
+        use crate::render::controls::ControlsDepth;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // No overlay open at all → spec-mandated auto-promote-from-Closed.
+        assert!(!state.overlay_state.any_open());
+        state.controls_depth = ControlsDepth::Closed;
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        // SIM[0] = SensorAngle: forward adjust auto-promotes to Tuner and
+        // redispatches the real AdjustSensorAngle(+1.0).
+        match apply_controls_action(&mut state, &ControlAction::ControlsAdjustFocused(1.0), &ctx) {
+            ControlsDispatch::Redispatch(ControlAction::AdjustSensorAngle(d)) => {
+                assert_eq!(d, 1.0)
+            }
+            _ => panic!("expected Redispatch(AdjustSensorAngle(1.0))"),
+        }
+        assert_eq!(state.controls_depth, ControlsDepth::Tuner);
+    }
+
+    #[test]
+    fn controls_in_category_hotkey_retargets_focus() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // In SIM category, pressing the StepSize hotkey (SIM index 3) must move
+        // focus to 3 and pass the action through to the main match.
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        assert!(matches!(
+            apply_controls_action(&mut state, &ControlAction::AdjustStepSize(0.1), &ctx),
+            ControlsDispatch::Passthrough
+        ));
+        assert_eq!(state.controls_focus, 3);
+    }
+
+    #[test]
+    fn controls_cross_category_hotkey_does_not_retarget() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // In SIM category (0), a Palette hotkey (APP category) must NOT change
+        // focus or category; it just passes through.
+        state.controls_category_idx = 0;
+        state.controls_focus = 2;
+        assert!(matches!(
+            apply_controls_action(&mut state, &ControlAction::CyclePalette, &ctx),
+            ControlsDispatch::Passthrough
+        ));
+        assert_eq!(state.controls_focus, 2);
+        assert_eq!(state.controls_category_idx, 0);
+    }
+
+    // ── Task-14 tests ─────────────────────────────────────────────────────────
+
+    /// ControlsAdjustFocused from Closed must auto-promote depth to Tuner and
+    /// then continue to dispatch the focused parameter's adjust action.
+    #[test]
+    fn arrow_from_closed_promotes_to_tuner() {
+        use crate::render::controls::ControlsDepth;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // Start fully closed (RuntimeState::new sets depth=Closed).
+        assert_eq!(state.controls_depth, ControlsDepth::Closed);
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        // A focused adjust must auto-promote depth to Tuner.
+        apply_controls_action(&mut state, &ControlAction::ControlsAdjustFocused(1.0), &ctx);
+        assert_eq!(state.controls_depth, ControlsDepth::Tuner);
+    }
+
+    /// After cycling to a category with fewer visible rows than the current
+    /// focus index, controls_focus must be clamped to the new category's last
+    /// row (no stale out-of-bounds index).
+    #[test]
+    fn category_change_clamps_focus() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // Open the controls overlay so CycleOptionsCategory is handled inside
+        // apply_controls_action (not just the closed→open branch in the runner).
+        state
+            .overlay_state
+            .open(crate::overlay::OverlayType::Controls);
+        // SIM (category 0) has 7 rows; set focus to the last row (index 6).
+        state.controls_category_idx = 0;
+        state.controls_focus = 6;
+        // Cycle through all categories until we reach SYS (index 5, 3 rows).
+        // SIM→ENV→APP→PST→PRF→SYS = 5 forward cycles.
+        for _ in 0..5 {
+            apply_controls_action(&mut state, &ControlAction::CycleOptionsCategory, &ctx);
+        }
+        assert_eq!(state.controls_category_idx, 5); // SYS
+                                                    // SYS has 3 rows (indices 0-2); focus must be clamped to at most 2.
+        let sys_len = crate::render::controls::registry::visible_params(5, &ctx).len();
+        assert!(
+            state.controls_focus < sys_len,
+            "focus {} out of bounds for SYS len {}",
+            state.controls_focus,
+            sys_len,
+        );
+    }
+
+    /// When ctx shrinks the current category's visible list (e.g. Gaussian
+    /// toggled off removes Diff Sigma from ENV), the defensive clamp at the
+    /// top of apply_controls_action must correct a stale focus index before
+    /// the action runs.
+    #[test]
+    fn conditional_row_disappearance_clamps_focus() {
+        let mut state = controls_test_state();
+        // Start in ENV (category 1) with Gaussian ON — that adds Diff Sigma,
+        // giving 7 rows (indices 0-6). Set focus to the last row.
+        let ctx_gaussian_on = RegistryCtx {
+            diffusion_gaussian: true,
+            mouse_enabled: false,
+        };
+        state.controls_category_idx = 1; // ENV
+        let len_with_sigma =
+            crate::render::controls::registry::visible_params(1, &ctx_gaussian_on).len();
+        state.controls_focus = len_with_sigma - 1; // last row
+                                                   // Now ctx flips to Gaussian OFF — Diff Sigma disappears, shorter list.
+        let ctx_gaussian_off = RegistryCtx {
+            diffusion_gaussian: false,
+            mouse_enabled: false,
+        };
+        let len_without_sigma =
+            crate::render::controls::registry::visible_params(1, &ctx_gaussian_off).len();
+        assert!(
+            len_without_sigma < len_with_sigma,
+            "gaussian off must shrink ENV row count"
+        );
+        // Any action dispatched with the new (shorter) ctx must clamp focus.
+        apply_controls_action(
+            &mut state,
+            &ControlAction::ControlsFocusPrev, // innocuous action
+            &ctx_gaussian_off,
+        );
+        assert!(
+            state.controls_focus < len_without_sigma,
+            "focus {} must be within new ENV len {}",
+            state.controls_focus,
+            len_without_sigma,
+        );
+    }
+
+    #[test]
+    fn build_param_views_sim_count_and_default_state() {
+        use crate::render::controls::ParamState;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        state.controls_category_idx = 0; // SIM
+        let views = build_param_views(&state, &ctx, 50_000);
+        // SIM has 7 numeric params, all unmodified at preset defaults.
+        assert_eq!(views.len(), 7);
+        let sensor = &views[0];
+        assert_eq!(sensor.value_text, format!("{:.1}°", state.sensor_angle));
+        assert_eq!(sensor.state, ParamState::Default);
+        assert!(sensor.ratio.is_some(), "numeric param must carry a ratio");
+        assert!(sensor.def_ratio.is_some());
+    }
+
+    #[test]
+    fn build_param_views_modified_numeric_flags_modified() {
+        use crate::render::controls::ParamState;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        state.controls_category_idx = 0;
+        // Push sensor_angle well off its default → must read as Modified.
+        state.sensor_angle = state.default_values.sensor_angle + 20.0;
+        let views = build_param_views(&state, &ctx, 50_000);
+        assert_eq!(views[0].state, ParamState::Modified);
+    }
+
+    #[test]
+    fn build_param_views_population_is_cli() {
+        use crate::render::controls::registry::ParamId;
+        use crate::render::controls::ParamState;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        state.controls_category_idx = 4; // PRF
+        let views = build_param_views(&state, &ctx, 50_000);
+        let pop = views
+            .iter()
+            .find(|v| v.desc.id == ParamId::Population)
+            .expect("Population row present in PRF");
+        assert_eq!(pop.state, ParamState::Cli);
+        assert_eq!(pop.value_text, "50k");
+        assert!(pop.ratio.is_none());
+    }
+
+    #[test]
+    fn build_param_views_mouse_timeout_is_display() {
+        use crate::render::controls::registry::ParamId;
+        use crate::render::controls::ParamState;
+        let mut state = controls_test_state();
+        // Mouse Timeout only appears when mouse is enabled.
+        state.mouse_mode = MouseInteractionMode::Attract;
+        let ctx = RegistryCtx {
+            diffusion_gaussian: false,
+            mouse_enabled: true,
+        };
+        state.controls_category_idx = 1; // ENV
+        let views = build_param_views(&state, &ctx, 50_000);
+        let mt = views
+            .iter()
+            .find(|v| v.desc.id == ParamId::MouseTimeout)
+            .expect("Mouse Timeout row present when mouse enabled");
+        assert_eq!(mt.state, ParamState::Display);
+        assert!(mt.ratio.is_none());
+        assert!(mt.value_text.ends_with('s'));
     }
 
     #[test]
@@ -2880,6 +4316,42 @@ mod tests {
             cli_ov.sensor_angle,
             Some(42.0),
             "CLI override retains sensor_angle"
+        );
+    }
+
+    // ── Task-15 tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn ambient_hidden_when_controls_depth_is_console() {
+        use crate::render::controls::ControlsDepth;
+        // Console open → ambient_mode returns Hidden.
+        assert_eq!(
+            ambient_mode(true, ControlsDepth::Console),
+            AmbientMode::Hidden,
+            "ambient must be hidden when Console depth is active"
+        );
+        // Defensive: Closed-while-open → also Hidden.
+        assert_eq!(
+            ambient_mode(true, ControlsDepth::Closed),
+            AmbientMode::Hidden,
+            "ambient must be hidden for Closed-while-open defensive case"
+        );
+    }
+
+    #[test]
+    fn ambient_shows_tuner_depth_when_controls_tuner() {
+        use crate::render::controls::ControlsDepth;
+        // Tuner open → ambient_mode returns Tuner.
+        assert_eq!(
+            ambient_mode(true, ControlsDepth::Tuner),
+            AmbientMode::Tuner,
+            "ambient must be Tuner when Tuner depth is active"
+        );
+        // Controls not open → Normal regardless of depth.
+        assert_eq!(
+            ambient_mode(false, ControlsDepth::Tuner),
+            AmbientMode::Normal,
+            "ambient must be Normal when controls are not open"
         );
     }
 

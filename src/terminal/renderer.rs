@@ -11,6 +11,7 @@ use crate::render::charset::{self as charset, Charset};
 use crate::render::dither::DitherMode;
 use crate::render::downsample::{downsample_multi_species, Cell as DownsampleCell};
 use crate::render::error_diffusion::ErrorDiffusion;
+use crate::render::motion::{breath, lerp_rgb};
 use crate::render::overlay::{ExpandedChromeOverlay, OverlayConfig};
 use crate::render::palette;
 use crate::render::palette::IntensityMapping;
@@ -96,6 +97,8 @@ pub struct TerminalRenderer {
     temporal_accent: Option<palette::RgbColor>,
     palette_cycle: palette::PaletteCycle,
     glyph: charset::GlyphConfig,
+    /// Monotonic seconds for overlay motion (breath on title-box accent). Set each frame.
+    phase_clock: f32,
 }
 
 impl TerminalRenderer {
@@ -149,7 +152,13 @@ impl TerminalRenderer {
             temporal_accent: None,
             palette_cycle: palette::PaletteCycle::default(),
             glyph: charset::GlyphConfig::default(),
+            phase_clock: 0.0,
         }
+    }
+
+    /// Set the phase clock for overlay motion (title-box breath, eases).
+    pub fn set_phase_clock(&mut self, t: f32) {
+        self.phase_clock = t;
     }
 
     /// Set the window frame mode for rendering.
@@ -515,6 +524,122 @@ impl TerminalRenderer {
         execute!(self.stdout, &buffer)
     }
 
+    /// Composite one overlay panel onto `buf`: themed panel background, per-char
+    /// border/text theming, rich per-cell overrides, then the floating title badge.
+    ///
+    /// Shared by both the single- and multi-species render paths so they cannot
+    /// drift. Previously the multi-species path inlined a near-identical copy that
+    /// hardcoded the panel background to the 256-colour default, silently dropping
+    /// the active theme's `bg_color` for species-coloured presets.
+    #[allow(clippy::too_many_arguments)]
+    fn compose_overlay(
+        buf: &mut FrameBuffer,
+        overlay: &RenderedOverlay,
+        x: usize,
+        y: usize,
+        config: &OverlayConfig,
+        panel_style: Option<&PanelStyle>,
+        accent: RgbColor,
+        phase_clock: f32,
+    ) {
+        let fg = config.text_color_256;
+        let bg = Some(config.bg_color_256);
+        let panel_bg = panel_style.map(|s| s.bg_color);
+        if panel_bg.is_some() {
+            buf.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, None, 0);
+        } else {
+            buf.draw_text_overlay(&overlay.lines, x, y, fg, bg);
+        }
+        // Apply theme colors per character — border chars get border_color, all
+        // other chars get text_primary. Done before rich_lines so per-overlay
+        // overrides (e.g. notification accent, key bindings) still win.
+        if let Some(style) = panel_style {
+            for (line_idx, line) in overlay.lines.iter().enumerate() {
+                for (col, c) in line.chars().enumerate() {
+                    let cell_x = x + col;
+                    let cell_y = y + line_idx;
+                    if cell_x < buf.width && cell_y < buf.height {
+                        let idx = cell_y * buf.width + cell_x;
+                        let color = if matches!(c, '█' | '▀' | '▄') {
+                            style.border_color
+                        } else {
+                            style.text_primary
+                        };
+                        match buf.color_mode {
+                            ColorMode::TrueColor => {
+                                buf.cells[idx].fg_color_rgb = Some(color);
+                            }
+                            _ => {
+                                buf.cells[idx].fg_color_256 = Some(palette::rgb_to_256(color));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(ref rich) = overlay.rich_lines {
+            buf.draw_rich_overlay(rich, x, y);
+        }
+        if let Some(tb) = &overlay.title_box {
+            let mini_x = x + 1 + tb.col_offset;
+            let mini_y = y.saturating_sub(1);
+            let badge_fg = if let Some(style) = panel_style {
+                palette::rgb_to_256(style.text_primary)
+            } else {
+                palette::rgb_to_256(palette::RgbColor {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                })
+            };
+            if panel_bg.is_some() {
+                buf.draw_text_overlay_with_panel(
+                    &tb.lines, mini_x, mini_y, badge_fg, bg, panel_bg, None, 0,
+                );
+            } else {
+                buf.draw_text_overlay(&tb.lines, mini_x, mini_y, badge_fg, bg);
+            }
+            // Apply breathed accent color to border chars (title-box signature).
+            // Breath: lerp accent toward muted by (1 - breath(clock, 5s, 12%)).
+            let title_accent = if let Some(style) = panel_style {
+                let pulse = breath(phase_clock, 5.0, 0.12);
+                lerp_rgb(style.muted, accent, pulse)
+            } else {
+                accent
+            };
+            let num_lines = tb.lines.len();
+            for (line_idx, line) in tb.lines.iter().enumerate() {
+                let width = line.chars().count();
+                if width < 2 {
+                    continue;
+                }
+                // Top and bottom borders: color all columns.
+                // Middle lines: color only first and last column (vertical borders).
+                let cols_to_color: Vec<usize> = if line_idx == 0 || line_idx == num_lines - 1 {
+                    (0..width).collect()
+                } else {
+                    vec![0, width - 1]
+                };
+                for col in cols_to_color {
+                    let cell_x = mini_x + col;
+                    let cell_y = mini_y + line_idx;
+                    if cell_x < buf.width && cell_y < buf.height {
+                        let idx = cell_y * buf.width + cell_x;
+                        match buf.color_mode {
+                            ColorMode::TrueColor => {
+                                buf.cells[idx].fg_color_rgb = Some(title_accent)
+                            }
+                            _ => {
+                                buf.cells[idx].fg_color_256 =
+                                    Some(palette::rgb_to_256(title_accent))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Render a frame with text overlays.
     ///
     /// Draws the sim frame, then composites overlays on top in z-order:
@@ -539,6 +664,7 @@ impl TerminalRenderer {
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
+        ambient_overlay: Option<(&RenderedOverlay, usize, usize)>,
         panel_style: Option<&PanelStyle>,
         _focused_overlay: Option<crate::overlay::OverlayType>,
         pause_style: PauseStyle,
@@ -715,6 +841,7 @@ impl TerminalRenderer {
                     snap.population,
                     layout.sim_w,
                 );
+                let footer_st = panel_style.unwrap_or(&crate::render::theme::GRUVBOX_DARK);
                 let (footer_status, footer_colors) = ExpandedChromeOverlay::build_footer_status(
                     snap.is_paused,
                     snap.preset,
@@ -727,13 +854,15 @@ impl TerminalRenderer {
                     snap.can_undo,
                     snap.can_redo,
                     Some(accent),
+                    footer_st,
                 );
                 let footer_keys = ExpandedChromeOverlay::build_footer_keybinds(
                     snap.chrome_state == ChromeState::ModalPane,
                     layout.sim_w,
                 );
-                // Dim text color for footer secondary row
-                let text_color = RgbColor::new(168, 153, 132);
+                // Dim text color for footer secondary row — theme-driven so it
+                // stays on-palette across all themes (was a hardcoded Gruvbox gray).
+                let text_color = footer_st.text_secondary;
                 buffer.draw_expanded_chrome(
                     layout.sim_x,
                     layout.sim_y,
@@ -745,6 +874,7 @@ impl TerminalRenderer {
                     &footer_keys,
                     accent,
                     text_color,
+                    footer_st.muted,
                 );
             }
             // Apply fade-out alpha when chrome is collapsing.
@@ -759,119 +889,24 @@ impl TerminalRenderer {
             }
         }
 
-        let get_overlay_colors =
-            |config: &OverlayConfig,
-             style: Option<&PanelStyle>|
-             -> (u8, Option<u8>, Option<RgbColor>, Option<RgbColor>, usize) {
-                if let Some(s) = style {
-                    (
-                        config.text_color_256,
-                        Some(config.bg_color_256),
-                        Some(s.bg_color),
-                        Some(s.border_color),
-                        s.indicator_width,
-                    )
-                } else {
-                    (
-                        config.text_color_256,
-                        Some(config.bg_color_256),
-                        None,
-                        None,
-                        0,
-                    )
-                }
-            };
-
-        // Unified draw helper: main panel + rich_lines + accented title badge.
+        // Unified draw helper — delegates to the shared compositor so the single-
+        // and multi-species paths render overlays identically (themed panel bg,
+        // theme pass, rich overrides, title badge).
         let draw_overlay = |buf: &mut FrameBuffer,
                             overlay: &RenderedOverlay,
                             x: usize,
                             y: usize,
                             config: &OverlayConfig| {
-            let (fg, bg, panel_bg, _border_col, _w) = get_overlay_colors(config, panel_style);
-            if panel_bg.is_some() {
-                buf.draw_text_overlay_with_panel(&overlay.lines, x, y, fg, bg, panel_bg, None, 0);
-            } else {
-                buf.draw_text_overlay(&overlay.lines, x, y, fg, bg);
-            }
-            // Apply theme colors per character — border chars get border_color,
-            // all other chars get text_primary. Done before rich_lines so per-overlay
-            // overrides (e.g. notification accent, key bindings) still win.
-            if let Some(style) = panel_style {
-                for (line_idx, line) in overlay.lines.iter().enumerate() {
-                    for (col, c) in line.chars().enumerate() {
-                        let cell_x = x + col;
-                        let cell_y = y + line_idx;
-                        if cell_x < buf.width && cell_y < buf.height {
-                            let idx = cell_y * buf.width + cell_x;
-                            let color = if matches!(c, '█' | '▀' | '▄') {
-                                style.border_color
-                            } else {
-                                style.text_primary
-                            };
-                            match buf.color_mode {
-                                ColorMode::TrueColor => {
-                                    buf.cells[idx].fg_color_rgb = Some(color);
-                                }
-                                _ => {
-                                    buf.cells[idx].fg_color_256 = Some(palette::rgb_to_256(color));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if let Some(ref rich) = overlay.rich_lines {
-                buf.draw_rich_overlay(rich, x, y);
-            }
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                let badge_fg = if let Some(style) = panel_style {
-                    palette::rgb_to_256(style.text_primary)
-                } else {
-                    palette::rgb_to_256(palette::RgbColor {
-                        r: 255,
-                        g: 255,
-                        b: 255,
-                    })
-                };
-                if panel_bg.is_some() {
-                    buf.draw_text_overlay_with_panel(
-                        &tb.lines, mini_x, mini_y, badge_fg, bg, panel_bg, None, 0,
-                    );
-                } else {
-                    buf.draw_text_overlay(&tb.lines, mini_x, mini_y, badge_fg, bg);
-                }
-                // Apply accent color to border chars
-                let num_lines = tb.lines.len();
-                for (line_idx, line) in tb.lines.iter().enumerate() {
-                    let width = line.chars().count();
-                    if width < 2 {
-                        continue;
-                    }
-                    // Top and bottom borders: color all columns
-                    // Middle lines: color only first and last column (vertical borders)
-                    let cols_to_color: Vec<usize> = if line_idx == 0 || line_idx == num_lines - 1 {
-                        (0..width).collect()
-                    } else {
-                        vec![0, width - 1]
-                    };
-                    for col in cols_to_color {
-                        let cell_x = mini_x + col;
-                        let cell_y = mini_y + line_idx;
-                        if cell_x < buf.width && cell_y < buf.height {
-                            let idx = cell_y * buf.width + cell_x;
-                            match buf.color_mode {
-                                ColorMode::TrueColor => buf.cells[idx].fg_color_rgb = Some(accent),
-                                _ => {
-                                    buf.cells[idx].fg_color_256 = Some(palette::rgb_to_256(accent))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            Self::compose_overlay(
+                buf,
+                overlay,
+                x,
+                y,
+                config,
+                panel_style,
+                accent,
+                self.phase_clock,
+            );
         };
 
         // Pause logo overlay (drawn first so status/controls appear on top)
@@ -983,6 +1018,14 @@ impl TerminalRenderer {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::PALETTE_EDITOR);
         }
 
+        // Ambient BASE surface — bottom-docked always-on strip (Task 12).
+        // Composited last: the ambient strip paints over the bottom rows, above all other overlays.
+        if let Some((overlay, x, y)) = ambient_overlay {
+            if let Some(ref rich) = overlay.rich_lines {
+                buffer.draw_rich_overlay_solid(rich, x, y, true);
+            }
+        }
+
         execute!(self.stdout, &buffer)
     }
 
@@ -1010,6 +1053,7 @@ impl TerminalRenderer {
         keyboard_hints_lines: Option<(&RenderedOverlay, usize, usize)>,
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
+        ambient_overlay: Option<(&RenderedOverlay, usize, usize)>,
         panel_style_ms: Option<&PanelStyle>,
         _focused_overlay: Option<crate::overlay::OverlayType>,
         pause_style: PauseStyle,
@@ -1206,95 +1250,24 @@ impl TerminalRenderer {
         }
 
         // Unified draw helper: main panel + rich_lines + accented title badge.
+        // Unified draw helper — same shared compositor as the single-species path,
+        // so multi-species overlays inherit the themed panel background (this path
+        // previously hardcoded the 256-colour default and dropped the theme bg).
         let draw_ms_overlay = |buf: &mut FrameBuffer,
                                overlay: &RenderedOverlay,
                                x: usize,
                                y: usize,
                                config: &OverlayConfig| {
-            buf.draw_text_overlay(
-                &overlay.lines,
+            Self::compose_overlay(
+                buf,
+                overlay,
                 x,
                 y,
-                config.text_color_256,
-                Some(config.bg_color_256),
+                config,
+                panel_style_ms,
+                accent,
+                self.phase_clock,
             );
-            // Apply theme colors per character — border chars get border_color,
-            // all other chars get text_primary.
-            if let Some(style) = panel_style_ms {
-                for (line_idx, line) in overlay.lines.iter().enumerate() {
-                    for (col, c) in line.chars().enumerate() {
-                        let cell_x = x + col;
-                        let cell_y = y + line_idx;
-                        if cell_x < buf.width && cell_y < buf.height {
-                            let idx = cell_y * buf.width + cell_x;
-                            let color = if matches!(c, '█' | '▀' | '▄') {
-                                style.border_color
-                            } else {
-                                style.text_primary
-                            };
-                            match buf.color_mode {
-                                ColorMode::TrueColor => {
-                                    buf.cells[idx].fg_color_rgb = Some(color);
-                                }
-                                _ => {
-                                    buf.cells[idx].fg_color_256 = Some(palette::rgb_to_256(color));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if let Some(ref rich) = overlay.rich_lines {
-                buf.draw_rich_overlay(rich, x, y);
-            }
-            if let Some(tb) = &overlay.title_box {
-                let mini_x = x + 1 + tb.col_offset;
-                let mini_y = y.saturating_sub(1);
-                let badge_fg = if let Some(style) = panel_style_ms {
-                    palette::rgb_to_256(style.text_primary)
-                } else {
-                    palette::rgb_to_256(palette::RgbColor {
-                        r: 255,
-                        g: 255,
-                        b: 255,
-                    })
-                };
-                buf.draw_text_overlay(
-                    &tb.lines,
-                    mini_x,
-                    mini_y,
-                    badge_fg,
-                    Some(config.bg_color_256),
-                );
-                // Apply accent color to border chars
-                let num_lines = tb.lines.len();
-                for (line_idx, line) in tb.lines.iter().enumerate() {
-                    let width = line.chars().count();
-                    if width < 2 {
-                        continue;
-                    }
-                    // Top and bottom borders: color all columns
-                    // Middle lines: color only first and last column (vertical borders)
-                    let cols_to_color: Vec<usize> = if line_idx == 0 || line_idx == num_lines - 1 {
-                        (0..width).collect()
-                    } else {
-                        vec![0, width - 1]
-                    };
-                    for col in cols_to_color {
-                        let cell_x = mini_x + col;
-                        let cell_y = mini_y + line_idx;
-                        if cell_x < buf.width && cell_y < buf.height {
-                            let idx = cell_y * buf.width + cell_x;
-                            match buf.color_mode {
-                                ColorMode::TrueColor => buf.cells[idx].fg_color_rgb = Some(accent),
-                                _ => {
-                                    buf.cells[idx].fg_color_256 = Some(palette::rgb_to_256(accent))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         };
 
         // Pause logo overlay (drawn first so status/controls appear on top)
@@ -1405,6 +1378,14 @@ impl TerminalRenderer {
             draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::PALETTE_EDITOR);
         }
 
+        // Ambient BASE surface — bottom-docked always-on strip (Task 12).
+        // Composited last: the ambient strip paints over the bottom rows, above all other overlays.
+        if let Some((overlay, x, y)) = ambient_overlay {
+            if let Some(ref rich) = overlay.rich_lines {
+                buffer.draw_rich_overlay_solid(rich, x, y, true);
+            }
+        }
+
         execute!(self.stdout, &buffer)
     }
 }
@@ -1495,11 +1476,42 @@ mod tests {
             None,
             None,
             None,
+            None, // ambient_overlay
             None,
             PauseStyle::Vignette,
             false,
         );
 
         assert!(result.is_ok());
+    }
+
+    /// `compose_overlay` is the single shared compositor for both the single- and
+    /// multi-species render paths (they were previously duplicated and could
+    /// drift). It must apply the per-char theme pass: box-drawing border chars
+    /// take `border_color`, every other char takes `text_primary`. Asserting this
+    /// on the shared fn covers both paths at once.
+    #[test]
+    fn compose_overlay_applies_theme_pass() {
+        let style = crate::render::theme::GRUVBOX_DARK;
+        let mut buf = FrameBuffer::new(8, 4, ColorMode::TrueColor, None);
+        let overlay = RenderedOverlay {
+            lines: vec!["███".to_string(), "█a█".to_string(), "███".to_string()],
+            title_box: None,
+            rich_lines: None,
+        };
+        TerminalRenderer::compose_overlay(
+            &mut buf,
+            &overlay,
+            0,
+            0,
+            &OverlayConfig::DASHBOARD,
+            Some(&style),
+            RgbColor::new(0, 255, 0),
+            0.0,
+        );
+        // Border cell (top-left '█') → border_color.
+        assert_eq!(buf.get_cell(0, 0).fg_color_rgb, Some(style.border_color));
+        // Content cell ('a' at 1,1) → text_primary.
+        assert_eq!(buf.get_cell(1, 1).fg_color_rgb, Some(style.text_primary));
     }
 }

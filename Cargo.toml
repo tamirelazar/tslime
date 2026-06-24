@@ -22,7 +22,7 @@ exclude = [
 default = ["terminal"]
 # gui is opt-in: cargo build --features gui
 gui = ["dep:iced", "dep:iced_term"]
-terminal = ["dep:crossterm", "dep:signal-hook", "dep:memory-stats", "dep:thiserror"]
+terminal = ["dep:crossterm", "dep:signal-hook", "dep:memory-stats", "dep:thiserror", "dep:tui-input"]
 # audio (choir mode) opt-in: cargo build --features audio
 audio = ["dep:cpal"]
 # multi-species is experimental: cargo build --features multi-species
@@ -30,6 +30,9 @@ multi-species = []
 
 [dependencies]
 crossterm = { version = "0.27", optional = true }
+# tui-input as a pure state machine (InputRequest API), default-features=false to
+# drop its event backend → no crossterm coupling. Drives the config-save text field.
+tui-input = { version = "0.15", optional = true, default-features = false }
 clap = { version = "4.4", features = ["derive"] }
 clap_complete = "4.4"
 rand = "0.8"

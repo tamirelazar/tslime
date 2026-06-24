@@ -121,6 +121,22 @@ lowercase increases and uppercase (Shift) decreases.
 | `q` | Quit |
 | `Esc` | Close open overlay |
 
+### Controls panel navigation
+
+The Controls panel opens into the Console study view (full master-detail interface) and supports two-depth navigation:
+
+| Key | Action |
+|---|---|
+| `Tab` | Toggle between Tuner (bottom strip) and Console (full panel) |
+| `← / →` | Adjust the focused parameter (equivalent to its per-parameter hotkey) |
+| `↑ / ↓` | Move focus between parameters |
+| `↵` | Activate an action parameter (Reset / Save Frame / Randomize) |
+| `[ / ]` | Move to previous / next category |
+| `{ / }` | Adjust dither intensity (development feature) |
+| `Esc` | Close the panel |
+
+Note: The per-parameter hotkeys (`a`/`A`, `j`/`J`, `t`/`T`, etc. from the Simulation and Appearance tables above) continue to work anywhere and take precedence. Arrow keys provide keyboard-driven alternatives to the focused-param hotkey while the panel is open.
+
 ### Custom Keybinds
 
 Customize quick-keys `1`–`7` by creating a `~/.config/tslime/keybinds.toml` file with the following format:
@@ -209,7 +225,7 @@ tracking issue describing current state and what's needed — contributions welc
 | Choir mode (audio) | `cargo install tslime --features audio`, then `--choir` | #9 |
 | GUI mode | `cargo build --features gui` | #10 |
 | WASM build | `tslime-wasm/` (standalone crate) | #11 |
-| Dithering | hidden flags: `--dither-mode ordered` (and `d`/`D`/`[`/`]` keys once enabled) | #12 |
+| Dithering | hidden flags: `--dither-mode ordered` (and `d`/`D`/`{`/`}` keys once enabled) | #12 |
 
 ## Contributing
 

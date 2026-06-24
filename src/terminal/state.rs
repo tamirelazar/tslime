@@ -16,7 +16,6 @@ use crate::overlay::{OverlayState, OverlayType};
 use crate::render::charset::Charset;
 pub use crate::render::charset::ALL_CHARSETS;
 use crate::render::dither::{DitherMatrix, DitherMode};
-use crate::render::options_overlay::ControlsOverlay;
 use crate::render::palette::IntensityMapping;
 use crate::render::theme::{PanelStyle, ALL_THEMES, GRUVBOX_DARK};
 use crate::simulation::config::{
@@ -356,6 +355,8 @@ pub enum ControlAction {
     ToggleInvertPalette,
     /// Toggle reversed palette.
     ToggleReversePalette,
+    /// Toggle the always-on status line (ambient base row).
+    ToggleStatusBar,
     /// Cycle to next intensity mapping.
     CycleIntensityMapping,
     /// Cycle to previous intensity mapping.
@@ -403,6 +404,16 @@ pub enum ControlAction {
     /// Toggle choir-mode audio sonification on/off.
     #[cfg(feature = "audio")]
     ToggleChoir,
+    /// Cycle controls overlay depth: Closed → Console → Tuner → Closed.
+    ToggleControlsDepth,
+    /// Move focus to the next control in the controls overlay.
+    ControlsFocusNext,
+    /// Move focus to the previous control in the controls overlay.
+    ControlsFocusPrev,
+    /// Adjust the currently focused control by the given signed delta (−1.0 / +1.0).
+    ControlsAdjustFocused(f32),
+    /// Activate (press) the currently focused control in the controls overlay.
+    ControlsActivateFocused,
     /// No action.
     None,
 }
@@ -567,6 +578,10 @@ pub struct RuntimeState {
     pub comparison_target: ComparisonTarget,
     /// Current category tab in controls overlay.
     pub controls_category_idx: usize,
+    /// Which depth of the Controls surface is showing (Closed / Tuner / Console).
+    pub controls_depth: crate::render::controls::ControlsDepth,
+    /// Index of the focused parameter row within the Controls surface.
+    pub controls_focus: usize,
     /// Time scale multiplier.
     pub time_scale: f32,
     /// Currently active preset.
@@ -653,8 +668,6 @@ pub struct RuntimeState {
     pub intensity_mapping_index: usize,
     /// Saved palette name (if loaded from saved palette).
     pub saved_palette_name: Option<String>,
-    /// Current notification message with timestamp and severity level.
-    pub notification: Option<(String, std::time::Instant, NotificationLevel)>,
     /// Frame counter for entropy collapse detection.
     pub collapse_frame_counter: usize,
     /// Frame counter for stagnation collapse detection (a near-static pattern
@@ -673,8 +686,9 @@ pub struct RuntimeState {
     pub initial_food_attractors: Vec<crate::simulation::config::Attractor>,
     /// Selected index in config browser.
     pub config_browser_selected_index: usize,
-    /// Input buffer for save dialog.
-    pub config_save_name_input: String,
+    /// Input buffer for save dialog. `tui_input::Input` tracks value + cursor so the
+    /// field supports mid-string editing (arrows/Home/End/Delete), not just append/pop.
+    pub config_save_name_input: tui_input::Input,
     /// Default values for reset.
     pub default_values: DefaultValues,
     /// Application-runtime config (warmup / auto-reset / grid / food-persist).
@@ -773,6 +787,13 @@ pub struct RuntimeState {
     pub palette_cycle: crate::render::palette::PaletteCycle,
     /// Glyph-selection config (lever 10). Default identity (no override).
     pub glyph: crate::render::charset::GlyphConfig,
+    /// Monotonic seconds for overlay motion (breath, eases). Advanced each frame by dt.
+    pub phase_clock: f32,
+    /// Ambient instrument surface states (Task 13+). Always contains a `Base`
+    /// sentinel at index 0; `Tune`/`Msg` entries override it while live. The
+    /// runner resolves the highest-priority live entry each frame via
+    /// [`crate::render::ambient::resolve`].
+    pub ambient_states: Vec<crate::render::ambient::AmbientState>,
 }
 
 impl RuntimeState {
@@ -796,6 +817,8 @@ impl RuntimeState {
             overlay_state: OverlayState::default(),
             comparison_target: ComparisonTarget::Preset(initial_preset),
             controls_category_idx: 0,
+            controls_depth: crate::render::controls::ControlsDepth::Closed,
+            controls_focus: 0,
             time_scale: cli_config.time_scale,
             current_preset: initial_preset,
             active_source: crate::profile::ProfileSource::StartupCli,
@@ -862,7 +885,6 @@ impl RuntimeState {
             intensity_mapping: crate::render::palette::IntensityMapping::linear(),
             intensity_mapping_index: 0,
             saved_palette_name: None,
-            notification: None,
             collapse_frame_counter: 0,
             stagnation_frame_counter: 0,
             prev_trail_sample: Vec::new(),
@@ -871,7 +893,7 @@ impl RuntimeState {
             food_persist_enabled: false,
             initial_food_attractors: Vec::new(),
             config_browser_selected_index: 0,
-            config_save_name_input: String::new(),
+            config_save_name_input: tui_input::Input::default(),
             default_values,
             app: crate::app_config::AppRuntimeConfig::default(),
             wind: cli_config.wind,
@@ -917,6 +939,8 @@ impl RuntimeState {
             deposit_cap: cli_config.deposit_cap,
             palette_cycle: crate::render::palette::PaletteCycle::default(),
             glyph: crate::render::charset::GlyphConfig::default(),
+            phase_clock: 0.0,
+            ambient_states: vec![crate::render::ambient::AmbientState::Base],
         }
     }
 
@@ -1139,7 +1163,11 @@ impl RuntimeState {
     }
 
     /// Closes all open overlay windows.
+    ///
+    /// Also resets PaletteEditor sub-state so no stale `palette_editor` Option
+    /// survives a programmatic close (e.g. preset swap, config save/load/reset).
     pub fn close_all_overlays(&mut self) {
+        self.overlay_state.palette_editor = None;
         self.overlay_state.close();
     }
 
@@ -1155,12 +1183,12 @@ impl RuntimeState {
 
     /// Cycles through control categories.
     pub fn cycle_controls_category(&mut self, forward: bool) {
+        let total = crate::render::controls::registry::CATEGORY_NAMES.len();
         if forward {
-            self.controls_category_idx =
-                (self.controls_category_idx + 1) % ControlsOverlay::TOTAL_CATEGORIES;
+            self.controls_category_idx = (self.controls_category_idx + 1) % total;
         } else {
             self.controls_category_idx = if self.controls_category_idx == 0 {
-                ControlsOverlay::TOTAL_CATEGORIES - 1
+                total - 1
             } else {
                 self.controls_category_idx - 1
             };
@@ -1736,6 +1764,13 @@ impl RuntimeState {
         }
     }
 
+    /// Advances the monotonic phase clock by `dt` seconds (clamped frame time).
+    pub fn advance_phase(&mut self, dt: f32) {
+        // Wrap at a large multiple of 2π so f32 precision stays good for sin().
+        const WRAP: f32 = 100_000.0;
+        self.phase_clock = (self.phase_clock + dt) % WRAP;
+    }
+
     /// Called when a modal pane is opened.
     ///
     /// Always sets chrome to ModalPane regardless of base state.
@@ -1798,35 +1833,28 @@ impl RuntimeState {
         self.max_brightness = rng.gen_range(10.0..40.0);
     }
 
+    /// Pushes a [`crate::render::ambient::AmbientState::Msg`] onto the ambient
+    /// states vec, replacing any existing MSG so messages don't stack unbounded.
+    ///
+    /// At most one active MSG is kept. The duration is determined by `level`
+    /// via [`crate::render::ambient::msg`].
+    pub fn push_msg(&mut self, level: NotificationLevel, text: String) {
+        let now = self.phase_clock;
+        // Remove any existing Msg entries so messages don't stack unbounded.
+        self.ambient_states
+            .retain(|s| !matches!(s, crate::render::ambient::AmbientState::Msg { .. }));
+        self.ambient_states
+            .push(crate::render::ambient::msg(level, text, now));
+    }
+
     /// Shows a temporary notification message at Info level.
     pub fn show_notification(&mut self, message: String) {
-        self.notification = Some((message, std::time::Instant::now(), NotificationLevel::Info));
+        self.push_msg(NotificationLevel::Info, message);
     }
 
     /// Shows a temporary notification with an explicit severity level.
     pub fn show_notification_with_level(&mut self, message: String, level: NotificationLevel) {
-        self.notification = Some((message, std::time::Instant::now(), level));
-    }
-
-    /// Updates notification state (clears expired notifications).
-    pub fn update_notifications(&mut self) {
-        if let Some((_, time, _)) = self.notification {
-            if time.elapsed().as_secs() >= 3 {
-                self.notification = None;
-            }
-        }
-    }
-
-    /// Returns the current notification message if any.
-    pub fn current_notification(&self) -> Option<&String> {
-        self.notification.as_ref().map(|(msg, _, _)| msg)
-    }
-
-    /// Returns the current notification message and level if any.
-    pub fn current_notification_full(&self) -> Option<(&str, NotificationLevel)> {
-        self.notification
-            .as_ref()
-            .map(|(msg, _, level)| (msg.as_str(), *level))
+        self.push_msg(level, message);
     }
 
     /// Cycles to the next UI theme.
@@ -2060,6 +2088,27 @@ mod tests {
     }
 
     #[test]
+    fn test_close_all_overlays_clears_palette_editor_sub_state() {
+        use crate::render::palette_editor::PaletteEditorState;
+
+        let mut state = create_test_runtime_state();
+
+        // Simulate opening the palette editor (sets both active overlay and sub-state).
+        state
+            .overlay_state
+            .open_palette_editor(PaletteEditorState::new(&Palette::Forest));
+        assert!(state.overlay_state.is_palette_editor_open());
+        assert!(state.overlay_state.palette_editor.is_some());
+
+        // close_all_overlays must clear both the active flag and the sub-state.
+        state.close_all_overlays();
+
+        assert!(!state.overlay_state.is_palette_editor_open());
+        assert!(state.overlay_state.palette_editor.is_none());
+        assert!(!state.any_overlay_open());
+    }
+
+    #[test]
     fn test_controls_category_cycling() {
         let mut state = create_test_runtime_state();
 
@@ -2085,6 +2134,16 @@ mod tests {
 
         state.cycle_controls_category(false);
         assert_eq!(state.controls_category_idx, 5);
+    }
+
+    #[test]
+    fn runtime_state_starts_closed_focus_zero() {
+        let s = create_test_runtime_state();
+        assert_eq!(
+            s.controls_depth,
+            crate::render::controls::ControlsDepth::Closed
+        );
+        assert_eq!(s.controls_focus, 0);
     }
 
     #[test]
@@ -2186,11 +2245,16 @@ mod tests {
             false,
             false,
         );
-        assert_eq!(state.current_notification(), None);
+        // show_notification delegates to push_msg — toasts live in ambient_states.
         state.show_notification("test".to_string());
-        assert_eq!(state.current_notification(), Some(&"test".to_string()));
-        state.update_notifications();
-        assert_eq!(state.current_notification(), Some(&"test".to_string()));
+        let has_msg = state
+            .ambient_states
+            .iter()
+            .any(|s| matches!(s, crate::render::ambient::AmbientState::Msg { .. }));
+        assert!(
+            has_msg,
+            "show_notification should push a Msg into ambient_states"
+        );
     }
 
     #[test]
@@ -2960,6 +3024,17 @@ mod tests {
     }
 
     #[test]
+    fn controls_actions_exist() {
+        let _ = [
+            ControlAction::ToggleControlsDepth,
+            ControlAction::ControlsFocusNext,
+            ControlAction::ControlsFocusPrev,
+            ControlAction::ControlsAdjustFocused(1.0),
+            ControlAction::ControlsActivateFocused,
+        ];
+    }
+
+    #[test]
     fn default_values_from_config_resolves_overrides() {
         use crate::config_manager::NamedProfile;
         use crate::profile_overrides::ProfileOverrides;
@@ -2987,5 +3062,27 @@ mod tests {
         );
         rs.toggle_comparison(ComparisonTarget::Preset(Preset::Network));
         assert!(!rs.overlay_state.is_open(OverlayType::PresetComparison));
+    }
+}
+
+#[cfg(test)]
+mod phase_tests {
+    use super::*;
+    #[test]
+    fn advance_phase_accumulates_dt() {
+        let mut rs = RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Network,
+            MouseInteractionMode::Disabled,
+            0.0,
+            &crate::simulation::config::SimConfig::default(),
+            crate::cli::PauseStyle::Vignette,
+            false,
+            false,
+        );
+        let before = rs.phase_clock;
+        rs.advance_phase(0.5);
+        assert!((rs.phase_clock - (before + 0.5)).abs() < 1e-6);
     }
 }
