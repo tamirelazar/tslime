@@ -379,7 +379,57 @@ fn tune_content_rows(w: usize, st: &PanelStyle, param: &TuneView, now: f32) -> V
     rows
 }
 
-/// Build the MSG content rows (icon + text, optional dismiss hint), each `w` wide.
+/// Greedy word-wrap `text` into lines no wider than `width` columns.
+///
+/// Breaks on ASCII spaces, never mid-word, so a notification reads as whole
+/// words across lines instead of being amputated (e.g. "…on GitH"). A single
+/// word longer than `width` is hard-broken into `width`-column chunks as a last
+/// resort. Always returns at least one line (an empty line for empty input).
+fn wrap_words(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![String::new()];
+    }
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut cur_len = 0usize;
+    for word in text.split(' ') {
+        let wlen = word.chars().count();
+        // A single oversized word can't fit any line — flush, then hard-break it.
+        if wlen > width {
+            if !cur.is_empty() {
+                lines.push(std::mem::take(&mut cur));
+                cur_len = 0;
+            }
+            for ch in word.chars() {
+                if cur_len == width {
+                    lines.push(std::mem::take(&mut cur));
+                    cur_len = 0;
+                }
+                cur.push(ch);
+                cur_len += 1;
+            }
+            continue;
+        }
+        let sep = usize::from(!cur.is_empty());
+        if cur_len + sep + wlen > width {
+            lines.push(std::mem::take(&mut cur));
+            cur.push_str(word);
+            cur_len = wlen;
+        } else {
+            if sep == 1 {
+                cur.push(' ');
+            }
+            cur.push_str(word);
+            cur_len += sep + wlen;
+        }
+    }
+    lines.push(cur);
+    lines
+}
+
+/// Build the MSG content rows (icon + wrapped text, optional dismiss hint),
+/// each `w` wide. Long messages wrap across rows so no word is truncated; the
+/// icon sits on the first row and continuation rows align under the text.
 fn msg_content_rows(
     w: usize,
     st: &PanelStyle,
@@ -387,15 +437,19 @@ fn msg_content_rows(
     text: &str,
     sticky: bool,
 ) -> Vec<RowBuf> {
-    let mut rows = Vec::with_capacity(2);
-    {
+    let color = level_color(level, st);
+    let icon = level.icon();
+    let icon_w = icon.chars().count();
+    let text_col = 2 + icon_w + 1;
+    let avail = w.saturating_sub(icon_w + 4).max(1);
+    let wrapped = wrap_words(text, avail);
+    let mut rows = Vec::with_capacity(wrapped.len() + 1);
+    for (i, line) in wrapped.iter().enumerate() {
         let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-        let color = level_color(level, st);
-        let icon = level.icon();
-        row.put(2, icon, Some(color), None);
-        let icon_w = icon.chars().count();
-        let msg: String = text.chars().take(w.saturating_sub(icon_w + 4)).collect();
-        row.put(2 + icon_w + 1, &msg, Some(color), None);
+        if i == 0 {
+            row.put(2, icon, Some(color), None);
+        }
+        row.put(text_col, line, Some(color), None);
         rows.push(row);
     }
     {
@@ -1176,5 +1230,57 @@ mod msg_tests {
         } else {
             panic!("expected Msg");
         }
+    }
+
+    // ── Notification word-wrap (no mid-word truncation) ────────────────────────
+
+    #[test]
+    fn wrap_words_keeps_short_text_on_one_line() {
+        assert_eq!(wrap_words("hi there", 20), vec!["hi there".to_string()]);
+    }
+
+    #[test]
+    fn wrap_words_breaks_on_word_boundary_not_mid_word() {
+        // Regression: the dither dev-only toast (53 chars) used to truncate to
+        // "…on GitH" inside a 51-col message area. Now it wraps, intact.
+        let text = "Dither is dev-only - see help-wanted issues on GitHub";
+        let lines = wrap_words(text, 51);
+        assert!(lines.len() >= 2, "long text must wrap: {lines:?}");
+        assert!(
+            lines.iter().all(|l| l.chars().count() <= 51),
+            "no line exceeds the width: {lines:?}"
+        );
+        // The trailing word survives whole — no "GitH" amputation.
+        assert!(
+            lines.iter().any(|l| l.contains("GitHub")),
+            "GitHub must appear intact: {lines:?}"
+        );
+        // Reassembling the words reproduces the original message (lossless).
+        assert_eq!(lines.join(" "), text);
+    }
+
+    #[test]
+    fn wrap_words_hard_breaks_an_oversized_word() {
+        let lines = wrap_words("supercalifragilistic", 5);
+        assert!(lines.iter().all(|l| l.chars().count() <= 5));
+        assert_eq!(lines.concat(), "supercalifragilistic");
+    }
+
+    #[test]
+    fn wrap_words_empty_yields_one_empty_line() {
+        assert_eq!(wrap_words("", 10), vec![String::new()]);
+    }
+
+    #[test]
+    fn msg_content_rows_does_not_truncate_github() {
+        let st = crate::render::theme::GRUVBOX_DARK;
+        let text = "Dither is dev-only - see help-wanted issues on GitHub";
+        let rows = msg_content_rows(MODAL_INNER_W, &st, NotificationLevel::Info, text, false);
+        // Concatenated message-row text contains the full word, not "GitH".
+        let joined: String = rows.iter().map(|r| r.text()).collect();
+        assert!(
+            joined.contains("GitHub"),
+            "rendered notification must not amputate GitHub:\n{joined}"
+        );
     }
 }
