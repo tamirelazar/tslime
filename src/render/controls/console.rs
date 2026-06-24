@@ -526,24 +526,48 @@ mod tests {
     };
 
     /// No category may exceed [`MAX_VISIBLE_ROWS`] — the console pads both panes
-    /// to that constant, and `build_console` `debug_assert!`s on overflow (it
-    /// panicked when APP grew past the cap). Worst case: all conditional rows on.
+    /// to that constant and the body loop reads exactly `MAX_VISIBLE_ROWS` rows,
+    /// so any category that yields more rows is **silently truncated in release**
+    /// (the `debug_assert!` in `build_console` is stripped). This test is the
+    /// release-proof guard: it runs in CI and covers *every* category under
+    /// *every* `RegistryCtx` combination, so a row added on any flag polarity is
+    /// caught at the source.
+    ///
+    /// Exhaustive over all `RegistryCtx` bool fields. **If you add a field to
+    /// `RegistryCtx`, add it to `ALL_CTX` below** so the coverage stays total.
     #[test]
     fn no_category_exceeds_max_visible_rows() {
-        let ctx = RegistryCtx {
-            diffusion_gaussian: true, // surfaces DiffusionSigma
-            mouse_enabled: true,      // surfaces MouseTimeout
-        };
-        for (cat, name) in CATEGORY_NAMES.iter().enumerate() {
-            let n = visible_params(cat, &ctx).len();
-            assert!(
-                n <= MAX_VISIBLE_ROWS,
-                "category {} ({}) has {} rows > MAX_VISIBLE_ROWS ({})",
-                cat,
-                name,
-                n,
-                MAX_VISIBLE_ROWS
-            );
+        const ALL_CTX: [RegistryCtx; 4] = [
+            RegistryCtx {
+                diffusion_gaussian: false,
+                mouse_enabled: false,
+            },
+            RegistryCtx {
+                diffusion_gaussian: false,
+                mouse_enabled: true,
+            },
+            RegistryCtx {
+                diffusion_gaussian: true,
+                mouse_enabled: false,
+            },
+            RegistryCtx {
+                diffusion_gaussian: true,
+                mouse_enabled: true,
+            },
+        ];
+        for ctx in &ALL_CTX {
+            for (cat, name) in CATEGORY_NAMES.iter().enumerate() {
+                let n = visible_params(cat, ctx).len();
+                assert!(
+                    n <= MAX_VISIBLE_ROWS,
+                    "category {} ({}) has {} rows > MAX_VISIBLE_ROWS ({}) at ctx {:?}",
+                    cat,
+                    name,
+                    n,
+                    MAX_VISIBLE_ROWS,
+                    ctx,
+                );
+            }
         }
     }
 
