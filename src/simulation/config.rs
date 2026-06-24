@@ -106,7 +106,7 @@ pub enum Preset {
     Etching,
     /// Color that shifts with motion direction (temporal Hue mode).
     Drift,
-    /// Sparse star-map scatter (Points charset).
+    /// Constellation: crisp star-map held via continuous template re-stamp (Points charset).
     Constellation,
     /// Posterized color bands (Quantize mapping + Wrap palette cycles).
     Mosaic,
@@ -274,8 +274,8 @@ pub const PRESETS: &[PresetSpec] = &[
     },
     PresetSpec {
         preset: Preset::Constellation,
-        name: "Constellation",
-        aliases: &[],
+        name: "constellations",
+        aliases: &["constellation", "atlas"],
         quick_key: Some('2'),
     },
     PresetSpec {
@@ -424,11 +424,13 @@ pub enum InitMode {
     Food,
     /// Agents distributed in a Gaussian blob at the center (Petri dish style).
     Petri,
+    /// Agents seeded as a real star constellation (stars + asterism edges).
+    Constellation,
 }
 
 impl InitMode {
-    /// Uniformly pick any init mode. Used by presets (e.g. Constellation) that
-    /// re-roll their starting layout on each reset.
+    /// Uniformly pick any init mode for non-structural presets. Named structural
+    /// modes such as `Constellation` are excluded and keep a stable layout.
     ///
     /// `ALL` is hand-maintained; the exhaustive match below is a compile-time
     /// guard — adding an `InitMode` variant fails to compile here until it is
@@ -459,7 +461,8 @@ impl InitMode {
                 | InitMode::Spiral
                 | InitMode::RandomClusters
                 | InitMode::Food
-                | InitMode::Petri => {}
+                | InitMode::Petri
+                | InitMode::Constellation => {}
             }
         }
         ALL[rng.gen_range(0..ALL.len())]
@@ -1395,6 +1398,10 @@ pub struct SimConfig {
     pub respawn_config: RespawnConfig,
     /// Trail sampling method (nearest or bilinear).
     pub sampling_mode: SamplingMode,
+    /// Constellation atlas re-stamp strength, applied each frame after
+    /// diffusion/decay. 0.0 = no re-stamp (drift); > 0.0 = self-healing
+    /// template source (static hold).
+    pub constellation_restamp_floor: f32,
 }
 
 impl SimConfig {
@@ -1520,6 +1527,8 @@ impl Default for SimConfig {
             },
             respawn_config: RespawnConfig::default(),
             sampling_mode: SamplingMode::Nearest,
+            constellation_restamp_floor:
+                crate::config_defaults::DEFAULT_CONSTELLATION_RESTAMP_FLOOR,
         }
     }
 }

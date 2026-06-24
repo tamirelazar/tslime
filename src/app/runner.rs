@@ -84,15 +84,11 @@ fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeStat
     }
 }
 
-/// The init mode to actually seed with. Constellation re-rolls a fresh random
-/// mode each reset; every other preset uses its stable baseline. Does NOT mutate
-/// config or `original_init_mode`, so dirty-projection stays clean.
-pub(crate) fn effective_init_mode(preset: Preset, base: InitMode) -> InitMode {
-    if matches!(preset, Preset::Constellation) {
-        InitMode::random(&mut rand::thread_rng())
-    } else {
-        base
-    }
+/// The init mode to actually seed with. The constellation figure is chosen by
+/// the seeded simulation RNG inside `Simulation::new`, so reset stays
+/// deterministic and every preset uses its stable baseline init mode.
+pub(crate) fn effective_init_mode(base: InitMode) -> InitMode {
+    base
 }
 
 /// Checks if simulation should auto-reset based on entropy collapse.
@@ -132,11 +128,7 @@ fn check_auto_reset(
 
         // Use the live original init mode (the apply seam updates it on restart),
         // NOT the startup `init_mode` local which is stale after a config load.
-        // Constellation re-rolls a fresh layout each reset (non-mutating).
-        let init_mode = effective_init_mode(
-            runtime_state.current_preset,
-            runtime_state.original_init_mode,
-        );
+        let init_mode = effective_init_mode(runtime_state.original_init_mode);
         sim.reset(new_seed, init_mode);
         runtime_state.reset_collapse_counter();
         runtime_state.reset_warmup();
@@ -1916,6 +1908,7 @@ pub fn run_simulation(
                     InitMode::RandomClusters => "Clusters",
                     InitMode::Food => "Food",
                     InitMode::Petri => "Petri",
+                    InitMode::Constellation => "Constellation",
                 };
 
                 let color_mode_name = match color_mode {
@@ -2699,12 +2692,7 @@ pub fn run_simulation(
                             }
                         }
                         ControlAction::Restart => {
-                            // Constellation re-rolls a fresh layout each reset
-                            // (non-mutating: original_init_mode is untouched).
-                            let init_mode = effective_init_mode(
-                                runtime_state.current_preset,
-                                runtime_state.original_init_mode,
-                            );
+                            let init_mode = effective_init_mode(runtime_state.original_init_mode);
                             sim.reset(runtime_state.original_seed, init_mode);
                         }
                         ControlAction::QuickKey(c) => match resolve_bind(c, &user_binds) {
@@ -4364,6 +4352,16 @@ mod tests {
             ambient_mode(false, ControlsDepth::Tuner),
             AmbientMode::Normal,
             "ambient must be Normal when controls are not open"
+        );
+    }
+
+    #[test]
+    fn constellation_reset_is_now_stable() {
+        use crate::simulation::config::InitMode;
+        // Constellation must NOT re-roll a random init mode anymore.
+        assert_eq!(
+            effective_init_mode(InitMode::Constellation),
+            InitMode::Constellation
         );
     }
 }

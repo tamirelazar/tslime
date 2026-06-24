@@ -208,10 +208,12 @@ impl From<Preset> for RenderArtDefaults {
                 afterglow: 0.1,
                 ..Self::default()
             },
-            // Points charset: sparse particle star-map.
+            // Atlas linework: Points charset for crisp star dots, lin/log split mapping.
             Preset::Constellation => Self {
                 charset: Some(Charset::Points),
                 palette: Some(Palette::Cosmic),
+                intensity_mapping: IntensityMapping::linear_log_split(10.0),
+                auto_normalize: Some(false),
                 ..Self::default()
             },
             // Quantize mapping + Wrap palette cycling: posterized bands.
@@ -487,6 +489,18 @@ mod tests {
         assert_eq!(RenderArtDefaults::from(Preset::Drift).afterglow, 0.1);
         assert_eq!(RenderArtDefaults::from(Preset::Forge).afterglow, 0.3);
         assert_eq!(RenderArtDefaults::from(Preset::Gossamer).afterglow, 0.2);
+    }
+
+    #[test]
+    fn constellation_renders_points_cosmic() {
+        let d = RenderArtDefaults::from(Preset::Constellation);
+        assert_eq!(d.charset, Some(Charset::Points));
+        assert_eq!(d.palette, Some(Palette::Cosmic));
+        assert_eq!(d.auto_normalize, Some(false));
+        assert_eq!(
+            d.intensity_mapping,
+            IntensityMapping::linear_log_split(10.0)
+        );
     }
 
     #[test]

@@ -1943,7 +1943,7 @@ mod tests {
         );
     }
 
-    /// Constellation resolves `auto_reset = true` when CLI does not override it.
+    /// Constellation resolves `auto_reset = false` (static hold) when CLI does not override it.
     #[test]
     fn resolve_app_uses_preset_auto_reset_default() {
         let ov = ProfileOverrides {
@@ -1951,18 +1951,18 @@ mod tests {
             ..Default::default()
         };
         assert!(
-            ov.resolve_app().auto_reset,
-            "constellation auto_reset should be on by default"
+            !ov.resolve_app().auto_reset,
+            "constellation auto_reset should be off by default (static hold)"
         );
         // Explicit override wins over the preset's default.
         let ov2 = ProfileOverrides {
             preset: Some(crate::simulation::config::Preset::Constellation),
-            auto_reset: Some(false),
+            auto_reset: Some(true),
             ..Default::default()
         };
         assert!(
-            !ov2.resolve_app().auto_reset,
-            "explicit Some(false) must override the preset default"
+            ov2.resolve_app().auto_reset,
+            "explicit Some(true) must override the preset default"
         );
     }
 
