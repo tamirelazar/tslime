@@ -7,7 +7,9 @@
 //! mainstream terminal renders single-width — so nothing shears.
 
 use crate::render::controls::registry::ParamId;
-use crate::render::palette::Palette;
+use crate::render::palette::{map_brightness_rgb, Palette, RgbColor};
+use crate::render::theme::PanelStyle;
+use crate::render::widgets::RowBuf;
 
 /// Glyph-rendering profile. Authored art is downgraded through the active one.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -106,7 +108,6 @@ pub(crate) fn is_safe_width1(ch: char) -> bool {
 }
 
 /// MASS brightness for a glyph (None = not a MASS glyph). Drives palette tint.
-#[allow(dead_code)]
 pub(crate) fn shade_brightness(ch: char) -> Option<f32> {
     Some(match ch {
         '·' | '∙' => 0.14,
@@ -121,7 +122,6 @@ pub(crate) fn shade_brightness(ch: char) -> Option<f32> {
 }
 
 /// True for STRUCTURE glyphs (rays, axes, arrows, RULE, caret, brackets, ticks).
-#[allow(dead_code)]
 pub(crate) fn is_structural(ch: char) -> bool {
     matches!(
         ch,
@@ -172,7 +172,6 @@ pub(crate) fn is_structural(ch: char) -> bool {
 }
 
 /// Resolve a `⟦name⟧` palette tag to a `Palette` (PALETTE strip swatches).
-#[allow(dead_code)]
 pub(crate) fn parse_palette_opt(name: &str) -> Option<Palette> {
     Some(match name.to_ascii_lowercase().as_str() {
         "slime" => Palette::Slime,
@@ -186,6 +185,123 @@ pub(crate) fn parse_palette_opt(name: &str) -> Option<Palette> {
         "neon" => Palette::Neon,
         _ => return None,
     })
+}
+
+/// Color one art cell by its AUTHORED glyph (material contract), independent of
+/// the later glyph downgrade. `ignite` = inside a «…» run; `pal_override` = inside
+/// a ⟦name⟧ run.
+fn cell_color(
+    ch: char,
+    ignite: bool,
+    pal_override: Option<Palette>,
+    st: &PanelStyle,
+    base_palette: Palette,
+) -> Option<RgbColor> {
+    if let Some(b) = shade_brightness(ch) {
+        // MASS: palette-tinted (wins over ignite — a lit lamp still glows pigment).
+        let p = pal_override.unwrap_or(base_palette);
+        Some(map_brightness_rgb(b, p, false, false, 0.0, None))
+    } else if ignite {
+        Some(st.accent_ignite)
+    } else if is_structural(ch) {
+        Some(st.accent_active)
+    } else if ch == ' ' {
+        None
+    } else {
+        // ANNOTATION (stage label, numerals, option text).
+        Some(st.text_secondary)
+    }
+}
+
+/// Render one dedented art line into a `width`-wide `RowBuf`, placing the block
+/// at horizontal offset `off`. Markers are consumed (not placed). The `opt:`/
+/// `caret` markers render as plain content here; Task 6 adds option lighting.
+fn render_one(
+    line: &str,
+    off: usize,
+    profile: Profile,
+    st: &PanelStyle,
+    base_palette: Palette,
+    width: usize,
+) -> RowBuf {
+    let mut row = RowBuf::new(width);
+    let mut col = off;
+    let mut ignite = false;
+    let mut pal_override: Option<Palette> = None;
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '«' => {
+                ignite = true;
+                continue;
+            }
+            '»' => {
+                ignite = false;
+                continue;
+            }
+            '⟦' => {
+                let mut name = String::new();
+                for c2 in chars.by_ref() {
+                    if c2 == '⟧' {
+                        break;
+                    }
+                    name.push(c2);
+                }
+                // ⟦⟧ closes a run; ⟦opt:..⟧/⟦caret⟧ handled in Task 6 (ignored here).
+                pal_override = if name.is_empty() || name.starts_with("opt:") || name == "caret" {
+                    None
+                } else {
+                    parse_palette_opt(&name)
+                };
+                continue;
+            }
+            _ => {}
+        }
+        let color = cell_color(ch, ignite, pal_override.clone(), st, base_palette.clone());
+        let glyph = map_glyph(ch, profile);
+        if let Some(c) = color {
+            row.put_cells(col, &[(glyph, c)], None);
+        }
+        // (no color = blank space, leave default)
+        col += 1;
+    }
+    row
+}
+
+/// Build the detail-pane rows for a field plate: centered specimen art, a blank
+/// divider, then the caption as left-aligned reading text.
+#[allow(dead_code)]
+pub fn render_art(
+    art: &str,
+    caption: &str,
+    profile: Profile,
+    st: &PanelStyle,
+    base_palette: Palette,
+    _live_select: Option<&str>,
+    width: usize,
+) -> Vec<RowBuf> {
+    let (ded, bw) = dedent_and_measure(art);
+    let off = width.saturating_sub(bw) / 2;
+    let mut rows: Vec<RowBuf> = Vec::new();
+    for line in ded.lines() {
+        rows.push(render_one(
+            line,
+            off,
+            profile,
+            st,
+            base_palette.clone(),
+            width,
+        ));
+    }
+    if !caption.is_empty() {
+        rows.push(RowBuf::new(width));
+        for cap in caption.lines() {
+            let mut r = RowBuf::new(width);
+            r.put(0, cap, Some(st.text_secondary), None);
+            rows.push(r);
+        }
+    }
+    rows
 }
 
 /// One parameter's specimen art + reading caption.
@@ -266,7 +382,6 @@ pub(crate) fn visible_width(line: &str) -> usize {
 }
 
 /// Strip the block's common leading indent; return (dedented art, visible width).
-#[allow(dead_code)]
 pub(crate) fn dedent_and_measure(art: &str) -> (String, usize) {
     let min = art
         .lines()
@@ -286,6 +401,48 @@ pub(crate) fn dedent_and_measure(art: &str) -> (String, usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn st() -> PanelStyle {
+        crate::render::theme::GRUVBOX_DARK
+    }
+
+    #[test]
+    fn render_art_consumes_markers_and_centers() {
+        let rows = render_art(
+            "«^» x",
+            "cap",
+            Profile::Safe,
+            &st(),
+            Palette::Heat,
+            None,
+            20,
+        );
+        let text: String = rows.iter().map(|r| r.text()).collect::<Vec<_>>().join("|");
+        // No marker glyphs survive.
+        assert!(!text.contains('«') && !text.contains('»') && !text.contains('⟦'));
+        // Each row is exactly `width` wide.
+        assert!(rows.iter().all(|r| r.text().chars().count() == 20));
+    }
+
+    #[test]
+    fn render_art_ignition_uses_accent_ignite() {
+        let s = st();
+        // "«▲»" -> mapped to "^", colored accent_ignite.
+        let mut rows = render_art("«▲»", "", Profile::Safe, &s, Palette::Heat, None, 12);
+        let rich = rows.remove(0).into_rich();
+        let lit = rich.iter().find(|(ch, _, _)| *ch == '^');
+        assert_eq!(lit.and_then(|(_, fg, _)| *fg), Some(s.accent_ignite));
+    }
+
+    #[test]
+    fn render_art_mass_is_palette_tinted() {
+        let s = st();
+        let mut rows = render_art("█", "", Profile::Safe, &s, Palette::Heat, None, 6);
+        let rich = rows.remove(0).into_rich();
+        let mass = rich.iter().find(|(ch, _, _)| *ch == '█');
+        let expect = map_brightness_rgb(1.0, Palette::Heat, false, false, 0.0, None);
+        assert_eq!(mass.and_then(|(_, fg, _)| *fg), Some(expect));
+    }
 
     /// The full authored glyph kit (handoff §3). Every glyph must downgrade to a
     /// single-width safe-range glyph under `Safe` — this turns "holds up across
