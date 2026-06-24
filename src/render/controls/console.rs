@@ -13,8 +13,9 @@
 //! value) plus a derived description line. Both panes are padded to a constant
 //! row count so the overall panel dimensions never change with category or focus.
 
+use crate::render::controls::field_plate::{field_plate, render_art, Profile};
 use crate::render::controls::registry::{ParamDesc, ParamKind, CATEGORY_NAMES};
-use crate::render::palette::RgbColor;
+use crate::render::palette::{Palette, RgbColor};
 use crate::render::panel::{Padding, PanelBuilder, RenderedOverlay, RichCell, TextAlignment};
 use crate::render::theme::PanelStyle;
 use crate::render::widgets::{state_color, RowBuf};
@@ -124,25 +125,6 @@ fn tab_rows(content_w: usize, active: usize, st: &PanelStyle) -> (RowBuf, RowBuf
     (ir, lr)
 }
 
-/// Simple word-wrap: break `s` into lines of at most `w` characters.
-fn wrap_text(s: &str, w: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut line = String::new();
-    for word in s.split_whitespace() {
-        if line.chars().count() + word.len() + if line.is_empty() { 0 } else { 1 } > w {
-            out.push(std::mem::take(&mut line));
-        }
-        if !line.is_empty() {
-            line.push(' ');
-        }
-        line.push_str(word);
-    }
-    if !line.is_empty() {
-        out.push(line);
-    }
-    out
-}
-
 /// Assemble a list of [`Rk`] content rows + PanelBuilder chrome → [`RenderedOverlay`].
 ///
 /// Mirrors `examples/controls_prototype.rs::assemble`: each [`Rk::Buf`] is added to
@@ -211,6 +193,7 @@ pub fn build_console(
     params: &[ParamView],
     style: &PanelStyle,
     _accent: RgbColor,
+    palette: Palette,
 ) -> RenderedOverlay {
     let cat = category.min(CATEGORY_NAMES.len().saturating_sub(1));
     let title = format!("CONTROLS · {}", CATEGORY_NAMES[cat]);
@@ -292,195 +275,203 @@ pub fn build_console(
     if !params.is_empty() {
         let pv = &params[focus_clamped];
 
-        // ── row 0: header ───────────────────────────────────────────────────
-        let mut head = RowBuf::new(RIGHT_W);
-        head.put(0, pv.desc.label, Some(style.text_primary), None);
-        let key_str = format!("[{}]", pv.desc.key_hint);
-        let key_col = match pv.state {
-            ParamState::Cli => Some(style.cli_color),
-            _ => Some(style.accent_active),
-        };
-        let key_start = RIGHT_W.saturating_sub(key_str.len());
-        head.put(key_start, &key_str, key_col, None);
-        right.push(head);
-
-        // ── row 1: blank spacer ─────────────────────────────────────────────
-        right.push(RowBuf::new(RIGHT_W));
-
-        // ── row 2: primary value / affordance ──────────────────────────────
-        let mut valrow = RowBuf::new(RIGHT_W);
-        match pv.desc.kind {
-            ParamKind::Numeric => {
-                // Value text + state label
-                let val_col = match pv.state {
-                    ParamState::Modified => Some(style.accent_active),
-                    _ => Some(style.text_primary),
+        if let Some(plate) = field_plate(pv.desc.id) {
+            // Art mode: specimen fills the pane; the [key] chip rides row 0.
+            let live = match pv.desc.kind {
+                ParamKind::Enum | ParamKind::Toggle => Some(pv.value_text.as_str()),
+                _ => None,
+            };
+            let mut art_rows = render_art(
+                plate.art,
+                plate.caption,
+                Profile::Safe,
+                style,
+                palette,
+                live,
+                RIGHT_W,
+            );
+            // Right-aligned [key] chip on the first row (replaces the old header).
+            if let Some(first) = art_rows.first_mut() {
+                let key_str = format!("[{}]", pv.desc.key_hint);
+                let key_col = match pv.state {
+                    ParamState::Cli => style.cli_color,
+                    _ => style.accent_active,
                 };
-                valrow.put(0, &pv.value_text, val_col, None);
-                // A Numeric param never carries ParamState::Display, so it is
-                // folded into the "default" label to keep the match exhaustive.
-                let state_label = match pv.state {
-                    ParamState::Modified => "modified",
-                    ParamState::Cli => "cli-only",
-                    ParamState::Default | ParamState::Display => "default",
-                };
-                valrow.put(14, state_label, Some(state_color(pv.state, style)), None);
+                first.put(
+                    RIGHT_W.saturating_sub(key_str.chars().count()),
+                    &key_str,
+                    Some(key_col),
+                    None,
+                );
             }
-            ParamKind::Enum => {
-                // Current value prominently; no gauge ticks
-                valrow.put(0, &pv.value_text, Some(style.text_primary), None);
-                let hint = "← → to cycle";
-                let hint_start = RIGHT_W.saturating_sub(hint.len());
-                valrow.put(hint_start, hint, Some(style.muted), None);
-            }
-            ParamKind::Toggle => {
-                // On/off pill
-                let (pill_text, pill_col) = if pv.value_text.eq_ignore_ascii_case("on")
-                    || pv.value_text == "true"
-                    || pv.value_text == "1"
-                {
-                    ("[ ON  ]", style.accent_active)
-                } else {
-                    ("[ OFF ]", style.muted)
-                };
-                valrow.put(0, pill_text, Some(pill_col), None);
-            }
-            ParamKind::Action => {
-                // "↵ to run" affordance
-                valrow.put(0, "↵ to run", Some(style.accent_active), None);
-            }
-            ParamKind::CliReadonly => {
-                // Value + "restart to change"
-                valrow.put(0, &pv.value_text, Some(style.cli_color), None);
-                let hint = "restart to change";
-                let hint_start = RIGHT_W.saturating_sub(hint.len());
-                valrow.put(hint_start, hint, Some(style.cli_color), None);
-            }
-            ParamKind::Display => {
-                // Value, dimmed
-                valrow.put(0, &pv.value_text, Some(style.muted), None);
-            }
-        }
-        right.push(valrow);
+            right.extend(art_rows);
+        } else {
+            // Fallback: kind-aware detail, cleaned of label redundancy.
 
-        // ── rows 3–4: kind widget (gauge+tick for numeric; hint for others) ─
-        match pv.desc.kind {
-            ParamKind::Numeric => {
-                if let (Some(ratio), Some(def_ratio)) = (pv.ratio, pv.def_ratio) {
-                    // row 3: large gauge bar
-                    let gw = RIGHT_W.saturating_sub(2);
-                    let mut grow = RowBuf::new(RIGHT_W);
-                    grow.put_cells(
-                        0,
-                        &crate::render::controls::value::gauge(
-                            ratio,
-                            def_ratio,
-                            gw,
-                            state_color(pv.state, style),
-                            style.accent_active,
-                            style.muted,
-                        ),
-                        None,
-                    );
-                    right.push(grow);
+            // ── row 0: [key] chip only (label lives in title-box + left list) ───
+            let mut head = RowBuf::new(RIGHT_W);
+            let key_str = format!("[{}]", pv.desc.key_hint);
+            let key_col = match pv.state {
+                ParamState::Cli => Some(style.cli_color),
+                _ => Some(style.accent_active),
+            };
+            head.put(
+                RIGHT_W.saturating_sub(key_str.chars().count()),
+                &key_str,
+                key_col,
+                None,
+            );
+            right.push(head);
 
-                    // row 4: tick labels  min … ▲def … max
-                    let mut tick = RowBuf::new(RIGHT_W);
-                    let min_s = "min";
-                    let max_s = "max";
-                    let def_col = (def_ratio * gw as f32).round() as usize;
-                    tick.put(0, min_s, Some(style.muted), None);
-                    if def_col < RIGHT_W {
-                        tick.put(def_col, "▲", Some(style.accent_active), None);
+            // ── row 1: blank spacer ─────────────────────────────────────────────
+            right.push(RowBuf::new(RIGHT_W));
+
+            // ── row 2: primary value / affordance ──────────────────────────────
+            let mut valrow = RowBuf::new(RIGHT_W);
+            match pv.desc.kind {
+                ParamKind::Numeric => {
+                    // Value text + state label
+                    let val_col = match pv.state {
+                        ParamState::Modified => Some(style.accent_active),
+                        _ => Some(style.text_primary),
+                    };
+                    valrow.put(0, &pv.value_text, val_col, None);
+                    // A Numeric param never carries ParamState::Display, so it is
+                    // folded into the "default" label to keep the match exhaustive.
+                    let state_label = match pv.state {
+                        ParamState::Modified => "modified",
+                        ParamState::Cli => "cli-only",
+                        ParamState::Default | ParamState::Display => "default",
+                    };
+                    valrow.put(14, state_label, Some(state_color(pv.state, style)), None);
+                }
+                ParamKind::Enum => {
+                    // Current value prominently; no gauge ticks
+                    valrow.put(0, &pv.value_text, Some(style.text_primary), None);
+                    let hint = "← → to cycle";
+                    let hint_start = RIGHT_W.saturating_sub(hint.len());
+                    valrow.put(hint_start, hint, Some(style.muted), None);
+                }
+                ParamKind::Toggle => {
+                    // On/off pill
+                    let (pill_text, pill_col) = if pv.value_text.eq_ignore_ascii_case("on")
+                        || pv.value_text == "true"
+                        || pv.value_text == "1"
+                    {
+                        ("[ ON  ]", style.accent_active)
+                    } else {
+                        ("[ OFF ]", style.muted)
+                    };
+                    valrow.put(0, pill_text, Some(pill_col), None);
+                }
+                ParamKind::Action => {
+                    // "↵ to run" affordance
+                    valrow.put(0, "↵ to run", Some(style.accent_active), None);
+                }
+                ParamKind::CliReadonly => {
+                    // Value + "restart to change"
+                    valrow.put(0, &pv.value_text, Some(style.cli_color), None);
+                    let hint = "restart to change";
+                    let hint_start = RIGHT_W.saturating_sub(hint.len());
+                    valrow.put(hint_start, hint, Some(style.cli_color), None);
+                }
+                ParamKind::Display => {
+                    // Value, dimmed
+                    valrow.put(0, &pv.value_text, Some(style.muted), None);
+                }
+            }
+            right.push(valrow);
+
+            // ── rows 3–4: kind widget (gauge+tick for numeric; hint for others) ─
+            match pv.desc.kind {
+                ParamKind::Numeric => {
+                    if let (Some(ratio), Some(def_ratio)) = (pv.ratio, pv.def_ratio) {
+                        // row 3: large gauge bar
+                        let gw = RIGHT_W.saturating_sub(2);
+                        let mut grow = RowBuf::new(RIGHT_W);
+                        grow.put_cells(
+                            0,
+                            &crate::render::controls::value::gauge(
+                                ratio,
+                                def_ratio,
+                                gw,
+                                state_color(pv.state, style),
+                                style.accent_active,
+                                style.muted,
+                            ),
+                            None,
+                        );
+                        right.push(grow);
+
+                        // row 4: tick labels  min … ▲def … max
+                        let mut tick = RowBuf::new(RIGHT_W);
+                        let min_s = "min";
+                        let max_s = "max";
+                        let def_col = (def_ratio * gw as f32).round() as usize;
+                        tick.put(0, min_s, Some(style.muted), None);
+                        if def_col < RIGHT_W {
+                            tick.put(def_col, "▲", Some(style.accent_active), None);
+                        }
+                        let max_start = RIGHT_W.saturating_sub(max_s.len());
+                        tick.put(max_start, max_s, Some(style.muted), None);
+                        right.push(tick);
+                    } else {
+                        // ratio not supplied — two blank rows
+                        right.push(RowBuf::new(RIGHT_W));
+                        right.push(RowBuf::new(RIGHT_W));
                     }
-                    let max_start = RIGHT_W.saturating_sub(max_s.len());
-                    tick.put(max_start, max_s, Some(style.muted), None);
-                    right.push(tick);
-                } else {
-                    // ratio not supplied — two blank rows
+                }
+                ParamKind::Enum => {
+                    // row 3: option indicator "◈ <value>"
+                    let mut orow = RowBuf::new(RIGHT_W);
+                    let opt_str = format!("◈  {}", pv.value_text);
+                    orow.put(0, &opt_str, Some(style.accent_active), None);
+                    right.push(orow);
+                    // row 4: blank
+                    right.push(RowBuf::new(RIGHT_W));
+                }
+                ParamKind::Toggle => {
+                    // row 3: press key to toggle hint
+                    let mut trow = RowBuf::new(RIGHT_W);
+                    trow.put(0, "press key to toggle", Some(style.muted), None);
+                    right.push(trow);
+                    // row 4: blank
+                    right.push(RowBuf::new(RIGHT_W));
+                }
+                ParamKind::Action => {
+                    // row 3: confirm prompt
+                    let mut arow = RowBuf::new(RIGHT_W);
+                    arow.put(0, "no undo — runs immediately", Some(style.muted), None);
+                    right.push(arow);
+                    // row 4: blank
+                    right.push(RowBuf::new(RIGHT_W));
+                }
+                ParamKind::CliReadonly => {
+                    // row 3: set via flag hint
+                    let mut crow = RowBuf::new(RIGHT_W);
+                    crow.put(0, "set via CLI flag at launch", Some(style.muted), None);
+                    right.push(crow);
+                    // row 4: blank
+                    right.push(RowBuf::new(RIGHT_W));
+                }
+                ParamKind::Display => {
+                    // rows 3–4: blank
                     right.push(RowBuf::new(RIGHT_W));
                     right.push(RowBuf::new(RIGHT_W));
                 }
             }
-            ParamKind::Enum => {
-                // row 3: option indicator "◈ <value>"
-                let mut orow = RowBuf::new(RIGHT_W);
-                let opt_str = format!("◈  {}", pv.value_text);
-                orow.put(0, &opt_str, Some(style.accent_active), None);
-                right.push(orow);
-                // row 4: blank
-                right.push(RowBuf::new(RIGHT_W));
-            }
-            ParamKind::Toggle => {
-                // row 3: press key to toggle hint
-                let mut trow = RowBuf::new(RIGHT_W);
-                trow.put(0, "press key to toggle", Some(style.muted), None);
-                right.push(trow);
-                // row 4: blank
-                right.push(RowBuf::new(RIGHT_W));
-            }
-            ParamKind::Action => {
-                // row 3: confirm prompt
-                let mut arow = RowBuf::new(RIGHT_W);
-                arow.put(0, "no undo — runs immediately", Some(style.muted), None);
-                right.push(arow);
-                // row 4: blank
-                right.push(RowBuf::new(RIGHT_W));
-            }
-            ParamKind::CliReadonly => {
-                // row 3: set via flag hint
-                let mut crow = RowBuf::new(RIGHT_W);
-                crow.put(0, "set via CLI flag at launch", Some(style.muted), None);
-                right.push(crow);
-                // row 4: blank
-                right.push(RowBuf::new(RIGHT_W));
-            }
-            ParamKind::Display => {
-                // rows 3–4: blank
-                right.push(RowBuf::new(RIGHT_W));
-                right.push(RowBuf::new(RIGHT_W));
-            }
-        }
 
-        // ── row 5: blank divider ────────────────────────────────────────────
-        right.push(RowBuf::new(RIGHT_W));
+            // ── row 5: blank divider ────────────────────────────────────────────
+            right.push(RowBuf::new(RIGHT_W));
 
-        // ── rows 6–7: description text (derived from kind + label) ──────────
-        //
-        // ParamDesc has no description field yet (out of scope for this task).
-        // We derive a short contextual hint from kind and label as a placeholder.
-        let desc_hint = match pv.desc.kind {
-            ParamKind::Numeric => {
-                format!("{} — adjust with keybind", pv.desc.label)
-            }
-            ParamKind::Enum => {
-                format!("{} — cycle through options", pv.desc.label)
-            }
-            ParamKind::Toggle => {
-                format!("{} — press key to toggle on/off", pv.desc.label)
-            }
-            ParamKind::Action => {
-                format!("{} — immediate action, no undo", pv.desc.label)
-            }
-            ParamKind::CliReadonly => {
-                format!(
-                    "{} — supplied at launch, not editable at runtime",
-                    pv.desc.label
-                )
-            }
-            ParamKind::Display => {
-                format!("{} — read-only display value", pv.desc.label)
-            }
-        };
-        let desc_lines = wrap_text(&desc_hint, RIGHT_W);
-        for line_idx in 0..2usize {
-            let mut drow = RowBuf::new(RIGHT_W);
-            if let Some(text) = desc_lines.get(line_idx) {
-                drow.put(0, text, Some(style.muted), None);
-            }
-            right.push(drow);
+            // ── rows 6–7: reserved (field-plate art will fill these once authored) ─
+            right.push(RowBuf::new(RIGHT_W));
+            right.push(RowBuf::new(RIGHT_W));
         }
     }
+
+    // Truncate art overflow before padding.
+    right.truncate(MAX_VISIBLE_ROWS);
 
     // Pad right to constant height.
     debug_assert!(
@@ -524,6 +515,7 @@ mod tests {
     use crate::render::controls::registry::{
         visible_params, ParamDesc, ParamId, ParamKind, RegistryCtx, CATEGORY_NAMES,
     };
+    use crate::render::palette::Palette;
 
     /// No category may exceed [`MAX_VISIBLE_ROWS`] — the console pads both panes
     /// to that constant and the body loop reads exactly `MAX_VISIBLE_ROWS` rows,
@@ -676,7 +668,7 @@ mod tests {
     fn console_dims_constant_across_categories_and_focus() {
         let s = crate::render::theme::SLIME_DARK;
         let acc = crate::render::palette::RgbColor { r: 0, g: 200, b: 0 };
-        let mk = |cat| build_console(cat, 0, &fixture_params(cat), &s, acc);
+        let mk = |cat| build_console(cat, 0, &fixture_params(cat), &s, acc, Palette::Organic);
         let h0 = mk(0).lines.len();
         for cat in 0..6 {
             assert_eq!(mk(cat).lines.len(), h0, "category {cat} height differs");
@@ -684,7 +676,7 @@ mod tests {
         let w0 = mk(0).lines[0].chars().count();
         // Verify all categories have consistent width
         for cat in 0..6 {
-            let ov = build_console(cat, 0, &fixture_params(cat), &s, acc);
+            let ov = build_console(cat, 0, &fixture_params(cat), &s, acc, Palette::Organic);
             assert!(
                 ov.lines.iter().all(|l| l.chars().count() == w0),
                 "cat {cat} width varies"
@@ -695,7 +687,7 @@ mod tests {
         if fixture_params(0).len() >= 2 {
             let params_cat0 = fixture_params(0);
             for focus in 0..params_cat0.len() {
-                let ov = build_console(0, focus, &params_cat0, &s, acc);
+                let ov = build_console(0, focus, &params_cat0, &s, acc, Palette::Organic);
                 assert_eq!(ov.lines.len(), h0, "cat 0 focus {focus} height differs");
                 assert!(
                     ov.lines.iter().all(|l| l.chars().count() == w0),
@@ -713,6 +705,7 @@ mod tests {
             &fixture_params(0),
             &crate::render::theme::SLIME_DARK,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            crate::render::palette::Palette::Organic,
         );
         assert!(ov
             .title_box
@@ -733,6 +726,7 @@ mod tests {
             &params,
             &crate::render::theme::SLIME_DARK,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            crate::render::palette::Palette::Organic,
         );
         // The first param's label should appear somewhere in the body lines.
         let combined: String = ov.lines.concat();
@@ -752,6 +746,7 @@ mod tests {
             &params,
             &crate::render::theme::SLIME_DARK,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            crate::render::palette::Palette::Organic,
         );
         assert!(!ov.lines.is_empty());
     }
@@ -762,21 +757,22 @@ mod tests {
         // produce constant-height output.
         let s = crate::render::theme::SLIME_DARK;
         let acc = crate::render::palette::RgbColor { r: 0, g: 200, b: 0 };
-        let ov_empty = build_console(0, 0, &[], &s, acc);
-        let ov_normal = build_console(0, 0, &fixture_params(0), &s, acc);
+        let ov_empty = build_console(0, 0, &[], &s, acc, Palette::Organic);
+        let ov_normal = build_console(0, 0, &fixture_params(0), &s, acc, Palette::Organic);
         assert_eq!(ov_empty.lines.len(), ov_normal.lines.len());
     }
 
-    /// Enum fixture: a ParamView with kind=Enum, ratio=None, value_text="Gaussian".
+    /// Enum fixture: a ParamView with kind=Enum, ratio=None, value_text="HalfBlock".
+    /// Uses Charset which is NOT authored → exercises the fallback enum detail.
     fn enum_fixture() -> ParamView {
         ParamView {
             desc: ParamDesc {
-                id: ParamId::DiffusionKernel,
-                key_hint: "K",
-                label: "Diffusion",
+                id: ParamId::Charset,
+                key_hint: "G/g",
+                label: "Charset",
                 kind: ParamKind::Enum,
             },
-            value_text: "Gaussian".to_string(),
+            value_text: "HalfBlock".to_string(),
             ratio: None,
             def_ratio: None,
             state: ParamState::Default,
@@ -796,6 +792,7 @@ mod tests {
             &fixture_params(0),
             &style,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            crate::render::palette::Palette::Organic,
         );
         let rich = ov.rich_lines.unwrap();
         assert_eq!(
@@ -819,10 +816,11 @@ mod tests {
             &[pv],
             &crate::render::theme::SLIME_DARK,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            crate::render::palette::Palette::Organic,
         );
         assert!(
-            ov.lines.iter().any(|l| l.contains("Gaussian")),
-            "enum value text 'Gaussian' not found in overlay"
+            ov.lines.iter().any(|l| l.contains("HalfBlock")),
+            "enum value text 'HalfBlock' not found in overlay"
         );
         // Gauge ticks (▲ for default marker) must not appear in the right detail pane.
         // We check the full output doesn't contain a gauge tick marker.
@@ -835,14 +833,27 @@ mod tests {
 
     #[test]
     fn action_param_detail_content() {
-        // Action kind (category 5=SYS, fixture_params(5) has Reset)
+        // Action kind — use Randomize which is NOT authored, so the fallback detail renders.
         // Detail should contain the "↵ to run" affordance string.
+        let pv = ParamView {
+            desc: ParamDesc {
+                id: ParamId::Randomize,
+                key_hint: "R",
+                label: "Randomize",
+                kind: ParamKind::Action,
+            },
+            value_text: "".to_string(),
+            ratio: None,
+            def_ratio: None,
+            state: ParamState::Default,
+        };
         let ov = build_console(
             5,
             0,
-            &fixture_params(5),
+            &[pv],
             &crate::render::theme::SLIME_DARK,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            crate::render::palette::Palette::Organic,
         );
         let combined: String = ov.lines.concat();
         assert!(
@@ -853,17 +864,30 @@ mod tests {
 
     #[test]
     fn cli_readonly_param_detail_content() {
-        // CliReadonly kind (category 4=PRF, fixture_params(4) has Population)
+        // CliReadonly kind — use FastMode which is NOT authored, so the fallback detail renders.
         // Detail should contain the "restart to change" hint string.
         let mut style = crate::render::theme::SLIME_DARK;
         let cli_color = RgbColor::new(1, 2, 3);
         style.cli_color = cli_color;
+        let pv = ParamView {
+            desc: ParamDesc {
+                id: ParamId::DiffusionSigma,
+                key_hint: "─",
+                label: "Sigma",
+                kind: ParamKind::CliReadonly,
+            },
+            value_text: "1.5".to_string(),
+            ratio: None,
+            def_ratio: None,
+            state: ParamState::Cli,
+        };
         let ov = build_console(
             4,
             0,
-            &fixture_params(4),
+            &[pv],
             &style,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            crate::render::palette::Palette::Organic,
         );
         let combined: String = ov.lines.concat();
         assert!(
@@ -903,6 +927,7 @@ mod tests {
             &[pv],
             &crate::render::theme::SLIME_DARK,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            crate::render::palette::Palette::Organic,
         );
         let combined: String = ov.lines.concat();
         assert!(
@@ -933,6 +958,7 @@ mod tests {
             &[pv],
             &crate::render::theme::SLIME_DARK,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            crate::render::palette::Palette::Organic,
         );
         let combined: String = ov.lines.concat();
         assert!(
@@ -951,11 +977,49 @@ mod tests {
             &fixture_params(0),
             &crate::render::theme::SLIME_DARK,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            crate::render::palette::Palette::Organic,
         );
         let combined: String = ov.lines.concat();
         assert!(
             combined.contains('█'),
             "numeric detail pane should contain gauge bar fill character █"
+        );
+    }
+
+    #[test]
+    fn authored_param_renders_art_stage_label() {
+        // SensorAngle (cat 0) is authored → detail shows the art's stage label.
+        let ov = build_console(
+            0,
+            0,
+            &fixture_params(0),
+            &crate::render::theme::SLIME_DARK,
+            crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            crate::render::palette::Palette::Organic,
+        );
+        let combined: String = ov.lines.concat();
+        assert!(
+            combined.contains("SENSE"),
+            "art stage label missing:\n{combined}"
+        );
+    }
+
+    #[test]
+    fn fallback_param_drops_restated_label_sentence() {
+        // TurnAngle (cat 0, second fixture row) is NOT authored → cleaned detail.
+        // The detail must not contain the old restated "adjust with keybind" copy.
+        let ov = build_console(
+            0,
+            1,
+            &fixture_params(0),
+            &crate::render::theme::SLIME_DARK,
+            crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
+            crate::render::palette::Palette::Organic,
+        );
+        let combined: String = ov.lines.concat();
+        assert!(
+            !combined.contains("adjust with keybind"),
+            "restated sentence not dropped"
         );
     }
 }

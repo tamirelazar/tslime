@@ -1777,6 +1777,7 @@ pub fn run_simulation(
                     };
                     let params = build_param_views(&runtime_state, &ctx, agent_count);
                     let truecolor = matches!(color_mode, ColorMode::TrueColor);
+                    let active_palette = ALL_PALETTES[runtime_state.palette_index].clone();
                     let overlay = build_controls(
                         depth,
                         runtime_state.controls_category_idx,
@@ -1784,6 +1785,7 @@ pub fn run_simulation(
                         &params,
                         &runtime_state.panel_style,
                         ui_accent,
+                        active_palette,
                         truecolor,
                         term_width as usize,
                     );

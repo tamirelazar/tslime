@@ -302,7 +302,6 @@ fn render_one(
 
 /// Build the detail-pane rows for a field plate: centered specimen art, a blank
 /// divider, then the caption as left-aligned reading text.
-#[allow(dead_code)]
 pub fn render_art(
     art: &str,
     caption: &str,
@@ -344,7 +343,6 @@ pub fn render_art(
 }
 
 /// One parameter's specimen art + reading caption.
-#[allow(dead_code)]
 pub struct FieldPlate {
     /// Authored ASCII-art specimen; may contain `«»` and `⟦⟧` authoring markers.
     pub art: &'static str,
@@ -354,7 +352,6 @@ pub struct FieldPlate {
 
 /// The authored field plate for `id`, or `None` for params not yet authored.
 /// 9 authored this batch; the remaining ~38 fall back to the kind-aware detail.
-#[allow(dead_code)]
 pub fn field_plate(id: ParamId) -> Option<FieldPlate> {
     let (art, caption) = match id {
         ParamId::SensorAngle => (

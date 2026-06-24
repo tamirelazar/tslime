@@ -15,7 +15,7 @@ pub mod field_plate;
 pub mod tuner;
 pub use tuner::build_tuner;
 
-use crate::render::palette::RgbColor;
+use crate::render::palette::{Palette, RgbColor};
 use crate::render::panel::RenderedOverlay;
 use crate::render::theme::PanelStyle;
 
@@ -44,11 +44,14 @@ pub fn build_controls(
     params: &[ParamView],
     style: &PanelStyle,
     accent: RgbColor,
+    palette: Palette,
     truecolor: bool,
     term_width: usize,
 ) -> Option<RenderedOverlay> {
     match depth {
-        ControlsDepth::Console => Some(build_console(category, focus, params, style, accent)),
+        ControlsDepth::Console => Some(build_console(
+            category, focus, params, style, accent, palette,
+        )),
         ControlsDepth::Tuner => {
             // Clamp focus to a valid index; bail gracefully when params is empty.
             let focused = params.get(focus.min(params.len().saturating_sub(1)))?;
@@ -111,6 +114,7 @@ mod tests {
                 &fixture,
                 &style,
                 accent,
+                crate::render::palette::Palette::Organic,
                 true,
                 80
             )
@@ -125,6 +129,7 @@ mod tests {
                 &fixture,
                 &style,
                 accent,
+                crate::render::palette::Palette::Organic,
                 true,
                 80
             )
@@ -139,6 +144,7 @@ mod tests {
                 &fixture,
                 &style,
                 accent,
+                crate::render::palette::Palette::Organic,
                 true,
                 80
             )
@@ -146,7 +152,18 @@ mod tests {
             "Tuner depth must produce an overlay once a focused param exists"
         );
         assert!(
-            build_controls(ControlsDepth::Tuner, 0, 0, &[], &style, accent, true, 80).is_none(),
+            build_controls(
+                ControlsDepth::Tuner,
+                0,
+                0,
+                &[],
+                &style,
+                accent,
+                crate::render::palette::Palette::Organic,
+                true,
+                80
+            )
+            .is_none(),
             "Tuner depth with empty params must produce no overlay"
         );
     }
