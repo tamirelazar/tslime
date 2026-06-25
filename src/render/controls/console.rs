@@ -1,17 +1,18 @@
 //! Console depth of the Controls Instrument: master-detail panel with tab strip.
 //!
 //! `build_console` produces a [`RenderedOverlay`] with:
-//! - A floating title box (`CONTROLS · <CATEGORY>`).
+//! - A floating title box (`CONTROLS`; the active tab dot below names the category).
 //! - A two-line `●/○` tab strip (one dot per category, accent-coloured for the active one).
-//! - A separator then a fixed-height body: left param list | pane divider | right detail.
-//! - Both panes padded to `MAX_VISIBLE_ROWS` so total panel height is constant for all
-//!   category and focus combinations (satisfies spec M6).
+//! - A separator then the body: left param list | pane divider | right detail.
+//! - Both panes pad to the taller of the two (floored at `MIN_BODY_ROWS`), so the
+//!   panel height tracks the active category instead of a fixed maximum — sparse
+//!   categories no longer show a tall empty void.
 //!
 //! The right-hand detail pane is kind-aware: it renders per-[`ParamKind`] content
-//! (numeric gauge + min/▲def/max ticks, enum value + cycle hint, toggle pill,
+//! (numeric gauge + min/▲(current)/max axis, enum value + cycle hint, toggle pill,
 //! action affordance, CLI-readonly "restart to change" copy, display-only muted
-//! value) plus a derived description line. Both panes are padded to a constant
-//! row count so the overall panel dimensions never change with category or focus.
+//! value). The header + kind widget convey the param; there is no restated
+//! description line.
 
 use crate::render::controls::registry::{ParamDesc, ParamKind, CATEGORY_NAMES};
 use crate::render::palette::RgbColor;
@@ -47,6 +48,10 @@ const RIGHT_W: usize = CW - RIGHT_AT;
 /// stable across categories and when conditional rows flip on; sparser categories
 /// pad with blank rows (the established constant-height design).
 pub(crate) const MAX_VISIBLE_ROWS: usize = 10;
+
+/// Minimum body height so a sparse category (e.g. PRF with two params) still
+/// reads as a panel rather than a thin sliver.
+const MIN_BODY_ROWS: usize = 5;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -124,23 +129,23 @@ fn tab_rows(content_w: usize, active: usize, st: &PanelStyle) -> (RowBuf, RowBuf
     (ir, lr)
 }
 
-/// Simple word-wrap: break `s` into lines of at most `w` characters.
-fn wrap_text(s: &str, w: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut line = String::new();
-    for word in s.split_whitespace() {
-        if line.chars().count() + word.len() + if line.is_empty() { 0 } else { 1 } > w {
-            out.push(std::mem::take(&mut line));
-        }
-        if !line.is_empty() {
-            line.push(' ');
-        }
-        line.push_str(word);
+/// Build the centered legend strip (`✱ modified   │ default   ─ cli-only`).
+fn legend_row(st: &PanelStyle) -> RowBuf {
+    const GAP: usize = 3;
+    let segs: [(&str, RgbColor); 3] = [
+        ("✱ modified", st.accent_modified),
+        ("│ default", st.accent_active),
+        ("─ cli-only", st.cli_color),
+    ];
+    let total: usize =
+        segs.iter().map(|(s, _)| s.chars().count()).sum::<usize>() + GAP * (segs.len() - 1);
+    let mut row = RowBuf::new(CW);
+    let mut c = CW.saturating_sub(total) / 2;
+    for (text, color) in segs {
+        row.put(c, text, Some(color), None);
+        c += text.chars().count() + GAP;
     }
-    if !line.is_empty() {
-        out.push(line);
-    }
-    out
+    row
 }
 
 /// Assemble a list of [`Rk`] content rows + PanelBuilder chrome → [`RenderedOverlay`].
@@ -213,7 +218,8 @@ pub fn build_console(
     _accent: RgbColor,
 ) -> RenderedOverlay {
     let cat = category.min(CATEGORY_NAMES.len().saturating_sub(1));
-    let title = format!("CONTROLS · {}", CATEGORY_NAMES[cat]);
+    // No category suffix: the active tab dot/label directly below names it.
+    let title = "CONTROLS";
     let (ir, lr) = tab_rows(CW, cat, style);
 
     // ── Left list ─────────────────────────────────────────────────────────────
@@ -244,49 +250,37 @@ pub fn build_console(
         let lcol = if focused || pv.state == ParamState::Modified {
             style.text_primary
         } else {
-            style.muted
+            // Readable-but-secondary, not muted: an unfocused list that is too
+            // dim reads as disabled.
+            style.text_secondary
         };
         b.put(3, pv.desc.label, Some(lcol), None);
 
-        // Gauge (6 chars) at the right end of the left pane, for numeric params.
-        if let (Some(ratio), Some(def_ratio)) = (pv.ratio, pv.def_ratio) {
-            let g = crate::render::controls::value::gauge(
-                ratio,
-                def_ratio,
-                6,
-                state_color(pv.state, style),
-                style.accent_active,
-                style.muted,
-            );
-            b.put_cells(LEFT_W - 6, &g, None);
-        }
+        // The master list is a clean label column. The value gauge lives in the
+        // detail pane only — a 6-cell gauge crammed against the divider read as
+        // glitch rather than data.
         left.push(b);
     }
 
-    // Pad left to constant height.
     debug_assert!(
         left.len() <= MAX_VISIBLE_ROWS,
         "left pane overflow: {} > {}",
         left.len(),
         MAX_VISIBLE_ROWS
     );
-    while left.len() < MAX_VISIBLE_ROWS {
-        left.push(RowBuf::new(LEFT_W));
-    }
 
     // ── Right detail: kind-aware per-param content ────────────────────────────
     //
-    // Fixed layout — always exactly MAX_VISIBLE_ROWS rows:
+    // Layout (5 rows):
     //   row 0:   header  (label left, [key] right)
     //   row 1:   blank spacer
     //   row 2:   primary value / affordance row
     //   row 3:   kind widget row 1  (gauge bar / option hint / toggle pill / …)
     //   row 4:   kind widget row 2  (tick labels / secondary hint / blank)
-    //   row 5:   blank divider
-    //   row 6:   description line 1 (wrapped from derived hint text)
-    //   row 7:   description line 2 (wrapped remainder, or blank)
     //
-    // This keeps constant dims without per-kind padding arithmetic.
+    // The detail no longer restates the label in a derived description line —
+    // the header + kind widget already convey what the param is and how to drive
+    // it, so the placeholder "<Label> — adjust with keybind" sentence is dropped.
     let mut right: Vec<RowBuf> = Vec::new();
 
     if !params.is_empty() {
@@ -324,7 +318,15 @@ pub fn build_console(
                     ParamState::Cli => "cli-only",
                     ParamState::Default | ParamState::Display => "default",
                 };
-                valrow.put(14, state_label, Some(state_color(pv.state, style)), None);
+                // Tag the value with its state inline (2-col gap), not at a
+                // fixed column that leaves a wide disconnected gutter.
+                let tag_col = pv.value_text.chars().count() + 2;
+                valrow.put(
+                    tag_col,
+                    state_label,
+                    Some(state_color(pv.state, style)),
+                    None,
+                );
             }
             ParamKind::Enum => {
                 // Current value prominently; no gauge ticks
@@ -384,15 +386,19 @@ pub fn build_console(
                     );
                     right.push(grow);
 
-                    // row 4: tick labels  min … ▲def … max
+                    // row 4: axis  min … ▲(current) … max. The default position
+                    // is already marked by the `│` notch on the bar above, so the
+                    // ▲ here tracks the *current* value (previously it duplicated
+                    // the default, leaving the live value unmarked on the axis).
                     let mut tick = RowBuf::new(RIGHT_W);
                     let min_s = "min";
                     let max_s = "max";
-                    let def_col = (def_ratio * gw as f32).round() as usize;
+                    let cur_col = (ratio * gw as f32).round() as usize;
                     tick.put(0, min_s, Some(style.muted), None);
-                    if def_col < RIGHT_W {
-                        tick.put(def_col, "▲", Some(style.accent_active), None);
-                    }
+                    // Keep the marker clear of the "min"/"max" labels at the ends.
+                    let cur_col =
+                        cur_col.clamp(min_s.len(), RIGHT_W.saturating_sub(max_s.len() + 1));
+                    tick.put(cur_col, "▲", Some(style.accent_active), None);
                     let max_start = RIGHT_W.saturating_sub(max_s.len());
                     tick.put(max_start, max_s, Some(style.muted), None);
                     right.push(tick);
@@ -441,62 +447,31 @@ pub fn build_console(
                 right.push(RowBuf::new(RIGHT_W));
             }
         }
-
-        // ── row 5: blank divider ────────────────────────────────────────────
-        right.push(RowBuf::new(RIGHT_W));
-
-        // ── rows 6–7: description text (derived from kind + label) ──────────
-        //
-        // ParamDesc has no description field yet (out of scope for this task).
-        // We derive a short contextual hint from kind and label as a placeholder.
-        let desc_hint = match pv.desc.kind {
-            ParamKind::Numeric => {
-                format!("{} — adjust with keybind", pv.desc.label)
-            }
-            ParamKind::Enum => {
-                format!("{} — cycle through options", pv.desc.label)
-            }
-            ParamKind::Toggle => {
-                format!("{} — press key to toggle on/off", pv.desc.label)
-            }
-            ParamKind::Action => {
-                format!("{} — immediate action, no undo", pv.desc.label)
-            }
-            ParamKind::CliReadonly => {
-                format!(
-                    "{} — supplied at launch, not editable at runtime",
-                    pv.desc.label
-                )
-            }
-            ParamKind::Display => {
-                format!("{} — read-only display value", pv.desc.label)
-            }
-        };
-        let desc_lines = wrap_text(&desc_hint, RIGHT_W);
-        for line_idx in 0..2usize {
-            let mut drow = RowBuf::new(RIGHT_W);
-            if let Some(text) = desc_lines.get(line_idx) {
-                drow.put(0, text, Some(style.muted), None);
-            }
-            right.push(drow);
-        }
     }
 
-    // Pad right to constant height.
     debug_assert!(
         right.len() <= MAX_VISIBLE_ROWS,
         "right pane overflow: {} > {}",
         right.len(),
         MAX_VISIBLE_ROWS
     );
-    while right.len() < MAX_VISIBLE_ROWS {
+
+    // Height now tracks the active category instead of padding every category to
+    // the fattest one — sparse categories (SYS, PRF) no longer show a tall void.
+    // Both panes pad to the taller of the two so the divider runs full height,
+    // with a small floor so a 2-param category still reads as a panel.
+    let body_h = left.len().max(right.len()).max(MIN_BODY_ROWS);
+    while left.len() < body_h {
+        left.push(RowBuf::new(LEFT_W));
+    }
+    while right.len() < body_h {
         right.push(RowBuf::new(RIGHT_W));
     }
 
     // ── Compose body rows ─────────────────────────────────────────────────────
     let mut rows: Vec<Rk> = vec![Rk::Buf(ir), Rk::Buf(lr), Rk::Sep];
 
-    for r in 0..MAX_VISIBLE_ROWS {
+    for r in 0..body_h {
         let mut row = RowBuf::new(CW);
         row.blit(0, &left[r]);
         row.put(DIVIDER_AT, "│", Some(style.muted), None);
@@ -504,16 +479,18 @@ pub fn build_console(
         rows.push(Rk::Buf(row));
     }
 
+    // A blank row at the bottom of the master-detail pane gives the body
+    // breathing room before the legend separator (the footer no longer carries
+    // its own trailing blank — bottom padding is 0 so the legend hugs the base).
+    rows.push(Rk::Buf(RowBuf::new(CW)));
+
     rows.push(Rk::Sep);
 
-    // Legend row
-    let mut leg = RowBuf::new(CW);
-    leg.put(0, "✱ modified", Some(style.accent_modified), None);
-    leg.put(13, "│ default", Some(style.accent_active), None);
-    leg.put(DIVIDER_AT, "─ cli-only", Some(style.cli_color), None);
-    rows.push(Rk::Buf(leg));
+    // Legend row — centered so the footer band reads as a balanced strip rather
+    // than left-piled tokens against an empty gutter.
+    rows.push(Rk::Buf(legend_row(style)));
 
-    assemble(&title, CW, Padding::new(1, 1, 2, 2), rows)
+    assemble(title, CW, Padding::new(1, 0, 2, 2), rows)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

@@ -13,11 +13,12 @@
 //!
 //! "Live" means: `sticky == true` OR `now <= until`.
 
+use crate::render::controls::ParamKind;
 use crate::render::motion::{breath, lerp_rgb};
 use crate::render::palette::RgbColor;
 use crate::render::panel::{footer_hints, RenderedOverlay, RichCell};
 use crate::render::theme::PanelStyle;
-use crate::render::widgets::{gauge, swatch, value_state, ParamState, RowBuf};
+use crate::render::widgets::{gauge, swatch, ParamState, RowBuf};
 use crate::terminal::state::NotificationLevel;
 
 // ── Layout constants ──────────────────────────────────────────────────────────
@@ -94,6 +95,9 @@ pub struct TuneView {
     /// is meaningful); `false` for enum/toggle params, where the value lives in
     /// `value_text` and an empty gauge would misleadingly read as "minimum".
     pub show_gauge: bool,
+    /// Parameter kind — drives the affordance and footer-hint grammar (a numeric
+    /// param tunes with `←→`, an action runs with `↵`, etc.).
+    pub kind: ParamKind,
 }
 
 /// State of the ambient instrument surface.
@@ -337,19 +341,30 @@ fn tune_content_rows(w: usize, st: &PanelStyle, param: &TuneView, now: f32) -> V
     let pulsed_accent = lerp_rgb(st.status_bar_bg, st.accent_active, pulse);
     let mut rows = Vec::with_capacity(3);
 
-    // row: label   value
+    // row: label   value/affordance. The label is always legible (a muted label
+    // reads as disabled); the value carries the state color but stays readable —
+    // Default folds to text_primary rather than the muted state token.
     {
         let mut row = RowBuf::new_matte(w, st.status_bar_bg);
         let lbl: String = param.label.chars().take(20).collect();
-        let lbl_cells = value_state(&lbl, param.state, st);
         let mut col = 2usize;
-        row.put_cells(col, &lbl_cells, None);
-        col += lbl.chars().count();
-        row.put(col, "   ", None, None);
-        col += 3;
-        let val: String = param.value_text.chars().take(16).collect();
-        let val_cells = value_state(&val, param.state, st);
-        row.put_cells(col, &val_cells, None);
+        row.put(col, &lbl, Some(st.text_primary), None);
+        col += lbl.chars().count() + 3;
+        match param.kind {
+            // Actions carry no value — show the run affordance instead.
+            ParamKind::Action => {
+                row.put(col, "↵ run", Some(st.accent_active), None);
+            }
+            _ => {
+                let val: String = param.value_text.chars().take(16).collect();
+                let val_col = match param.state {
+                    ParamState::Modified => st.accent_modified,
+                    ParamState::Cli => st.cli_color,
+                    _ => st.text_primary,
+                };
+                row.put(col, &val, Some(val_col), None);
+            }
+        }
         rows.push(row);
     }
     // row: gauge (value marker + default tick), accent breathing. Numeric params
@@ -367,16 +382,30 @@ fn tune_content_rows(w: usize, st: &PanelStyle, param: &TuneView, now: f32) -> V
         row.put_cells(2, &g, None);
         rows.push(row);
     }
-    // row: hint. Numeric/enum/toggle params adjust with ←→; the param-kind
-    // distinction (e.g. "↵ run" for actions) is handled in a later batch — for
-    // now every tune hint shares the unified grammar + a visible exit.
+    // row: hint — per-kind verb grammar, centered. A numeric param tunes with
+    // ←→; an enum cycles; a toggle/action commits with ↵; read-only params can
+    // only be picked past.
     {
         let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-        let hint = footer_hints(&[("←→", "tune"), ("↑↓", "pick"), ("esc", "close")]);
-        row.put(2, &hint, Some(st.muted), None);
+        let hint = match param.kind {
+            ParamKind::Numeric => footer_hints(&[("←→", "tune"), ("↑↓", "pick"), ("esc", "close")]),
+            ParamKind::Enum => footer_hints(&[("←→", "cycle"), ("↑↓", "pick"), ("esc", "close")]),
+            ParamKind::Toggle => footer_hints(&[("↵", "toggle"), ("↑↓", "pick"), ("esc", "close")]),
+            ParamKind::Action => footer_hints(&[("↵", "run"), ("↑↓", "pick"), ("esc", "close")]),
+            ParamKind::CliReadonly | ParamKind::Display => {
+                footer_hints(&[("↑↓", "pick"), ("esc", "close")])
+            }
+        };
+        let start = 2 + center_offset(&hint, w.saturating_sub(2));
+        row.put(start, &hint, Some(st.muted), None);
         rows.push(row);
     }
     rows
+}
+
+/// Horizontal offset to center `text` within `width` columns (0 if it overflows).
+fn center_offset(text: &str, width: usize) -> usize {
+    width.saturating_sub(text.chars().count()) / 2
 }
 
 /// Greedy word-wrap `text` into lines no wider than `width` columns.
@@ -455,12 +484,9 @@ fn msg_content_rows(
     {
         let mut row = RowBuf::new_matte(w, st.status_bar_bg);
         if sticky && matches!(level, NotificationLevel::Error) {
-            row.put(
-                2,
-                &footer_hints(&[("esc", "dismiss")]),
-                Some(st.muted),
-                None,
-            );
+            let hint = footer_hints(&[("esc", "dismiss")]);
+            let start = 2 + center_offset(&hint, w.saturating_sub(2));
+            row.put(start, &hint, Some(st.muted), None);
         }
         rows.push(row);
     }
@@ -477,7 +503,9 @@ fn pause_content_rows(w: usize, st: &PanelStyle) -> Vec<RowBuf> {
     }
     {
         let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-        row.put(2, "space to resume", Some(st.muted), None);
+        let hint = "space to resume";
+        let start = 2 + center_offset(hint, w.saturating_sub(2));
+        row.put(start, hint, Some(st.muted), None);
         rows.push(row);
     }
     rows
@@ -683,6 +711,7 @@ mod ambient_tests {
             default: 0.5,
             state: ParamState::Default,
             show_gauge: true,
+            kind: ParamKind::Numeric,
         }
     }
 
@@ -1014,6 +1043,7 @@ mod tune_tests {
             default: 0.5,
             state: ParamState::Default,
             show_gauge: true,
+            kind: ParamKind::Numeric,
         }
     }
 
@@ -1160,6 +1190,7 @@ mod tune_tests {
                 default: 0.3,
                 state: ParamState::Modified,
                 show_gauge: true,
+                kind: ParamKind::Numeric,
             },
             until: 100.0,
         };

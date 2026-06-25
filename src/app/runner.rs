@@ -859,6 +859,7 @@ fn tune_view_for_action(
         default,
         state: pv.state,
         show_gauge,
+        kind: pv.desc.kind,
     })
 }
 
@@ -1206,6 +1207,7 @@ pub fn run_simulation(
                         default,
                         state: pv.state,
                         show_gauge,
+                        kind: pv.desc.kind,
                     },
                     until: f32::MAX,
                 };
