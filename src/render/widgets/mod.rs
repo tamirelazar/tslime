@@ -5,7 +5,7 @@ mod rowbuf;
 mod state;
 pub use kit::*;
 pub use rowbuf::RowBuf;
-pub use state::{state_color, ParamState};
+pub use state::{state_color, value_color, ParamState};
 
 /// Named vertical spacing steps for consistent layout rhythm.
 pub mod spacing {

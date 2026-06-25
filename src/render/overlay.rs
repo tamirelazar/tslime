@@ -409,10 +409,22 @@ impl KeyboardHintsOverlay {
     }
 
     /// Calculates center position for the overlay.
-    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+    ///
+    /// `content_height` is the rendered body height (`overlay.lines.len()`). The
+    /// floating title box sits one row above the body, so the visual block spans
+    /// `content_height + 1` rows starting at `y - 1`; we center that whole block
+    /// and keep `y >= 1` so the title stays on-screen. When the overlay is taller
+    /// than the terminal it top-anchors (`y == 1`) so the top — the most useful
+    /// rows — is always visible instead of being pushed off the bottom.
+    pub fn calculate_position(
+        term_width: usize,
+        term_height: usize,
+        content_height: usize,
+    ) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
-        let y = (term_height.saturating_sub(20)) / 2;
-        (x, y)
+        let visual_height = content_height + 1; // +1 for the floating title row
+        let top = term_height.saturating_sub(visual_height) / 2;
+        (x, top + 1)
     }
 }
 
@@ -948,9 +960,18 @@ mod tests {
 
     #[test]
     fn test_keyboard_hints_position() {
-        let (x, y) = KeyboardHintsOverlay::calculate_position(100, 100);
+        // Centers the visual block (content + 1 title row), keeping y >= 1.
+        let (x, y) = KeyboardHintsOverlay::calculate_position(100, 100, 28);
         assert_eq!(x, (100 - KeyboardHintsOverlay::WIDTH) / 2);
-        assert_eq!(y, (100usize.saturating_sub(20)) / 2);
+        assert_eq!(y, 100usize.saturating_sub(29) / 2 + 1);
+    }
+
+    #[test]
+    fn test_keyboard_hints_position_top_anchors_when_too_tall() {
+        // Overlay taller than the terminal: top-anchor at y == 1 so the title and
+        // top rows stay on-screen instead of the body being pushed off the bottom.
+        let (_x, y) = KeyboardHintsOverlay::calculate_position(120, 24, 30);
+        assert_eq!(y, 1);
     }
 
     #[test]
