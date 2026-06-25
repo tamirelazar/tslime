@@ -51,6 +51,8 @@ tslime --seed 42 --population 80000           # reproducible run, denser network
 tslime --braille --palette mono               # high-resolution monochrome
 tslime --palette-cycles 3 --palette-cycle-mode mirror  # banded contour coloring
 tslime --ascii --glyph-selection hybrid                # edge-aware directional glyphs on filaments
+tslime --transition figlet                             # announce preset switches with a big block-letter name
+tslime --transition type --transition-tagline          # typed readout + the preset's one-line tagline
 tslime --export-gif demo.gif --export-frames 120 --export-fps 30
 tslime -p > frame.txt                         # print a single frame and exit
 ```

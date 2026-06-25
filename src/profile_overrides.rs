@@ -18,7 +18,7 @@ use crate::render::palette::{IntensityMapping, Palette, PaletteCycle, RgbColor, 
 use crate::render_art_defaults::ResolvedRenderConfig;
 use crate::simulation::config::{
     Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode, Preset, SimConfig,
-    TerminalSizeThreshold, WindowFrame, WindowPadding,
+    TerminalSizeThreshold, TransitionStyle, WindowFrame, WindowPadding,
 };
 use serde::{Deserialize, Serialize};
 
@@ -69,6 +69,8 @@ pub struct ProfileOverrides {
     #[serde(default, with = "serde_opt_window_frame")]
     pub window_frame: Option<WindowFrame>,
     pub chrome_style: Option<ChromeStyle>,
+    pub transition_style: Option<TransitionStyle>,
+    pub transition_tagline: Option<bool>,
     pub aspect: Option<Aspect>,
     pub window_padding: Option<WindowPadding>,
     pub frame_matte_cols: Option<usize>,
@@ -319,6 +321,12 @@ impl ProfileOverrides {
                 Some(ChromeStyle::Fullscreen)
             } else {
                 args.chrome_style
+            },
+            transition_style: args.transition,
+            transition_tagline: if args.transition_tagline {
+                Some(true)
+            } else {
+                None
             },
             aspect: args.aspect,
             window_padding: args.window_padding,
@@ -681,6 +689,12 @@ impl ProfileOverrides {
         // Chrome style, aspect, padding, status bar, size thresholds
         if let Some(cs) = self.chrome_style {
             config.chrome_style = cs;
+        }
+        if let Some(ts) = self.transition_style {
+            config.transition_style = ts;
+        }
+        if let Some(v) = self.transition_tagline {
+            config.transition_tagline = v;
         }
         if let Some(a) = self.aspect {
             config.aspect = a;

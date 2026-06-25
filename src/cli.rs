@@ -14,8 +14,8 @@ use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
     Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode, Obstacle,
-    PointConfig, Preset, SimConfig, TerminalSizeThreshold, TerrainType, Wind, WindowFrame,
-    WindowPadding,
+    PointConfig, Preset, SimConfig, TerminalSizeThreshold, TerrainType, TransitionStyle, Wind,
+    WindowFrame, WindowPadding,
 };
 use crate::validation::Validatable;
 
@@ -836,6 +836,21 @@ pub struct Args {
     )]
     /// Chrome display level for the window mode.
     pub chrome_style: Option<ChromeStyle>,
+
+    #[arg(
+        long = "transition",
+        value_name = "STYLE",
+        help = "Preset-switch announcement: toast (default), figlet, or type"
+    )]
+    /// How a runtime preset switch is announced on screen.
+    pub transition: Option<TransitionStyle>,
+
+    #[arg(
+        long = "transition-tagline",
+        help = "Show the preset tagline during figlet/type transitions"
+    )]
+    /// Show the preset tagline during figlet/type transitions.
+    pub transition_tagline: bool,
 
     #[arg(
         long = "aspect",
@@ -2337,6 +2352,8 @@ impl Default for Args {
             window_frame: None,
             fullscreen: false,
             chrome_style: None,
+            transition: None,
+            transition_tagline: false,
             aspect: None,
             window_padding: None,
             frame_matte_cols: None,

@@ -409,6 +409,45 @@ impl Preset {
             .find(|spec| spec.preset == *self)
             .map_or("Unknown", |spec| spec.name)
     }
+
+    /// A short one-line "character" tagline, shown under figlet/type transitions
+    /// when taglines are enabled. Exhaustive so new presets must add one.
+    pub fn tagline(&self) -> &'static str {
+        use Preset::*;
+        match self {
+            Network => "dense interconnected mesh",
+            Exploratory => "wide searching tentacles",
+            Tendrils => "long branching arms",
+            Organic => "balanced natural growth",
+            Fire => "aggressive flame-like fronts",
+            River => "flowing water-like channels",
+            PetriDish => "slow center-out growth",
+            Vortex => "spinning vortex currents",
+            Lightning => "fast dendritic forks",
+            ChaosEdge => "edge-of-chaos sensitivity",
+            Blob => "aggregating blob clusters",
+            Slime => "surface-tension flow",
+            Vines => "creeping cohesive tendrils",
+            Vinescii => "ascii cohesive flocking",
+            Smoke => "drifting smoke columns",
+            Vortex36 => "trail-modulated vortex",
+            DynamicTendrils => "trail-sensing tendrils",
+            Mold => "front-lit growing veins",
+            Etching => "directional filament linework",
+            Drift => "color drifts with motion",
+            Constellation => "a crisp star-map",
+            Mosaic => "posterized color bands",
+            Marble => "veined stone",
+            Prism => "maximum color resolution",
+            Vellum => "soft parchment density",
+            Forge => "grainy molten thermal",
+            Wane => "slow ghosting decay",
+            Gossamer => "delicate woven threads",
+            Codex => "typographic engraving",
+            Tide => "living water, shifting hue",
+            Trademark => "the living tslime mark",
+        }
+    }
 }
 
 /// How agents are initially distributed in the simulation.
@@ -906,6 +945,44 @@ impl std::str::FromStr for ChromeStyle {
     }
 }
 
+/// How a runtime preset switch is announced on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TransitionStyle {
+    /// Ambient toast notification (default, current behavior).
+    #[default]
+    Toast,
+    /// Big block-letter preset name, centered, fading up then out.
+    Figlet,
+    /// Typed letter-spaced readout over a dimmed band, with caret + underline.
+    Type,
+}
+
+impl std::str::FromStr for TransitionStyle {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "toast" => Ok(TransitionStyle::Toast),
+            "figlet" => Ok(TransitionStyle::Figlet),
+            "type" => Ok(TransitionStyle::Type),
+            _ => Err(format!(
+                "Invalid transition: '{}'. Must be one of: toast, figlet, type",
+                s
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for TransitionStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TransitionStyle::Toast => "toast",
+            TransitionStyle::Figlet => "figlet",
+            TransitionStyle::Type => "type",
+        })
+    }
+}
+
 /// Visual aspect ratio for the simulation window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -1398,6 +1475,10 @@ pub struct SimConfig {
     pub frame_matte_rows: usize,
     /// Chrome display style (minimal, expanded, fullscreen).
     pub chrome_style: ChromeStyle,
+    /// How a runtime preset switch is announced (toast/figlet/type).
+    pub transition_style: TransitionStyle,
+    /// Whether the figlet/type transition shows the preset tagline (default false).
+    pub transition_tagline: bool,
     /// Visual aspect ratio of the simulation window.
     pub aspect: Aspect,
     /// Outer padding between terminal edge and window frame.
@@ -1528,6 +1609,8 @@ impl Default for SimConfig {
             frame_matte_cols: crate::config_defaults::frame_matte::DEFAULT_COLS,
             frame_matte_rows: crate::config_defaults::frame_matte::DEFAULT_ROWS,
             chrome_style: ChromeStyle::Minimal,
+            transition_style: TransitionStyle::Toast,
+            transition_tagline: false,
             aspect: Aspect::default(),
             window_padding: WindowPadding::Auto,
             show_status_bar: false,

@@ -1296,10 +1296,19 @@ pub fn run_simulation(
                     aux_frame,
                     term_size,
                 )?;
-                rs.show_notification(format!(
-                    "Applied preset: {}",
-                    crate::terminal::control::preset_name(preset)
-                ));
+                // Trademark is the logo preset. The big FIGLET name is unreadable
+                // over its dense bright field (and redundant — the logo *is* the
+                // announcement), so suppress the figlet switch entirely. TYPE
+                // (dimmed band) and the plain toast still read fine, so keep them.
+                use crate::simulation::config::{Preset, TransitionStyle};
+                let suppress = matches!(preset, Preset::Trademark)
+                    && rs.transition_style == TransitionStyle::Figlet;
+                if !suppress {
+                    rs.announce_preset_switch(
+                        crate::terminal::control::preset_name(preset),
+                        crate::terminal::input::preset_tagline(preset),
+                    );
+                }
             }
             PendingSwap::Config(config) => {
                 // The config was already resolved at selection time and carried
@@ -1869,6 +1878,27 @@ pub fn run_simulation(
         );
         let ambient_data = ambient_overlay_built.as_ref().map(|(v, x, y)| (v, *x, *y));
 
+        // Preset-switch transition (figlet/type): build a view for this frame while
+        // the animation is live; drop the state once it has fully elapsed.
+        let transition_view = {
+            let now = runtime_state.phase_clock;
+            let v = runtime_state.active_transition.as_ref().and_then(|a| {
+                let elapsed = now - a.start;
+                (elapsed < crate::render::transition::TRANSITION_SECS).then(|| {
+                    crate::render::transition::TransitionView {
+                        style: a.style,
+                        name: a.name.clone(),
+                        tagline: a.tagline.clone(),
+                        elapsed,
+                    }
+                })
+            });
+            if v.is_none() {
+                runtime_state.active_transition = None;
+            }
+            v
+        };
+
         // Legacy single-row status_data: only used by the PAUSE path renderer (see below).
         // In the MAIN path we pass None — the ambient strip takes its place.
         #[allow(clippy::type_complexity)]
@@ -2261,6 +2291,7 @@ pub fn run_simulation(
                     .as_ref()
                     .map(|v| (v, palette_editor_x, palette_editor_y)),
                 ambient_data,
+                transition_view.as_ref(),
                 Some(&runtime_state.panel_style),
                 runtime_state.overlay_state.active(),
                 runtime_state.pause_style,
@@ -3770,6 +3801,7 @@ pub fn run_simulation(
                     None,
                     None,
                     pause_ambient_overlay.as_ref().map(|(v, x, y)| (v, *x, *y)),
+                    None, // no preset transition during pause
                     Some(&runtime_state.panel_style),
                     runtime_state.overlay_state.active(),
                     runtime_state.pause_style,
@@ -3832,6 +3864,11 @@ fn switch_preset(
 ) -> io::Result<()> {
     let ov = crate::profile_overrides::ProfileOverrides {
         preset: Some(new_preset),
+        // Carry the user's transition preference across the switch — it's a global
+        // UX setting, not a per-preset sim lever, so a bare preset resolve must not
+        // reset it to the default (toast).
+        transition_style: Some(rs.transition_style),
+        transition_tagline: Some(rs.transition_tagline),
         ..Default::default()
     };
     crate::app::apply_overrides(

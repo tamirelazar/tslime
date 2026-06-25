@@ -158,6 +158,8 @@ pub fn capture_overrides(
         boundary_mode: Some(sim_config.boundary_mode),
         window_frame: Some(sim_config.window_frame),
         chrome_style: Some(sim_config.chrome_style),
+        transition_style: Some(sim_config.transition_style),
+        transition_tagline: Some(sim_config.transition_tagline),
         aspect: Some(sim_config.aspect),
         window_padding: Some(sim_config.window_padding),
         frame_matte_cols: Some(sim_config.frame_matte_cols),
