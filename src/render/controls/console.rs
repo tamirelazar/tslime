@@ -49,10 +49,6 @@ const RIGHT_W: usize = CW - RIGHT_AT;
 /// pad with blank rows (the established constant-height design).
 pub(crate) const MAX_VISIBLE_ROWS: usize = 10;
 
-/// Minimum body height so a sparse category (e.g. PRF with two params) still
-/// reads as a panel rather than a thin sliver.
-const MIN_BODY_ROWS: usize = 5;
-
 // ── Public types ──────────────────────────────────────────────────────────────
 
 /// Caller-assembled view data for one parameter row.
@@ -409,12 +405,10 @@ pub fn build_console(
                 }
             }
             ParamKind::Enum => {
-                // row 3: option indicator "◈ <value>"
-                let mut orow = RowBuf::new(RIGHT_W);
-                let opt_str = format!("◈  {}", pv.value_text);
-                orow.put(0, &opt_str, Some(style.accent_active), None);
-                right.push(orow);
-                // row 4: blank
+                // The current value already shows in row 2 with the cycle hint;
+                // a second "◈ <value>" line here just duplicated it. Leave the
+                // widget rows blank.
+                right.push(RowBuf::new(RIGHT_W));
                 right.push(RowBuf::new(RIGHT_W));
             }
             ParamKind::Toggle => {
@@ -456,11 +450,10 @@ pub fn build_console(
         MAX_VISIBLE_ROWS
     );
 
-    // Height now tracks the active category instead of padding every category to
-    // the fattest one — sparse categories (SYS, PRF) no longer show a tall void.
-    // Both panes pad to the taller of the two so the divider runs full height,
-    // with a small floor so a 2-param category still reads as a panel.
-    let body_h = left.len().max(right.len()).max(MIN_BODY_ROWS);
+    // Fixed panel height = the tallest category (APP, 10 params). A constant
+    // height keeps the panel from jumping as you cycle categories; sparser
+    // categories pad with blank rows to the same height.
+    let body_h = MAX_VISIBLE_ROWS;
     while left.len() < body_h {
         left.push(RowBuf::new(LEFT_W));
     }
