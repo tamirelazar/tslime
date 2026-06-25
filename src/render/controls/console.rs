@@ -968,12 +968,13 @@ mod tests {
     }
 
     #[test]
-    fn numeric_param_has_gauge_bar_char() {
-        // Numeric kind renders a gauge with fill characters (█).
-        // fixture_params(0) has Numeric params with Some(ratio), so gauge is rendered.
+    fn numeric_param_has_gauge_ticks() {
+        // A numeric param with no specimen art falls back to the kind-aware pane,
+        // which renders a gauge with `min … ▲ … max` tick labels. TurnAngle (focus 1)
+        // is not authored, so it exercises this path.
         let ov = build_console(
             0,
-            0,
+            1,
             &fixture_params(0),
             &crate::render::theme::SLIME_DARK,
             crate::render::palette::RgbColor { r: 0, g: 200, b: 0 },
@@ -981,14 +982,16 @@ mod tests {
         );
         let combined: String = ov.lines.concat();
         assert!(
-            combined.contains('█'),
-            "numeric detail pane should contain gauge bar fill character █"
+            combined.contains("min") && combined.contains("max"),
+            "numeric fallback pane should show gauge tick labels:\n{combined}"
         );
     }
 
     #[test]
-    fn authored_param_renders_art_stage_label() {
-        // SensorAngle (cat 0) is authored → detail shows the art's stage label.
+    fn authored_param_renders_specimen_art() {
+        // SensorAngle (cat 0, focus 0) is authored → detail shows the specimen, not
+        // the kind-aware fallback. The amber `cone = 45°` dimension label is unique
+        // to the art and never appears in the fallback pane.
         let ov = build_console(
             0,
             0,
@@ -999,8 +1002,8 @@ mod tests {
         );
         let combined: String = ov.lines.concat();
         assert!(
-            combined.contains("SENSE"),
-            "art stage label missing:\n{combined}"
+            combined.contains("cone"),
+            "specimen art missing:\n{combined}"
         );
     }
 
