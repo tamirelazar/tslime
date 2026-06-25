@@ -163,7 +163,23 @@ config = "my-night-config"
 
 ## Gallery
 
-<!-- ws6: preset/palette showcase gifs -->
+tslime is a live instrument, not a static screensaver — every visual is reshaped
+from the keyboard while it runs. A few of the controls:
+
+<table>
+<tr>
+<td width="50%"><img src="assets/demos/palette-cycle.gif" width="100%"><br><b>Palette cycling</b> — press <code>c</code> to sweep through palettes; the whole field recolors instantly.</td>
+<td width="50%"><img src="assets/demos/charset-cycle.gif" width="100%"><br><b>Character sets</b> — press <code>`</code> to re-render the same growth in a different glyph language.</td>
+</tr>
+<tr>
+<td width="50%"><img src="assets/demos/preset-transition.gif" width="100%"><br><b>Preset transitions</b> — quick-keys <code>1</code>–<code>7</code> switch presets with an optional figlet announcement.</td>
+<td width="50%"><img src="assets/demos/randomize.gif" width="100%"><br><b>Randomize</b> — press <code>8</code> to scramble every parameter into a fresh organism.</td>
+</tr>
+<tr>
+<td width="50%"><img src="assets/demos/param-tune.gif" width="100%"><br><b>Live tuning</b> — adjust any parameter in real time; here the decay factor lengthens the trails.</td>
+<td width="50%"><img src="assets/demos/palette-editor.gif" width="100%"><br><b>Palette editor</b> — press <code>p</code> to reshape a palette by lightness, chroma, and hue.</td>
+</tr>
+</table>
 
 There are 31 named presets: network, exploratory, tendrils, organic, fire, river,
 petri, vortex, lightning, chaosedge, blob, slime, vines, vinescii, smoke, vortex36,
