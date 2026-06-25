@@ -7,7 +7,9 @@ binary, runs on Linux, macOS, Windows, and over SSH, and works as both a screens
 and an instrument: every simulation parameter can be steered live from the keyboard
 while it runs.
 
-<!-- ws6: hero gif -->
+<p align="center">
+  <img src="assets/demos/hero.gif" alt="tslime growing the logo across the Organic, Constellation, Vinescii, and Trademark presets" width="100%">
+</p>
 
 ## Install
 

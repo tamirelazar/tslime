@@ -15,6 +15,8 @@ First public release.
 - Screensaver and interactive modes; pause, restart, preset/palette cycling at runtime
 - GIF, PNG, and WebM export
 - Window-frame display modes
+- README hero demo: a looping montage that grows the tslime logo across the
+  Organic, Constellation, Vinescii, and Trademark launch presets
 - `vinescii` preset — the vines (flocking) pattern in pure ASCII
 - Experimental: multi-species, choir audio, and GUI (feature-gated); WASM build (standalone crate)
 
