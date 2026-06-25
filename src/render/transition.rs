@@ -1,9 +1,10 @@
 //! Preset-switch transition overlays.
 //!
-//! When the user switches presets at runtime the app can announce it three ways
+//! When the user switches presets at runtime the app can announce it four ways
 //! (user-selectable via `--transition`):
 //!
-//! - [`TransitionStyle::Toast`] — the default ambient notification ("Applied
+//! - [`TransitionStyle::Off`] — the default: no on-screen announcement.
+//! - [`TransitionStyle::Toast`] — an ambient notification ("Applied
 //!   preset: X"); handled by the existing notification path, not here.
 //! - [`TransitionStyle::Figlet`] — the preset name in big block letters, centered,
 //!   fading up then out.
@@ -204,7 +205,7 @@ pub fn draw_transition(
     }
     let name = view.name.to_uppercase();
     match view.style {
-        TransitionStyle::Toast => {}
+        TransitionStyle::Off | TransitionStyle::Toast => {}
         TransitionStyle::Figlet => draw_figlet(
             buf,
             &name,
@@ -420,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn default_is_toast() {
-        assert_eq!(TransitionStyle::default(), TransitionStyle::Toast);
+    fn default_is_off() {
+        assert_eq!(TransitionStyle::default(), TransitionStyle::Off);
     }
 }
