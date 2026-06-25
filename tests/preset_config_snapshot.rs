@@ -40,6 +40,7 @@ const PRESETS: &[&str] = &[
     "gossamer",
     "codex",
     "tide",
+    "logo",
 ];
 
 /// Dump the assembled config for `preset` by invoking the binary's hidden

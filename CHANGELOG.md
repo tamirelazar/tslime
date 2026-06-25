@@ -9,7 +9,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 First public release.
 
 ### Added
-- Physarum simulation (Jones 2010 model) with 30 presets and runtime parameter controls
+- Physarum simulation (Jones 2010 model) with 31 presets and runtime parameter controls
+- `trademark` preset (alias `logo`) — the tslime logo held as a stable figure (constellation re-stamp behavior with the embedded logo image as the template); bound to quick-key `4` by default
 - Terminal rendering: half-block, ASCII, braille, quadrant, shade, points, and sculpted charsets; 22 OKLch-based color palettes
 - Screensaver and interactive modes; pause, restart, preset/palette cycling at runtime
 - GIF, PNG, and WebM export
@@ -18,7 +19,7 @@ First public release.
 - Experimental: multi-species, choir audio, and GUI (feature-gated); WASM build (standalone crate)
 
 ### Changed
-- Quick-keys `1`–`3` now switch the launch presets (Organic, Constellation, Vinescii).
+- Quick-keys `1`–`4` now switch the launch presets (Organic, Constellation, Vinescii, Trademark).
 - Preset pass: renamed pulse→slime, flocking→vines, ripple→smoke, lumen→mold
   (old names still accepted as CLI aliases); per-preset visual tuning applied
   (braille/quadrant charsets, palette assignments, auto-normalize, window frames);

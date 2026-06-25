@@ -688,6 +688,40 @@ pub fn seed_agents(
     }
 }
 
+/// Build a re-stamp template from a food/brightness image (e.g. the embedded
+/// tslime logo). Mirrors the loader selection used by `InitMode::Food`: the
+/// embedded logo for the default path, otherwise a file on disk. The result is
+/// normalized to `0..=1` so it re-stamps with the same scaling as the asterism
+/// template. Returns `None` if the image can't be loaded or is fully dark.
+pub fn build_food_template(
+    width: usize,
+    height: usize,
+    food_path: Option<&str>,
+    invert: bool,
+    scale: f32,
+) -> Option<Vec<f32>> {
+    use crate::simulation::food::{load_default_food_image, load_image_grayscale};
+    let path = food_path?;
+    let map = if path == "assets/tslime_logo.png" {
+        load_default_food_image(width, height, invert, scale)
+    } else {
+        load_image_grayscale(path, width, height, invert, scale)
+    };
+    match map {
+        Ok(m) => {
+            let max = m.iter().copied().fold(0.0f32, f32::max);
+            if max <= 0.0 {
+                return None;
+            }
+            Some(m.iter().map(|&v| (v / max).min(1.0)).collect())
+        }
+        Err(e) => {
+            eprintln!("Warning: failed to load food template '{path}': {e}");
+            None
+        }
+    }
+}
+
 fn gaussian_offset(rng: &mut Rng, sigma: f32) -> (f32, f32) {
     let u1: f32 = rng.gen();
     let u2: f32 = rng.gen();

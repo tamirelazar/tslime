@@ -324,8 +324,9 @@ impl FromStr for InitMode {
             "clusters" => Ok(InitMode::RandomClusters),
             "petri" => Ok(InitMode::Petri),
             "food" => Ok(InitMode::Food),
+            "foodconst" | "logo" | "logohold" => Ok(InitMode::FoodConstellation),
             _ => Err(format!(
-                "Invalid init mode: {}. Must be one of: random, central, circle, gradient, wave, spiral, clusters, petri, food",
+                "Invalid init mode: {}. Must be one of: random, central, circle, gradient, wave, spiral, clusters, petri, food, foodconst",
                 s
             )),
         }

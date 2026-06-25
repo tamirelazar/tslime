@@ -216,6 +216,17 @@ impl From<Preset> for RenderArtDefaults {
                 auto_normalize: Some(false),
                 ..Self::default()
             },
+            // Trademark: render the held logo as a solid, legible shape
+            // (HalfBlock) on the Ethereal palette rather than the stippled Points
+            // look — the picture should read as the logo, not stars. Auto-normalize
+            // brightness so the held figure stays evenly lit.
+            Preset::Trademark => Self {
+                charset: Some(Charset::HalfBlock),
+                palette: Some(Palette::Ethereal),
+                intensity_mapping: IntensityMapping::linear_log_split(10.0),
+                auto_normalize: Some(true),
+                ..Self::default()
+            },
             // Quantize mapping + Wrap palette cycling: posterized bands.
             Preset::Mosaic => Self {
                 intensity_mapping: IntensityMapping::quantize(6),

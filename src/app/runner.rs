@@ -1915,6 +1915,7 @@ pub fn run_simulation(
                     InitMode::Food => "Food",
                     InitMode::Petri => "Petri",
                     InitMode::Constellation => "Constellation",
+                    InitMode::FoodConstellation => "Logo",
                 };
 
                 let color_mode_name = match color_mode {

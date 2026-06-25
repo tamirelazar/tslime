@@ -194,6 +194,21 @@ impl Simulation {
             None
         };
 
+        // Re-stamp template held each frame (see `constellation_restamp_floor`):
+        // the asterism glow for Constellation, the brightness image for
+        // FoodConstellation. Other modes have no template.
+        let restamp_template: Option<Vec<f32>> = match init_mode {
+            InitMode::Constellation => constellation_layout.as_ref().map(|l| l.template.clone()),
+            InitMode::FoodConstellation => constellations::build_food_template(
+                width,
+                height,
+                config.food_image_path.as_deref(),
+                config.food_image_invert,
+                config.food_image_scale,
+            ),
+            _ => None,
+        };
+
         let food_path = config.food_image_path.as_deref();
         let food_invert = config.food_image_invert;
         let food_scale = config.food_image_scale;
@@ -239,11 +254,11 @@ impl Simulation {
             ));
         }
 
-        if let Some(ref layout) = constellation_layout {
+        if let Some(ref template) = restamp_template {
             let scale = config.max_brightness;
             for tm in &mut trail_maps {
                 let cur = tm.current_mut();
-                for (c, &t) in cur.iter_mut().zip(layout.template.iter()) {
+                for (c, &t) in cur.iter_mut().zip(template.iter()) {
                     *c = c.max(t * scale);
                 }
             }
@@ -278,7 +293,7 @@ impl Simulation {
             gradient_magnitude: None,
             combined_trail_buffer,
             frame_count: 0,
-            constellation_template: constellation_layout.map(|l| l.template),
+            constellation_template: restamp_template,
         }
     }
 
@@ -355,7 +370,10 @@ impl Simulation {
             InitMode::Petri => {
                 Self::init_petri(rng, width, height, agents, population, species_id);
             }
-            InitMode::Food => {
+            // FoodConstellation seeds agents identically to Food (from the
+            // brightness map); it differs only in that the image is also kept
+            // as a re-stamp template (built by the caller).
+            InitMode::Food | InitMode::FoodConstellation => {
                 if let Some(path) = food_image_path {
                     Self::init_from_food(
                         rng,
@@ -1142,6 +1160,18 @@ impl Simulation {
             None
         };
 
+        let restamp_template: Option<Vec<f32>> = match init_mode {
+            InitMode::Constellation => constellation_layout.as_ref().map(|l| l.template.clone()),
+            InitMode::FoodConstellation => constellations::build_food_template(
+                width,
+                height,
+                self.config.food_image_path.as_deref(),
+                self.config.food_image_invert,
+                self.config.food_image_scale,
+            ),
+            _ => None,
+        };
+
         for (species_id, species_config) in self.config.species_configs.iter().enumerate() {
             Self::init_species(
                 &mut self.rng,
@@ -1161,16 +1191,16 @@ impl Simulation {
         for trail_map in &mut self.trail_maps {
             trail_map.clear();
         }
-        if let Some(ref layout) = constellation_layout {
+        if let Some(ref template) = restamp_template {
             let scale = self.config.max_brightness;
             for tm in &mut self.trail_maps {
                 let cur = tm.current_mut();
-                for (c, &t) in cur.iter_mut().zip(layout.template.iter()) {
+                for (c, &t) in cur.iter_mut().zip(template.iter()) {
                     *c = c.max(t * scale);
                 }
             }
         }
-        self.constellation_template = constellation_layout.map(|l| l.template);
+        self.constellation_template = restamp_template;
 
         if let Some(ref mut history) = self.trail_history {
             history.clear();
@@ -2272,5 +2302,70 @@ mod tests {
             drift.trail_maps[0].current()[idx] < tval * scale * 1.0,
             "drift (floor 0.0) must not re-stamp: cell should have decayed"
         );
+    }
+
+    // FoodConstellation seeds agents from the embedded logo brightness map and
+    // keeps that image as a re-stamp template, so the picture is pre-seeded into
+    // the trail and persists under re-stamp — the constellation mechanism with a
+    // food image instead of a star asterism.
+    #[test]
+    fn food_constellation_builds_template_and_holds_under_restamp() {
+        let scale = SimConfig::default().max_brightness;
+        let cfg = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 0, // isolate the re-stamp mechanism (no agent deposits)
+                ..Default::default()
+            }],
+            constellation_restamp_floor: 1.0,
+            // SimConfig::default() already points food_image_path at the embedded
+            // tslime logo with invert/scale defaults.
+            ..Default::default()
+        };
+        let mut sim = Simulation::new(160, 100, cfg, 11, InitMode::FoodConstellation, 0);
+        // Template was built from the logo image, not a star asterism.
+        let template = sim
+            .constellation_template
+            .clone()
+            .expect("FoodConstellation must build a re-stamp template");
+        let (idx, &tval) = template
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap();
+        assert!(tval > 0.0, "logo template is empty");
+        // Trail is pre-seeded with the picture at frame 0.
+        let bright0: f32 = sim.trail_maps[0]
+            .current()
+            .iter()
+            .copied()
+            .fold(0.0, f32::max);
+        assert!(bright0 > 0.0, "logo not pre-seeded into trail");
+        // Re-stamp (floor 1.0) holds the brightest cell against decay.
+        for _ in 0..20 {
+            sim.update(1.0);
+        }
+        let held = sim.trail_maps[0].current()[idx];
+        assert!(
+            held >= tval * scale - 1e-3,
+            "re-stamp did not hold the logo (held={held}, expected>={e})",
+            e = tval * scale - 1e-3
+        );
+    }
+
+    #[test]
+    fn food_constellation_is_deterministic() {
+        let cfg = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 3000,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let a = Simulation::new(160, 100, cfg.clone(), 77, InitMode::FoodConstellation, 0);
+        let b = Simulation::new(160, 100, cfg, 77, InitMode::FoodConstellation, 0);
+        assert_eq!(a.agents.len(), b.agents.len());
+        assert!(!a.agents.is_empty(), "logo seeding produced no agents");
+        assert_eq!(a.agents[0].x, b.agents[0].x);
+        assert_eq!(a.agents[0].y, b.agents[0].y);
     }
 }

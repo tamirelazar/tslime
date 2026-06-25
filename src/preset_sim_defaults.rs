@@ -675,6 +675,33 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
+            // Trademark: same held-figure mechanism as Constellation,
+            // but the re-stamp template is the embedded tslime logo image
+            // (FoodConstellation init) instead of a star asterism. More agents
+            // than Constellation since the logo fills a solid area rather than
+            // sparse points + thin edges.
+            Preset::Trademark => Self {
+                sensor_angle: 45.0,
+                sensor_distance: 12.0,
+                rotation_angle: 18.0,
+                step_size: 0.3,
+                decay_factor: 0.92,
+                deposit_amount: 0.3,
+                diffusion_kernel: DiffusionKernel::Mean3x3,
+                max_brightness: 10.0,
+                preferred_init_mode: Some(InitMode::FoodConstellation),
+                constellation_restamp_floor: 1.0,
+                species_configs: vec![SpeciesConfig {
+                    name: "default".to_string(),
+                    count: 8_000,
+                    sensor_angle: 45.0,
+                    rotation_angle: 18.0,
+                    step_size: 0.3,
+                    deposit_amount: 0.3,
+                    ..Default::default()
+                }],
+                ..Self::default()
+            },
             // Dense smooth body for posterized bands (config.rs:827-847)
             Preset::Mosaic => Self {
                 sensor_angle: 30.0,
