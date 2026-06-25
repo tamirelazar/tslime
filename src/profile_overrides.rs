@@ -891,6 +891,13 @@ pub(crate) fn project(ov: &ProfileOverrides) -> Result<Canonical, String> {
     // carry None while capture carries Some.
     sim.respawn_config = Default::default();
 
+    // `constellation_restamp_floor` is set by the Constellation preset's sim-default
+    // layer, but it has no `ProfileOverrides` field (capture can't read it back) and
+    // is not runtime-editable. Capture therefore projects it to its default while a
+    // clean Constellation swap resolves it to the preset value, making the swap read
+    // falsely dirty. Normalize on BOTH sides so the guard stays blind to it.
+    sim.constellation_restamp_floor = Default::default();
+
     // Reproduce apply_color_aa_all priority EXACTLY ([P1]):
     //   1. full per-charset array if color_aa_all present,
     //   2. else the FULLY RESOLVED color_aa on the RESOLVED charset's slot over defaults.

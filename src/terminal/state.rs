@@ -2849,6 +2849,21 @@ mod tests {
         );
     }
 
+    /// Repro: a freshly-applied Constellation preset must NOT read dirty.
+    #[test]
+    fn clean_constellation_swap_is_not_dirty() {
+        use crate::profile_overrides::ProfileOverrides;
+        let ov = ProfileOverrides {
+            preset: Some(Preset::Constellation),
+            ..Default::default()
+        };
+        let (rs, sim) = clean_session(ov);
+        assert!(
+            !rs.is_dirty(&sim, rs.live_palette.clone(), rs.live_charset.clone()),
+            "a freshly-applied Constellation preset must not read dirty"
+        );
+    }
+
     /// CLEAN `--color-aa subtle` session: the source carries a scalar `color_aa`,
     /// live capture re-captures it, and project() must reproduce apply_color_aa_all
     /// semantics (scalar on the RESOLVED charset slot over defaults) so the two
