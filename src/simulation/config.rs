@@ -126,6 +126,9 @@ pub enum Preset {
     Codex,
     /// Living water with animated hue-shift over time.
     Tide,
+    /// The tslime logo held as a stable figure: constellation re-stamp behavior
+    /// with the embedded logo image as the template (FoodConstellation init).
+    Trademark,
 }
 
 /// Static identity of one preset: the enum variant, its display name, extra
@@ -332,6 +335,12 @@ pub const PRESETS: &[PresetSpec] = &[
         aliases: &[],
         quick_key: None,
     },
+    PresetSpec {
+        preset: Preset::Trademark,
+        name: "Trademark",
+        aliases: &["logo", "logo-constellation", "logogram", "tslime"],
+        quick_key: Some('4'),
+    },
 ];
 
 /// Looks up a preset by display name or alias (case-insensitive).
@@ -426,6 +435,10 @@ pub enum InitMode {
     Petri,
     /// Agents seeded as a real star constellation (stars + asterism edges).
     Constellation,
+    /// Agents seeded from a food/brightness image (e.g. the embedded tslime
+    /// logo) and the image is held as a re-stamp template, so the picture
+    /// persists like a constellation figure instead of dispersing.
+    FoodConstellation,
 }
 
 impl InitMode {
@@ -462,7 +475,8 @@ impl InitMode {
                 | InitMode::RandomClusters
                 | InitMode::Food
                 | InitMode::Petri
-                | InitMode::Constellation => {}
+                | InitMode::Constellation
+                | InitMode::FoodConstellation => {}
             }
         }
         ALL[rng.gen_range(0..ALL.len())]
@@ -2269,7 +2283,8 @@ mod tests {
         assert_eq!(preset_for_set_key('1'), Some(Preset::Organic));
         assert_eq!(preset_for_set_key('2'), Some(Preset::Constellation));
         assert_eq!(preset_for_set_key('3'), Some(Preset::Vinescii));
-        for c in ['4', '5', '6', '7'] {
+        assert_eq!(preset_for_set_key('4'), Some(Preset::Trademark));
+        for c in ['5', '6', '7'] {
             assert_eq!(
                 preset_for_set_key(c),
                 None,
@@ -2277,6 +2292,7 @@ mod tests {
             );
         }
         assert_eq!(preset_for_compare_key('@'), Some(Preset::Constellation));
+        assert_eq!(preset_for_compare_key('$'), Some(Preset::Trademark));
     }
 
     #[test]

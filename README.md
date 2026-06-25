@@ -69,8 +69,8 @@ lowercase increases and uppercase (Shift) decreases.
 |---|---|
 | `Space` | Pause / resume |
 | `r` | Restart |
-| `1`–`3` | Switch preset (Organic / Constellation / Vinescii) |
-| `4`–`7` | Custom binds — set in `~/.config/tslime/keybinds.toml` |
+| `1`–`4` | Switch preset (Organic / Constellation / Vinescii / Trademark) |
+| `5`–`7` | Custom binds — set in `~/.config/tslime/keybinds.toml` |
 | `Shift+1`–`7` | Compare bound preset/config (A/B) |
 | `8` | Randomize parameters |
 | `0` | Reset to defaults |
@@ -151,8 +151,8 @@ key = "5"
 config = "my-night-config"
 ```
 
-- **Keys**: Bind to any digit `1`–`7`. Keys `1`–`3` default to Organic, Constellation, and Vinescii; user entries override.
-- **Targets**: Bind to either a `preset` (any of the 30 named presets) or a `config` (any saved configuration from `Ctrl+S`).
+- **Keys**: Bind to any digit `1`–`7`. Keys `1`–`4` default to Organic, Constellation, Vinescii, and Trademark; user entries override.
+- **Targets**: Bind to either a `preset` (any of the 31 named presets) or a `config` (any saved configuration from `Ctrl+S`).
 - **Comparison**: Press `Shift+1` through `Shift+7` to compare the bound preset or config against the current settings (A/B mode).
 - **Invalid entries**: Silently ignored; the app launches normally and skips unparseable lines.
 - **Live bindings**: The `?` overlay shows current key bindings and their targets.
@@ -161,10 +161,10 @@ config = "my-night-config"
 
 <!-- ws6: preset/palette showcase gifs -->
 
-There are 30 named presets: network, exploratory, tendrils, organic, fire, river,
+There are 31 named presets: network, exploratory, tendrils, organic, fire, river,
 petri, vortex, lightning, chaosedge, blob, slime, vines, vinescii, smoke, vortex36,
 dynamictendrils, mold, etching, drift, constellation, mosaic, marble, prism, vellum,
-forge, wane, gossamer, codex, and tide. The old names pulse, flocking, ripple, and
+forge, wane, gossamer, codex, tide, and trademark. The old names pulse, flocking, ripple, and
 lumen are still accepted as CLI aliases. Palettes and character sets are independent of
 the preset and can be cycled at runtime. Preset parameters are defined in
 `src/simulation/config.rs` and `src/preset_sim_defaults.rs`.
@@ -179,6 +179,7 @@ Showcase presets highlight specific visual levers:
 - **etching** — Directional filament linework via Sobel glyph selection (Braille, TUI-only).
 - **drift** — Color that shifts with motion direction (temporal Hue mode).
 - **constellation** — Sparse star-map scatter via the Points charset; re-rolls layout on reset.
+- **trademark** (alias `logo`) — The tslime logo held as a stable figure: constellation re-stamp behavior with the embedded logo image as the template (Ethereal palette, HalfBlock, auto-normalized brightness). Bound to key `4` by default.
 - **mosaic** — Posterized color bands: Quantize mapping + wrapped palette cycles.
 - **marble** — Veined stone via heavy Gaussian diffusion + Perlin intensity mapping.
 - **prism** — Maximum color resolution: HalfBlockDual charset + strong color anti-aliasing.

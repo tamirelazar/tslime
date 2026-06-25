@@ -424,6 +424,7 @@ impl ExplorationParams {
             InitMode::Food => "InitMode::Food",
             InitMode::Petri => "InitMode::Petri",
             InitMode::Constellation => "InitMode::Constellation",
+            InitMode::FoodConstellation => "InitMode::FoodConstellation",
         };
 
         format!(
