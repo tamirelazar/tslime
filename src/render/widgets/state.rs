@@ -23,6 +23,19 @@ pub fn state_color(state: ParamState, st: &PanelStyle) -> RgbColor {
     }
 }
 
+/// Color for a parameter's *value text*. Like [`state_color`] but keeps a value
+/// at its default legible: a muted default value reads as disabled, so Default
+/// and Display fold to `text_primary` while Modified/Cli still carry their state
+/// color. Single source of truth for both the console value row and the ambient
+/// tuner value — do not re-roll this match inline.
+pub fn value_color(state: ParamState, st: &PanelStyle) -> RgbColor {
+    match state {
+        ParamState::Cli => st.cli_color,
+        ParamState::Modified => st.accent_modified,
+        ParamState::Default | ParamState::Display => st.text_primary,
+    }
+}
+
 #[cfg(test)]
 mod state_tests {
     use super::*;

@@ -817,9 +817,55 @@ impl PanelBuilder {
     }
 }
 
+/// Format a modal action-hint footer in the canonical "instrument voice".
+///
+/// Each `(key, verb)` pair renders as `"{key} {verb}"`, joined with `" · "`.
+/// Keys are compact glyphs (`↵`, `esc`, `↑↓`, `←→`, `del`) and verbs are
+/// lowercase. This is the SINGLE source of truth for confirm/cancel/navigate
+/// hint grammar across every modal (Console, Dashboard, Save, Browser, Tuner,
+/// Notification, …) so the wording can never drift per-surface again.
+///
+/// ```text
+/// footer_hints(&[("↵", "save"), ("esc", "cancel")]) == "↵ save · esc cancel"
+/// ```
+pub fn footer_hints(actions: &[(&str, &str)]) -> String {
+    actions
+        .iter()
+        .map(|(key, verb)| format!("{key} {verb}"))
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn footer_hints_joins_with_middle_dot() {
+        assert_eq!(
+            footer_hints(&[("↵", "save"), ("esc", "cancel")]),
+            "↵ save · esc cancel"
+        );
+    }
+
+    #[test]
+    fn footer_hints_single_and_empty() {
+        assert_eq!(footer_hints(&[("esc", "cancel")]), "esc cancel");
+        assert_eq!(footer_hints(&[]), "");
+    }
+
+    #[test]
+    fn footer_hints_multi_action_browser_grammar() {
+        assert_eq!(
+            footer_hints(&[
+                ("↑↓", "navigate"),
+                ("↵", "load"),
+                ("del", "delete"),
+                ("esc", "cancel")
+            ]),
+            "↑↓ navigate · ↵ load · del delete · esc cancel"
+        );
+    }
 
     #[test]
     fn test_total_width_with_border_and_padding() {

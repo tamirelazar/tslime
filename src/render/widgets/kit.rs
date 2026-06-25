@@ -1,8 +1,6 @@
 use crate::render::palette::RgbColor;
 use crate::render::theme::PanelStyle;
 
-use super::{state_color, ParamState};
-
 /// Renders a gauge containing exactly `width` cells, or no cells when `width` is zero.
 ///
 /// Values outside a valid finite range are clamped. Non-finite values or bounds,
@@ -57,17 +55,6 @@ pub fn sparkline(values: &[f32]) -> String {
         result.push(BARS[level]);
     }
     result
-}
-
-/// Colors every Unicode scalar value in `text` according to its parameter state.
-///
-/// Width counts scalar values, not grapheme clusters or display columns. Callers
-/// must provide text whose scalar values each occupy one terminal column.
-pub fn value_state(text: &str, state: ParamState, st: &PanelStyle) -> Vec<(char, RgbColor)> {
-    let color = state_color(state, st);
-    let mut cells = Vec::with_capacity(text.chars().count());
-    cells.extend(text.chars().map(|ch| (ch, color)));
-    cells
 }
 
 /// Renders a one-cell color swatch.
@@ -240,14 +227,6 @@ mod kit_tests {
         assert_eq!(
             sparkline(&[f32::NAN, f32::INFINITY, f32::NEG_INFINITY]),
             "▁▁▁"
-        );
-    }
-
-    #[test]
-    fn value_state_colors_by_token() {
-        assert_eq!(
-            value_state("4λ", ParamState::Cli, &GRUVBOX_DARK),
-            vec![('4', GRUVBOX_DARK.cli_color), ('λ', GRUVBOX_DARK.cli_color)]
         );
     }
 

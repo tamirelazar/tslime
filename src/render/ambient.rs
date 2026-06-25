@@ -13,11 +13,12 @@
 //!
 //! "Live" means: `sticky == true` OR `now <= until`.
 
+use crate::render::controls::ParamKind;
 use crate::render::motion::{breath, lerp_rgb};
 use crate::render::palette::RgbColor;
-use crate::render::panel::{RenderedOverlay, RichCell};
+use crate::render::panel::{footer_hints, RenderedOverlay, RichCell};
 use crate::render::theme::PanelStyle;
-use crate::render::widgets::{gauge, swatch, value_state, ParamState, RowBuf};
+use crate::render::widgets::{gauge, swatch, value_color, ParamState, RowBuf};
 use crate::terminal::state::NotificationLevel;
 
 // ── Layout constants ──────────────────────────────────────────────────────────
@@ -94,6 +95,9 @@ pub struct TuneView {
     /// is meaningful); `false` for enum/toggle params, where the value lives in
     /// `value_text` and an empty gauge would misleadingly read as "minimum".
     pub show_gauge: bool,
+    /// Parameter kind — drives the affordance and footer-hint grammar (a numeric
+    /// param tunes with `←→`, an action runs with `↵`, etc.).
+    pub kind: ParamKind,
 }
 
 /// State of the ambient instrument surface.
@@ -337,19 +341,25 @@ fn tune_content_rows(w: usize, st: &PanelStyle, param: &TuneView, now: f32) -> V
     let pulsed_accent = lerp_rgb(st.status_bar_bg, st.accent_active, pulse);
     let mut rows = Vec::with_capacity(3);
 
-    // row: label   value
+    // row: label   value/affordance. The label is always legible (a muted label
+    // reads as disabled); the value carries the state color but stays readable —
+    // Default folds to text_primary rather than the muted state token.
     {
         let mut row = RowBuf::new_matte(w, st.status_bar_bg);
         let lbl: String = param.label.chars().take(20).collect();
-        let lbl_cells = value_state(&lbl, param.state, st);
         let mut col = 2usize;
-        row.put_cells(col, &lbl_cells, None);
-        col += lbl.chars().count();
-        row.put(col, "   ", None, None);
-        col += 3;
-        let val: String = param.value_text.chars().take(16).collect();
-        let val_cells = value_state(&val, param.state, st);
-        row.put_cells(col, &val_cells, None);
+        row.put(col, &lbl, Some(st.text_primary), None);
+        col += lbl.chars().count() + 3;
+        match param.kind {
+            // Actions carry no value — show the run affordance instead.
+            ParamKind::Action => {
+                row.put(col, "↵ run", Some(st.accent_active), None);
+            }
+            _ => {
+                let val: String = param.value_text.chars().take(16).collect();
+                row.put(col, &val, Some(value_color(param.state, st)), None);
+            }
+        }
         rows.push(row);
     }
     // row: gauge (value marker + default tick), accent breathing. Numeric params
@@ -367,16 +377,83 @@ fn tune_content_rows(w: usize, st: &PanelStyle, param: &TuneView, now: f32) -> V
         row.put_cells(2, &g, None);
         rows.push(row);
     }
-    // row: hint
+    // row: hint — per-kind verb grammar, centered. A numeric param tunes with
+    // ←→; an enum cycles; a toggle/action commits with ↵; read-only params can
+    // only be picked past.
     {
         let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-        row.put(2, "←→ tune", Some(st.muted), None);
+        let hint = match param.kind {
+            ParamKind::Numeric => footer_hints(&[("←→", "tune"), ("↑↓", "pick"), ("esc", "close")]),
+            ParamKind::Enum => footer_hints(&[("←→", "cycle"), ("↑↓", "pick"), ("esc", "close")]),
+            ParamKind::Toggle => footer_hints(&[("↵", "toggle"), ("↑↓", "pick"), ("esc", "close")]),
+            ParamKind::Action => footer_hints(&[("↵", "run"), ("↑↓", "pick"), ("esc", "close")]),
+            ParamKind::CliReadonly | ParamKind::Display => {
+                footer_hints(&[("↑↓", "pick"), ("esc", "close")])
+            }
+        };
+        let start = 2 + center_offset(&hint, w.saturating_sub(2));
+        row.put(start, &hint, Some(st.muted), None);
         rows.push(row);
     }
     rows
 }
 
-/// Build the MSG content rows (icon + text, optional dismiss hint), each `w` wide.
+/// Horizontal offset to center `text` within `width` columns (0 if it overflows).
+fn center_offset(text: &str, width: usize) -> usize {
+    width.saturating_sub(text.chars().count()) / 2
+}
+
+/// Greedy word-wrap `text` into lines no wider than `width` columns.
+///
+/// Breaks on ASCII spaces, never mid-word, so a notification reads as whole
+/// words across lines instead of being amputated (e.g. "…on GitH"). A single
+/// word longer than `width` is hard-broken into `width`-column chunks as a last
+/// resort. Always returns at least one line (an empty line for empty input).
+fn wrap_words(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![String::new()];
+    }
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut cur_len = 0usize;
+    for word in text.split(' ') {
+        let wlen = word.chars().count();
+        // A single oversized word can't fit any line — flush, then hard-break it.
+        if wlen > width {
+            if !cur.is_empty() {
+                lines.push(std::mem::take(&mut cur));
+                cur_len = 0;
+            }
+            for ch in word.chars() {
+                if cur_len == width {
+                    lines.push(std::mem::take(&mut cur));
+                    cur_len = 0;
+                }
+                cur.push(ch);
+                cur_len += 1;
+            }
+            continue;
+        }
+        let sep = usize::from(!cur.is_empty());
+        if cur_len + sep + wlen > width {
+            lines.push(std::mem::take(&mut cur));
+            cur.push_str(word);
+            cur_len = wlen;
+        } else {
+            if sep == 1 {
+                cur.push(' ');
+            }
+            cur.push_str(word);
+            cur_len += sep + wlen;
+        }
+    }
+    lines.push(cur);
+    lines
+}
+
+/// Build the MSG content rows (icon + wrapped text, optional dismiss hint),
+/// each `w` wide. Long messages wrap across rows so no word is truncated; the
+/// icon sits on the first row and continuation rows align under the text.
 fn msg_content_rows(
     w: usize,
     st: &PanelStyle,
@@ -384,21 +461,27 @@ fn msg_content_rows(
     text: &str,
     sticky: bool,
 ) -> Vec<RowBuf> {
-    let mut rows = Vec::with_capacity(2);
-    {
+    let color = level_color(level, st);
+    let icon = level.icon();
+    let icon_w = icon.chars().count();
+    let text_col = 2 + icon_w + 1;
+    let avail = w.saturating_sub(icon_w + 4).max(1);
+    let wrapped = wrap_words(text, avail);
+    let mut rows = Vec::with_capacity(wrapped.len() + 1);
+    for (i, line) in wrapped.iter().enumerate() {
         let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-        let color = level_color(level, st);
-        let icon = level.icon();
-        row.put(2, icon, Some(color), None);
-        let icon_w = icon.chars().count();
-        let msg: String = text.chars().take(w.saturating_sub(icon_w + 4)).collect();
-        row.put(2 + icon_w + 1, &msg, Some(color), None);
+        if i == 0 {
+            row.put(2, icon, Some(color), None);
+        }
+        row.put(text_col, line, Some(color), None);
         rows.push(row);
     }
     {
         let mut row = RowBuf::new_matte(w, st.status_bar_bg);
         if sticky && matches!(level, NotificationLevel::Error) {
-            row.put(2, "Esc to dismiss", Some(st.muted), None);
+            let hint = footer_hints(&[("esc", "dismiss")]);
+            let start = 2 + center_offset(&hint, w.saturating_sub(2));
+            row.put(start, &hint, Some(st.muted), None);
         }
         rows.push(row);
     }
@@ -415,7 +498,9 @@ fn pause_content_rows(w: usize, st: &PanelStyle) -> Vec<RowBuf> {
     }
     {
         let mut row = RowBuf::new_matte(w, st.status_bar_bg);
-        row.put(2, "space to resume", Some(st.muted), None);
+        let hint = "space to resume";
+        let start = 2 + center_offset(hint, w.saturating_sub(2));
+        row.put(start, hint, Some(st.muted), None);
         rows.push(row);
     }
     rows
@@ -621,6 +706,7 @@ mod ambient_tests {
             default: 0.5,
             state: ParamState::Default,
             show_gauge: true,
+            kind: ParamKind::Numeric,
         }
     }
 
@@ -952,6 +1038,7 @@ mod tune_tests {
             default: 0.5,
             state: ParamState::Default,
             show_gauge: true,
+            kind: ParamKind::Numeric,
         }
     }
 
@@ -1098,6 +1185,7 @@ mod tune_tests {
                 default: 0.3,
                 state: ParamState::Modified,
                 show_gauge: true,
+                kind: ParamKind::Numeric,
             },
             until: 100.0,
         };
@@ -1168,5 +1256,57 @@ mod msg_tests {
         } else {
             panic!("expected Msg");
         }
+    }
+
+    // ── Notification word-wrap (no mid-word truncation) ────────────────────────
+
+    #[test]
+    fn wrap_words_keeps_short_text_on_one_line() {
+        assert_eq!(wrap_words("hi there", 20), vec!["hi there".to_string()]);
+    }
+
+    #[test]
+    fn wrap_words_breaks_on_word_boundary_not_mid_word() {
+        // Regression: the dither dev-only toast (53 chars) used to truncate to
+        // "…on GitH" inside a 51-col message area. Now it wraps, intact.
+        let text = "Dither is dev-only - see help-wanted issues on GitHub";
+        let lines = wrap_words(text, 51);
+        assert!(lines.len() >= 2, "long text must wrap: {lines:?}");
+        assert!(
+            lines.iter().all(|l| l.chars().count() <= 51),
+            "no line exceeds the width: {lines:?}"
+        );
+        // The trailing word survives whole — no "GitH" amputation.
+        assert!(
+            lines.iter().any(|l| l.contains("GitHub")),
+            "GitHub must appear intact: {lines:?}"
+        );
+        // Reassembling the words reproduces the original message (lossless).
+        assert_eq!(lines.join(" "), text);
+    }
+
+    #[test]
+    fn wrap_words_hard_breaks_an_oversized_word() {
+        let lines = wrap_words("supercalifragilistic", 5);
+        assert!(lines.iter().all(|l| l.chars().count() <= 5));
+        assert_eq!(lines.concat(), "supercalifragilistic");
+    }
+
+    #[test]
+    fn wrap_words_empty_yields_one_empty_line() {
+        assert_eq!(wrap_words("", 10), vec![String::new()]);
+    }
+
+    #[test]
+    fn msg_content_rows_does_not_truncate_github() {
+        let st = crate::render::theme::GRUVBOX_DARK;
+        let text = "Dither is dev-only - see help-wanted issues on GitHub";
+        let rows = msg_content_rows(MODAL_INNER_W, &st, NotificationLevel::Info, text, false);
+        // Concatenated message-row text contains the full word, not "GitH".
+        let joined: String = rows.iter().map(|r| r.text()).collect();
+        assert!(
+            joined.contains("GitHub"),
+            "rendered notification must not amputate GitHub:\n{joined}"
+        );
     }
 }

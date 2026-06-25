@@ -859,6 +859,7 @@ fn tune_view_for_action(
         default,
         state: pv.state,
         show_gauge,
+        kind: pv.desc.kind,
     })
 }
 
@@ -1206,6 +1207,7 @@ pub fn run_simulation(
                         default,
                         state: pv.state,
                         show_gauge,
+                        kind: pv.desc.kind,
                     },
                     until: f32::MAX,
                 };
@@ -1740,8 +1742,12 @@ pub fn run_simulation(
         } else {
             None
         };
-        let (keyboard_hints_x, keyboard_hints_y) = if keyboard_hints_lines.is_some() {
-            KeyboardHintsOverlay::calculate_position(term_width as usize, term_height as usize)
+        let (keyboard_hints_x, keyboard_hints_y) = if let Some(ref ov) = keyboard_hints_lines {
+            KeyboardHintsOverlay::calculate_position(
+                term_width as usize,
+                term_height as usize,
+                ov.lines.len(),
+            )
         } else {
             (0, 0)
         };
