@@ -1893,6 +1893,8 @@ impl RuntimeState {
     /// `transition_tagline` is enabled.
     pub fn announce_preset_switch(&mut self, name: &str, tagline: &str) {
         match self.transition_style {
+            // Default: switch silently, no on-screen announcement.
+            TransitionStyle::Off => {}
             TransitionStyle::Toast => {
                 self.show_notification(format!("Applied preset: {name}"));
             }
