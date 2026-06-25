@@ -2699,7 +2699,15 @@ pub fn run_simulation(
                         }
                         ControlAction::Restart => {
                             let init_mode = effective_init_mode(runtime_state.original_init_mode);
-                            sim.reset(runtime_state.original_seed, init_mode);
+                            // Re-roll the seed on each manual restart so seed-driven
+                            // choices (e.g. the Constellation figure) vary — UNLESS a
+                            // seed was pinned via `--seed`, which stays reproducible.
+                            let seed = match args.seed {
+                                Some(pinned) => pinned,
+                                None => crate::app::fresh_seed(),
+                            };
+                            runtime_state.original_seed = seed;
+                            sim.reset(seed, init_mode);
                         }
                         ControlAction::QuickKey(c) => match resolve_bind(c, &user_binds) {
                             Some(crate::keybind_manager::BindTarget::Preset(preset)) => {
