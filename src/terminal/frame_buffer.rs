@@ -146,6 +146,28 @@ impl FrameBuffer {
         }
     }
 
+    /// Resets every cell to the matte background (blank space + background color),
+    /// wiping any simulation content and window frame already drawn. Used to give
+    /// a clean backdrop behind a modal overlay that would otherwise overlap the
+    /// frame border and read as visual noise.
+    pub fn fill_background(&mut self) {
+        let (bg_color_256, bg_color_rgb) = match (self.background_color, self.color_mode) {
+            (Some(bg), ColorMode::TrueColor) => (None, Some(bg)),
+            (Some(bg), _) => (Some(palette::rgb_to_256(bg)), None),
+            (None, _) => (None, None),
+        };
+        let blank = Cell {
+            char: ' ',
+            fg_color_256: None,
+            bg_color_256,
+            fg_color_rgb: None,
+            bg_color_rgb,
+        };
+        for cell in &mut self.cells {
+            *cell = blank;
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn get_cell(&self, x: usize, y: usize) -> &Cell {
         &self.cells[y * self.width + x]
