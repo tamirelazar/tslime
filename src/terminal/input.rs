@@ -276,6 +276,11 @@ pub fn preset_name(preset: Preset) -> &'static str {
     preset.name()
 }
 
+/// Returns the short character tagline of a preset.
+pub fn preset_tagline(preset: Preset) -> &'static str {
+    preset.tagline()
+}
+
 /// Returns the display name of a palette.
 pub fn palette_name(palette: Palette) -> &'static str {
     palette.name()

@@ -71,3 +71,7 @@ pub mod panel;
 #[cfg(feature = "terminal")]
 /// Config browser and save-dialog overlay builders (hand-rolled; no ratatui dep).
 pub mod ratatui_adapter;
+
+#[cfg(feature = "terminal")]
+/// Preset-switch transition overlays (figlet / typed readout).
+pub mod transition;

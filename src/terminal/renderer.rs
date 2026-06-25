@@ -705,6 +705,7 @@ impl TerminalRenderer {
         preset_comparison_lines: Option<(&RenderedOverlay, usize, usize)>,
         palette_editor_overlay: Option<(&RenderedOverlay, usize, usize)>,
         ambient_overlay: Option<(&RenderedOverlay, usize, usize)>,
+        transition: Option<&crate::render::transition::TransitionView>,
         panel_style: Option<&PanelStyle>,
         _focused_overlay: Option<crate::overlay::OverlayType>,
         pause_style: PauseStyle,
@@ -950,6 +951,51 @@ impl TerminalRenderer {
                     layout.sim_w,
                     layout.sim_h,
                     progress,
+                );
+            }
+        }
+
+        // Preset-switch transition (figlet name / typed readout): drawn over the
+        // sim + frame but beneath interactive overlays. Skipped when a modal has
+        // already wiped the backdrop to a clean matte.
+        if !blank_backdrop {
+            if let Some(view) = transition {
+                let ctx = crate::render::transition::PaletteCtx {
+                    palette: self.palette.clone(),
+                    reverse: self.reverse_palette,
+                    invert: self.invert_palette,
+                    hue_shift: self.hue_shift,
+                    mapping: self.intensity_mapping.as_ref(),
+                };
+                // Column range inside the window frame border, so full-width
+                // transition effects (the TYPE dim band) stop at the frame.
+                let content_x = if self.window_frame.is_visible() {
+                    match self.window_layout {
+                        Some(ref l)
+                            if !matches!(
+                                l.fallback,
+                                crate::render::window::FallbackMode::Fullscreen
+                            ) =>
+                        {
+                            (l.sim_x, l.sim_x + l.sim_w)
+                        }
+                        Some(_) => (0, self.width),
+                        None => (
+                            crate::render::window::FRAME_RING_COLS,
+                            self.width
+                                .saturating_sub(crate::render::window::FRAME_RING_COLS),
+                        ),
+                    }
+                } else {
+                    (0, self.width)
+                };
+                crate::render::transition::draw_transition(
+                    &mut buffer,
+                    view,
+                    self.width,
+                    self.height,
+                    content_x,
+                    &ctx,
                 );
             }
         }

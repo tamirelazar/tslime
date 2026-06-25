@@ -20,7 +20,7 @@ use crate::render::palette::IntensityMapping;
 use crate::render::theme::{PanelStyle, ALL_THEMES, GRUVBOX_DARK};
 use crate::simulation::config::{
     Aspect, ChromeStyle, DiffusionKernel, InitMode, Preset, SimConfig, TerminalSizeThreshold,
-    TerrainType, Wind, WindowFrame, WindowPadding,
+    TerrainType, TransitionStyle, Wind, WindowFrame, WindowPadding,
 };
 use crate::simulation::food::load_logo_from_memory;
 use rand::Rng;
@@ -564,6 +564,19 @@ pub enum ComparisonTarget {
     Config(Box<crate::config_manager::NamedProfile>),
 }
 
+/// A playing figlet/type preset-switch transition.
+#[derive(Debug, Clone)]
+pub struct TransitionAnim {
+    /// The preset name to display.
+    pub name: String,
+    /// Optional tagline shown beneath the name (when enabled).
+    pub tagline: Option<String>,
+    /// The style to render (figlet or type; never toast).
+    pub style: TransitionStyle,
+    /// `phase_clock` value when the switch happened.
+    pub start: f32,
+}
+
 #[derive(Debug, Clone)]
 /// Global runtime state managing simulation parameters and UI state.
 pub struct RuntimeState {
@@ -638,6 +651,12 @@ pub struct RuntimeState {
     pub window_frame: WindowFrame,
     /// Chrome display style (minimal, expanded, fullscreen).
     pub chrome_style: ChromeStyle,
+    /// How a runtime preset switch is announced (toast/figlet/type).
+    pub transition_style: TransitionStyle,
+    /// Whether figlet/type transitions show the preset tagline.
+    pub transition_tagline: bool,
+    /// Active figlet/type transition animation, if one is playing.
+    pub active_transition: Option<TransitionAnim>,
     /// User's configured chrome level (sticky base state).
     pub base_chrome_state: ChromeState,
     /// Current transient chrome state.
@@ -862,6 +881,9 @@ impl RuntimeState {
             motion_blur_frames: 0,
             window_frame: cli_config.window_frame,
             chrome_style: cli_config.chrome_style,
+            transition_style: cli_config.transition_style,
+            transition_tagline: cli_config.transition_tagline,
+            active_transition: None,
             base_chrome_state: match cli_config.chrome_style {
                 ChromeStyle::Expanded => ChromeState::Expanded,
                 ChromeStyle::Minimal => ChromeState::Minimal,
@@ -983,6 +1005,8 @@ impl RuntimeState {
         self.time_scale = sim.time_scale;
         self.window_frame = sim.window_frame;
         self.chrome_style = sim.chrome_style;
+        self.transition_style = sim.transition_style;
+        self.transition_tagline = sim.transition_tagline;
         self.aspect = sim.aspect;
         self.window_padding = sim.window_padding;
         self.show_status_bar = sim.show_status_bar;
@@ -1860,6 +1884,32 @@ impl RuntimeState {
     /// Shows a temporary notification message at Info level.
     pub fn show_notification(&mut self, message: String) {
         self.push_msg(NotificationLevel::Info, message);
+    }
+
+    /// Announce a preset switch using the configured transition style.
+    ///
+    /// `Toast` falls back to a normal notification; `Figlet`/`Type` arm a timed
+    /// animation drawn over the sim. `tagline` is ignored unless
+    /// `transition_tagline` is enabled.
+    pub fn announce_preset_switch(&mut self, name: &str, tagline: &str) {
+        match self.transition_style {
+            TransitionStyle::Toast => {
+                self.show_notification(format!("Applied preset: {name}"));
+            }
+            style => {
+                let tagline = if self.transition_tagline {
+                    Some(tagline.to_string())
+                } else {
+                    None
+                };
+                self.active_transition = Some(TransitionAnim {
+                    name: name.to_string(),
+                    tagline,
+                    style,
+                    start: self.phase_clock,
+                });
+            }
+        }
     }
 
     /// Shows a temporary notification with an explicit severity level.
