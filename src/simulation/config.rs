@@ -949,8 +949,10 @@ impl std::str::FromStr for ChromeStyle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TransitionStyle {
-    /// Ambient toast notification (default, current behavior).
+    /// No on-screen announcement (default) — preset switches silently.
     #[default]
+    Off,
+    /// Ambient toast notification.
     Toast,
     /// Big block-letter preset name, centered, fading up then out.
     Figlet,
@@ -962,11 +964,12 @@ impl std::str::FromStr for TransitionStyle {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
+            "off" | "none" => Ok(TransitionStyle::Off),
             "toast" => Ok(TransitionStyle::Toast),
             "figlet" => Ok(TransitionStyle::Figlet),
             "type" => Ok(TransitionStyle::Type),
             _ => Err(format!(
-                "Invalid transition: '{}'. Must be one of: toast, figlet, type",
+                "Invalid transition: '{}'. Must be one of: off, toast, figlet, type",
                 s
             )),
         }
@@ -976,6 +979,7 @@ impl std::str::FromStr for TransitionStyle {
 impl std::fmt::Display for TransitionStyle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            TransitionStyle::Off => "off",
             TransitionStyle::Toast => "toast",
             TransitionStyle::Figlet => "figlet",
             TransitionStyle::Type => "type",
@@ -1609,7 +1613,7 @@ impl Default for SimConfig {
             frame_matte_cols: crate::config_defaults::frame_matte::DEFAULT_COLS,
             frame_matte_rows: crate::config_defaults::frame_matte::DEFAULT_ROWS,
             chrome_style: ChromeStyle::Minimal,
-            transition_style: TransitionStyle::Toast,
+            transition_style: TransitionStyle::Off,
             transition_tagline: false,
             aspect: Aspect::default(),
             window_padding: WindowPadding::Auto,
