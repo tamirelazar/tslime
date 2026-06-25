@@ -104,15 +104,16 @@ const SCORPIUS: Constellation = Constellation {
 const CYGNUS: Constellation = Constellation {
     name: "Cygnus",
     stars: &[
-        (0.50, 0.08),
-        (0.50, 0.48),
-        (0.50, 0.92),
-        (0.14, 0.38),
-        (0.86, 0.54),
-        (0.30, 0.44),
-        (0.70, 0.50),
+        (0.50, 0.00),
+        (0.50, 0.32),
+        (0.50, 0.66),
+        (0.50, 1.00),
+        (0.18, 0.40),
+        (0.00, 0.30),
+        (0.82, 0.52),
+        (1.00, 0.60),
     ],
-    edges: &[(0, 1), (1, 2), (3, 5), (5, 1), (1, 6), (6, 4)],
+    edges: &[(0, 1), (1, 2), (2, 3), (1, 4), (4, 5), (1, 6), (6, 7)],
 };
 
 const LEO: Constellation = Constellation {
@@ -170,8 +171,297 @@ const GEMINI: Constellation = Constellation {
     ],
 };
 
+const CASSIOPEIA: Constellation = Constellation {
+    name: "Cassiopeia",
+    stars: &[
+        (0.00, 0.20),
+        (0.27, 0.55),
+        (0.50, 0.00),
+        (0.74, 0.48),
+        (1.00, 0.30),
+    ],
+    edges: &[(0, 1), (1, 2), (2, 3), (3, 4)],
+};
+
+const SAGITTARIUS: Constellation = Constellation {
+    name: "Sagittarius",
+    stars: &[
+        (0.00, 0.42),
+        (0.20, 0.30),
+        (0.18, 0.62),
+        (0.40, 0.18),
+        (0.46, 0.55),
+        (0.62, 0.00),
+        (0.66, 0.42),
+        (0.92, 0.30),
+        (1.00, 0.62),
+    ],
+    edges: &[
+        (0, 1),
+        (1, 3),
+        (3, 5),
+        (5, 6),
+        (6, 4),
+        (4, 2),
+        (2, 0),
+        (1, 6),
+        (6, 7),
+        (7, 8),
+        (8, 4),
+    ],
+};
+
+const PEGASUS_ANDROMEDA: Constellation = Constellation {
+    name: "Pegasus-Andromeda",
+    stars: &[
+        (0.30, 0.62),
+        (0.30, 1.00),
+        (0.66, 0.60),
+        (0.64, 0.98),
+        (0.50, 0.78),
+        (0.20, 0.40),
+        (0.08, 0.20),
+        (0.00, 0.00),
+        (0.78, 0.46),
+        (0.92, 0.34),
+        (0.46, 0.46),
+    ],
+    edges: &[
+        (0, 2),
+        (2, 3),
+        (3, 1),
+        (1, 0),
+        (0, 4),
+        (0, 5),
+        (5, 6),
+        (6, 7),
+        (2, 8),
+        (8, 9),
+        (2, 10),
+    ],
+};
+
+const LYRA: Constellation = Constellation {
+    name: "Lyra",
+    stars: &[
+        (0.15, 0.00),
+        (0.00, 0.22),
+        (0.40, 0.30),
+        (0.30, 0.72),
+        (0.70, 0.80),
+        (0.85, 1.00),
+        (0.62, 0.40),
+    ],
+    edges: &[
+        (0, 1),
+        (0, 2),
+        (2, 6),
+        (6, 3),
+        (3, 4),
+        (4, 5),
+        (5, 6),
+        (1, 3),
+    ],
+};
+
+const AQUILA: Constellation = Constellation {
+    name: "Aquila",
+    stars: &[
+        (0.50, 0.00),
+        (0.36, 0.22),
+        (0.62, 0.20),
+        (0.30, 0.48),
+        (0.70, 0.50),
+        (0.16, 0.78),
+        (1.00, 0.60),
+        (0.00, 1.00),
+    ],
+    edges: &[(1, 0), (0, 2), (1, 3), (2, 4), (3, 5), (5, 7), (4, 6)],
+};
+
+const BOOTES: Constellation = Constellation {
+    name: "Bootes",
+    stars: &[
+        (0.42, 1.00),
+        (0.18, 0.62),
+        (0.66, 0.66),
+        (0.10, 0.30),
+        (0.74, 0.30),
+        (0.40, 0.18),
+        (0.50, 0.00),
+    ],
+    edges: &[(0, 1), (0, 2), (1, 3), (2, 4), (3, 5), (4, 5), (5, 6)],
+};
+
+const TAURUS: Constellation = Constellation {
+    name: "Taurus",
+    stars: &[
+        (0.00, 0.00),
+        (0.20, 0.30),
+        (0.40, 0.52),
+        (0.56, 0.60),
+        (0.50, 0.78),
+        (0.72, 0.66),
+        (1.00, 1.00),
+        (0.90, 0.20),
+    ],
+    edges: &[
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 4),
+        (3, 5),
+        (5, 7),
+        (5, 6),
+        (2, 5),
+    ],
+};
+
+const DRACO: Constellation = Constellation {
+    name: "Draco",
+    stars: &[
+        (0.92, 1.00),
+        (0.78, 0.92),
+        (0.86, 0.80),
+        (0.70, 0.78),
+        (0.58, 0.66),
+        (0.40, 0.62),
+        (0.30, 0.50),
+        (0.42, 0.36),
+        (0.30, 0.22),
+        (0.46, 0.12),
+        (0.20, 0.10),
+        (0.00, 0.00),
+        (0.16, 0.00),
+    ],
+    edges: &[
+        (0, 2),
+        (2, 1),
+        (1, 3),
+        (3, 2),
+        (3, 4),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 8),
+        (8, 9),
+        (8, 10),
+        (10, 11),
+        (10, 12),
+    ],
+};
+
+const HERCULES: Constellation = Constellation {
+    name: "Hercules",
+    stars: &[
+        (0.30, 0.42),
+        (0.62, 0.36),
+        (0.66, 0.66),
+        (0.36, 0.70),
+        (0.50, 0.00),
+        (0.08, 0.30),
+        (0.00, 0.10),
+        (0.80, 0.24),
+        (1.00, 0.30),
+        (0.22, 0.92),
+        (0.04, 1.00),
+        (0.72, 0.96),
+        (0.92, 1.00),
+    ],
+    edges: &[
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (0, 5),
+        (5, 6),
+        (1, 4),
+        (1, 7),
+        (7, 8),
+        (3, 9),
+        (9, 10),
+        (2, 11),
+        (11, 12),
+    ],
+};
+
+const CANIS_MAJOR: Constellation = Constellation {
+    name: "Canis Major",
+    stars: &[
+        (0.30, 0.00),
+        (0.10, 0.18),
+        (0.46, 0.24),
+        (0.00, 0.40),
+        (0.40, 0.52),
+        (0.52, 0.78),
+        (0.78, 0.86),
+        (1.00, 1.00),
+        (0.66, 0.58),
+    ],
+    edges: &[
+        (0, 1),
+        (0, 2),
+        (1, 3),
+        (2, 4),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (4, 8),
+        (8, 2),
+    ],
+};
+
+const PERSEUS: Constellation = Constellation {
+    name: "Perseus",
+    stars: &[
+        (0.50, 0.00),
+        (0.40, 0.22),
+        (0.46, 0.42),
+        (0.30, 0.56),
+        (0.16, 0.70),
+        (0.00, 0.86),
+        (0.10, 1.00),
+        (0.60, 0.60),
+        (0.72, 0.78),
+        (0.66, 1.00),
+        (0.86, 0.50),
+        (1.00, 0.40),
+    ],
+    edges: &[
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 4),
+        (4, 5),
+        (4, 6),
+        (2, 7),
+        (7, 8),
+        (8, 9),
+        (2, 10),
+        (10, 11),
+    ],
+};
+
 /// All shipped figures, in display order.
-pub const ALL: &[Constellation] = &[ORION, URSA_MAJOR, SCORPIUS, CYGNUS, LEO, GEMINI];
+pub const ALL: &[Constellation] = &[
+    ORION,
+    URSA_MAJOR,
+    SCORPIUS,
+    CYGNUS,
+    LEO,
+    GEMINI,
+    CASSIOPEIA,
+    SAGITTARIUS,
+    PEGASUS_ANDROMEDA,
+    LYRA,
+    AQUILA,
+    BOOTES,
+    TAURUS,
+    DRACO,
+    HERCULES,
+    CANIS_MAJOR,
+    PERSEUS,
+];
 
 /// Pick one figure using the seeded simulation RNG (deterministic under `--seed`).
 pub fn pick(rng: &mut Rng) -> &'static Constellation {
@@ -179,16 +469,46 @@ pub fn pick(rng: &mut Rng) -> &'static Constellation {
     &ALL[i]
 }
 
-/// Map normalized 0..1 figure coords into grid pixels, centered with a 10%
+/// Uniformly rescale + center a figure so its bounding box fills the unit
+/// square in its longer dimension, preserving the figure's real proportions.
+///
+/// Figures are authored over varying sub-ranges of 0..1; without this an
+/// asterism that only spans, say, x∈0.30..0.64 would render as a small patch.
+/// Normalizing to the bbox makes every figure cover the available area.
+fn normalize_to_unit_square(stars: &[(f32, f32)]) -> Vec<(f32, f32)> {
+    let (mut minx, mut maxx, mut miny, mut maxy) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+    for &(x, y) in stars {
+        minx = minx.min(x);
+        maxx = maxx.max(x);
+        miny = miny.min(y);
+        maxy = maxy.max(y);
+    }
+    let fw = (maxx - minx).max(1e-6);
+    let fh = (maxy - miny).max(1e-6);
+    // Uniform scale by the larger extent keeps the figure undistorted; the
+    // longer dimension spans exactly 0..1, the shorter is centered.
+    let s = 1.0 / fw.max(fh);
+    let (cx, cy) = ((minx + maxx) / 2.0, (miny + maxy) / 2.0);
+    stars
+        .iter()
+        .map(|&(x, y)| (0.5 + (x - cx) * s, 0.5 + (y - cy) * s))
+        .collect()
+}
+
+/// Map a figure's normalized coords into grid pixels, centered with a small
 /// margin, scaled so the figure's **visual** aspect matches `aspect`. Halfblock
 /// packs 2 vertical px per cell, so a visual ratio W:H needs pixel ratio W:(H*2).
+///
+/// The figure is first uniformly rescaled to fill the unit square (see
+/// [`normalize_to_unit_square`]) so it covers as much of the frame as possible.
 pub fn fit_to_grid(
     stars: &[(f32, f32)],
     width: usize,
     height: usize,
     aspect: Aspect,
 ) -> Vec<(f32, f32)> {
-    const MARGIN: f32 = 0.05;
+    const MARGIN: f32 = 0.04;
+    let normalized = normalize_to_unit_square(stars);
     let gw = width as f32;
     let gh = height as f32;
     let avail_w = gw * (1.0 - 2.0 * MARGIN);
@@ -206,7 +526,7 @@ pub fn fit_to_grid(
     let off_x = (gw - box_w) / 2.0;
     let off_y = (gh - box_h) / 2.0;
 
-    stars
+    normalized
         .iter()
         .map(|&(nx, ny)| (off_x + nx * box_w, off_y + ny * box_h))
         .collect()
