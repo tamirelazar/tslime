@@ -18,7 +18,7 @@ use crate::render::motion::{breath, lerp_rgb};
 use crate::render::palette::RgbColor;
 use crate::render::panel::{footer_hints, RenderedOverlay, RichCell};
 use crate::render::theme::PanelStyle;
-use crate::render::widgets::{gauge, swatch, ParamState, RowBuf};
+use crate::render::widgets::{gauge, swatch, value_color, ParamState, RowBuf};
 use crate::terminal::state::NotificationLevel;
 
 // ── Layout constants ──────────────────────────────────────────────────────────
@@ -357,12 +357,7 @@ fn tune_content_rows(w: usize, st: &PanelStyle, param: &TuneView, now: f32) -> V
             }
             _ => {
                 let val: String = param.value_text.chars().take(16).collect();
-                let val_col = match param.state {
-                    ParamState::Modified => st.accent_modified,
-                    ParamState::Cli => st.cli_color,
-                    _ => st.text_primary,
-                };
-                row.put(col, &val, Some(val_col), None);
+                row.put(col, &val, Some(value_color(param.state, st)), None);
             }
         }
         rows.push(row);

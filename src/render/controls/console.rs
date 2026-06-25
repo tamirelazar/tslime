@@ -4,9 +4,9 @@
 //! - A floating title box (`CONTROLS`; the active tab dot below names the category).
 //! - A two-line `●/○` tab strip (one dot per category, accent-coloured for the active one).
 //! - A separator then the body: left param list | pane divider | right detail.
-//! - Both panes pad to the taller of the two (floored at `MIN_BODY_ROWS`), so the
-//!   panel height tracks the active category instead of a fixed maximum — sparse
-//!   categories no longer show a tall empty void.
+//! - Both panes pad to a constant [`MAX_VISIBLE_ROWS`] (the tallest category), so
+//!   the panel height never jumps as you cycle categories; sparser categories pad
+//!   with blank rows. Stable height was chosen over no-void.
 //!
 //! The right-hand detail pane is kind-aware: it renders per-[`ParamKind`] content
 //! (numeric gauge + min/▲(current)/max axis, enum value + cycle hint, toggle pill,
@@ -18,7 +18,7 @@ use crate::render::controls::registry::{ParamDesc, ParamKind, CATEGORY_NAMES};
 use crate::render::palette::RgbColor;
 use crate::render::panel::{Padding, PanelBuilder, RenderedOverlay, RichCell, TextAlignment};
 use crate::render::theme::PanelStyle;
-use crate::render::widgets::{state_color, RowBuf};
+use crate::render::widgets::{state_color, value_color, RowBuf};
 
 pub use crate::render::widgets::ParamState;
 
@@ -301,12 +301,10 @@ pub fn build_console(
         let mut valrow = RowBuf::new(RIGHT_W);
         match pv.desc.kind {
             ParamKind::Numeric => {
-                // Value text + state label
-                let val_col = match pv.state {
-                    ParamState::Modified => Some(style.accent_active),
-                    _ => Some(style.text_primary),
-                };
-                valrow.put(0, &pv.value_text, val_col, None);
+                // Value text + state label. Value color comes from the shared
+                // `value_color` helper so the console value and the ambient tuner
+                // value never drift (and Modified matches the inline state tag).
+                valrow.put(0, &pv.value_text, Some(value_color(pv.state, style)), None);
                 // A Numeric param never carries ParamState::Display, so it is
                 // folded into the "default" label to keep the match exhaustive.
                 let state_label = match pv.state {
@@ -389,11 +387,13 @@ pub fn build_console(
                     let mut tick = RowBuf::new(RIGHT_W);
                     let min_s = "min";
                     let max_s = "max";
-                    let cur_col = (ratio * gw as f32).round() as usize;
                     tick.put(0, min_s, Some(style.muted), None);
-                    // Keep the marker clear of the "min"/"max" labels at the ends.
-                    let cur_col =
-                        cur_col.clamp(min_s.len(), RIGHT_W.saturating_sub(max_s.len() + 1));
+                    // Use the gauge's notch coordinate frame (round(ratio·(gw-1)),
+                    // clamped to the bar's column range) so the ▲ sits exactly
+                    // under the `│` default notch when current == default — using
+                    // a different denominator left them a column apart.
+                    let cur_col = (ratio * (gw as f32 - 1.0)).round() as usize;
+                    let cur_col = cur_col.min(gw.saturating_sub(1));
                     tick.put(cur_col, "▲", Some(style.accent_active), None);
                     let max_start = RIGHT_W.saturating_sub(max_s.len());
                     tick.put(max_start, max_s, Some(style.muted), None);
