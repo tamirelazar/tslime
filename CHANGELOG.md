@@ -20,6 +20,10 @@ First public release.
 - README gallery: six looping demos of the runtime controls — palette cycling,
   character sets, preset transitions, randomize, live parameter tuning, and the
   palette editor (replaces the earlier static preset stills)
+- No-notifications mode: suppress transient toasts and ambient parameter
+  readouts for a clean field. Start with `--no-notifications`; toggle live with
+  `Ctrl+N`. User-opened overlays (controls, palette editor, dashboard, preset
+  transitions) are unaffected.
 - `vinescii` preset — the vines (flocking) pattern in pure ASCII
 - Experimental: multi-species, choir audio, and GUI (feature-gated); WASM build (standalone crate)
 
