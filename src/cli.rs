@@ -840,7 +840,7 @@ pub struct Args {
     #[arg(
         long = "transition",
         value_name = "STYLE",
-        help = "Preset-switch announcement: toast (default), figlet, or type"
+        help = "Preset-switch announcement: off (default), toast, figlet, or type"
     )]
     /// How a runtime preset switch is announced on screen.
     pub transition: Option<TransitionStyle>,
