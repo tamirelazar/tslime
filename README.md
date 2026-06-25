@@ -120,6 +120,7 @@ lowercase increases and uppercase (Shift) decreases.
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `h` | Controls panel |
 | `?` | Keyboard hints |
+| `Ctrl+N` | Toggle notifications (toasts + param readouts) |
 | `\` | Dashboard overlay |
 | `g` | Save current frame to PNG |
 | `q` | Quit |

@@ -270,6 +270,12 @@ impl KeyboardHintsOverlay {
                 Left,
             )
             .add_two_col(
+                "Ctrl+N     Notifications",
+                "g          Save frame PNG",
+                Left,
+                Left,
+            )
+            .add_two_col(
                 "( / )      Window frame",
                 "F10        Cycle chrome",
                 Left,
