@@ -17,6 +17,9 @@ First public release.
 - Window-frame display modes
 - README hero demo: a looping montage that grows the tslime logo across the
   Organic, Constellation, Vinescii, and Trademark launch presets
+- README gallery: six looping demos of the runtime controls — palette cycling,
+  character sets, preset transitions, randomize, live parameter tuning, and the
+  palette editor (replaces the earlier static preset stills)
 - `vinescii` preset — the vines (flocking) pattern in pure ASCII
 - Experimental: multi-species, choir audio, and GUI (feature-gated); WASM build (standalone crate)
 
