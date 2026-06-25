@@ -1716,11 +1716,14 @@ impl RuntimeState {
 
     /// Called when simulation is paused.
     ///
-    /// If the base chrome state is Minimal, expands chrome to show title + footer.
+    /// If the base chrome state is Minimal, expands chrome to show title + footer
+    /// — but only when no overlay is open. An open overlay owns the screen, and
+    /// the status bar would just clutter behind it, so the chrome stays collapsed
+    /// (the status bar appears on pause **and** no-overlay only).
     /// If base is Expanded, stays Expanded (no change needed).
     /// Also cancels any in-progress fade-out, snapping back to Expanded.
     pub fn on_pause(&mut self) {
-        if self.base_chrome_state == ChromeState::Minimal {
+        if self.base_chrome_state == ChromeState::Minimal && !self.any_overlay_open() {
             self.chrome_state = ChromeState::Expanded; // cancels any fade
         }
     }
@@ -1773,9 +1776,16 @@ impl RuntimeState {
 
     /// Called when a modal pane is opened.
     ///
-    /// Always sets chrome to ModalPane regardless of base state.
+    /// The overlay owns the screen. With persistent (Expanded) base chrome the
+    /// title + footer stay visible as ModalPane (with modal-navigation keybinds);
+    /// with the default Minimal base, chrome collapses to Minimal so the status
+    /// bar / title block don't clutter behind the overlay.
     pub fn on_modal_open(&mut self) {
-        self.chrome_state = ChromeState::ModalPane;
+        if self.base_chrome_state == ChromeState::Expanded {
+            self.chrome_state = ChromeState::ModalPane;
+        } else {
+            self.chrome_state = ChromeState::Minimal;
+        }
     }
 
     /// Called when the last modal pane is closed.
@@ -2502,11 +2512,37 @@ mod tests {
     }
 
     #[test]
-    fn test_chrome_base_minimal_modal_open() {
+    fn test_chrome_base_minimal_modal_open_stays_collapsed() {
+        // Default (Minimal) base: opening an overlay keeps chrome collapsed so the
+        // status bar does not clutter behind it.
         let mut state = create_test_runtime_state();
         state.base_chrome_state = ChromeState::Minimal;
+        state.chrome_state = ChromeState::Minimal;
+        state.on_modal_open();
+        assert_eq!(state.chrome_state, ChromeState::Minimal);
+    }
+
+    #[test]
+    fn test_chrome_base_expanded_modal_open_is_modal_pane() {
+        // Persistent (Expanded) base: an overlay shows ModalPane chrome.
+        let mut state = create_test_runtime_state();
+        state.base_chrome_state = ChromeState::Expanded;
         state.on_modal_open();
         assert_eq!(state.chrome_state, ChromeState::ModalPane);
+    }
+
+    #[test]
+    fn test_chrome_pause_with_overlay_open_stays_collapsed() {
+        // Status bar appears on (pause AND no overlay): pausing while an overlay is
+        // open must NOT expand chrome.
+        let mut state = create_test_runtime_state();
+        state.base_chrome_state = ChromeState::Minimal;
+        state.chrome_state = ChromeState::Minimal;
+        state
+            .overlay_state
+            .open(crate::overlay::OverlayType::KeyboardHints);
+        state.on_pause();
+        assert_eq!(state.chrome_state, ChromeState::Minimal);
     }
 
     #[test]

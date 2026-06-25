@@ -640,6 +640,46 @@ impl TerminalRenderer {
         }
     }
 
+    /// Whether a modal panel overlay overlaps the window-frame border, in which
+    /// case the sim + frame should be wiped to a clean matte behind it.
+    ///
+    /// Returns false when there is no visible frame (fullscreen / no layout), so
+    /// the simulation always shows through when there is no border to clutter.
+    /// A panel "intersects the border" when its rectangle is not fully contained
+    /// within the sim interior — i.e. it reaches into or past the frame ring.
+    fn modal_overlaps_frame(&self, panels: &[Option<(&RenderedOverlay, usize, usize)>]) -> bool {
+        use crate::render::window::FallbackMode;
+        if !self.window_frame.is_visible() {
+            return false;
+        }
+        let Some(layout) = &self.window_layout else {
+            return false;
+        };
+        if matches!(layout.fallback, FallbackMode::Fullscreen) {
+            return false;
+        }
+        let (sx, sy, sw, sh) = (layout.sim_x, layout.sim_y, layout.sim_w, layout.sim_h);
+        panels.iter().flatten().any(|(overlay, x, y)| {
+            let w = overlay
+                .lines
+                .iter()
+                .map(|l| l.chars().count())
+                .max()
+                .unwrap_or(0);
+            let h = overlay.lines.len();
+            if w == 0 || h == 0 {
+                return false;
+            }
+            // The floating title box sits one row above the body.
+            let top = y.saturating_sub(usize::from(overlay.title_box.is_some()));
+            let bottom = y + h;
+            let right = x + w;
+            // Fully inside the interior → does not touch the border.
+            let contained = *x >= sx && top >= sy && right <= sx + sw && bottom <= sy + sh;
+            !contained
+        })
+    }
+
     /// Render a frame with text overlays.
     ///
     /// Draws the sim frame, then composites overlays on top in z-order:
@@ -760,37 +800,62 @@ impl TerminalRenderer {
             buffer.apply_pause_effect(pause_style, fc, pause_pulse_draw_mode);
         }
 
-        if let Some(mut grid) = grid_renderer.cloned() {
-            grid.initialize(self.width, self.height);
+        // When a modal panel overlaps the window-frame border, wipe the sim + frame
+        // to a clean matte so the panel reads as the sole focus instead of fighting
+        // the border and simulation behind it.
+        let blank_backdrop = self.modal_overlaps_frame(&[
+            controls_lines,
+            dashboard_lines,
+            config_browser_lines,
+            config_save_lines,
+            dirty_guard_lines,
+            keyboard_hints_lines,
+            preset_comparison_lines,
+            palette_editor_overlay,
+        ]);
 
-            // Calculate average brightness for adaptive opacity
-            let total_brightness: f32 = downsampled
-                .iter()
-                .map(|cell| cell.top.max(cell.bottom))
-                .sum();
-            let avg_brightness = if !downsampled.is_empty() && max_trail_value > 0.0 {
-                (total_brightness / (downsampled.len() as f32)) / max_trail_value
-            } else {
-                0.0
-            };
+        if !blank_backdrop {
+            if let Some(mut grid) = grid_renderer.cloned() {
+                grid.initialize(self.width, self.height);
 
-            for y in 0..self.height {
-                for x in 0..self.width {
-                    if grid.is_grid_position(x, y, self.width, self.height) {
-                        let (on_vertical, on_horizontal) = grid.get_grid_lines(x, y);
-                        let opacity =
-                            grid.calculate_opacity(x, y, self.width, self.height, avg_brightness);
-                        buffer.render_grid_background(
-                            x,
-                            y,
-                            grid.color,
-                            opacity,
-                            on_vertical,
-                            on_horizontal,
-                        );
+                // Calculate average brightness for adaptive opacity
+                let total_brightness: f32 = downsampled
+                    .iter()
+                    .map(|cell| cell.top.max(cell.bottom))
+                    .sum();
+                let avg_brightness = if !downsampled.is_empty() && max_trail_value > 0.0 {
+                    (total_brightness / (downsampled.len() as f32)) / max_trail_value
+                } else {
+                    0.0
+                };
+
+                for y in 0..self.height {
+                    for x in 0..self.width {
+                        if grid.is_grid_position(x, y, self.width, self.height) {
+                            let (on_vertical, on_horizontal) = grid.get_grid_lines(x, y);
+                            let opacity = grid.calculate_opacity(
+                                x,
+                                y,
+                                self.width,
+                                self.height,
+                                avg_brightness,
+                            );
+                            buffer.render_grid_background(
+                                x,
+                                y,
+                                grid.color,
+                                opacity,
+                                on_vertical,
+                                on_horizontal,
+                            );
+                        }
                     }
                 }
             }
+        }
+
+        if blank_backdrop {
+            buffer.fill_background();
         }
 
         // Palette accent color used for accented title badges and border.
@@ -802,7 +867,7 @@ impl TerminalRenderer {
             self.intensity_mapping.as_ref(),
         );
 
-        if self.window_frame.is_visible() {
+        if !blank_backdrop && self.window_frame.is_visible() {
             if let Some(ref layout) = self.window_layout {
                 use crate::render::window::FallbackMode;
                 if !matches!(layout.fallback, FallbackMode::Fullscreen) {
@@ -1180,37 +1245,61 @@ impl TerminalRenderer {
             buffer.apply_pause_effect(pause_style, fc, pause_pulse_draw_mode);
         }
 
-        if let Some(mut grid) = grid_renderer.cloned() {
-            grid.initialize(self.width, self.height);
+        // See render_with_overlay: blank the sim + frame when a modal panel overlaps
+        // the window-frame border, so the panel is the sole focus.
+        let blank_backdrop = self.modal_overlaps_frame(&[
+            controls_lines,
+            dashboard_lines,
+            config_browser_lines,
+            config_save_lines,
+            dirty_guard_lines,
+            keyboard_hints_lines,
+            preset_comparison_lines,
+            palette_editor_overlay,
+        ]);
 
-            // Calculate average brightness from all species combined
-            let total_brightness: f32 = all_downsampled_cells
-                .iter()
-                .map(|cell| cell.top.max(cell.bottom))
-                .sum();
-            let avg_brightness = if !all_downsampled_cells.is_empty() && max_trail_value > 0.0 {
-                (total_brightness / (all_downsampled_cells.len() as f32)) / max_trail_value
-            } else {
-                0.0
-            };
+        if !blank_backdrop {
+            if let Some(mut grid) = grid_renderer.cloned() {
+                grid.initialize(self.width, self.height);
 
-            for y in 0..self.height {
-                for x in 0..self.width {
-                    if grid.is_grid_position(x, y, self.width, self.height) {
-                        let (on_vertical, on_horizontal) = grid.get_grid_lines(x, y);
-                        let opacity =
-                            grid.calculate_opacity(x, y, self.width, self.height, avg_brightness);
-                        buffer.render_grid_background(
-                            x,
-                            y,
-                            grid.color,
-                            opacity,
-                            on_vertical,
-                            on_horizontal,
-                        );
+                // Calculate average brightness from all species combined
+                let total_brightness: f32 = all_downsampled_cells
+                    .iter()
+                    .map(|cell| cell.top.max(cell.bottom))
+                    .sum();
+                let avg_brightness = if !all_downsampled_cells.is_empty() && max_trail_value > 0.0 {
+                    (total_brightness / (all_downsampled_cells.len() as f32)) / max_trail_value
+                } else {
+                    0.0
+                };
+
+                for y in 0..self.height {
+                    for x in 0..self.width {
+                        if grid.is_grid_position(x, y, self.width, self.height) {
+                            let (on_vertical, on_horizontal) = grid.get_grid_lines(x, y);
+                            let opacity = grid.calculate_opacity(
+                                x,
+                                y,
+                                self.width,
+                                self.height,
+                                avg_brightness,
+                            );
+                            buffer.render_grid_background(
+                                x,
+                                y,
+                                grid.color,
+                                opacity,
+                                on_vertical,
+                                on_horizontal,
+                            );
+                        }
                     }
                 }
             }
+        }
+
+        if blank_backdrop {
+            buffer.fill_background();
         }
 
         // Palette accent color for accented title badges (same approach as single-species).
@@ -1222,7 +1311,7 @@ impl TerminalRenderer {
             self.intensity_mapping.as_ref(),
         );
 
-        if self.window_frame.is_visible() {
+        if !blank_backdrop && self.window_frame.is_visible() {
             if let Some(ref layout) = self.window_layout {
                 use crate::render::window::FallbackMode;
                 if !matches!(layout.fallback, FallbackMode::Fullscreen) {
