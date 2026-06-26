@@ -1,6 +1,6 @@
 [package]
 name = "tslime"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["tslime contributors"]
 description = "A lightweight terminal screensaver simulating slime mold growth patterns"

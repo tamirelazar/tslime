@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - TBD
+
+Distribution and release-pipeline fixes.
+
+### Changed
+- Linux release binary is now statically linked (musl target), so the single
+  `tslime-linux-x86_64` download runs on any x86_64 Linux distribution
+  regardless of glibc version.
+- Install documentation now leads with `cargo install` and a Homebrew tap;
+  see the README for per-platform paths.
+
+### Fixed
+- macOS distribution: prebuilt macOS binaries are no longer published (the
+  previous one was Gatekeeper-blocked and mislabeled as x86_64 while actually
+  being arm64). Install on macOS via `brew install tamirelazar/tslime/tslime`
+  or `cargo install tslime`, both of which avoid Gatekeeper.
+
+### Added
+- Homebrew tap `tamirelazar/homebrew-tslime` (source build).
+- One-paste install blocks for Linux and Windows in the README: they fetch the
+  latest release binary, install it to a user directory, put it on `PATH`, and
+  (on Windows) clear the Mark-of-the-Web so SmartScreen stays quiet.
+- Nix flake: `nix run github:tamirelazar/tslime` runs tslime ephemerally without
+  installing; `nix build` and `nix profile install` are also supported.
+- Docker image on GHCR: `docker run --rm -it ghcr.io/tamirelazar/tslime` runs
+  tslime ephemerally without installing (published on release; linux/amd64).
+
 ## [0.1.0] - 2026-06-26
 
 First public release.

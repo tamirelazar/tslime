@@ -1,0 +1,14 @@
+# Keep the build context tiny. Exclude every target dir (root + nested crates
+# like tslime-wasm), the Nix `result` symlink, and all dev-meta. Only source,
+# Cargo manifests, and embedded assets reach the build.
+**/target
+result
+tslime-wasm
+.git
+.meta.git
+.claude
+.superpowers
+docs
+assets/demos
+.ws6_preview
+.github
