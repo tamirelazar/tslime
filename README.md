@@ -177,8 +177,7 @@ from the keyboard while it runs. A few of the controls:
 <td width="50%"><img src="assets/demos/randomize.gif" width="100%"><br><b>Randomize</b> — press <code>8</code> to scramble every parameter into a fresh organism.</td>
 </tr>
 <tr>
-<td width="50%"><img src="assets/demos/param-tune.gif" width="100%"><br><b>Live tuning</b> — adjust any parameter in real time; here the decay factor lengthens the trails.</td>
-<td width="50%"><img src="assets/demos/palette-editor.gif" width="100%"><br><b>Palette editor</b> — press <code>p</code> to reshape a palette by lightness, chroma, and hue.</td>
+<td colspan="2" align="center"><img src="assets/demos/palette-editor.gif" width="50%"><br><b>Palette editor</b> — press <code>p</code> to reshape a palette by lightness, chroma, and hue.</td>
 </tr>
 </table>
 
