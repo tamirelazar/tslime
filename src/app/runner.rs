@@ -1020,6 +1020,7 @@ pub fn run_simulation(
     runtime_state.active_overrides = startup_ov;
     runtime_state.preload_pause_logo(term_width as usize, term_height as usize);
     runtime_state.dither_mode = dither_mode;
+    runtime_state.notifications_enabled = !args.no_notifications;
     runtime_state.trail_age_enabled = args.trail_age;
     runtime_state.trail_delta_enabled = args.trail_delta;
     runtime_state.gradient_magnitude_enabled = args.gradient_magnitude;
@@ -3305,6 +3306,15 @@ pub fn run_simulation(
                                 runtime_state.on_modal_close();
                             }
                         }
+                        ControlAction::ToggleNotifications => {
+                            runtime_state.notifications_enabled =
+                                !runtime_state.notifications_enabled;
+                            // Confirm only when turning them back ON — push_msg is
+                            // a no-op while disabled, so an "off" toast can't show.
+                            if runtime_state.notifications_enabled {
+                                runtime_state.show_notification("Notifications on".to_string());
+                            }
+                        }
                         ControlAction::SetIntensityMapping(_) => {}
                         ControlAction::ShowConfigBrowser => {
                             runtime_state.close_all_overlays();
@@ -3535,9 +3545,12 @@ pub fn run_simulation(
                     // each adjust refreshes the hold so rapid adjusts extend it,
                     // then it eases back to BASE. This REPLACES any on-adjust
                     // toast (none existed — param adjusts only notify at bounds).
-                    if let Some(tune) =
+                    let tune_view = if runtime_state.notifications_enabled {
                         tune_view_for_action(&runtime_state, &action, &registry_ctx, agent_count)
-                    {
+                    } else {
+                        None
+                    };
+                    if let Some(tune) = tune_view {
                         const TUNE_HOLD_SECS: f32 = 2.5;
                         let now = runtime_state.phase_clock;
                         // Surface the focused param (debounced) and drop the
@@ -3869,6 +3882,14 @@ fn switch_preset(
         // reset it to the default (toast).
         transition_style: Some(rs.transition_style),
         transition_tagline: Some(rs.transition_tagline),
+        // Likewise carry the active chrome (fullscreen/expanded/minimal). It's a
+        // global display mode chosen at launch or via F10/F11, not a per-preset
+        // lever; without this a bare preset resolve resets chrome to the preset
+        // default, silently dropping the user out of fullscreen. Most presets fill
+        // the frame regardless via the edge-hug fallback, but presets with a small
+        // `min_sim_size` (Constellation, Trademark) fall back to the centered 3:2
+        // layout and visibly letterbox on switch.
+        chrome_style: Some(rs.chrome_style),
         ..Default::default()
     };
     crate::app::apply_overrides(

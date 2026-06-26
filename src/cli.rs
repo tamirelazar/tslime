@@ -853,6 +853,13 @@ pub struct Args {
     pub transition_tagline: bool,
 
     #[arg(
+        long = "no-notifications",
+        help = "Suppress transient notifications (toasts + ambient param readouts); toggle at runtime with Ctrl+N"
+    )]
+    /// Start with transient notifications suppressed. Toggle live with `Ctrl+N`.
+    pub no_notifications: bool,
+
+    #[arg(
         long = "aspect",
         value_name = "RATIO",
         help = "Window aspect ratio: 3:2 (default), square, 4:3, 16:10, 16:9, or W:H"
@@ -2354,6 +2361,7 @@ impl Default for Args {
             chrome_style: None,
             transition: None,
             transition_tagline: false,
+            no_notifications: false,
             aspect: None,
             window_padding: None,
             frame_matte_cols: None,

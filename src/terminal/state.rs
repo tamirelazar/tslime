@@ -371,6 +371,8 @@ pub enum ControlAction {
     CycleOptionsCategoryReverse,
     /// Toggle dashboard overlay (merged stats + info).
     ToggleDashboard,
+    /// Toggle transient notifications (toasts + ambient param readouts).
+    ToggleNotifications,
     /// Show configuration browser.
     ShowConfigBrowser,
     /// Show configuration save dialog.
@@ -813,6 +815,12 @@ pub struct RuntimeState {
     /// runner resolves the highest-priority live entry each frame via
     /// [`crate::render::ambient::resolve`].
     pub ambient_states: Vec<crate::render::ambient::AmbientState>,
+    /// When `false`, transient notifications are suppressed: toast messages
+    /// ([`push_msg`](Self::push_msg)) and the ambient `Tune` param readouts are
+    /// not surfaced, leaving the field clean. User-opened overlays (controls,
+    /// palette editor, dashboard, preset-transition) are unaffected. Toggled at
+    /// runtime with `Ctrl+N`; set false at launch via `--no-notifications`.
+    pub notifications_enabled: bool,
 }
 
 impl RuntimeState {
@@ -963,6 +971,7 @@ impl RuntimeState {
             glyph: crate::render::charset::GlyphConfig::default(),
             phase_clock: 0.0,
             ambient_states: vec![crate::render::ambient::AmbientState::Base],
+            notifications_enabled: true,
         }
     }
 
@@ -1873,6 +1882,11 @@ impl RuntimeState {
     /// At most one active MSG is kept. The duration is determined by `level`
     /// via [`crate::render::ambient::msg`].
     pub fn push_msg(&mut self, level: NotificationLevel, text: String) {
+        // Suppressed entirely when notifications are off, so no transient toast
+        // ever reaches the ambient stack.
+        if !self.notifications_enabled {
+            return;
+        }
         let now = self.phase_clock;
         // Remove any existing Msg entries so messages don't stack unbounded.
         self.ambient_states
@@ -2062,6 +2076,32 @@ mod tests {
             false,
             false,
         )
+    }
+
+    #[test]
+    fn notifications_enabled_by_default_and_push_msg_surfaces_a_toast() {
+        let mut rs = create_test_runtime_state();
+        assert!(rs.notifications_enabled, "default should be enabled");
+        rs.push_msg(NotificationLevel::Info, "hello".to_string());
+        assert!(
+            rs.ambient_states
+                .iter()
+                .any(|s| matches!(s, crate::render::ambient::AmbientState::Msg { .. })),
+            "a Msg should be surfaced when notifications are enabled"
+        );
+    }
+
+    #[test]
+    fn disabled_notifications_suppress_push_msg() {
+        let mut rs = create_test_runtime_state();
+        rs.notifications_enabled = false;
+        rs.push_msg(NotificationLevel::Info, "hidden".to_string());
+        assert!(
+            !rs.ambient_states
+                .iter()
+                .any(|s| matches!(s, crate::render::ambient::AmbientState::Msg { .. })),
+            "no Msg should be surfaced when notifications are disabled"
+        );
     }
 
     #[test]

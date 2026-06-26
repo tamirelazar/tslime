@@ -7,7 +7,9 @@ binary, runs on Linux, macOS, Windows, and over SSH, and works as both a screens
 and an instrument: every simulation parameter can be steered live from the keyboard
 while it runs.
 
-<!-- ws6: hero gif -->
+<p align="center">
+  <img src="assets/demos/hero.gif" alt="tslime growing the logo across the Organic, Constellation, Vinescii, and Trademark presets" width="100%">
+</p>
 
 ## Install
 
@@ -118,6 +120,7 @@ lowercase increases and uppercase (Shift) decreases.
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `h` | Controls panel |
 | `?` | Keyboard hints |
+| `Ctrl+N` | Toggle notifications (toasts + param readouts) |
 | `\` | Dashboard overlay |
 | `g` | Save current frame to PNG |
 | `q` | Quit |
@@ -161,7 +164,22 @@ config = "my-night-config"
 
 ## Gallery
 
-<!-- ws6: preset/palette showcase gifs -->
+tslime is a live instrument, not a static screensaver — every visual is reshaped
+from the keyboard while it runs. A few of the controls:
+
+<table>
+<tr>
+<td width="50%"><img src="assets/demos/palette-cycle.gif" width="100%"><br><b>Palette cycling</b> — press <code>c</code> to sweep through palettes; the whole field recolors instantly.</td>
+<td width="50%"><img src="assets/demos/charset-cycle.gif" width="100%"><br><b>Character sets</b> — press <code>`</code> to re-render the same growth in a different glyph language.</td>
+</tr>
+<tr>
+<td width="50%"><img src="assets/demos/preset-transition.gif" width="100%"><br><b>Preset transitions</b> — quick-keys <code>1</code>–<code>7</code> switch presets with an optional figlet announcement.</td>
+<td width="50%"><img src="assets/demos/randomize.gif" width="100%"><br><b>Randomize</b> — press <code>8</code> to scramble every parameter into a fresh organism.</td>
+</tr>
+<tr>
+<td colspan="2" align="center"><img src="assets/demos/palette-editor.gif" width="50%"><br><b>Palette editor</b> — press <code>p</code> to reshape a palette by lightness, chroma, and hue.</td>
+</tr>
+</table>
 
 There are 31 named presets: network, exploratory, tendrils, organic, fire, river,
 petri, vortex, lightning, chaosedge, blob, slime, vines, vinescii, smoke, vortex36,

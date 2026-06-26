@@ -126,6 +126,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
                 }
             }
             KeyCode::Char('y') | KeyCode::Char('Y') => return ControlAction::Redo,
+            KeyCode::Char('n') | KeyCode::Char('N') => return ControlAction::ToggleNotifications,
             _ => {}
         }
     }
