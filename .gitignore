@@ -23,3 +23,7 @@ tslime_frame_*.png
 
 # Git worktrees
 .worktrees/
+
+# Nix build result symlinks
+result
+result-*

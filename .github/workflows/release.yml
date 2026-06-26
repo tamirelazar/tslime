@@ -26,15 +26,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
         include:
           - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
             artifact_name: tslime
             asset_name: tslime-linux-x86_64
           - os: macos-latest
+            target: aarch64-apple-darwin
             artifact_name: tslime
-            asset_name: tslime-macos-x86_64
+            asset_name: tslime-macos-arm64
           - os: windows-latest
+            target: x86_64-pc-windows-msvc
             artifact_name: tslime.exe
             asset_name: tslime-windows-x86_64.exe
 
@@ -44,6 +46,12 @@ jobs:
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: Install musl tools (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends musl-tools
 
     - name: Cache cargo registry
       uses: actions/cache@v4
@@ -64,14 +72,14 @@ jobs:
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Build release binary
-      run: cargo build --release --verbose
+      run: cargo build --release --verbose --target ${{ matrix.target }}
 
     - name: Check binary size
       if: runner.os == 'Linux'
       run: |
-        size target/release/tslime
-        SIZE=$(stat -c%s target/release/tslime)
-        # Headroom over the ~3.1MB Linux release binary.
+        BIN="target/${{ matrix.target }}/release/tslime"
+        size "$BIN" || true
+        SIZE=$(stat -c%s "$BIN")
         MAX_SIZE=4000000
         if [ "$SIZE" -gt "$MAX_SIZE" ]; then
           echo "Binary size $SIZE exceeds $MAX_SIZE limit"
@@ -79,11 +87,19 @@ jobs:
         fi
         echo "Binary size $SIZE is under $MAX_SIZE limit"
 
+    # Stage the binary under its release asset name so the downloaded artifact
+    # is named correctly for `gh release create` (no post-download rename).
+    - name: Stage binary
+      shell: bash
+      run: |
+        mkdir -p dist
+        cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "dist/${{ matrix.asset_name }}"
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.asset_name }}
-        path: target/release/${{ matrix.artifact_name }}
+        path: dist/${{ matrix.asset_name }}
 
   gui-build:
     name: GUI Build
@@ -148,3 +164,90 @@ jobs:
       with:
         name: ${{ matrix.asset_name }}
         path: target/release/${{ matrix.artifact_name }}
+
+  # Publish a GitHub Release with the CLI binaries attached and notes pulled
+  # from the matching CHANGELOG section. Tag pushes only (skipped for manual
+  # workflow_dispatch runs, which have no tag to release).
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download Linux binary
+      uses: actions/download-artifact@v4
+      with:
+        name: tslime-linux-x86_64
+        path: dist
+
+    - name: Download Windows binary
+      uses: actions/download-artifact@v4
+      with:
+        name: tslime-windows-x86_64.exe
+        path: dist
+
+    - name: Extract release notes from CHANGELOG
+      shell: bash
+      run: |
+        version="${GITHUB_REF_NAME#v}"
+        awk -v v="$version" '
+          $0 ~ ("^## \\[" v "\\]") { found=1; next }
+          found && /^## \[/ { exit }
+          found { print }
+        ' CHANGELOG.md > RELEASE_NOTES.md
+        if [ ! -s RELEASE_NOTES.md ]; then
+          printf 'tslime %s\n' "$GITHUB_REF_NAME" > RELEASE_NOTES.md
+        fi
+
+    - name: Create GitHub Release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      shell: bash
+      run: |
+        gh release create "$GITHUB_REF_NAME" \
+          --repo "$GITHUB_REPOSITORY" \
+          --title "tslime $GITHUB_REF_NAME" \
+          --notes-file RELEASE_NOTES.md \
+          dist/tslime-linux-x86_64 \
+          dist/tslime-windows-x86_64.exe
+
+  # Publish a container image to GHCR so users can `docker run --rm -it
+  # ghcr.io/<owner>/tslime` without installing anything. Self-contained build
+  # (the Dockerfile compiles the static musl binary onto a scratch image). Tag
+  # pushes only. linux/amd64; arm64 is a follow-up.
+  docker:
+    name: Publish Docker image
+    needs: hygiene
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        platforms: linux/amd64
+        push: true
+        tags: |
+          ghcr.io/${{ github.repository }}:latest
+          ghcr.io/${{ github.repository }}:${{ github.ref_name }}
