@@ -73,6 +73,10 @@ fn preset_assembled_configs_match_golden() {
         std::fs::write(GOLDEN, &buf).expect("write golden");
         return;
     }
-    let golden = std::fs::read_to_string(GOLDEN).unwrap_or_default();
+    // Normalize CRLF: git may check the golden out with CRLF on Windows
+    // (core.autocrlf), while `buf` is always built with LF.
+    let golden = std::fs::read_to_string(GOLDEN)
+        .unwrap_or_default()
+        .replace("\r\n", "\n");
     assert_eq!(buf, golden, "assembled preset configs differ from golden");
 }
