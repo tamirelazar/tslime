@@ -10,13 +10,39 @@ binary, runs on Linux, macOS, Windows, and over SSH.
 
 ## Install
 
-From crates.io:
+### Any platform — cargo
 
 ```bash
 cargo install tslime
 ```
 
-From source (requires Rust 1.70 or later):
+Builds from source (requires Rust 1.70 or later). This is the universal path
+and sidesteps macOS Gatekeeper entirely.
+
+### macOS — Homebrew
+
+```bash
+brew install tamirelazar/tslime/tslime
+```
+
+### Linux / Windows — prebuilt binary
+
+Download from the [latest release](https://github.com/tamirelazar/tslime/releases/latest):
+
+- **Linux** — `tslime-linux-x86_64` is statically linked and runs on any x86_64
+  Linux distribution:
+
+  ```bash
+  chmod +x tslime-linux-x86_64 && ./tslime-linux-x86_64
+  ```
+
+- **Windows** — `tslime-windows-x86_64.exe`. SmartScreen may warn about the
+  unsigned executable; click **More info → Run anyway**.
+
+> macOS prebuilt binaries are not published — use Homebrew or `cargo install`
+> (both avoid Gatekeeper). ARM Linux (aarch64): use `cargo install`.
+
+### From source
 
 ```bash
 git clone https://github.com/tamirelazar/tslime.git
@@ -24,8 +50,6 @@ cd tslime
 cargo build --release
 ./target/release/tslime
 ```
-
-Prebuilt binaries for Linux, macOS, and Windows accompany each release.
 
 ## Usage
 
