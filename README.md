@@ -10,59 +10,54 @@ binary, runs on Linux, macOS, Windows, and over SSH.
 
 ## Install
 
-### Any platform — cargo
+### cargo
 
 ```bash
 cargo install tslime
 ```
 
-Builds from source (requires Rust 1.70 or later). This is the universal path
-and sidesteps macOS Gatekeeper entirely.
+Builds from source; requires Rust 1.70 or later.
 
-### Try it without installing — Nix
+### Try it without installing
 
-If you have Nix with flakes, run tslime ephemerally — nothing is installed:
+With [Nix](https://nixos.org):
 
 ```bash
 nix run github:tamirelazar/tslime
 ```
 
-### Try it without installing — Docker
-
-No Nix? Run the published container instead — nothing is installed on the host:
+With Docker:
 
 ```bash
 docker run --rm -it ghcr.io/tamirelazar/tslime
 ```
 
-### macOS — Homebrew
+### macOS
 
 ```bash
 brew install tamirelazar/tslime/tslime
 ```
 
-### Linux — prebuilt binary
+### Linux
 
-The Linux binary is statically linked (musl) and runs on any x86_64 distribution.
-Paste this to install it to `~/.local/bin`:
+The Linux binary is statically linked and runs on any x86_64 distribution.
+Install it to `~/.local/bin`:
 
 ```bash
 mkdir -p ~/.local/bin
 curl -fsSL https://github.com/tamirelazar/tslime/releases/latest/download/tslime-linux-x86_64 -o ~/.local/bin/tslime
 chmod +x ~/.local/bin/tslime
-~/.local/bin/tslime --version
 ```
 
-If `tslime` isn't found afterwards, add `~/.local/bin` to your `PATH`:
+If `~/.local/bin` isn't on your `PATH`, add it:
 
 ```bash
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile && export PATH="$HOME/.local/bin:$PATH"
 ```
 
-### Windows — prebuilt binary
+### Windows
 
-Paste this into **PowerShell**. It downloads the binary, clears the
-Mark-of-the-Web so SmartScreen stays quiet, and adds it to your `PATH`:
+In PowerShell:
 
 ```powershell
 $dir = "$env:LOCALAPPDATA\Programs\tslime"
@@ -71,14 +66,9 @@ Invoke-WebRequest "https://github.com/tamirelazar/tslime/releases/latest/downloa
 Unblock-File "$dir\tslime.exe"
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$dir*") { [Environment]::SetEnvironmentVariable("Path", "$userPath;$dir", "User") }
-& "$dir\tslime.exe" --version
 ```
 
-Open a new terminal afterwards so the `PATH` change takes effect (or run
-`$env:Path += ";$dir"` in the current one), then just run `tslime`.
-
-> macOS prebuilt binaries are not published — use Homebrew or `cargo install`
-> (both avoid Gatekeeper). ARM Linux (aarch64): use `cargo install`.
+Open a new terminal so the `PATH` change takes effect, then run `tslime`.
 
 ### From source
 
