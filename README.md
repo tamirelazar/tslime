@@ -1,15 +1,12 @@
-# tslime
+<p align="center">
+  <img src="assets/demos/hero.gif" alt="tslime growing the logo across the Organic, Constellation, Vinescii, and Trademark presets" width="50%">
+</p>
+<h1 align="center">TSLIME</h1>
 
-A terminal screensaver that runs a Physarum polycephalum (slime mold) transport-network
+A terminal screensaver, simulation playground and keyboard fidget toy. It runs a Physarum polycephalum (slime mold) transport-network
 simulation. Tens of thousands of agents deposit and follow pheromone trails, and the
 resulting network is drawn straight into your terminal. It ships as a single static
-binary, runs on Linux, macOS, Windows, and over SSH, and works as both a screensaver
-and an instrument: every simulation parameter can be steered live from the keyboard
-while it runs.
-
-<p align="center">
-  <img src="assets/demos/hero.gif" alt="tslime growing the logo across the Organic, Constellation, Vinescii, and Trademark presets" width="100%">
-</p>
+binary, runs on Linux, macOS, Windows, and over SSH. 
 
 ## Install
 
@@ -28,7 +25,7 @@ cargo build --release
 ./target/release/tslime
 ```
 
-Prebuilt binaries for Linux, macOS, and Windows accompany each GitHub release.
+Prebuilt binaries for Linux, macOS, and Windows accompany each release.
 
 ## Usage
 
@@ -44,103 +41,12 @@ Screensaver mode exits on the first keypress:
 tslime -S
 ```
 
-Some starting points:
+Some of the presets I use come pre-loaded and are bound to the `1`-`4` keys. You can bind any preset or saved-config to the number keys via a config file.
 
-```bash
-tslime --preset lightning --palette heat      # fast dendritic branching, warm colors
-tslime --preset drift --palette ocean --fps 24  # slow and quiet
-tslime --seed 42 --population 80000           # reproducible run, denser network
-tslime --braille --palette mono               # high-resolution monochrome
-tslime --palette-cycles 3 --palette-cycle-mode mirror  # banded contour coloring
-tslime --ascii --glyph-selection hybrid                # edge-aware directional glyphs on filaments
-tslime --transition figlet                             # announce preset switches with a big block-letter name
-tslime --transition type --transition-tagline          # typed readout + the preset's one-line tagline
-tslime --export-gif demo.gif --export-frames 120 --export-fps 30
-tslime -p > frame.txt                         # print a single frame and exit
-```
+In general, mature (= fun to play with) features will have runtime controls, while experimental features will be reachable through cli flags. I try to keep the really nascent stuff behind a compilation flag as well, but be aware that if something is not in the control console (reachable by pressing `h`) - it is not guaranteed to work.
 
 `tslime --help` lists every flag. `tslime --explain` walks through what each
 simulation parameter does and how the parameters interact.
-
-## Controls
-
-Everything below works while the simulation is running. For paired keys,
-lowercase increases and uppercase (Shift) decreases.
-
-### Simulation
-
-| Key | Action |
-|---|---|
-| `Space` | Pause / resume |
-| `r` | Restart |
-| `1`–`4` | Switch preset (Organic / Constellation / Vinescii / Trademark) |
-| `5`–`7` | Custom binds — set in `~/.config/tslime/keybinds.toml` |
-| `Shift+1`–`7` | Compare bound preset/config (A/B) |
-| `8` | Randomize parameters |
-| `0` | Reset to defaults |
-| `+` / `-` | Time scale |
-| `a` / `A` | Sensor angle |
-| `j` / `J` | Sensor distance |
-| `t` / `T` | Turn angle |
-| `s` / `S` | Step size |
-| `e` / `E` | Trail decay |
-| `i` / `I` | Deposit amount |
-| `k` | Cycle diffusion kernel |
-| `w` / `W` | Cycle wind direction |
-| `u` | Cycle terrain type |
-| `y` / `Y` | Terrain strength |
-
-### Appearance
-
-| Key | Action |
-|---|---|
-| `c` / `C` | Cycle palette |
-| `9` / `*` | Cycle theme |
-| `` ` `` / `~` | Cycle character set |
-| `"` | Cycle color anti-aliasing (active charset) |
-| `n` / `N` | Brightness |
-| `m` / `M` | Cycle intensity mapping |
-| `x` | Invert palette |
-| `z` | Reverse palette |
-| `o` | Palette hue-shift speed |
-| `v` | Motion blur |
-| `'` | Trail age coloring |
-| `.` | Growth/decay highlighting |
-| `>` | Edge glow |
-| `(` / `)` | Cycle window frame |
-| `F10` | Cycle chrome (minimal / expanded / fullscreen) |
-| `F11` | Fullscreen |
-
-### System
-
-| Key | Action |
-|---|---|
-| `p` | Palette editor |
-| `Ctrl+S` / `Ctrl+L` | Save / load configuration |
-| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
-| `h` | Controls panel |
-| `?` | Keyboard hints |
-| `Ctrl+N` | Toggle notifications (toasts + param readouts) |
-| `\` | Dashboard overlay |
-| `g` | Save current frame to PNG |
-| `q` | Quit |
-| `Esc` | Close open overlay |
-
-### Controls panel navigation
-
-The Controls panel opens into the Console study view (full master-detail interface) and supports two-depth navigation:
-
-| Key | Action |
-|---|---|
-| `Tab` | Toggle between Tuner (bottom strip) and Console (full panel) |
-| `← / →` | Adjust the focused parameter (equivalent to its per-parameter hotkey) |
-| `↑ / ↓` | Move focus between parameters |
-| `↵` | Activate an action parameter (Reset / Save Frame / Randomize) |
-| `[ / ]` | Move to previous / next category |
-| `{ / }` | Adjust dither intensity (development feature) |
-| `Esc` | Close the panel |
-
-Note: The per-parameter hotkeys (`a`/`A`, `j`/`J`, `t`/`T`, etc. from the Simulation and Appearance tables above) continue to work anywhere and take precedence. Arrow keys provide keyboard-driven alternatives to the focused-param hotkey while the panel is open.
 
 ### Custom Keybinds
 
@@ -157,9 +63,8 @@ config = "my-night-config"
 ```
 
 - **Keys**: Bind to any digit `1`–`7`. Keys `1`–`4` default to Organic, Constellation, Vinescii, and Trademark; user entries override.
-- **Targets**: Bind to either a `preset` (any of the 31 named presets) or a `config` (any saved configuration from `Ctrl+S`).
+- **Targets**: Bind to either a `preset` (any of ~31 named presets) or a `config` (any saved configuration from `Ctrl+S`).
 - **Comparison**: Press `Shift+1` through `Shift+7` to compare the bound preset or config against the current settings (A/B mode).
-- **Invalid entries**: Silently ignored; the app launches normally and skips unparseable lines.
 - **Live bindings**: The `?` overlay shows current key bindings and their targets.
 
 ## Gallery
@@ -184,31 +89,9 @@ from the keyboard while it runs. A few of the controls:
 There are 31 named presets: network, exploratory, tendrils, organic, fire, river,
 petri, vortex, lightning, chaosedge, blob, slime, vines, vinescii, smoke, vortex36,
 dynamictendrils, mold, etching, drift, constellation, mosaic, marble, prism, vellum,
-forge, wane, gossamer, codex, tide, and trademark. The old names pulse, flocking, ripple, and
-lumen are still accepted as CLI aliases. Palettes and character sets are independent of
+forge, wane, gossamer, codex, tide, and trademark. Palettes and character sets are independent of
 the preset and can be cycled at runtime. Preset parameters are defined in
-`src/simulation/config.rs` and `src/preset_sim_defaults.rs`.
-
-## How it works
-
-The simulation implements the agent-based model from Jones (2010) [1]. Each agent
-carries only a position and a heading. Every step it senses the pheromone trail at
-three points ahead of it (front-left, front, front-right), rotates toward the
-strongest reading, moves forward, and deposits pheromone at its new position.
-
-The trail lives in a 2D grid. Each frame the grid is diffused with a 3×3 mean
-kernel (a 5×5 Gaussian is available) and then decayed by a constant factor. Agents
-reinforce paths that other agents have taken; diffusion and decay erase paths that
-go unused. Transport networks emerge from nothing but these local rules.
-
-To draw a frame, the grid is downsampled to the terminal's cell dimensions by
-average pooling, then mapped to characters: half-blocks by default for double
-vertical resolution, with ASCII, braille, quadrant, shade, and other character sets
-available.
-
-Colors come from palettes defined as gradients in the OKLch color space [5], which
-keeps perceived brightness uniform across the gradient — intensity in the
-simulation reads as intensity on screen, regardless of hue.
+`src/simulation/config.rs` and `src/preset_sim_defaults.rs`. Please note that a lot of them are WIP that is seeking feedback (from you!). Other than the 4 preset bound to `1`-`4`, which are the ones i actually use, i consider none of them to be "ready". 
 
 ## Experimental Features 
 
