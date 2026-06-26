@@ -11,12 +11,12 @@ on:
       - '**.md'
       - 'LICENSE'
       - 'assets/**'
+  # No paths-ignore here: required status checks must report on every PR to a
+  # protected branch, including docs-only ones — otherwise a markdown PR can
+  # never satisfy branch protection and gets stuck unmergeable. The test job's
+  # own matrix gating keeps non-promotion PRs cheap (ubuntu-only).
   pull_request:
     branches: [master, dev]
-    paths-ignore:
-      - '**.md'
-      - 'LICENSE'
-      - 'assets/**'
 
 env:
   CARGO_TERM_COLOR: always
