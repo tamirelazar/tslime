@@ -37,11 +37,11 @@ pub struct PanelStyle {
     pub muted: RgbColor,
     /// Color for modified/changed parameter markers.
     pub accent_modified: RgbColor,
-    /// CLI error/highlight color (migrated from hardcoded CLI_RED).
+    /// CLI error/highlight color.
     pub cli_color: RgbColor,
-    /// Focus background color for highlighted rows (migrated from hardcoded FOCUS_BG).
+    /// Focus background color for highlighted rows.
     pub focus_bg: RgbColor,
-    /// Default state color for ambient instrument indicator (aliased to muted).
+    /// State color for the ambient instrument indicator (aliased to `muted`).
     pub state_default: RgbColor,
     /// Accent color for a healthy FPS readout (currently unused).
     pub accent_fps_good: RgbColor,

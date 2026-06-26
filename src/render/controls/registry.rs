@@ -1,6 +1,5 @@
-//! Parameter kinds and descriptors for the Controls Instrument UI.
-//! Defines the type system for all parameters that can be displayed and manipulated
-//! in the Tuner and Console surfaces.
+//! Parameter kinds and descriptors for the Controls Instrument UI — the set of
+//! parameters shown and edited in the Tuner and Console surfaces.
 
 /// The kind of control parameter — determines how it's displayed and interacted with.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -22,50 +21,50 @@ pub enum ParamKind {
 /// Unique identifier for each parameter in the simulation and rendering system.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ParamId {
-    /// Sensor angle parameter.
+    /// Sensor angle.
     SensorAngle,
-    /// Sensor distance parameter.
+    /// Sensor distance.
     SensorDistance,
-    /// Turn angle parameter.
+    /// Turn angle.
     TurnAngle,
-    /// Step size parameter.
+    /// Step size.
     StepSize,
-    /// Decay parameter.
+    /// Trail decay factor.
     Decay,
-    /// Deposit parameter.
+    /// Deposit amount.
     Deposit,
-    /// Time scale parameter.
+    /// Time scale.
     TimeScale,
-    /// Diffusion kernel parameter.
+    /// Diffusion kernel.
     DiffusionKernel,
-    /// Diffusion sigma parameter.
+    /// Gaussian diffusion sigma.
     DiffusionSigma,
-    /// Wind parameter.
+    /// Wind direction.
     Wind,
-    /// Terrain type parameter.
+    /// Terrain type.
     TerrainType,
-    /// Terrain strength parameter.
+    /// Terrain strength.
     TerrainStrength,
-    /// Attractor parameter.
+    /// Attractor strength.
     Attractor,
 
-    /// Mouse mode parameter.
+    /// Mouse interaction mode.
     MouseMode,
-    /// Mouse timeout parameter.
+    /// Mouse idle timeout.
     MouseTimeout,
-    /// Theme parameter.
+    /// UI theme.
     Theme,
-    /// Palette parameter.
+    /// Color palette.
     Palette,
-    /// Charset parameter.
+    /// Glyph charset.
     Charset,
-    /// Color anti-aliasing parameter.
+    /// Color anti-aliasing.
     ColorAa,
-    /// Palette shift parameter.
+    /// Palette shift speed.
     PaletteShift,
-    /// Invert parameter.
+    /// Invert palette.
     Invert,
-    /// Reverse parameter.
+    /// Reverse palette.
     Reverse,
     /// Always-on status line (ambient base row) toggle.
     StatusLine,
@@ -73,32 +72,32 @@ pub enum ParamId {
     WindowFrame,
     /// Window chrome mode (Minimal / Expanded / Fullscreen).
     Chrome,
-    /// Dither parameter.
+    /// Dither mode (dev-only).
     Dither,
     /// Intensity (tone) mapping curve.
     IntensityMapping,
-    /// Auto-normalize parameter.
+    /// Auto-normalize brightness.
     AutoNormalize,
-    /// Motion blur parameter.
+    /// Motion blur.
     MotionBlur,
-    /// Brightness parameter.
+    /// Brightness.
     Brightness,
-    /// Trail age parameter.
+    /// Trail-age coloring.
     TrailAge,
-    /// Trail delta parameter.
+    /// Trail-delta coloring.
     TrailDelta,
-    /// Edge glow parameter.
+    /// Edge glow.
     EdgeGlow,
-    /// Fast mode parameter.
+    /// Fast mode.
     FastMode,
 
-    /// Population parameter.
+    /// Agent population (CLI-only, read-only at runtime).
     Population,
-    /// Save frame parameter.
+    /// Save current frame to PNG.
     SaveFrame,
-    /// Reset parameter.
+    /// Reset to defaults.
     Reset,
-    /// Randomize parameter.
+    /// Randomize parameters.
     Randomize,
 }
 

@@ -59,7 +59,7 @@ impl Profile {
 mod tests {
     use super::*;
 
-    /// from_preset for the same preset twice is deterministic / equal (dirty basis).
+    /// from_preset for the same preset twice resolves to equal profiles.
     #[test]
     fn from_preset_is_equal_for_same_preset() {
         let a = Profile::from_preset(Preset::Mold).expect("a");

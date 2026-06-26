@@ -1514,7 +1514,7 @@ mod tests {
 
     #[test]
     fn load_dialog_keeps_selection_visible() {
-        // 15 palettes, select the last: the old take(8) hid it; ListState windows to it.
+        // 15 palettes, select the last: the old take(8) hid it; scroll_start windows to it.
         let mut state = PaletteEditorState::new(&Palette::Forest);
         state.mode = EditorMode::LoadDialog;
         state.saved_palettes_list = (0..15)

@@ -817,13 +817,12 @@ impl PanelBuilder {
     }
 }
 
-/// Format a modal action-hint footer in the canonical "instrument voice".
+/// Format a modal action-hint footer.
 ///
 /// Each `(key, verb)` pair renders as `"{key} {verb}"`, joined with `" · "`.
 /// Keys are compact glyphs (`↵`, `esc`, `↑↓`, `←→`, `del`) and verbs are
-/// lowercase. This is the SINGLE source of truth for confirm/cancel/navigate
-/// hint grammar across every modal (Console, Dashboard, Save, Browser, Tuner,
-/// Notification, …) so the wording can never drift per-surface again.
+/// lowercase. Single source of truth for footer hint grammar so wording stays
+/// consistent across overlays.
 ///
 /// ```text
 /// footer_hints(&[("↵", "save"), ("esc", "cancel")]) == "↵ save · esc cancel"

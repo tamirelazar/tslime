@@ -1235,12 +1235,12 @@ impl DashboardOverlay {
             st.accent_error
         };
 
-        // ── Build gauges (width 15) ───────────────────────────────────────────
+        // ── Build gauges (FPS is width 32, the rest width 15) ─────────────────
         // Each gauge returns Vec<(char, RgbColor)>; we extract chars for the
         // string lines and store cells for rich_lines coloring.
         //
-        // gauge() uses accent_active for fill + value tick; we recolor the fill
-        // cells (all '█' + '│') with the threshold color in gauge_rich_overlay.
+        // gauge() uses accent_active for fill + value tick; the `recolor` closure
+        // below repaints the fill cells ('█' + '│') with the threshold color.
         let fps_gauge_cells = gauge(fps, (0.0, 60.0), 60.0, 32, st);
         let trail_gauge_cells = gauge(trail_percent, (0.0, 100.0), 100.0, 15, st);
         let entropy_gauge_cells = gauge(entropy, (0.0, 8.0), 8.0, 15, st);
@@ -1561,8 +1561,8 @@ impl DashboardOverlay {
     ///
     /// `gauge_overrides` and `legend_overrides` map body line indices
     /// (0-based in the raw `lines` vec) to `(content_col_offset, cells)` pairs.
-    /// The rendered lines have 1 top-border row prepended by PanelBuilder, so
-    /// body line `b` maps to rendered line `b + 1`.
+    /// PanelBuilder prepends 1 top-border row + 2 top-padding rows, so body line
+    /// `b` maps to rendered line `b + 3`.
     fn generate_rich_lines(
         lines: &[String],
         _fps: f32,

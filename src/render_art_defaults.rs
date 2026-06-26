@@ -2,9 +2,9 @@
 //!
 //! `RenderArtDefaults` is the render-layer counterpart to [`SimConfig`]: it is
 //! resolved from the active [`Preset`] alongside the sim config, carrying render
-//! parameters (currently `intensity_mapping`) that must not pollute the sim layer.
-//! For now every preset uses the historical global default (log10); tasteful
-//! per-preset values land in the showcase-presets issue (#36).
+//! parameters (intensity mapping, palette, charset, temporal color, afterglow,
+//! and more) that must not pollute the sim layer. Most presets resolve to the
+//! historical identity defaults; showcase presets carry art-on payloads.
 
 use crate::render::charset::Charset;
 use crate::render::palette::{IntensityMapping, Palette, PaletteCycle, RgbColor, TemporalMode};
@@ -12,8 +12,8 @@ use crate::simulation::config::Preset;
 
 /// Render-layer art defaults resolved per [`Preset`], emitted alongside
 /// [`crate::simulation::config::SimConfig`]. Keeps render concerns out of the
-/// sim layer (spec §5). Currently carries only `intensity_mapping`; later
-/// render-layer levers extend this struct.
+/// sim layer. Each field carries its own identity default; presets override the
+/// levers they style.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct RenderArtDefaults {
     /// Brightness→color tone curve. Default = global log10 (historical default).
@@ -151,29 +151,27 @@ impl From<Preset> for RenderArtDefaults {
                 auto_normalize: Some(true),
                 ..Self::default()
             },
-            // Network (Task 6): Braille charset for fine network filaments.
+            // Braille charset for fine network filaments.
             Preset::Network => Self {
                 charset: Some(Charset::Braille),
                 ..Self::default()
             },
-            // Exploratory (Task 7 step 1): Jade palette.
             Preset::Exploratory => Self {
                 palette: Some(Palette::Jade),
                 ..Self::default()
             },
-            // Organic (Task 8): Braille + Vibrant palette.
             Preset::Organic => Self {
                 charset: Some(Charset::Braille),
                 palette: Some(Palette::Vibrant),
                 ..Self::default()
             },
-            // Fire (Task 9): Quadrant charset + Subtle color-AA.
+            // Quadrant charset + Subtle color-AA.
             Preset::Fire => Self {
                 charset: Some(Charset::Quadrant),
                 color_aa: Some(AaStrength::Subtle),
                 ..Self::default()
             },
-            // Slime (Task 10): Quadrant + Strong AA + Slime palette + auto-normalize.
+            // Quadrant + Strong AA + Slime palette + auto-normalize.
             Preset::Slime => Self {
                 charset: Some(Charset::Quadrant),
                 color_aa: Some(AaStrength::Strong),
@@ -181,7 +179,7 @@ impl From<Preset> for RenderArtDefaults {
                 auto_normalize: Some(true),
                 ..Self::default()
             },
-            // Smoke (Task 12): Slate palette + auto-normalize.
+            // Slate palette + auto-normalize.
             Preset::Smoke => Self {
                 palette: Some(Palette::Slate),
                 auto_normalize: Some(true),
@@ -325,11 +323,10 @@ mod tests {
     use crate::render::palette::IntensityMapping;
     use crate::simulation::config::Preset;
 
-    /// The surviving "plain" presets that carry no art-on defaults (identity).
-    /// Showcase presets (Lumen/Etching + the completion-pass set) are excluded:
-    /// they carry art-on payloads, not identity.
-    // Presets with NO render-art overrides (back-compat identity set). River and
-    // Vines were given render mods (ocean/braille; auto-normalize) and so left this set.
+    /// Presets with NO render-art overrides (back-compat identity set).
+    /// Showcase presets (Etching and the rest) are excluded: they carry art-on
+    /// payloads, not identity. River and Vines were given render mods
+    /// (ocean/braille; auto-normalize) and so left this set.
     const EXISTING_PRESETS: [Preset; 8] = [
         Preset::Tendrils,
         Preset::PetriDish,

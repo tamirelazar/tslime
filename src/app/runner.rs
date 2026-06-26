@@ -1641,7 +1641,7 @@ pub fn run_simulation(
         // Narrow live reads instead of cloning the whole SimConfig (which carries heap Vecs
         // including obstacle masks). Species colors are the only Vec consumers, collected once
         // here and reused at both render sites. (DiffusionKernel is read directly via sim.config()
-        // where needed — the old local was removed in Task 15 with build_status_line.)
+        // where needed.)
         let current_species_rgb: Vec<crate::render::palette::RgbColor> =
             extract_species_rgb_colors(sim.config());
 
@@ -1766,7 +1766,7 @@ pub fn run_simulation(
         // overlay open-state (so esc / CloseOverlays / exclusivity keep working),
         // while `controls_depth` selects which depth (Console / Tuner) renders.
         //
-        // Task 15: Tuner depth is now handled entirely by the ambient strip (see
+        // Tuner depth is handled entirely by the ambient strip (see
         // ambient_overlay_built below). Only Console depth renders a separate
         // composite here; Tuner returns (None, 0, 0) so the bottom rows belong
         // exclusively to the ambient strip.
@@ -2077,7 +2077,7 @@ pub fn run_simulation(
             if runtime_state.overlay_state.is_open(OverlayType::ConfigSave)
                 && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
             {
-                // SPIKE: tui_input-backed field with a rendered caret (was append-only).
+                // tui_input-backed field with a rendered caret.
                 Some(crate::render::ratatui_adapter::build_config_save(
                     runtime_state.config_save_name_input.value(),
                     runtime_state.config_save_name_input.cursor(),
@@ -2337,7 +2337,6 @@ pub fn run_simulation(
                     // Skip warmup on any key press
                     if in_warmup {
                         runtime_state.warmup_counter = runtime_state.app.warmup_frames;
-                        // Skip to end
                     }
 
                     // Centralized overlay input handling: toggle keys, Escape, and
@@ -3539,7 +3538,7 @@ pub fn run_simulation(
                         | ControlAction::ControlsActivateFocused => {}
                     }
 
-                    // ── TUNE surfacing (Task 13) ─────────────────────────────
+                    // ── TUNE surfacing ───────────────────────────────────────
                     // When the dispatched action adjusted a single sim/render
                     // param, surface it in the ambient TUNE state (debounced):
                     // each adjust refreshes the hold so rapid adjusts extend it,
@@ -4160,7 +4159,7 @@ mod tests {
         assert_eq!(state.controls_category_idx, 0);
     }
 
-    // ── Task-14 tests ─────────────────────────────────────────────────────────
+    // ── Controls focus / auto-promote tests ────────────────────────────────────
 
     /// ControlsAdjustFocused from Closed must auto-promote depth to Tuner and
     /// then continue to dispatch the focused parameter's adjust action.
@@ -4392,7 +4391,7 @@ mod tests {
         );
     }
 
-    // ── Task-15 tests ─────────────────────────────────────────────────────────
+    // ── Ambient mode resolution tests ───────────────────────────────────────────
 
     #[test]
     fn ambient_hidden_when_controls_depth_is_console() {

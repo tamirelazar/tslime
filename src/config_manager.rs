@@ -33,9 +33,9 @@ struct ConfigFile {
 /// Convert a `TerrainType` value to the string form used by `ProfileOverrides.terrain`.
 ///
 /// `TerrainType` only implements `FromStr` (no `Display`), so this helper provides
-/// the reverse mapping for capture.  Returns `None` for `TerrainType::None` so that
-/// the field round-trips identically to what `from_args` emits for the default
-/// `--terrain none` flag.
+/// the reverse mapping for capture. The `Option` matches the field's type; every
+/// variant maps to a name so the field round-trips identically to what `from_args`
+/// emits.
 fn terrain_name(t: TerrainType) -> Option<String> {
     match t {
         TerrainType::None => Some("none".to_string()),
@@ -62,32 +62,25 @@ pub fn capture_overrides(
     // Convert sim.max_brightness (white-point) back to user-facing brightness gain.
     let brightness_gain = crate::config_defaults::trail::brightness_gain(sim_config.max_brightness);
 
-    // Temporal accent: convert Option<RgbColor> to the typed field.
     let temporal_accent = rs.temporal_accent;
 
-    // palette_cycle: convert from the live PaletteCycle struct.
+    // An identity cycle is the default, so record None rather than reading dirty.
     let palette_cycle = if rs.palette_cycle.is_identity() {
         None
     } else {
         Some(rs.palette_cycle)
     };
 
-    // glyph: convert GlyphConfig to the typed Option<GlyphSelection> + threshold.
     let (glyph_selection, glyph_edge_threshold) = match rs.glyph.selection {
         None => (None, None),
         Some(sel) => (Some(sel), Some(rs.glyph.edge_threshold)),
     };
 
-    // color_aa: convert the fixed array to Option<AaStrength> via the single
-    // scalar (ProfileOverrides.color_aa is Option<AaStrength>, not a Vec).
-    // The old code saved a Vec<String> per-charset; the new ProfileOverrides has
-    // a single AaStrength scalar (the active charset's setting).  We save the
-    // active charset's value — apply reads it back into all slots defensively as
-    // before.  This is a slight simplification from the old per-slot vec; see
-    // Phase C for a full per-slot upgrade.
+    // ProfileOverrides.color_aa is a single AaStrength scalar, so save the active
+    // charset's value; apply reads it back into all slots. The full per-charset
+    // array is preserved separately in color_aa_all below.
     let color_aa = Some(rs.color_aa[rs.charset_index % rs.color_aa.len()]);
 
-    // intensity_mapping: save the live session mapping.
     let intensity_mapping = Some(rs.intensity_mapping.clone());
 
     ProfileOverrides {
@@ -95,7 +88,7 @@ pub fn capture_overrides(
         preset: None,
         seed: None,
 
-        // sim levers (sourced from sim_config, same as old from_runtime)
+        // sim levers (sourced from sim_config)
         sensor_angle: Some(sim_config.sensor_angle),
         sensor_distance: Some(sim_config.sensor_distance),
         rotation_angle: Some(sim_config.rotation_angle),
@@ -108,7 +101,7 @@ pub fn capture_overrides(
         // sim levers — time_scale is live-editable via +/- keys so capture the live value.
         time_scale: Some(rs.time_scale),
         // population: capture for display (config-browser "Nk agents") only; a
-        // restart-only lever (not live-applied). Mirrors old from_runtime: first_species.count.
+        // restart-only lever, not live-applied.
         population: Some(sim_config.total_population()),
         fps: None,
         food_image_path: None,
@@ -176,7 +169,7 @@ pub fn capture_overrides(
         deposit_gamma: Some(rs.deposit_gamma),
         deposit_cap: Some(rs.deposit_cap),
 
-        // render levers (sourced from runtime_state, same as old from_runtime)
+        // render levers (sourced from runtime_state)
         palette: Some(palette),
         charset: Some(charset),
         color_aa,
@@ -199,7 +192,7 @@ pub fn capture_overrides(
         reverse_palette: Some(rs.reverse_palette),
         invert_palette: Some(rs.invert_palette),
         food_persist: Some(rs.food_persist_enabled),
-        // Full per-charset AA array — mirrors old from_runtime which stored the whole array.
+        // Full per-charset AA array (color_aa above is just the active charset's scalar).
         color_aa_all: Some(rs.color_aa.to_vec()),
 
         // app-runtime levers — sourced from rs.app (live session values).

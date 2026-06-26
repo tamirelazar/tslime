@@ -1,15 +1,14 @@
 //! Window frame rendering for terminal display.
 //!
-//! This module draws the chrome ring around the simulation viewport. The
-//! windowed layout ([`crate::render::window`]) reserves an **aspect-aware ring**
-//! (`ring_cols` columns left/right, `ring_rows` rows top/bottom, configurable via
-//! `SimConfig::frame_matte_cols`/`frame_matte_rows`) and insets the simulation by
-//! that ring, so the simulation never renders under the border. The horizontal
-//! ring is wider than the vertical one so the border + inner matte read as
-//! visually even on terminals whose cells are roughly 1:2 (width:height). The
-//! renderer fills the ring with an outer accent band plus an inner
-//! background-colored matte, which also keeps trail content from bleeding past
-//! the frame in the blit path (`render_window_frame_at`, which skips blank cells).
+//! Draws the chrome ring around the simulation viewport. The windowed layout
+//! ([`crate::render::window`]) reserves a ring (`ring_cols` columns left/right,
+//! `ring_rows` rows top/bottom, set via
+//! `SimConfig::frame_matte_cols`/`frame_matte_rows`) and insets the simulation
+//! by it, so the simulation never renders under the border. The horizontal ring
+//! is wider than the vertical one to offset the ~1:2 (width:height) terminal
+//! cell aspect. The ring is filled with an outer accent band plus an inner
+//! background-colored matte; the matte also keeps trail content from bleeding
+//! past the frame in the blit path (`render_window_frame_at` skips blank cells).
 
 use crate::render::palette::RgbColor;
 use crate::simulation::config::WindowFrame;
@@ -152,11 +151,9 @@ impl WindowFrameRenderer {
         }
     }
 
-    /// Renders a thin-line box at the outer ring edge, with a background **matte**
-    /// between the box and the simulation. The matte (the rest of the ring) gives
-    /// a visible gap so trail content does not touch the border. The matte is
-    /// wider in columns than rows so it reads as visually even (see the
-    /// `ring_cols`/`ring_rows` fields).
+    /// Renders a thin-line box at the outer ring edge, with a background matte
+    /// (the rest of the ring) between the box and the simulation so trail
+    /// content does not touch the border.
     fn render_frame(&self, buffer: &mut FrameBuffer) {
         let width = buffer.width();
         let height = buffer.height();

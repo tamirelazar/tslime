@@ -14,8 +14,8 @@
 //!   row 5:  (bottom margin / status-bar clearance)
 //! ```
 //!
-//! The caller (Task 13) is responsible for positioning the overlay at the bottom of the
-//! terminal and for wiring depth dispatch in `build_controls`.
+//! The caller positions the overlay at the bottom of the terminal and wires depth
+//! dispatch in `build_controls`.
 
 use crate::render::controls::registry::ParamKind;
 use crate::render::controls::value::heatmap_slider;
@@ -53,9 +53,9 @@ const RECENT_SLOT_W: usize = 18;
 ///
 /// Layout (within the strip):
 /// ```text
-///  col 2  : "[key] Label"           ← accent_active
-///  col 22 : kind widget             ← heatmap/enum/toggle/action/dim
-///  right  : value text              ← accent_active (or muted)
+///  col 2  : "[key] Label"           ← accent
+///  col 22 : kind widget             ← heatmap/enum/toggle/action/read-only
+///  right  : value text              ← accent (or muted for CLI/Display)
 /// ```
 fn render_focused(
     row: &mut RowBuf,
@@ -65,7 +65,7 @@ fn render_focused(
     style: &PanelStyle,
     truecolor: bool,
 ) {
-    // Left: "[key] Label" (up to 20 chars)
+    // Left: "[key] Label", truncated to 18 chars.
     let head = format!("[{}] {}", pv.desc.key_hint, pv.desc.label);
     let head: String = head.chars().take(18).collect();
     row.put(2, &head, Some(accent), None);
@@ -118,7 +118,7 @@ fn render_focused(
             row.put(widget_start, "↵ run", Some(accent), None);
         }
         ParamKind::CliReadonly | ParamKind::Display => {
-            // Dimmed value — already shown on the right; show a hint here
+            // Value is shown on the right; the widget slot just flags read-only.
             row.put(widget_start, "(read-only)", Some(style.muted), None);
         }
     }
@@ -131,8 +131,8 @@ fn render_focused(
 /// - `focused`: the currently focused parameter (shown as a kind-aware widget in the
 ///   focused row).
 /// - `recent`: recently-touched parameters shown in the RECENT ambient row. Each is
-///   displayed as `label  value` (no sparkline history — [`ParamView`] carries no history
-///   slice; a real history source is wired by the runner and is out of scope for this task).
+///   displayed as `label  value`; [`ParamView`] carries no history slice, so the row
+///   renders a single-sample sparkline rather than a rolling history.
 /// - `style`: the active [`PanelStyle`] for colour selection.
 /// - `accent`: caller-supplied accent colour from the active simulation palette.
 /// - `truecolor`: when `true`, the heatmap slider uses a green→red gradient; when
@@ -163,8 +163,7 @@ pub fn build_tuner(
     bufs.push(border);
 
     // ── row 1: RECENT ambient row ─────────────────────────────────────────────
-    // ParamView has no history slice; we render current-value sparkline-of-one.
-    // A real rolling history would be supplied by the runner (out of scope: Task 13+).
+    // ParamView has no history slice, so each entry renders a single-sample sparkline.
     {
         let mut rrow = RowBuf::new_matte(w, style.status_bar_bg);
         rrow.put(2, "RECENT", Some(style.muted), None);

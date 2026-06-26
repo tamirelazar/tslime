@@ -114,7 +114,7 @@ pub mod trail {
     pub const MAX_DECAY_FACTOR: f32 = 0.9999;
     /// Minimum diffusion sigma.
     pub const MIN_DIFFUSION_SIGMA: f32 = 0.5;
-    /// Maximum diffusion sigma (widened from 2.0 to support the separable path).
+    /// Maximum diffusion sigma (the separable blur path supports up to 4.0).
     pub const MAX_DIFFUSION_SIGMA: f32 = 4.0;
     /// Minimum max brightness.
     pub const MIN_MAX_BRIGHTNESS: f32 = 1.0;
@@ -133,7 +133,7 @@ pub mod trail {
     pub const MIN_AFTERGLOW: f32 = 0.0;
     /// Maximum afterglow strength.
     pub const MAX_AFTERGLOW: f32 = 1.0;
-    /// Default diffuse-weight blend (1.0 = full blur, byte-identical to today).
+    /// Default diffuse-weight blend (1.0 = full blur).
     pub const DEFAULT_DIFFUSE_WEIGHT: f32 = 1.0;
     /// Minimum diffuse-weight blend.
     pub const MIN_DIFFUSE_WEIGHT: f32 = 0.0;

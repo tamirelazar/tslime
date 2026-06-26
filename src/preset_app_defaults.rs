@@ -25,13 +25,10 @@ impl Default for PresetAppDefaults {
 impl From<Preset> for PresetAppDefaults {
     fn from(preset: Preset) -> Self {
         match preset {
-            // Constellation holds its figure indefinitely via the per-frame
-            // template re-stamp, so it must NOT auto-reset — a reset would drop
-            // the held figure. Entropy threshold is moot while auto_reset is
-            // false; set 0.0 to keep the detector off explicitly.
-            // Both Constellation and Trademark hold their figure
-            // indefinitely via the per-frame re-stamp, so they must NOT
-            // auto-reset (a reset would drop the held picture).
+            // Constellation and Trademark hold their figure indefinitely via the
+            // per-frame template re-stamp, so they must NOT auto-reset — a reset
+            // would drop the held figure. Entropy threshold is moot while
+            // auto_reset is false; 0.0 keeps the detector off explicitly.
             Preset::Constellation | Preset::Trademark => Self {
                 auto_reset: false,
                 entropy_threshold: 0.0,

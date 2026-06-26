@@ -68,7 +68,6 @@ pub fn heatmap_slider(
                 ('│', dim)
             } else if i < filled {
                 let col = if truecolor {
-                    // value-magnitude heatmap: green→red as position increases
                     let t = i as f32 / width as f32;
                     RgbColor {
                         r: (90.0 + 140.0 * t) as u8,

@@ -1086,7 +1086,6 @@ impl Simulation {
             let current = self.trail_maps[0].current();
             let a = self.temporal_alpha;
             for ((l, d), &c) in lag.iter_mut().zip(diff.iter_mut()).zip(current.iter()) {
-                // EMA toward current; diff is the SIGNED, un-normalized lead.
                 *l = a * c + (1.0 - a) * *l;
                 *d = c - *l;
             }

@@ -33,7 +33,7 @@ use crate::render::theme::PanelStyle;
 /// terminals and `false` for 256-colour or below.
 ///
 /// `term_width` is forwarded to [`build_tuner`] so the strip fills the full
-/// terminal width instead of the default [`STRIP_W`] minimum.
+/// terminal width instead of its default minimum width.
 #[allow(clippy::too_many_arguments)]
 pub fn build_controls(
     depth: ControlsDepth,

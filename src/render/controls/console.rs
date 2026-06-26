@@ -274,15 +274,13 @@ pub fn build_console(
     //   row 3:   kind widget row 1  (gauge bar / option hint / toggle pill / …)
     //   row 4:   kind widget row 2  (tick labels / secondary hint / blank)
     //
-    // The detail no longer restates the label in a derived description line —
-    // the header + kind widget already convey what the param is and how to drive
-    // it, so the placeholder "<Label> — adjust with keybind" sentence is dropped.
+    // No restated description line: the header + kind widget already convey what
+    // the param is and how to drive it.
     let mut right: Vec<RowBuf> = Vec::new();
 
     if !params.is_empty() {
         let pv = &params[focus_clamped];
 
-        // ── row 0: header ───────────────────────────────────────────────────
         let mut head = RowBuf::new(RIGHT_W);
         head.put(0, pv.desc.label, Some(style.text_primary), None);
         let key_str = format!("[{}]", pv.desc.key_hint);
@@ -294,10 +292,9 @@ pub fn build_console(
         head.put(key_start, &key_str, key_col, None);
         right.push(head);
 
-        // ── row 1: blank spacer ─────────────────────────────────────────────
+        // row 1: blank spacer
         right.push(RowBuf::new(RIGHT_W));
 
-        // ── row 2: primary value / affordance ──────────────────────────────
         let mut valrow = RowBuf::new(RIGHT_W);
         match pv.desc.kind {
             ParamKind::Numeric => {
@@ -323,14 +320,12 @@ pub fn build_console(
                 );
             }
             ParamKind::Enum => {
-                // Current value prominently; no gauge ticks
                 valrow.put(0, &pv.value_text, Some(style.text_primary), None);
                 let hint = "← → to cycle";
                 let hint_start = RIGHT_W.saturating_sub(hint.len());
                 valrow.put(hint_start, hint, Some(style.muted), None);
             }
             ParamKind::Toggle => {
-                // On/off pill
                 let (pill_text, pill_col) = if pv.value_text.eq_ignore_ascii_case("on")
                     || pv.value_text == "true"
                     || pv.value_text == "1"
@@ -342,18 +337,15 @@ pub fn build_console(
                 valrow.put(0, pill_text, Some(pill_col), None);
             }
             ParamKind::Action => {
-                // "↵ to run" affordance
                 valrow.put(0, "↵ to run", Some(style.accent_active), None);
             }
             ParamKind::CliReadonly => {
-                // Value + "restart to change"
                 valrow.put(0, &pv.value_text, Some(style.cli_color), None);
                 let hint = "restart to change";
                 let hint_start = RIGHT_W.saturating_sub(hint.len());
                 valrow.put(hint_start, hint, Some(style.cli_color), None);
             }
             ParamKind::Display => {
-                // Value, dimmed
                 valrow.put(0, &pv.value_text, Some(style.muted), None);
             }
         }
@@ -363,7 +355,7 @@ pub fn build_console(
         match pv.desc.kind {
             ParamKind::Numeric => {
                 if let (Some(ratio), Some(def_ratio)) = (pv.ratio, pv.def_ratio) {
-                    // row 3: large gauge bar
+                    // row 3: gauge bar
                     let gw = RIGHT_W.saturating_sub(2);
                     let mut grow = RowBuf::new(RIGHT_W);
                     grow.put_cells(
@@ -412,31 +404,24 @@ pub fn build_console(
                 right.push(RowBuf::new(RIGHT_W));
             }
             ParamKind::Toggle => {
-                // row 3: press key to toggle hint
                 let mut trow = RowBuf::new(RIGHT_W);
                 trow.put(0, "press key to toggle", Some(style.muted), None);
                 right.push(trow);
-                // row 4: blank
                 right.push(RowBuf::new(RIGHT_W));
             }
             ParamKind::Action => {
-                // row 3: confirm prompt
                 let mut arow = RowBuf::new(RIGHT_W);
                 arow.put(0, "no undo — runs immediately", Some(style.muted), None);
                 right.push(arow);
-                // row 4: blank
                 right.push(RowBuf::new(RIGHT_W));
             }
             ParamKind::CliReadonly => {
-                // row 3: set via flag hint
                 let mut crow = RowBuf::new(RIGHT_W);
                 crow.put(0, "set via CLI flag at launch", Some(style.muted), None);
                 right.push(crow);
-                // row 4: blank
                 right.push(RowBuf::new(RIGHT_W));
             }
             ParamKind::Display => {
-                // rows 3–4: blank
                 right.push(RowBuf::new(RIGHT_W));
                 right.push(RowBuf::new(RIGHT_W));
             }

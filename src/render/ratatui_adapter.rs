@@ -64,10 +64,8 @@ pub fn stamp_caret(
 
 /// Compute the first-visible row index so `selected` stays within the visible window.
 ///
-/// Mirrors `ConfigBrowserOverlay::config_browser_window`: pins the selection to the
-/// bottom of the `[start, start + max_visible)` window and clamps so the window never
-/// runs past the end of the list. Replaces `list_scroll_offset` for all callers that
-/// only need the start index (no ratatui).
+/// Pins the selection to the bottom of the `[start, start + max_visible)` window and
+/// clamps so the window never runs past the end of the list.
 pub fn scroll_start(total: usize, selected: usize, max_visible: usize) -> usize {
     if total <= max_visible || max_visible == 0 {
         return 0;
@@ -76,9 +74,8 @@ pub fn scroll_start(total: usize, selected: usize, max_visible: usize) -> usize 
     sel.saturating_sub(max_visible - 1).min(total - max_visible)
 }
 
-/// Option-B config browser: **chrome is the existing `PanelBuilder`** (title box,
-/// block border, footer — pixel-identical to the current app), with hand-rolled
-/// scroll-window math keeping the selection visible.
+/// Config browser overlay: `PanelBuilder` chrome (title box, block border, footer) plus
+/// scroll-window math that keeps the selection visible.
 ///
 /// `active_name` — when `Some(name)`, the row whose `config.name == name` gets a `▶`
 /// prefix to mark it as the currently-loaded config (in addition to the `›` cursor).
@@ -149,10 +146,9 @@ const SAVE_CONTENT_WIDTH: usize = 34;
 /// Visible width of the editable name field.
 const SAVE_FIELD_WIDTH: usize = 25;
 
-/// Option-B config-save dialog: PanelBuilder chrome plus a `tui_input`-backed editable
-/// field with a block caret ([`stamp_caret`]). `value`/`cursor` come from
-/// `tui_input::Input`, enabling mid-string insert/delete and Home/End/arrows — the
-/// hand-rolled version only did append + backspace with the cursor pinned to the end.
+/// Config-save dialog: `PanelBuilder` chrome plus a `tui_input`-backed editable field
+/// with a block caret ([`stamp_caret`]). `value`/`cursor` come from `tui_input::Input`,
+/// supporting mid-string insert/delete and Home/End/arrows.
 pub fn build_config_save(value: &str, cursor: usize, style: &PanelStyle) -> RenderedOverlay {
     use TextAlignment::Left;
 
@@ -223,7 +219,6 @@ mod tests {
             beta_content.starts_with("  2 "),
             "non-selected beta row must start with '  2 ' (space+space+index, after border+padding):\n{beta_line}\ncontent: {beta_content}"
         );
-        // Footer hints present (B1 had dropped these). Unified instrument-voice grammar.
         assert!(text.contains("↑↓ navigate"), "nav footer missing:\n{text}");
         assert!(text.contains("esc cancel"), "esc footer missing:\n{text}");
     }
@@ -238,7 +233,7 @@ mod tests {
         );
     }
 
-    /// Hand-rolled scroll_start keeps the selection visible — no ratatui ListState.
+    /// `scroll_start` keeps the selection visible when it scrolls past the window.
     #[test]
     fn selection_stays_visible_when_scrolled_past_window() {
         let configs: Vec<_> = (0..30).map(|i| profile(&format!("cfg{i:02}"))).collect();
@@ -334,7 +329,7 @@ mod tests {
 
     const BROWSER_WIDTH_TOTAL: usize = 56;
 
-    /// The caret cell tracks the cursor mid-string (the win over append-only editing).
+    /// The caret cell tracks the cursor mid-string.
     #[test]
     fn save_dialog_caret_follows_cursor() {
         let style = crate::render::theme::PanelStyle::default();

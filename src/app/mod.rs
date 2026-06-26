@@ -76,7 +76,7 @@ pub fn extract_species_rgb_colors(config: &SimConfig) -> Vec<RgbColor> {
 /// runtime-state change" (load / undo / redo / randomize / reset). Keeping it in one place
 /// prevents the per-handler drift that left charset and intensity-mapping unapplied on load.
 pub fn sync_renderer_caches(runtime_state: &RuntimeState, renderer: &mut TerminalRenderer) {
-    // Push the EXACT live palette/charset (incl. Custom/CustomAscii), not the lossy
+    // Push the exact live palette/charset (incl. Custom/CustomAscii), not the lossy
     // index reconstruction — so a custom palette in a loaded config survives apply.
     renderer.set_palette(runtime_state.live_palette.clone());
     renderer.set_invert_palette(runtime_state.invert_palette);
@@ -116,8 +116,8 @@ pub fn apply_live_params(
     new_config.terrain = runtime_state.terrain_type;
     new_config.terrain_strength = runtime_state.terrain_strength;
     new_config.attractor_strength = runtime_state.attractor_strength;
-    // LOSSLESS wind: use the precise vector, not the coarse direction reconstruction
-    // (which would rewrite e.g. (0.3, 0.0) into (1.0, 0.0)) ([P1b]).
+    // Use the precise wind vector, not the coarse direction reconstruction
+    // (which would rewrite e.g. (0.3, 0.0) into (1.0, 0.0)).
     new_config.wind = runtime_state.wind;
     sim.update_config(new_config);
 
@@ -128,9 +128,9 @@ pub fn apply_live_params(
 /// sim compute buffers. Shared by startup, live preset-switch, reset, and the
 /// config-load apply seam so the paths can't diverge.
 ///
-/// Sets `rs.live_palette`/`rs.live_charset` to the EXACT resolved values (incl.
+/// Sets `rs.live_palette`/`rs.live_charset` to the exact resolved values (incl.
 /// `Custom`/`CustomAscii`) in addition to the lossy indices, so a custom palette
-/// survives a load instead of falling back to the index palette ([P0] render-lossy).
+/// survives a load instead of falling back to the index palette.
 pub(crate) fn apply_render_config(
     r: &crate::render_art_defaults::ResolvedRenderConfig,
     rs: &mut RuntimeState,
@@ -170,7 +170,7 @@ pub(crate) fn apply_render_config(
     rs.palette_shift_speed = crate::terminal::state::palette_shift_speed_of(r.hue_shift);
 
     // Adaptive-brightness baseline (the runner rebuilds AdaptiveBrightness from this
-    // after a swap). A preset may default this ON.
+    // after a swap). A preset may default this on.
     rs.auto_normalize = r.auto_normalize;
 
     // Temporal + afterglow runtime state and sim compute toggles.
@@ -186,8 +186,8 @@ pub(crate) fn apply_render_config(
 
 /// A fresh, per-call-unique seed for unpinned restarts.
 ///
-/// MUST be per-call-unique ([P1]): seconds-resolution `SystemTime` would let two
-/// swaps in one second reuse a seed. `rand::random::<u64>()` is unique per call.
+/// Must be per-call-unique: seconds-resolution `SystemTime` would let two swaps in
+/// one second reuse a seed. `rand::random::<u64>()` is unique per call.
 pub(crate) fn fresh_seed() -> u64 {
     rand::random::<u64>()
 }
@@ -238,7 +238,7 @@ pub(crate) fn apply_window(
 
     renderer.set_dimensions(tw, th);
 
-    // Recompute layout + derive render dims from the SAME layout (resize-block parity).
+    // Recompute layout + derive render dims from the same layout (resize-block parity).
     let (render_w, render_h) = {
         let layout = if matches!(sim_config.chrome_style, ChromeStyle::Fullscreen) {
             None
@@ -269,13 +269,13 @@ pub(crate) fn apply_window(
     }
 }
 
-/// The ONE total apply seam: applies EVERY lever of a `ProfileOverrides` —
-/// sim, render, app-runtime, and apply-only flags — and totally syncs the
-/// renderer, window, grid, and (when `restart`) the simulation seed + init mode.
+/// The single apply seam for a `ProfileOverrides`: applies every lever — sim,
+/// render, app-runtime, and apply-only flags — and syncs the renderer, window,
+/// grid, and (when `restart`) the simulation seed + init mode.
 ///
-/// This is the spine of config-load: a load applies all levers, syncs the renderer
-/// completely (incl. Custom palette/charset via `live_*`), preserves PRECISE wind,
-/// and restarts with the correct init mode + seed (unpinned saved config → a fresh
+/// This is the spine of config-load. It applies all levers, syncs the renderer
+/// (incl. Custom palette/charset via `live_*`), preserves precise wind, and
+/// restarts with the correct init mode + seed (unpinned saved config → a fresh
 /// per-call-unique random seed; pinned `seed` honored verbatim).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_overrides(
@@ -293,29 +293,28 @@ pub(crate) fn apply_overrides(
 ) -> Result<(), String> {
     let profile = ov.resolve()?;
 
-    // 1. Full sim push (terrain, PRECISE wind, attractors, obstacles+masks, …).
+    // 1. Full sim push (terrain, precise wind, attractors, obstacles+masks, …).
     sim.update_config(profile.sim.clone());
 
-    // 2. Mirror sim levers into RuntimeState — LOSSLESS wind ([P1b]).
+    // 2. Mirror sim levers into RuntimeState (lossless wind).
     rs.sync_sim_levers(&profile.sim);
 
-    // 3. App-runtime config ([P0a]) — the live source for warmup/auto-reset/grid/food.
+    // 3. App-runtime config — the live source for warmup/auto-reset/grid/food.
     rs.app = profile.app.clone();
 
     // 4. Render side: indices + intensity/cycle/glyph/temporal/afterglow + sim toggles.
-    //    apply_render_config sets rs.live_palette/live_charset to EXACT values.
+    //    apply_render_config sets rs.live_palette/live_charset to exact values.
     apply_render_config(&profile.render, rs, renderer, sim);
 
-    // 5. Apply-only flags the resolved Profile does NOT carry — straight from overrides.
+    // 5. Apply-only flags the resolved Profile does not carry — straight from overrides.
     rs.reverse_palette = ov.reverse_palette.unwrap_or(false);
     rs.invert_palette = ov.invert_palette.unwrap_or(false);
     rs.food_persist_enabled = ov.food_persist.unwrap_or(false);
-    // Per-charset color-AA: delegate to apply_color_aa_all (Task 5 helper).
     rs.apply_color_aa_all(ov);
     renderer.set_color_aa(rs.current_color_aa());
 
-    // 6. TOTAL renderer sync ([P1a]) — push EVERYTHING the renderer caches, using
-    //    the EXACT live palette/charset (not the lossy index reconstruction).
+    // 6. Renderer sync — push everything the renderer caches, using the exact
+    //    live palette/charset (not the lossy index reconstruction).
     sync_renderer_caches(rs, renderer);
     renderer.set_background_color(profile.sim.background_color.as_deref().and_then(hex_to_rgb));
 
@@ -330,10 +329,10 @@ pub(crate) fn apply_overrides(
     );
     rs.set_render_baseline(profile.render.clone());
 
-    // 8. Rebuild the grid overlay from the new (complete) app config ([P0a]).
+    // 8. Rebuild the grid overlay from the new (complete) app config.
     *grid_renderer = build_grid_renderer(&rs.app, term_size);
 
-    // 9. Restart with CORRECT init + seed ([P0b]).
+    // 9. Restart with the correct init + seed.
     if restart {
         let init = profile.sim.preferred_init_mode.unwrap_or(InitMode::Food);
         let seed = profile.seed.unwrap_or_else(fresh_seed);
@@ -763,7 +762,7 @@ pub fn print_mode(
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
-    // Read the RESOLVED auto-normalize so `--preset slime --print` honors the preset.
+    // Read the resolved auto-normalize so `--preset slime --print` honors the preset.
     let mut adaptive_brightness =
         AdaptiveBrightness::new(args.normalize_window, render.auto_normalize);
     adaptive_brightness.update(downsampled.cells());
@@ -907,8 +906,8 @@ pub fn capture_frames_mode(
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let color_mode = args.color_mode().unwrap_or(ColorMode::Bits256);
 
-    // Resolve the render config first so adaptive-brightness reads the RESOLVED
-    // auto-normalize (a preset may default it ON) rather than the raw CLI flag.
+    // Resolve the render config first so adaptive-brightness reads the resolved
+    // auto-normalize (a preset may default it on) rather than the raw CLI flag.
     let render = crate::profile::Profile::resolve_from_args(args)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
         .render;
@@ -1147,8 +1146,8 @@ pub fn export_gif_mode(
     let mut gif_exporter = GifExporter::new(width, height, output_path, args.export_fps)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-    // Resolve the render config first so adaptive-brightness reads the RESOLVED
-    // auto-normalize (a preset may default it ON) rather than the raw CLI flag.
+    // Resolve the render config first so adaptive-brightness reads the resolved
+    // auto-normalize (a preset may default it on) rather than the raw CLI flag.
     let render = crate::profile::Profile::resolve_from_args(args)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
         .render;
@@ -1326,8 +1325,8 @@ pub fn export_webm_mode(
     let mut webm_exporter = WebmExporter::new(width, height, output_path, args.export_fps)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-    // Resolve the render config first so adaptive-brightness reads the RESOLVED
-    // auto-normalize (a preset may default it ON) rather than the raw CLI flag.
+    // Resolve the render config first so adaptive-brightness reads the resolved
+    // auto-normalize (a preset may default it on) rather than the raw CLI flag.
     let render = crate::profile::Profile::resolve_from_args(args)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
         .render;
@@ -1513,7 +1512,7 @@ mod tests {
             .position(|c| *c == Charset::Ascii)
             .unwrap();
         rs.charset_index = ascii_idx;
-        // Callers keep index and the EXACT live value in sync (Step 4b); sync_renderer_caches
+        // Callers keep index and the exact live value in sync; sync_renderer_caches
         // now pushes the exact live_charset so Custom/CustomAscii survive a load.
         rs.live_charset = Charset::Ascii;
         rs.window_frame = WindowFrame::Glow;
@@ -1689,20 +1688,16 @@ mod tests {
     }
 
     /// Proves that temporal_strength > 0.0 reaches the export render path and
-    /// changes pixel output relative to temporal_strength == 0.0.
+    /// changes pixel output relative to temporal_strength == 0.0, exercising the
+    /// set_compute_temporal → downsample_aux → from_downsampled chain that
+    /// capture_frames_mode, export_gif_mode, and export_webm_mode use.
     ///
-    /// This is the seam test for B9.  It directly exercises the
-    /// set_compute_temporal → downsample_aux → from_downsampled call chain that
-    /// capture_frames_mode, export_gif_mode, and export_webm_mode now use.
-    ///
-    /// The test works at two levels:
-    ///  1. Structural: verifies that set_compute_temporal allocates the diff
-    ///     buffer and that temporal_diff() returns Some(...) with non-zero values
-    ///     after running the simulation.
-    ///  2. Pixel: synthetically injects a known non-zero signed_diff into an
-    ///     AuxFrame cell and asserts that from_downsampled with a temporal
-    ///     strength above 0.0 produces different pixels than with strength 0.0,
-    ///     using the same DownsampledFrame so the only variable is temporal modulation.
+    /// Two levels:
+    ///  1. Structural: set_compute_temporal allocates the diff buffer and
+    ///     temporal_diff() returns non-zero values after running the sim.
+    ///  2. Pixel: inject a known non-zero signed_diff into an AuxFrame and assert
+    ///     that from_downsampled with temporal strength > 0.0 produces different
+    ///     pixels than strength 0.0, holding the DownsampledFrame fixed.
     #[test]
     fn temporal_color_changes_export_pixels() {
         use crate::render::downsample::{AuxCell, AuxFrame, Cell as DownsampleCell};
@@ -1839,7 +1834,7 @@ mod tests {
         assert!(sim.afterglow_lag().is_some());
     }
 
-    // ── apply_overrides seam (Phase C, Task 3) ──────────────────────────────────
+    // ── apply_overrides seam ─────────────────────────────────────────────────────
 
     /// Build the doubles `apply_overrides` operates on: a runtime state, renderer,
     /// simulation, frame timer, optional grid, window, and frame/aux buffers.

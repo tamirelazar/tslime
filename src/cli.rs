@@ -3229,7 +3229,7 @@ mod tests {
         assert_eq!(r.color_aa, AaStrength::Off);
     }
 
-    // --- switch/reset/Model-B/toggle resolution matrix (Task 17) ---
+    // --- switch/reset/Model-B/toggle resolution matrix ---
 
     /// identity → art-on: Mold carries temporal and afterglow levers.
     #[test]
@@ -3244,7 +3244,7 @@ mod tests {
     }
 
     /// art-on → identity: Network carries no art-on levers (temporal=0, afterglow=0).
-    /// Also verifies the sim toggle clears the buffer when set to false (Task 11).
+    /// Also verifies the sim toggle clears the buffer when set to false.
     #[test]
     fn switch_art_on_to_identity_disables_levers() {
         use crate::simulation::config::{InitMode, SimConfig};
@@ -3256,7 +3256,7 @@ mod tests {
             .render;
         assert_eq!(r.temporal_color, 0.0, "network must have temporal_color=0");
         assert_eq!(r.afterglow, 0.0, "network must have afterglow=0");
-        // Verify sim toggle properly clears when turned off (Task 11 getter coverage).
+        // Verify sim toggle properly clears when turned off.
         let mut sim = Simulation::new(40, 20, SimConfig::default(), 42, InitMode::Random, 0);
         sim.set_compute_temporal(true, 0.2);
         sim.set_compute_temporal(r.temporal_color > 0.0, 0.2);

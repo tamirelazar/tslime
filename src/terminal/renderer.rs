@@ -156,7 +156,7 @@ impl TerminalRenderer {
         }
     }
 
-    /// Set the phase clock for overlay motion (title-box breath, eases).
+    /// Set the phase clock (monotonic seconds) driving the title-box breath.
     pub fn set_phase_clock(&mut self, t: f32) {
         self.phase_clock = t;
     }
@@ -1129,8 +1129,8 @@ impl TerminalRenderer {
             draw_overlay(&mut buffer, overlay, x, y, &OverlayConfig::PALETTE_EDITOR);
         }
 
-        // Ambient BASE surface — bottom-docked always-on strip (Task 12).
-        // Composited last: the ambient strip paints over the bottom rows, above all other overlays.
+        // Ambient BASE surface — bottom-docked always-on strip, composited last so
+        // it paints over the bottom rows, above all other overlays.
         if let Some((overlay, x, y)) = ambient_overlay {
             if let Some(ref rich) = overlay.rich_lines {
                 buffer.draw_rich_overlay_solid(rich, x, y, true);
@@ -1384,7 +1384,6 @@ impl TerminalRenderer {
             }
         }
 
-        // Unified draw helper: main panel + rich_lines + accented title badge.
         // Unified draw helper — same shared compositor as the single-species path,
         // so multi-species overlays inherit the themed panel background (this path
         // previously hardcoded the 256-colour default and dropped the theme bg).
@@ -1513,8 +1512,8 @@ impl TerminalRenderer {
             draw_ms_overlay(&mut buffer, overlay, x, y, &OverlayConfig::PALETTE_EDITOR);
         }
 
-        // Ambient BASE surface — bottom-docked always-on strip (Task 12).
-        // Composited last: the ambient strip paints over the bottom rows, above all other overlays.
+        // Ambient BASE surface — bottom-docked always-on strip, composited last so
+        // it paints over the bottom rows, above all other overlays.
         if let Some((overlay, x, y)) = ambient_overlay {
             if let Some(ref rich) = overlay.rich_lines {
                 buffer.draw_rich_overlay_solid(rich, x, y, true);

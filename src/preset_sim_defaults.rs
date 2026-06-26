@@ -6,7 +6,7 @@
 //! mirrors `SimConfig::default()` so unset fields resolve byte-identically.
 //!
 //! **afterglow is NOT a field here** — it was vestigial in the assembled config
-//! and moves to `RenderArtDefaults` in a later commit. `decay_gamma`,
+//! and lives in `RenderArtDefaults` (the render layer). `decay_gamma`,
 //! `deposit_curve`, `deposit_scale`, `deposit_gamma` ARE sim levers and are kept.
 
 use crate::config_defaults::{agent, trail};
@@ -15,10 +15,7 @@ use crate::simulation::config::{
     RespawnConfig, SamplingMode, SimConfig, SpeciesConfig, Wind, WindowFrame,
 };
 
-/// Declarative per-preset sim-layer spec. Replaces the imperative
-/// `Preset::apply()`: each preset is a struct literal using `..Default::default()`
-/// for fields it doesn't change. `apply_to` writes every field into a `SimConfig`.
-/// `Default` mirrors `SimConfig::default()` so unset fields resolve identically.
+/// Declarative per-preset sim-layer spec (see module docs).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PresetSimDefaults {
     pub sensor_angle: f32,
@@ -54,8 +51,8 @@ pub(crate) struct PresetSimDefaults {
 
 impl Default for PresetSimDefaults {
     fn default() -> Self {
-        // Mirror SimConfig::default() (config.rs:2030-2086) for every scalar so a
-        // preset that leaves a field unset resolves byte-identically.
+        // Mirror SimConfig::default() for every scalar so a preset that leaves a
+        // field unset resolves byte-identically.
         Self {
             sensor_angle: agent::DEFAULT_SENSOR_ANGLE,
             sensor_distance: agent::DEFAULT_SENSOR_DISTANCE,
@@ -128,7 +125,7 @@ impl From<Preset> for PresetSimDefaults {
         use crate::render::palette::RgbColor;
         use crate::simulation::config::{InitMode, Obstacle, PointConfig, Wind};
         match preset {
-            // Dense network of branching paths (config.rs:387-400)
+            // Dense network of branching paths
             Preset::Network => Self {
                 sensor_angle: 15.0,
                 rotation_angle: 30.0,
@@ -144,7 +141,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Wide searching tentacles (config.rs:401-417)
+            // Wide searching tentacles
             Preset::Exploratory => Self {
                 // sensor 30° + rotation 60° + decay 0.92 keep a continuously
                 // spreading, dynamic network. The old 45°/0.96 over-persisted and
@@ -168,7 +165,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Long branching arms (config.rs:418-436)
+            // Long branching arms
             Preset::Tendrils => Self {
                 sensor_angle: 30.0,
                 sensor_distance: 12.0,
@@ -194,7 +191,7 @@ impl From<Preset> for PresetSimDefaults {
             // look is render-only (Braille + Vibrant in RenderArtDefaults); no sim
             // deviation here, so a bare launch and `--preset organic` resolve identically.
             Preset::Organic => Self::default(),
-            // Fast flame-like patterns (config.rs:446-462)
+            // Fast flame-like patterns
             Preset::Fire => Self {
                 sensor_angle: 15.0,
                 rotation_angle: 30.0,
@@ -214,7 +211,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Flowing water patterns with wind; boundary wraps to keep flow continuous (config.rs:463-478)
+            // Flowing water patterns with wind; boundary wraps to keep flow continuous
             Preset::River => Self {
                 sensor_angle: 25.0,
                 step_size: 1.2,
@@ -234,7 +231,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Petri dish: starts center, slow growth, persistent trails (config.rs:479-503)
+            // Petri dish: starts center, slow growth, persistent trails
             Preset::PetriDish => Self {
                 sensor_angle: 45.0,
                 rotation_angle: 20.0,
@@ -261,7 +258,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Spinning vortex (config.rs:504-522)
+            // Spinning vortex
             Preset::Vortex => Self {
                 sensor_angle: 25.2,
                 sensor_distance: 3.9,
@@ -282,7 +279,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Fast dendritic branching (config.rs:523-542)
+            // Fast dendritic branching
             Preset::Lightning => Self {
                 sensor_angle: 31.9,
                 sensor_distance: 23.2,
@@ -304,7 +301,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Edge-of-chaos sensitive patterns (config.rs:543-562)
+            // Edge-of-chaos sensitive patterns
             Preset::ChaosEdge => Self {
                 sensor_angle: 5.0,
                 sensor_distance: 26.4,
@@ -326,7 +323,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Aggregating blob clusters (config.rs:563-582)
+            // Aggregating blob clusters
             Preset::Blob => Self {
                 sensor_angle: 72.1,
                 sensor_distance: 2.1,
@@ -348,7 +345,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Slime-mold surface tension with trail-based flow modulation (config.rs:583-616)
+            // Slime-mold surface tension with trail-based flow modulation
             Preset::Slime => Self {
                 sensor_angle: 60.0,
                 sensor_distance: 30.0,
@@ -385,7 +382,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Creeping vine tendrils with trail-modulated cohesion (config.rs:617-650)
+            // Creeping vine tendrils with trail-modulated cohesion
             Preset::Vines => Self {
                 sensor_angle: 45.0,
                 sensor_distance: 25.0,
@@ -459,7 +456,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Drifting smoke columns; boundary wraps so plumes re-enter (config.rs:651-685)
+            // Drifting smoke columns; boundary wraps so plumes re-enter
             Preset::Smoke => Self {
                 sensor_angle: 35.0,
                 sensor_distance: 12.0,
@@ -498,7 +495,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Enhanced vortex with trail modulation (config.rs:686-719)
+            // Enhanced vortex with trail modulation
             Preset::Vortex36 => Self {
                 sensor_angle: 25.2,
                 sensor_distance: 7.0,
@@ -534,7 +531,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Dynamic tendrils with trail-based sensor modulation (config.rs:720-743)
+            // Dynamic tendrils with trail-based sensor modulation
             Preset::DynamicTendrils => Self {
                 decay_factor: 0.92,
                 species_configs: vec![SpeciesConfig {
@@ -560,9 +557,8 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Bleuje-style front-lit veins; NOTE: afterglow=0.3 intentionally dropped
-            // (moves to RenderArtDefaults). Sim levers: deposit_curve, deposit_scale,
-            // decay_gamma (config.rs:744-762)
+            // Bleuje-style front-lit veins; afterglow=0.3 lives in the render layer.
+            // Sim levers: deposit_curve, deposit_scale, decay_gamma
             Preset::Mold => Self {
                 // Wider sensor (22.5°) + high rotation (60°) under Bounce keep a
                 // *contained* branching colony whose veins fold back at the walls.
@@ -608,8 +604,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Directional filament linework; NOTE: afterglow=0.2 intentionally dropped
-            // (moves to RenderArtDefaults) (config.rs:763-784)
+            // Directional filament linework; afterglow=0.2 lives in the render layer.
             Preset::Etching => Self {
                 sensor_angle: 30.0,
                 sensor_distance: 12.0,
@@ -631,7 +626,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Smooth flowing; NOTE: afterglow=0.1 intentionally dropped (config.rs:785-805)
+            // Smooth flowing; afterglow=0.1 lives in the render layer.
             Preset::Drift => Self {
                 sensor_angle: 30.0,
                 sensor_distance: 14.0,
@@ -702,7 +697,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Dense smooth body for posterized bands (config.rs:827-847)
+            // Dense smooth body for posterized bands
             Preset::Mosaic => Self {
                 sensor_angle: 30.0,
                 sensor_distance: 15.0,
@@ -724,7 +719,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Heavy Gaussian smear for veined stone (config.rs:848-869)
+            // Heavy Gaussian smear for veined stone
             Preset::Marble => Self {
                 sensor_angle: 50.0,
                 sensor_distance: 18.0,
@@ -747,7 +742,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Balanced colorful base (config.rs:870-889)
+            // Balanced colorful base
             Preset::Prism => Self {
                 sensor_angle: 25.0,
                 sensor_distance: 12.0,
@@ -768,7 +763,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Soft parchment density (config.rs:890-911)
+            // Soft parchment density
             Preset::Vellum => Self {
                 sensor_angle: 28.0,
                 sensor_distance: 12.0,
@@ -791,7 +786,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Aggressive molten; NOTE: afterglow=0.3 intentionally dropped (config.rs:912-932)
+            // Aggressive molten; afterglow=0.3 lives in the render layer.
             Preset::Forge => Self {
                 sensor_angle: 15.0,
                 sensor_distance: 9.0,
@@ -812,7 +807,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Long faint tails: low decay_gamma + Pow deposit + high decay_factor (config.rs:933-955)
+            // Long faint tails: low decay_gamma + Pow deposit + high decay_factor
             Preset::Wane => Self {
                 sensor_angle: 25.0,
                 sensor_distance: 12.0,
@@ -836,7 +831,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Fine sparse threads; NOTE: afterglow=0.2 intentionally dropped (config.rs:956-976)
+            // Fine sparse threads; afterglow=0.2 lives in the render layer.
             Preset::Gossamer => Self {
                 sensor_angle: 35.0,
                 sensor_distance: 10.0,
@@ -857,7 +852,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Typographic linework base (config.rs:977-996)
+            // Typographic linework base
             Preset::Codex => Self {
                 sensor_angle: 30.0,
                 sensor_distance: 14.0,
@@ -878,7 +873,7 @@ impl From<Preset> for PresetSimDefaults {
                 }],
                 ..Self::default()
             },
-            // Flowing water body (config.rs:997-1016)
+            // Flowing water body
             Preset::Tide => Self {
                 sensor_angle: 25.0,
                 sensor_distance: 12.0,

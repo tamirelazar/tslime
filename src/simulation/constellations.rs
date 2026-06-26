@@ -580,7 +580,7 @@ pub fn build_layout(
             stamp_gaussian(&mut template, width, height, x, y, 0.55, 0.45);
         }
     }
-    // Clamp to 0..1.
+    // Clamp the upper bound to 1 (max-combine can exceed it; values never go below 0).
     for v in &mut template {
         *v = v.min(1.0);
     }

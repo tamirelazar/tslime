@@ -86,7 +86,7 @@ pub enum GlyphSelection {
 /// mirroring `PaletteCycle`). `selection: None` = native per-charset behavior.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GlyphConfig {
-    /// Glyph-selection strategy (e.g., Brightness, Shape, Hybrid).
+    /// Glyph-selection strategy; `None` keeps each charset's native behavior.
     pub selection: Option<GlyphSelection>,
     /// Sobel gradient-magnitude threshold for edge-glyph selection (Hybrid mode).
     pub edge_threshold: f32,
@@ -105,6 +105,8 @@ impl Default for GlyphConfig {
 /// (`n[4]` = center). Returns a directional glyph (`| / - \`) when gradient
 /// magnitude exceeds `threshold`, else `None` (caller falls back to a
 /// brightness bucket). Gradients are normalized to `[-1,1]`. (#34, lever 10.)
+///
+/// Uses the 3×3 Sobel operator (Sobel & Feldman 1968).
 pub fn sobel_edge_glyph(n: &[f32; 9], threshold: f32) -> Option<char> {
     let gx = ((n[2] + 2.0 * n[5] + n[8]) - (n[0] + 2.0 * n[3] + n[6])) / 4.0;
     let gy = ((n[6] + 2.0 * n[7] + n[8]) - (n[0] + 2.0 * n[1] + n[2])) / 4.0;

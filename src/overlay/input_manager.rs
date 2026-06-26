@@ -279,7 +279,6 @@ mod tests {
             let mut state = OverlayState::default();
             state.open(overlay);
             let result = OverlayInputManager::handle_input(&state, &esc);
-            // PaletteEditor delegates internally; all others return CloseOverlay.
             assert_eq!(
                 result,
                 OverlayInputResult::CloseOverlay,
@@ -296,7 +295,6 @@ mod tests {
             let mut state = OverlayState::default();
             state.open(overlay);
             let result = OverlayInputManager::handle_input(&state, &esc);
-            // Pause overlays don't close on Esc — the key is not consumed either.
             assert_ne!(
                 result,
                 OverlayInputResult::CloseOverlay,

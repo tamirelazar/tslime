@@ -21,7 +21,6 @@ pub mod spacing {
 mod spacing_tests {
     use super::spacing;
 
-    // This runtime test intentionally documents the public rhythm invariant.
     #[allow(clippy::assertions_on_constants)]
     #[test]
     fn rhythm_steps_are_ordered() {

@@ -1056,7 +1056,6 @@ impl TrailMap {
         self.swap_buffers();
     }
 
-    /// Dispatch to the appropriate diffusion implementation.
     /// Separable Gaussian blur (two 1D passes) for the wider sigma range (sigma > 2.0).
     /// `O(2r)` per cell vs `O(r²)`. Uses bounce/wrap boundary consistent with the
     /// other diffusion paths. radius = ceil(3·sigma).

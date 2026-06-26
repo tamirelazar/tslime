@@ -159,9 +159,8 @@ fn priority(state: &AmbientState) -> u8 {
 /// Select the highest-priority live state from `states`.
 ///
 /// Priority order (high → low): error-MSG > MSG > TUNE > BASE.
-/// Expired non-sticky entries are skipped. There must be at least one `Base`
-/// entry (it never expires); if `states` is empty a `Base` reference returned
-/// from a static is not available, so callers should always include one.
+/// Expired non-sticky entries are skipped. Callers must always include a
+/// never-expiring `Base` sentinel, or this panics on an empty slice.
 ///
 /// # Panics
 ///
@@ -253,15 +252,12 @@ fn base_content_row(w: usize, st: &PanelStyle, base: &BaseStatus) -> RowBuf {
     let mut row = RowBuf::new_matte(w, st.status_bar_bg);
     let mut col = 2usize;
 
-    // preset name
     row.put(col, &base.preset_name, Some(st.text_primary), None);
     col += base.preset_name.chars().count();
 
-    // separator
     row.put(col, "  ◦  ", Some(st.muted), None);
     col += 5;
 
-    // time scale
     row.put(col, &base.time_scale_text, Some(st.text_primary), None);
     col += base.time_scale_text.chars().count();
 

@@ -65,7 +65,7 @@ fn parse_entries(entries: Vec<RawKeybind>, known_configs: &[String]) -> HashMap<
             }
             _ => continue, // both set or neither set: invalid
         };
-        map.insert(key, target); // later valid entry overrides earlier
+        map.insert(key, target);
     }
     map
 }

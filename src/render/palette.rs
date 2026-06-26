@@ -2578,9 +2578,9 @@ pub fn map_brightness(
 
 /// 256-color counterpart to [`map_brightness_rgb_cycled`].
 ///
-/// Applies a [`PaletteCycle`] remap at pass-order step 5 (between the tone
-/// curve and the gradient lookup). The non-cycled wrapper delegates here with
-/// an identity cycle, so existing callers stay byte-identical.
+/// Applies a [`PaletteCycle`] remap between the tone curve and the gradient
+/// lookup. The non-cycled wrapper delegates here with an identity cycle, so
+/// existing callers stay byte-identical.
 pub fn map_brightness_cycled(
     brightness: f32,
     palette: Palette,
@@ -2600,7 +2600,7 @@ pub fn map_brightness_cycled(
         brightness = mapping.apply(brightness);
     }
 
-    // Pass-order step 5: spatial palette repeat, pre-lookup.
+    // Spatial palette repeat, applied before the gradient lookup.
     let t = cycle.map(brightness);
 
     // Get the color based on palette type
@@ -2693,7 +2693,7 @@ pub fn map_brightness_rgb_cycled(
         brightness = mapping.apply(brightness);
     }
 
-    // Pass-order step 5: spatial palette repeat, pre-lookup.
+    // Spatial palette repeat, applied before the gradient lookup.
     let t = cycle.map(brightness);
 
     // Use the new gradient interpolation system
@@ -2804,8 +2804,8 @@ impl PaletteCycle {
         self.cycles <= 1
     }
 
-    /// Remap a tone-mapped brightness `t` (0..1) to the cycled gradient index
-    /// (spec §6 step 5). Identity when `cycles ≤ 1`.
+    /// Remap a tone-mapped brightness `t` (0..1) to the cycled gradient index.
+    /// Identity when `cycles ≤ 1`.
     #[inline]
     pub fn map(&self, t: f32) -> f32 {
         if self.is_identity() {
@@ -2828,9 +2828,9 @@ impl PaletteCycle {
 /// intensity tone curve. `diff_norm` is the white-point-normalized signed
 /// temporal difference (lever 3); `temporal_strength` 0.0 disables temporal
 /// modulation, making this byte-identical to `map_brightness_rgb`.
-/// `cycle` applies a [`PaletteCycle`] remap at pass-order step 5 (between the
-/// tone curve and the gradient lookup). Pass [`PaletteCycle::default()`] for
-/// identity behavior (byte-identical to the pre-cycle path).
+/// `cycle` applies a [`PaletteCycle`] remap between the tone curve and the
+/// gradient lookup. Pass [`PaletteCycle::default()`] for identity behavior
+/// (byte-identical to the pre-cycle path).
 #[allow(clippy::too_many_arguments)]
 pub fn colorize_subpixel(
     brightness: f32,

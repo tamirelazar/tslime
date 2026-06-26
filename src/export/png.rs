@@ -1,11 +1,9 @@
 //! PNG frame export.
 //!
-//! **Colorize-last invariant**: PNG export colors pixels through the shared
-//! [`crate::render::palette::colorize_subpixel`], the SAME entry point used by
-//! the live TUI frame buffer and GIF/WebM export. One scalar brightness maps
-//! through exactly one colorize pass for every output (TUI, GIF, WebM, PNG), so
-//! saved stills match the on-screen look. Do not add a separate
-//! palette-mapping path here.
+//! Colorize-last invariant: PNG export colors pixels through
+//! [`crate::render::palette::colorize_subpixel`], the same entry point the live
+//! TUI frame buffer and GIF/WebM export use, so saved stills match the on-screen
+//! look. Don't add a separate palette-mapping path here.
 
 use crate::cli::Palette;
 use crate::render::downsample::Cell;
@@ -14,10 +12,8 @@ use crate::render::palette::IntensityMapping;
 use image::{Rgb, RgbImage};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Maps a single normalized brightness value to an RGB color for PNG export,
-/// routing through the shared `colorize_subpixel` colorizer so intensity
-/// mapping and temporal-color modulation are applied consistently with the live
-/// TUI render.
+/// Colors one normalized brightness value via `colorize_subpixel`, so PNG export
+/// shares the live TUI's intensity mapping and temporal-color modulation.
 #[allow(clippy::too_many_arguments)]
 fn png_pixel_color(
     norm: f32,
@@ -99,7 +95,7 @@ pub fn save_frame_as_png(
             0.0
         };
 
-        // Compute normalized signed diff for temporal modulation.
+        // Normalized signed diff drives temporal color modulation.
         let diff_norm = if temporal_strength > 0.0 && max_brightness > 0.0 {
             if let Some(aux) = aux_cells {
                 if let Some(aux_cell) = aux.get(idx) {
@@ -344,12 +340,9 @@ mod tests {
         assert!(nanos.chars().all(|c| c.is_ascii_digit()));
     }
 
-    /// Guards the colorize-last invariant: the PNG helper must agree with the
-    /// shared `colorize_subpixel` entry point across a brightness sweep, a
-    /// non-default intensity mapping, and several flag combinations.  Any future
-    /// edit to `png_pixel_color` that drops the mapping argument, hardwires a
-    /// different palette call, or diverges from `colorize_subpixel` will cause
-    /// this test to fail.
+    /// Guards the colorize-last invariant: the PNG helper must agree with
+    /// `colorize_subpixel` across a brightness sweep, a non-default intensity
+    /// mapping, and the reverse/invert flag combinations.
     #[test]
     fn test_png_pixel_color_matches_render_colorizer() {
         use crate::render::palette::{self, IntensityMapping, Palette, TemporalMode};

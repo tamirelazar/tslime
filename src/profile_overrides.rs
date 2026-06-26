@@ -219,7 +219,7 @@ impl ProfileOverrides {
     pub(crate) fn from_args(args: &Args) -> Result<Self, String> {
         // Render: glyph — store the raw CLI-flag values separately so resolve_render
         // can apply them onto the PRESET's art.glyph exactly as glyph_config_parsed
-        // does (src/cli.rs:2006-2018). Pre-parsing against GlyphConfig::default() would
+        // does. Pre-parsing against GlyphConfig::default() would
         // make an explicit --glyph-edge-threshold 0.15 (== the default) indistinguishable
         // from "not set", silently dropping the override on presets with a different
         // default edge_threshold (e.g. Etching). Clamp edge_threshold here to mirror
@@ -241,8 +241,7 @@ impl ProfileOverrides {
                     _ => TemporalMode::Hue,
                 });
 
-        // Render: temporal_accent parsed from hex string. Oracle errors via
-        // `map_err(|_| format!("invalid --temporal-accent hex: {hex}"))`.
+        // Render: temporal_accent parsed from hex string.
         let temporal_accent = args
             .temporal_accent
             .as_ref()
@@ -753,14 +752,14 @@ impl ProfileOverrides {
         if let Some(ref pc) = self.palette_cycle {
             art.palette_cycle = *pc;
         }
-        // Mirror glyph_config_parsed(art.glyph) exactly (src/cli.rs:2006-2018):
-        // only apply when at least one glyph CLI flag was explicitly provided.
+        // Mirror glyph_config_parsed(art.glyph): only apply when at least one
+        // glyph CLI flag was explicitly provided.
         if self.glyph_selection.is_some() || self.glyph_edge_threshold.is_some() {
             if let Some(sel) = self.glyph_selection {
                 art.glyph.selection = Some(sel);
             }
             if let Some(t) = self.glyph_edge_threshold {
-                // Already clamped in from_args; applied unconditionally like the oracle.
+                // Already clamped in from_args; applied unconditionally.
                 art.glyph.edge_threshold = t;
             }
         }
@@ -795,9 +794,9 @@ impl ProfileOverrides {
             // CLI explicitly set
             p.clone()
         } else {
-            // Mirror the oracle's fallback: art.palette else the default-palette name.
-            // We parse DEFAULT_PALETTE_NAME rather than hard-coding Palette::Moss so
-            // this stays correct if the default is changed. (Finding 2.)
+            // Fallback: art.palette else the default-palette name. We parse
+            // DEFAULT_PALETTE_NAME rather than hard-coding Palette::Moss so this
+            // stays correct if the default is changed.
             // Invariant: crate::config_defaults::palette::DEFAULT_PALETTE_NAME == "moss"
             // → parse always succeeds; Palette::Moss is a safe fallback.
             art.palette.unwrap_or_else(|| {
@@ -1463,7 +1462,7 @@ mod tests {
         assert!(!c.obstacles.is_empty());
     }
 
-    /// Validation parity: invalid sensor_angle must be rejected (Phase A CRITICAL).
+    /// Validation parity: invalid sensor_angle must be rejected.
     #[test]
     fn resolve_rejects_invalid_sensor_angle() {
         let a = args(&["--sensor-angle", "999"]);
@@ -1665,7 +1664,7 @@ mod tests {
         assert_eq!(back.intensity_mapping, None);
     }
 
-    // ── Important 1: Vec fields must not emit empty arrays in minimal TOML ──
+    // ── Vec fields must not emit empty arrays in minimal TOML ──
 
     #[test]
     fn overrides_toml_empty_vecs_not_emitted() {
@@ -1690,7 +1689,7 @@ mod tests {
         );
     }
 
-    // ── Important 2: serde_opt_charset named + CustomAscii round-trips ──
+    // ── serde_opt_charset named + CustomAscii round-trips ──
 
     #[test]
     fn overrides_toml_charset_braille_round_trip() {
@@ -1722,7 +1721,7 @@ mod tests {
         assert_eq!(back.charset, Some(original));
     }
 
-    // ── Important 2: serde_opt_palette Custom round-trip ──
+    // ── serde_opt_palette Custom round-trip ──
 
     #[test]
     fn overrides_toml_palette_custom_round_trip() {
@@ -1743,7 +1742,7 @@ mod tests {
         assert_eq!(back.palette, Some(Palette::Custom(colors)));
     }
 
-    // ── Important 3: linear_log_split lossy test ──
+    // ── linear_log_split lossy test ──
 
     #[test]
     fn overrides_toml_intensity_mapping_linear_log_split_is_lossy() {
@@ -1761,7 +1760,7 @@ mod tests {
         );
     }
 
-    // ── Minor 5: AaStrength uses lowercase serde tokens ──
+    // ── AaStrength uses lowercase serde tokens ──
 
     #[test]
     fn overrides_toml_color_aa_lowercase_token_and_round_trip() {
@@ -1789,7 +1788,7 @@ mod tests {
         }
     }
 
-    // ── Task 2: AppRuntimeConfig / init_mode tests ──
+    // ── AppRuntimeConfig / init_mode tests ──
 
     #[test]
     fn app_levers_round_trip() {
@@ -1829,7 +1828,7 @@ mod tests {
         assert_eq!(p.sim.preferred_init_mode, Some(InitMode::Random));
     }
 
-    // ── Task 4: bare_preset_against / startup classification ──
+    // ── bare_preset_against / startup classification ──
 
     /// `--preset organic` with no other overrides → `bare_preset_against` returns Some(Organic).
     #[test]
@@ -1874,7 +1873,7 @@ mod tests {
         );
     }
 
-    // ── auto_normalize membrane (Task 2) ──
+    // ── auto_normalize membrane ──
 
     /// CLI absent → `None` (must NOT shadow a preset default) → resolves `false`.
     #[test]
@@ -1950,7 +1949,7 @@ mod tests {
         assert_ne!(project(&on).unwrap(), project(&off).unwrap());
     }
 
-    // ── auto_reset membrane (Task 3) ──
+    // ── auto_reset membrane ──
 
     /// CLI `--preset constellation` absent `--auto-reset` flag → `auto_reset` is `None`
     /// (must NOT shadow the preset's own default).

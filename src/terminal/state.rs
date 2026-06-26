@@ -1391,7 +1391,7 @@ impl RuntimeState {
         self.color_aa[self.charset_index % self.color_aa.len()]
     }
 
-    /// Apply a CLI `--color-aa` override to the launch charset and re-baseline.
+    /// Apply a CLI `--color-aa` override to the launch charset's slot.
     pub fn apply_cli_color_aa(&mut self, aa: crate::render::antialiasing::AaStrength) {
         let i = self.charset_index;
         self.color_aa[i] = aa;
@@ -1882,13 +1882,10 @@ impl RuntimeState {
     /// At most one active MSG is kept. The duration is determined by `level`
     /// via [`crate::render::ambient::msg`].
     pub fn push_msg(&mut self, level: NotificationLevel, text: String) {
-        // Suppressed entirely when notifications are off, so no transient toast
-        // ever reaches the ambient stack.
         if !self.notifications_enabled {
             return;
         }
         let now = self.phase_clock;
-        // Remove any existing Msg entries so messages don't stack unbounded.
         self.ambient_states
             .retain(|s| !matches!(s, crate::render::ambient::AmbientState::Msg { .. }));
         self.ambient_states
@@ -3143,7 +3140,7 @@ mod tests {
     fn clean_preset_swap_with_trail_modulation_is_not_dirty() {
         use crate::profile_overrides::ProfileOverrides;
 
-        // Slime carries trail_modulation: Some(_) in PresetSimDefaults (line 359).
+        // Slime carries trail_modulation: Some(_) in PresetSimDefaults.
         let ov_slime = ProfileOverrides {
             preset: Some(Preset::Slime),
             ..Default::default()
@@ -3154,7 +3151,7 @@ mod tests {
             "a freshly-applied Slime preset (trail_modulation: Some) must not read dirty"
         );
 
-        // DynamicTendrils also carries trail_modulation: Some(_) (line 493).
+        // DynamicTendrils also carries trail_modulation: Some(_).
         let ov_dt = ProfileOverrides {
             preset: Some(Preset::DynamicTendrils),
             ..Default::default()

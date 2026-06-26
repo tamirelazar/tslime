@@ -535,9 +535,7 @@ impl FrameBuffer {
                     break;
                 }
                 let idx = y * self.width + x;
-                // Write character. By default space = transparent (let sim show
-                // through); `solid` forces opacity by writing the space too, so a
-                // bordered modal reads as a filled box rather than a colored mask.
+                // Space stays transparent unless `solid` (see method doc).
                 if ch != ' ' || solid {
                     self.cells[idx].char = ch;
                 }
@@ -4531,8 +4529,8 @@ mod tests {
 
     /// draw_text_overlay_with_panel must not panic when start_x >= buffer width.
     ///
-    /// Before the fix, `.min(self.width - start_x)` would underflow (usize subtraction
-    /// wraps) and the function would either panic or corrupt memory.
+    /// Before the fix, `.min(self.width - start_x)` underflowed (usize subtraction
+    /// wraps), yielding a huge panel width and an out-of-bounds index panic.
     #[test]
     fn draw_text_overlay_with_panel_start_x_gte_width_no_panic() {
         let mut buf = FrameBuffer::new(10, 5, crate::cli::ColorMode::TrueColor, None);

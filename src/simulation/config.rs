@@ -481,12 +481,13 @@ pub enum InitMode {
 }
 
 impl InitMode {
-    /// Uniformly pick any init mode for non-structural presets. Named structural
-    /// modes such as `Constellation` are excluded and keep a stable layout.
+    /// Uniformly pick any init mode for non-structural presets. Structural modes
+    /// (`Constellation`, `FoodConstellation`) are excluded so they keep a stable
+    /// layout.
     ///
-    /// `ALL` is hand-maintained; the exhaustive match below is a compile-time
-    /// guard — adding an `InitMode` variant fails to compile here until it is
-    /// also added to `ALL`, so the picker can never silently exclude a variant.
+    /// `ALL` is hand-maintained. The `_guard` match below is exhaustive, so a new
+    /// `InitMode` variant breaks compilation there until it is handled — a forced
+    /// reminder to decide whether the variant also belongs in `ALL`.
     pub fn random(rng: &mut impl rand::Rng) -> Self {
         use InitMode::*;
         const ALL: [InitMode; 9] = [
@@ -500,9 +501,7 @@ impl InitMode {
             Food,
             Petri,
         ];
-        // Exhaustiveness guard: keep ALL in sync with the enum. Adding a variant
-        // breaks this match until it is also added to ALL above.
-        #[allow(dead_code)]
+        #[allow(dead_code)] // compile-time exhaustiveness guard; never called
         const fn _guard(m: InitMode) {
             match m {
                 InitMode::Random
@@ -876,10 +875,9 @@ pub enum WindowFrame {
 }
 
 impl WindowFrame {
-    /// Returns true if this mode reduces simulation display area.
-    ///
-    /// The windowed layout reserves a frame ring for every mode uniformly, so
-    /// no single mode specially reduces the area; retained for API stability.
+    /// Whether this mode reduces the simulation display area. Always `false`: the
+    /// windowed layout reserves a frame ring uniformly, so no mode specially
+    /// shrinks the area. Retained for API stability.
     pub fn reduces_display_area(&self) -> bool {
         false
     }

@@ -4,7 +4,6 @@ use crate::render::panel::RichCell;
 /// A single overlay row under construction: parallel character, foreground,
 /// and background layers.
 ///
-/// Merged superset of the former `console.rs` and `tuner.rs` copies.
 /// Width and offsets count Unicode scalar values, not terminal display columns;
 /// callers must supply glyphs that each occupy a single terminal column.
 pub struct RowBuf {

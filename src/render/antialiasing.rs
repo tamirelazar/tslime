@@ -13,7 +13,7 @@ use crate::render::charset::Charset;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AaStrength {
-    /// No color blur — raw per-cell color (today's behavior).
+    /// No color blur — raw per-cell color.
     #[default]
     Off,
     /// Weighted-center 3×3: `0.5·self + 0.5·mean(neighbors)`. Gentle.
@@ -92,9 +92,7 @@ pub fn blur_field(src: &[f32], width: usize, height: usize, strength: AaStrength
     if strength == AaStrength::Off || width == 0 || height == 0 {
         return src.to_vec();
     }
-    // Invariant: src is exactly the row-major field. With it, idx = y*width+x and
-    // every in-range nidx are provably < src.len(), so the inner indexing needs no
-    // per-cell bounds check (debug builds catch a caller that violates this).
+    // src must be the row-major width*height field so idx = y*width+x is valid.
     debug_assert_eq!(
         src.len(),
         width * height,

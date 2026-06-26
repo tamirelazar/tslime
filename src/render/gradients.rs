@@ -2152,9 +2152,9 @@ const ETHEREAL_OKLCH: [OklchStop; 11] = [
 ];
 
 // =============================================================================
-// New palettes (completion pass): OKLCH + RGB fallback + 256-color codes.
-// OKLch stops are hand-authored design; RGB/256 arrays generated from them via
-// oklch_to_srgb + rgb_to_256 for perceptual consistency.
+// Additional palettes: OKLch stops + RGB fallback + 256-color codes.
+// The OKLch stops are hand-authored; the RGB and 256-color arrays are derived
+// from them via oklch_to_srgb + rgb_to_256 to stay perceptually consistent.
 // =============================================================================
 
 // Jade: dark green → mid-saturation jade → pale green
