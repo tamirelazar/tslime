@@ -16,20 +16,21 @@ const FPS_STEPS: [usize; 6] = [60, 45, 30, 25, 20, 15];
 ///
 /// # Timing Model
 ///
-/// FrameTimer tracks actual elapsed wall-clock time between frames and
-/// returns a delta_time value scaled by time_scale. The caller (main.rs)
-/// is responsible for applying reference timestep normalization.
+/// Two deltas are exposed, both scaled by `time_scale`:
 ///
-/// delta_time() returns: `actual_elapsed_wall_time * time_scale`
+/// - [`delta_time`](Self::delta_time) — measured wall-clock time since the last
+///   frame. Used for FPS stats and UI animation, which should track real time.
+/// - [`fixed_delta`](Self::fixed_delta) — the target frame interval
+///   (`1 / target_fps`). Used to step the simulation, decoupling it from
+///   frame-write jitter.
 ///
-/// The caller (main.rs) divides by REFERENCE_TIME_STEP (1/30) to normalize
-/// to the reference 30-fps simulation rate. This ensures:
-/// - time_scale 2.0 doubles simulation speed
-/// - --fps 30 and --fps 60 produce identical simulation progression
-///   at the same wall-clock elapsed time
+/// The caller (`app/runner.rs`) divides by `REFERENCE_TIME_STEP` (1/30) to
+/// normalize to the reference 30-fps simulation rate, so `time_scale` 2.0
+/// doubles simulation speed and different `--fps` values produce the same
+/// simulation progression per wall-clock second.
 ///
-/// The target_fps setting only controls the maximum frame rate (via sleep timing).
-/// It does not affect the delta_time value.
+/// The `target_fps` setting caps the frame rate via sleep timing in
+/// [`tick`](Self::tick); it does not affect `delta_time`.
 ///
 /// # Usage
 ///
@@ -39,10 +40,11 @@ const FPS_STEPS: [usize; 6] = [60, 45, 30, 25, 20, 15];
 /// let mut timer = FrameTimer::with_time_scale(fps, frame_delay, time_scale);
 ///
 /// loop {
-///     let dt = timer.delta_time();  // Returns elapsed * time_scale
-///     sim.update(dt / REFERENCE_TIME_STEP);  // Apply normalization
+///     let dt = timer.delta_time();      // wall-clock dt, for stats/UI
+///     let sim_dt = timer.fixed_delta(); // fixed step, for the simulation
+///     sim.update(sim_dt / REFERENCE_TIME_STEP);
 ///     // ... render ...
-///     timer.tick();  // Sleeps to maintain target FPS, increments frame count
+///     timer.tick(); // Sleeps to maintain target FPS, increments frame count
 /// }
 /// ```
 #[derive(Debug, Clone)]
@@ -68,7 +70,6 @@ pub struct FrameTimer {
 
 impl FrameTimer {
     #[cfg(test)]
-    #[allow(dead_code)]
     /// Create a new frame timer with the specified FPS and frame delay.
     pub fn new(fps: usize, frame_delay_seconds: f32) -> Self {
         Self::with_time_scale(fps, frame_delay_seconds, 1.0)
@@ -146,28 +147,24 @@ impl FrameTimer {
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     /// Get the target FPS setting.
     pub fn target_fps(&self) -> usize {
         self.target_fps
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     /// Get the frame delay duration.
     pub fn frame_delay(&self) -> Duration {
         self.frame_delay
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     /// Set the target FPS.
     pub fn set_target_fps(&mut self, fps: usize) {
         self.target_fps = fps;
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     /// Set the frame delay in seconds.
     pub fn set_frame_delay(&mut self, frame_delay_seconds: f32) {
         self.frame_delay = Duration::from_secs_f32(frame_delay_seconds);
@@ -240,8 +237,9 @@ impl FrameTimer {
 
     /// Calculate delta time for the current frame.
     ///
-    /// This updates the internal timer state and returns the elapsed time
-    /// multiplied by the time scale.
+    /// Returns the wall-clock time since the last call, multiplied by the time
+    /// scale. Also records an FPS sample, so [`average_fps`](Self::average_fps)
+    /// only updates if this is called each frame.
     pub fn delta_time(&mut self) -> f32 {
         let elapsed = self.last_frame_time.elapsed();
         self.last_frame_time = Instant::now();
@@ -272,7 +270,7 @@ impl FrameTimer {
     ///
     /// Trade-off: under sustained real slowdown (actual FPS below target) the sim
     /// runs slightly slow-motion rather than catching up — preferable to lurching
-    /// for a screensaver, and consistent with the existing `dt.clamp(0.1)` policy.
+    /// for a screensaver, and consistent with the caller's existing `dt.min(0.1)` cap.
     pub fn fixed_delta(&self) -> f32 {
         let target_fps = self.target_fps.max(1) as f32;
         (1.0 / target_fps) * self.time_scale

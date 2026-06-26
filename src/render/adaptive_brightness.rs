@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 #[derive(Debug, Clone)]
 /// Manages adaptive brightness normalization to prevent screen flickering.
 ///
@@ -14,11 +12,8 @@ pub struct AdaptiveBrightness {
 }
 
 impl AdaptiveBrightness {
-    /// Creates a new `AdaptiveBrightness` instance.
-    ///
-    /// # Arguments
-    /// * `window_size` - Number of frames to track for peak history (clamped 1-100).
-    /// * `enabled` - Whether adaptive brightness is active.
+    /// Creates a new tracker. `window_size` is the number of frames of peak
+    /// history to keep (clamped to 1-200).
     pub fn new(window_size: usize, enabled: bool) -> Self {
         use crate::config_defaults::normalization;
         Self {
@@ -30,19 +25,14 @@ impl AdaptiveBrightness {
         }
     }
 
-    /// Sets the smoothing factor for brightness transitions.
-    ///
-    /// # Arguments
-    /// * `factor` - Smoothing value between 0.01 (slow) and 0.5 (fast).
+    /// Sets the smoothing factor for brightness transitions,
+    /// clamped to 0.01 (slow) - 0.5 (fast).
     pub fn with_smoothing_factor(mut self, factor: f32) -> Self {
         self.smoothing_factor = factor.clamp(0.01, 0.5);
         self
     }
 
-    /// Updates the brightness tracker with the current frame's data.
-    ///
-    /// Calculates the peak brightness of the current frame and updates the
-    /// moving average history.
+    /// Records the current frame's peak brightness and updates the smoothed maximum.
     pub fn update(&mut self, cells: &[crate::render::downsample::Cell]) {
         if !self.enabled {
             return;
@@ -71,9 +61,8 @@ impl AdaptiveBrightness {
         }
     }
 
-    /// Returns the current smoothed maximum brightness.
-    ///
-    /// If disabled, returns 1.0 (default unnormalized multiplier).
+    /// Returns the current smoothed maximum brightness (never below 1.0).
+    /// Returns 1.0 when disabled.
     pub fn get_max_brightness(&self) -> f32 {
         if self.enabled {
             self.current_max.max(1.0)

@@ -2,12 +2,13 @@ use crate::cli::Palette;
 use crate::render::dither::DitherMode;
 use crate::render::palette::RgbColor;
 use crate::render::theme::PanelStyle;
+use crate::render::widgets::{gauge, legend, spacing, truncate_ellipsis};
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
 pub use crate::render::panel::{
-    BorderConfig, ColumnLayout, Padding, PanelBuilder, PanelRow, PanelSize, RenderedOverlay,
-    RenderedTitleBox, RichCell, TextAlignment, TitleAlignment,
+    footer_hints, BorderConfig, ColumnLayout, Padding, PanelBuilder, PanelRow, PanelSize,
+    RenderedOverlay, RenderedTitleBox, RichCell, TextAlignment, TitleAlignment,
 };
 
 // --- OverlayConfig ---
@@ -86,6 +87,16 @@ impl OverlayConfig {
     /// Config save overlay configuration
     pub const CONFIG_SAVE: OverlayConfig = OverlayConfig {
         width: 38,
+        height_padding: 1,
+        width_padding: 1,
+        text_color_256: 15,
+        bg_color_256: 236,
+        has_border: true,
+    };
+
+    /// Dirty-state guard overlay configuration
+    pub const DIRTY_GUARD: OverlayConfig = OverlayConfig {
+        width: 48,
         height_padding: 1,
         width_padding: 1,
         text_color_256: 15,
@@ -176,8 +187,40 @@ impl KeyboardHintsOverlay {
     const CONTENT_WIDTH: usize = 74; // 88 - 2(border) - 6(pad-L) - 6(pad-R)
 
     /// Builds the keyboard hints overlay content.
-    pub fn build_overlay(accent: RgbColor) -> RenderedOverlay {
+    pub fn build_overlay(
+        accent: RgbColor,
+        st: &PanelStyle,
+        user_binds: &std::collections::HashMap<char, crate::keybind_manager::BindTarget>,
+    ) -> RenderedOverlay {
+        use crate::keybind_manager::BindTarget;
         use TextAlignment::Left;
+
+        let label_for = |c: char| -> String {
+            match user_binds.get(&c) {
+                Some(BindTarget::Preset(p)) => p.name().to_string(),
+                Some(BindTarget::Config(name)) => {
+                    let truncated: String = name.chars().take(10).collect();
+                    format!("cfg:{truncated}")
+                }
+                None => match crate::simulation::config::preset_for_set_key(c) {
+                    Some(p) => p.name().to_string(),
+                    None => "unbound".to_string(),
+                },
+            }
+        };
+        let keys_line1 = format!(
+            "1:{} 2:{} 3:{}",
+            label_for('1'),
+            label_for('2'),
+            label_for('3')
+        );
+        let keys_line2 = format!(
+            "4:{} 5:{} 6:{} 7:{}",
+            label_for('4'),
+            label_for('5'),
+            label_for('6'),
+            label_for('7')
+        );
 
         let thin_sep = "─".repeat(Self::CONTENT_WIDTH);
 
@@ -194,18 +237,10 @@ impl KeyboardHintsOverlay {
                 Left,
             )
             .add_two_col("r          Restart", "Ctrl+L     Load config", Left, Left)
-            .add_two_col(
-                "1 \u{2013} 7      Select preset",
-                "Ctrl+Z     Undo",
-                Left,
-                Left,
-            )
-            .add_two_col(
-                "Shift+1\u{2013}7  Compare preset",
-                "Ctrl+Y     Redo",
-                Left,
-                Left,
-            )
+            .add_two_col("Ctrl+Z     Undo", "Ctrl+Y     Redo", Left, Left)
+            .add_single(keys_line1, Left)
+            .add_single(keys_line2, Left)
+            .add_single("Shift+1-7  Compare bound key", Left)
             .add_two_col(
                 "p          Palette editor",
                 "q / Esc    Quit / close",
@@ -213,7 +248,7 @@ impl KeyboardHintsOverlay {
                 Left,
             )
             .add_empty()
-            .add_single(thin_sep, Left)
+            .add_single(&thin_sep, Left)
             .add_empty()
             .add_two_col("OVERLAYS", "POST-PROCESSING", Left, Left)
             .add_two_col(
@@ -224,29 +259,67 @@ impl KeyboardHintsOverlay {
             )
             .add_two_col(
                 "?          Keyboard hints",
-                "[ / ]      Dither strength",
-                Left,
-                Left,
-            )
-            .add_two_col(
-                "\\ / |      Dashboard",
                 "9 / *      Cycle theme",
                 Left,
                 Left,
             )
             .add_two_col(
-                "Tab        Cycle category",
-                "F2         Choir on / off",
+                "\\ / |      Dashboard",
+                "{ }        Dither (dev)",
+                Left,
+                Left,
+            )
+            .add_two_col(
+                "Ctrl+N     Notifications",
+                "g          Save frame PNG",
+                Left,
+                Left,
+            )
+            .add_two_col(
+                "( / )      Window frame",
+                "F10        Cycle chrome",
+                Left,
+                Left,
+            )
+            .add_empty()
+            .add_single(&thin_sep, Left)
+            .add_empty()
+            .add_two_col("CONTROLS (h opens)", "CONTROLS (h opens)", Left, Left)
+            .add_two_col(
+                "Tab        Tuner ⇄ Console",
+                "[ / ]      Prev / Next category",
+                Left,
+                Left,
+            )
+            .add_two_col(
+                "↑ / ↓      Move focus",
+                "← / →      Adjust param",
+                Left,
+                Left,
+            )
+            .add_two_col(
+                "↵          Activate action",
+                {
+                    #[cfg(feature = "audio")]
+                    let choir_hint = "F2         Choir on / off";
+                    #[cfg(not(feature = "audio"))]
+                    let choir_hint = "";
+                    choir_hint
+                },
                 Left,
                 Left,
             )
             .build_overlay();
-        overlay.rich_lines = Some(Self::generate_rich_lines(&overlay.lines, accent));
+        overlay.rich_lines = Some(Self::generate_rich_lines(&overlay.lines, accent, st));
         overlay
     }
 
     /// Generates per-cell colour data: keybind tokens coloured with the accent colour.
-    fn generate_rich_lines(lines: &[String], accent: RgbColor) -> Vec<Vec<RichCell>> {
+    fn generate_rich_lines(
+        lines: &[String],
+        accent: RgbColor,
+        st: &PanelStyle,
+    ) -> Vec<Vec<RichCell>> {
         // Layout constants: 1 border + 6 padding = content starts at char index 7.
         const CONTENT_START: usize = 7;
         let col_width = Self::CONTENT_WIDTH / 2; // 37
@@ -297,6 +370,16 @@ impl KeyboardHintsOverlay {
                         continue;
                     }
 
+                    // Dev-only entries: muted for the whole column (token-based).
+                    if col_text.contains("(dev)") {
+                        for (i, &c) in col_chars.iter().enumerate() {
+                            if c != ' ' {
+                                rich[col_start + i] = (c, Some(st.muted), None);
+                            }
+                        }
+                        continue;
+                    }
+
                     // Section headers are all-uppercase (e.g. "SIMULATION", "POST-PROCESSING").
                     let first_word = trimmed.split_whitespace().next().unwrap_or("");
                     let is_header = !first_word.is_empty()
@@ -332,10 +415,22 @@ impl KeyboardHintsOverlay {
     }
 
     /// Calculates center position for the overlay.
-    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+    ///
+    /// `content_height` is the rendered body height (`overlay.lines.len()`). The
+    /// floating title box sits one row above the body, so the visual block spans
+    /// `content_height + 1` rows starting at `y - 1`; we center that whole block
+    /// and keep `y >= 1` so the title stays on-screen. When the overlay is taller
+    /// than the terminal it top-anchors (`y == 1`) so the top — the most useful
+    /// rows — is always visible instead of being pushed off the bottom.
+    pub fn calculate_position(
+        term_width: usize,
+        term_height: usize,
+        content_height: usize,
+    ) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
-        let y = (term_height.saturating_sub(20)) / 2;
-        (x, y)
+        let visual_height = content_height + 1; // +1 for the floating title row
+        let top = term_height.saturating_sub(visual_height) / 2;
+        (x, top + 1)
     }
 }
 
@@ -351,19 +446,46 @@ impl PresetComparisonOverlay {
     /// Builds the comparison overlay showing modified parameters.
     pub fn build_overlay(
         current: &crate::terminal::control::RuntimeState,
-        preset: Preset,
+        target: &crate::terminal::state::ComparisonTarget,
     ) -> RenderedOverlay {
+        use crate::terminal::state::ComparisonTarget;
         use TextAlignment::Left;
 
-        let defaults = crate::terminal::control::DefaultValues::from_preset(preset);
-        let pname = preset_name(preset);
+        let (label, defaults, col_header) = match target {
+            ComparisonTarget::Preset(p) => (
+                preset_name(*p).to_string(),
+                crate::terminal::control::DefaultValues::from_preset(*p),
+                "Preset Default",
+            ),
+            ComparisonTarget::Config(np) => {
+                let (lbl, dv) = match np.overrides.resolve() {
+                    Ok(p) => (
+                        np.name.clone(),
+                        crate::terminal::control::DefaultValues::from_sim_config(
+                            &p.sim,
+                            p.render.auto_normalize,
+                        ),
+                    ),
+                    Err(_) => (
+                        format!("{} (unresolved)", np.name),
+                        crate::terminal::control::DefaultValues::from_preset(
+                            crate::simulation::config::Preset::Organic,
+                        ),
+                    ),
+                };
+                (lbl, dv, "Config Default")
+            }
+        };
 
         let mut builder = PanelBuilder::new(Self::CONTENT_WIDTH, None)
             .with_padding(Padding::new(1, 1, 2, 2))
-            .with_title(format!("PRESET COMPARISON: {}", pname))
+            .with_title(format!("COMPARISON: {}", label))
             .with_title_box()
-            .add_empty()
-            .add_single("Parameter        │ Current      │ Preset Default", Left)
+            .add_empty_n(spacing::ROW)
+            .add_single(
+                format!("Parameter        │ Current      │ {}", col_header),
+                Left,
+            )
             .add_single(
                 "──────────────────┼──────────────┼──────────────────────",
                 Left,
@@ -442,8 +564,11 @@ impl PresetComparisonOverlay {
         );
 
         builder
-            .add_empty()
-            .add_single("Press Enter to Apply Preset     Esc to Close", Left)
+            .add_empty_n(spacing::ROW)
+            .add_single(
+                footer_hints(&[("↵", "apply preset"), ("esc", "close")]),
+                Left,
+            )
             .build_overlay()
     }
 
@@ -468,16 +593,11 @@ impl ConfigBrowserOverlay {
 
     /// Computes the index of the first visible config so the selection stays in view.
     ///
-    /// Returns the window start that keeps `selected` visible, anchored at the
-    /// bottom of the `[start, start + max_visible)` window. Because the selection
-    /// is always pinned to the bottom of the window, navigating upward jumps the
-    /// window so `selected` sits on the last visible row rather than the nearest
-    /// edge. The result is clamped so the window never runs past the end of the list.
-    ///
-    /// # Parameters
-    /// - `selected`: currently highlighted index (clamped to `total - 1`)
-    /// - `total`: number of configs available
-    /// - `max_visible`: number of rows the panel can display at once
+    /// Returns the window start that keeps `selected` (clamped to `total - 1`)
+    /// visible, anchored at the bottom of the `[start, start + max_visible)`
+    /// window. Because the selection is pinned to the bottom of the window,
+    /// navigating upward jumps the window so `selected` sits on the last visible
+    /// row. The result is clamped so the window never runs past the end of the list.
     fn config_browser_window(selected: usize, total: usize, max_visible: usize) -> usize {
         if total <= max_visible || max_visible == 0 {
             return 0;
@@ -490,7 +610,7 @@ impl ConfigBrowserOverlay {
 
     /// Builds the configuration list overlay.
     pub fn build_overlay(
-        configs: &[crate::config_manager::SavedConfig],
+        configs: &[crate::config_manager::NamedProfile],
         selected_index: usize,
     ) -> RenderedOverlay {
         use TextAlignment::Left;
@@ -502,11 +622,11 @@ impl ConfigBrowserOverlay {
 
         if configs.is_empty() {
             builder = builder
-                .add_empty()
+                .add_empty_n(spacing::ROW)
                 .add_single("No saved configurations", Left)
-                .add_empty()
+                .add_empty_n(spacing::ROW)
                 .add_single("Press Ctrl+S to save current settings", Left)
-                .add_empty();
+                .add_empty_n(spacing::ROW);
         } else {
             let total = configs.len();
             let start =
@@ -530,12 +650,21 @@ impl ConfigBrowserOverlay {
                 let num = i + 1;
                 let selected_marker = if i == selected_index { "›" } else { " " };
                 let name = &config.name;
-                let palette = &config.palette;
-                let pop = config.population / 1000;
-                let line = format!(
-                    "{}{} {} - {} - {}k agents",
-                    selected_marker, num, name, palette, pop,
-                );
+                let palette = config
+                    .overrides
+                    .palette
+                    .as_ref()
+                    .map(|p| p.name())
+                    .unwrap_or("?");
+                let pop = config.overrides.population.unwrap_or(0) / 1000;
+                let suffix = format!(" - {} - {}k agents", palette, pop);
+                // Derive name budget from the column width, subtracting the
+                // fixed overhead: marker(1) + num digits + space(1) + suffix.
+                let num_digits = num.to_string().len();
+                let overhead = 1 + num_digits + 1 + suffix.chars().count();
+                let name_budget = Self::CONTENT_WIDTH.saturating_sub(overhead).max(4);
+                let truncated_name = truncate_ellipsis(name, name_budget);
+                let line = format!("{}{} {}{}", selected_marker, num, truncated_name, suffix,);
                 builder = builder.add_single(line, Left);
             }
 
@@ -548,12 +677,21 @@ impl ConfigBrowserOverlay {
                 builder = builder.add_empty();
             }
 
-            builder = builder
-                .add_empty()
-                .add_single("↑/↓: Navigate  Enter: Load  Del: Delete", Left);
+            builder = builder.add_empty_n(spacing::ROW).add_single(
+                footer_hints(&[
+                    ("↑↓", "navigate"),
+                    ("↵", "load"),
+                    ("del", "delete"),
+                    ("esc", "cancel"),
+                ]),
+                Left,
+            );
+            return builder.build_overlay();
         }
 
-        builder.add_single("Esc: Cancel", Left).build_overlay()
+        builder
+            .add_single(footer_hints(&[("esc", "cancel")]), Left)
+            .build_overlay()
     }
 
     /// Calculates center position for the browser overlay.
@@ -581,10 +719,10 @@ impl ConfigSaveOverlay {
             .with_padding(Padding::new(0, 0, 1, 1))
             .with_title("SAVE CONFIGURATION")
             .with_title_box()
-            .add_empty()
+            .add_empty_n(spacing::ROW)
             .add_single(format!("Name: {:<25}", name_input), Left)
-            .add_empty()
-            .add_single("Enter: Save    Esc: Cancel", Left)
+            .add_empty_n(spacing::ROW)
+            .add_single(footer_hints(&[("↵", "save"), ("esc", "cancel")]), Left)
             .build_overlay()
     }
 
@@ -592,6 +730,45 @@ impl ConfigSaveOverlay {
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
         let x = (term_width.saturating_sub(Self::TOTAL_WIDTH)) / 2;
         let y = (term_height.saturating_sub(5)) / 2;
+        (x, y)
+    }
+}
+
+/// Overlay for the dirty-state guard: confirms discarding live edits before a swap.
+pub struct DirtyGuardOverlay;
+
+impl DirtyGuardOverlay {
+    /// Total rendered width.
+    const TOTAL_WIDTH: usize = 48;
+    /// Content width (inner drawable area). 48 - 2(border) - 2*1(padding).
+    const CONTENT_WIDTH: usize = 44;
+
+    /// Builds the dirty-state guard dialog overlay.
+    pub fn build_overlay() -> RenderedOverlay {
+        use TextAlignment::Left;
+
+        PanelBuilder::new(Self::CONTENT_WIDTH, None)
+            .with_padding(Padding::new(0, 0, 1, 1))
+            .with_title("UNSAVED CHANGES")
+            .with_title_box()
+            .add_empty_n(spacing::ROW)
+            .add_single("Discard live edits and switch?", Left)
+            .add_empty_n(spacing::ROW)
+            .add_single(
+                footer_hints(&[("↵", "discard & switch"), ("esc", "cancel")]),
+                Left,
+            )
+            .build_overlay()
+    }
+
+    /// Calculates center position for the guard dialog.
+    ///
+    /// The overlay is 7 visible rows tall: 6 main-panel lines (top border + 4 content
+    /// rows + bottom border) plus 1 title-box line drawn one row above. Subtracting 7
+    /// keeps the dialog vertically centred.
+    pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let x = (term_width.saturating_sub(Self::TOTAL_WIDTH)) / 2;
+        let y = (term_height.saturating_sub(7)) / 2;
         (x, y)
     }
 }
@@ -605,70 +782,6 @@ pub fn format_notification(text: &str, level: NotificationLevel) -> String {
     format!("{}  {}", level.icon(), text)
 }
 
-/// Builds a two-line notification toast panel with an accent-colored border.
-///
-/// The panel shows:
-/// - Line 1: `"{icon}  {message}"` with icon in the level's accent color
-/// - Border characters colored with the theme's accent color for the notification level
-pub fn build_notification_panel(
-    msg: &str,
-    level: NotificationLevel,
-    panel_style: &PanelStyle,
-) -> RenderedOverlay {
-    let content = format!(" {}  {} ", level.icon(), msg);
-    let cw = content.chars().count();
-    let accent = match level {
-        NotificationLevel::Info => panel_style.accent_info,
-        NotificationLevel::Success => panel_style.accent_success,
-        NotificationLevel::Warning => panel_style.accent_warning,
-        NotificationLevel::Error => panel_style.accent_error,
-    };
-    let mut overlay = PanelBuilder::new(cw, None)
-        .with_padding(Padding::COMPACT)
-        .with_border_color(accent)
-        .add_single(content, TextAlignment::Left)
-        .build_overlay();
-    overlay.rich_lines = Some(build_notification_rich_lines(&overlay.lines, accent));
-    overlay
-}
-
-/// Applies per-character color overrides to a notification panel.
-///
-/// Colors:
-/// - All border characters (`█`, `▀`, `▄`) → accent foreground
-/// - Icon prefix on the content line → accent foreground
-fn build_notification_rich_lines(lines: &[String], accent: RgbColor) -> Vec<Vec<RichCell>> {
-    lines
-        .iter()
-        .enumerate()
-        .map(|(line_idx, line)| {
-            let chars: Vec<char> = line.chars().collect();
-            chars
-                .iter()
-                .enumerate()
-                .map(|(i, &c)| {
-                    let fg = if matches!(c, '█' | '▀' | '▄') {
-                        // Border characters: color with accent
-                        Some(accent)
-                    } else if line_idx == 1 {
-                        // Content line: positions 0-1 are border+padding, position 2 onwards is content.
-                        // Content format: " {icon}  {message}"
-                        // icon = 1 char at position 3 (border(1) + pad(1) + space(1) = 3)
-                        if i == 3 {
-                            Some(accent)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                    (c, fg, None)
-                })
-                .collect()
-        })
-        .collect()
-}
-
 /// Utilities for rendering overlay elements (status line, help lists).
 pub struct OverlayRenderer;
 
@@ -676,16 +789,15 @@ impl OverlayRenderer {
     #[allow(clippy::too_many_arguments)]
     /// Builds the status bar string displayed at the bottom of the screen.
     ///
-    /// Uses `◦` as a segment separator for a clean powerline-inspired look.
-    /// Segments are added in priority order; lower-priority segments are omitted
-    /// when the terminal is too narrow to fit them.
+    /// Uses `◦` as a segment separator. Segments are added in priority order;
+    /// lower-priority segments are omitted when the terminal is too narrow.
     ///
-    /// Layout (left to right):
+    /// Layout (left to right, right side right-aligned):
     /// ```text
-    ///   PRESET  ◦  1.0×  ▸  PALETTE  ▸  50k  [Z Y]  ⏸ PAUSED  ·  ? help
+    ///   PRESET  ◦  1.0×  ◦  ■ PALETTE  ◦  50k  ◦  KERNEL      ↺ ↻  ⏸ PAUSED  ? help
     /// ```
     pub fn build_status_line(
-        _is_paused: bool,
+        is_paused: bool,
         preset: Preset,
         time_scale: f32,
         palette: Palette,
@@ -696,26 +808,15 @@ impl OverlayRenderer {
         can_undo: bool,
         can_redo: bool,
         accent: Option<RgbColor>,
+        st: &PanelStyle,
     ) -> (String, Vec<(usize, RgbColor)>) {
         const SEP: &str = "  ◦  ";
         let mut color_overrides: Vec<(usize, RgbColor)> = Vec::new();
 
-        // Theme colors for status bar chrome (GRUVBOX-matching hardcoded values)
-        let muted = RgbColor {
-            r: 102,
-            g: 92,
-            b: 84,
-        };
-        let accent_success = RgbColor {
-            r: 184,
-            g: 187,
-            b: 38,
-        }; // green for undo ↺
-        let accent_info = RgbColor {
-            r: 131,
-            g: 165,
-            b: 152,
-        }; // teal for redo ↻ and ?
+        // Theme colors drawn from L2 tokens — no hardcoded RGB.
+        let muted = st.muted;
+        let accent_success = st.accent_success; // green for undo ↺
+        let accent_info = st.accent_info; // teal for redo ↻ and ?
 
         let preset_text = preset_name(preset);
         let palette_text = palette_name(palette);
@@ -794,7 +895,7 @@ impl OverlayRenderer {
             right.push_str("  ");
         }
 
-        if _is_paused {
+        if is_paused {
             paused_offset_in_right = Some(right.chars().count());
             right.push_str("⏸ PAUSED  ");
         }
@@ -823,16 +924,11 @@ impl OverlayRenderer {
             if let Some(off) = help_q_offset_in_right {
                 color_overrides.push((right_start + off, accent_info));
             }
-            // Color ⏸ PAUSED with amber
+            // Color ⏸ PAUSED with accent_warning token
             if let Some(paused_off) = paused_offset_in_right {
                 let global_start = right_start + paused_off;
-                let amber = RgbColor {
-                    r: 215,
-                    g: 153,
-                    b: 33,
-                };
                 for i in 0.."⏸ PAUSED".chars().count() {
-                    color_overrides.push((global_start + i, amber));
+                    color_overrides.push((global_start + i, st.accent_warning));
                 }
             }
             format!("{}{}{}", left, " ".repeat(gap), right)
@@ -870,9 +966,18 @@ mod tests {
 
     #[test]
     fn test_keyboard_hints_position() {
-        let (x, y) = KeyboardHintsOverlay::calculate_position(100, 100);
+        // Centers the visual block (content + 1 title row), keeping y >= 1.
+        let (x, y) = KeyboardHintsOverlay::calculate_position(100, 100, 28);
         assert_eq!(x, (100 - KeyboardHintsOverlay::WIDTH) / 2);
-        assert_eq!(y, (100usize.saturating_sub(20)) / 2);
+        assert_eq!(y, 100usize.saturating_sub(29) / 2 + 1);
+    }
+
+    #[test]
+    fn test_keyboard_hints_position_top_anchors_when_too_tall() {
+        // Overlay taller than the terminal: top-anchor at y == 1 so the title and
+        // top rows stay on-screen instead of the body being pushed off the bottom.
+        let (_x, y) = KeyboardHintsOverlay::calculate_position(120, 24, 30);
+        assert_eq!(y, 1);
     }
 
     #[test]
@@ -904,6 +1009,19 @@ mod tests {
 /// Unified dashboard overlay combining stats and environment info in a landscape three-zone layout.
 pub struct DashboardOverlay;
 
+/// Rich colored cells for a gauge bar: `(char, RgbColor)` per cell.
+type GaugeCells = Vec<(char, RgbColor)>;
+
+/// Gauge override entry: `(body_line_index, content_col_offset, cells)`.
+///
+/// Stored during `build_overlay` and consumed by `generate_rich_lines` to apply
+/// threshold-band colors to gauge rows.
+type GaugeOverride = (usize, usize, GaugeCells);
+
+/// Resolved gauge lookup entry used inside `generate_rich_lines`:
+/// `(rendered_line_index, content_col_offset, cells_slice)`.
+type GaugeLookupEntry<'a> = (usize, usize, &'a [(char, RgbColor)]);
+
 impl DashboardOverlay {
     /// Total rendered width of the dashboard window.
     pub const WIDTH: usize = 84;
@@ -913,6 +1031,48 @@ impl DashboardOverlay {
     const LEFT_COL: usize = 37;
     /// Right column width within the two-column middle zone.
     const RIGHT_COL: usize = 38;
+
+    /// Fixed body row count for constant-height layout (paused / running must match).
+    ///
+    /// Body rows (between the top/bottom borders, excluding PanelBuilder-added borders):
+    ///   PERFORMANCE header + blank + FPS + blank  = 4
+    ///   ENV|SIM header + blank                    = 2
+    ///   Preset|Trail + Palette|Entropy + Grid|Agents + Term|MaxTrail + Seed|Frames + Init|Time = 6
+    ///   blank + SYSTEM header + blank             = 3
+    ///   CPU|SIMD + Mem|AutoReset + Color|Charset  = 3
+    ///   food (conditional, padded)                = 1
+    ///   extras (conditional, padded)              = 1
+    ///   legend row                                = 1
+    ///   blank + PALETTE header + strip            = 3
+    ///   Total                                     = 24
+    const BODY_ROWS: usize = 24;
+
+    // ── Threshold bands for gauge recoloring ─────────────────────────────────
+    //
+    // FPS (range 0..60, target ≈ 60):
+    //   healthy  ≥ 55  (target-5)  → accent_success
+    //   warn     ≥ 45  (target-15) → accent_warning
+    //   critical < 45              → accent_error
+    //
+    // Trail utilisation (range 0..100 %):
+    //   healthy  < 80 %  → accent_success
+    //   warn     < 95 %  → accent_warning
+    //   critical ≥ 95 %  → accent_error
+    //
+    // Entropy (range 0..8, from calculate_entropy; max_entropy scaled to 8.0):
+    //   healthy  ≥ 3.0  → accent_success   (well-mixed, diverse pattern)
+    //   warn     ≥ 1.5  → accent_warning   (starting to stagnate)
+    //   critical < 1.5  → accent_error     (low entropy = collapsed/uniform)
+    //
+    // CPU % (range 0..100 %):
+    //   healthy  < 50 % → accent_success
+    //   warn     < 80 % → accent_warning
+    //   critical ≥ 80 % → accent_error
+    //
+    // Memory MB (range 0..100 MB):
+    //   healthy  < 50 MB → accent_success
+    //   warn     < 80 MB → accent_warning
+    //   critical ≥ 80 MB → accent_error
 
     /// Calculates entropy of the trail map for complexity analysis.
     pub fn calculate_entropy(trail_map: &[f32], sample_rate: usize) -> f32 {
@@ -951,17 +1111,6 @@ impl DashboardOverlay {
         } else {
             0.0
         }
-    }
-
-    /// Builds a proportional progress bar string.
-    fn build_progress_bar(value: f32, max: f32, width: usize) -> String {
-        let filled = if max > 0.0 {
-            ((value / max).clamp(0.0, 1.0) * width as f32) as usize
-        } else {
-            0
-        };
-        let empty = width.saturating_sub(filled);
-        format!("{}{}", "█".repeat(filled), "░".repeat(empty))
     }
 
     /// Builds a section header spanning the full content width.
@@ -1038,6 +1187,7 @@ impl DashboardOverlay {
         use TextAlignment::Left;
 
         let cw = Self::CONTENT_WIDTH;
+        let st = panel_style;
 
         let trail_percent = if trail_capacity > 0.0 {
             (trail_sum / trail_capacity * 100.0).min(99.9)
@@ -1046,12 +1196,93 @@ impl DashboardOverlay {
         };
         let elapsed_str = format_elapsed_time(elapsed_seconds);
 
-        // Progress bars
-        let fps_bar = Self::build_progress_bar(fps, 60.0, 32);
-        let trail_bar = Self::build_progress_bar(trail_percent, 100.0, 15);
-        let entropy_bar = Self::build_progress_bar(entropy, 8.0, 15);
-        let cpu_bar = Self::build_progress_bar(cpu_percent, 100.0, 15);
-        let mem_bar = Self::build_progress_bar(memory_mb, 100.0, 15);
+        // ── Threshold-aware fill color selection ──────────────────────────────
+        // Returns the fill color for a gauge based on the metric's threshold bands.
+        // See BODY_ROWS comment block above for full band definitions.
+        let fps_fill_color = if fps >= 55.0 {
+            st.accent_success
+        } else if fps >= 45.0 {
+            st.accent_warning
+        } else {
+            st.accent_error
+        };
+        let trail_fill_color = if trail_percent < 80.0 {
+            st.accent_success
+        } else if trail_percent < 95.0 {
+            st.accent_warning
+        } else {
+            st.accent_error
+        };
+        let entropy_fill_color = if entropy >= 3.0 {
+            st.accent_success
+        } else if entropy >= 1.5 {
+            st.accent_warning
+        } else {
+            st.accent_error
+        };
+        let cpu_fill_color = if cpu_percent < 50.0 {
+            st.accent_success
+        } else if cpu_percent < 80.0 {
+            st.accent_warning
+        } else {
+            st.accent_error
+        };
+        let mem_fill_color = if memory_mb < 50.0 {
+            st.accent_success
+        } else if memory_mb < 80.0 {
+            st.accent_warning
+        } else {
+            st.accent_error
+        };
+
+        // ── Build gauges (FPS is width 32, the rest width 15) ─────────────────
+        // Each gauge returns Vec<(char, RgbColor)>; we extract chars for the
+        // string lines and store cells for rich_lines coloring.
+        //
+        // gauge() uses accent_active for fill + value tick; the `recolor` closure
+        // below repaints the fill cells ('█' + '│') with the threshold color.
+        let fps_gauge_cells = gauge(fps, (0.0, 60.0), 60.0, 32, st);
+        let trail_gauge_cells = gauge(trail_percent, (0.0, 100.0), 100.0, 15, st);
+        let entropy_gauge_cells = gauge(entropy, (0.0, 8.0), 8.0, 15, st);
+        let cpu_gauge_cells = gauge(cpu_percent, (0.0, 100.0), 100.0, 15, st);
+        let mem_gauge_cells = gauge(memory_mb, (0.0, 100.0), 100.0, 15, st);
+
+        // Extract plain chars from gauge cells for string rendering
+        let fps_bar: String = fps_gauge_cells.iter().map(|(c, _)| c).collect();
+        let trail_bar: String = trail_gauge_cells.iter().map(|(c, _)| c).collect();
+        let entropy_bar: String = entropy_gauge_cells.iter().map(|(c, _)| c).collect();
+        let cpu_bar: String = cpu_gauge_cells.iter().map(|(c, _)| c).collect();
+        let mem_bar: String = mem_gauge_cells.iter().map(|(c, _)| c).collect();
+
+        // Recolor fill cells (█ and │) with threshold-band color.
+        // The ▲ default tick keeps st.state_default, ░ keeps st.muted.
+        let recolor =
+            |cells: Vec<(char, RgbColor)>, fill_color: RgbColor| -> Vec<(char, RgbColor)> {
+                cells
+                    .into_iter()
+                    .map(|(c, col)| {
+                        if c == '█' || c == '│' {
+                            (c, fill_color)
+                        } else {
+                            (c, col)
+                        }
+                    })
+                    .collect()
+            };
+        let fps_gauge_rich = recolor(fps_gauge_cells, fps_fill_color);
+        let trail_gauge_rich = recolor(trail_gauge_cells, trail_fill_color);
+        let entropy_gauge_rich = recolor(entropy_gauge_cells, entropy_fill_color);
+        let cpu_gauge_rich = recolor(cpu_gauge_cells, cpu_fill_color);
+        let mem_gauge_rich = recolor(mem_gauge_cells, mem_fill_color);
+
+        // ── Legend row cells ──────────────────────────────────────────────────
+        let legend_cells = legend(&[
+            ("█ good", st.accent_success),
+            ("█ warn", st.accent_warning),
+            ("█ crit", st.accent_error),
+            ("▲ default", st.state_default),
+        ]);
+        let legend_str: String = legend_cells.iter().map(|(c, _)| c).collect();
 
         let grid_str = format!("{}×{}", grid_width, grid_height);
         let term_str = format!("{}×{}", term_width, term_height);
@@ -1064,54 +1295,85 @@ impl DashboardOverlay {
                 .to_string()
         });
 
-        // Build line list
-        let mut lines: Vec<String> = Vec::new();
+        // ── Build line list ───────────────────────────────────────────────────
+        // Lines are built in a fixed order. Optional rows (food, extras) are
+        // always emitted (blank when not present) to keep BODY_ROWS constant.
+        let mut lines: Vec<String> = Vec::with_capacity(Self::BODY_ROWS);
+        // Map from body line index → (col_offset, gauge_rich_cells)
+        // col_offset is the offset within the content (not including border/padding).
+        let mut gauge_overrides: Vec<GaugeOverride> = Vec::new();
+        // Map from body line index → (col_offset, legend_cells)
+        let mut legend_overrides: Vec<GaugeOverride> = Vec::new();
 
-        // ── PERFORMANCE ──
+        // ── PERFORMANCE ──                                                 row 0
         lines.push(format!(
             "{:<cw$}",
             Self::build_section_header("PERFORMANCE", cw)
         ));
+        // blank                                                             row 1
         lines.push(format!("{:<cw$}", ""));
-        // FPS label + bar + values (paused-aware)
-        let fps_row = if is_paused {
-            format!("  FPS   {:<32}  PAUSED", "░".repeat(32))
-        } else {
-            format!("  FPS   {}  {:.0}  avg {:.0}", fps_bar, fps, avg_fps)
-        };
-        lines.push(format!("{:<cw$}", fps_row));
+        // FPS row                                                           row 2
+        {
+            let row_idx = lines.len();
+            let fps_row = if is_paused {
+                // Show muted bar when paused (gauge chars but all muted — just use ░)
+                format!("  FPS   {:<32}  PAUSED", "░".repeat(32))
+            } else {
+                format!("  FPS   {}  {:.0}  avg {:.0}", fps_bar, fps, avg_fps)
+            };
+            lines.push(format!("{:<cw$}", fps_row));
+            if !is_paused {
+                // "  FPS   " = 9 chars; gauge starts at col 9 within content
+                gauge_overrides.push((row_idx, 9, fps_gauge_rich));
+            }
+        }
+        // blank                                                             row 3
         lines.push(format!("{:<cw$}", ""));
 
-        // ── ENVIRONMENT (left) ─── | ── SIMULATION (right) ──
+        // ── ENVIRONMENT | SIMULATION ──                                    row 4
         let env_header = Self::build_section_header("ENVIRONMENT", Self::LEFT_COL);
         let sim_header = Self::build_section_header("SIMULATION", Self::RIGHT_COL);
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(&env_header, &sim_header)
         ));
+        // blank                                                             row 5
         lines.push(format!("{:<cw$}", ""));
 
-        // Preset | Trail bar
-        let trail_row = format!("  Trail   {}  {:.1}%", trail_bar, trail_percent);
-        lines.push(format!(
-            "{:<cw$}",
-            Self::build_two_col_row(
-                &format!("  Preset  {:>18}", Self::truncate(preset_name, 18)),
-                &trail_row
-            )
-        ));
+        // Preset | Trail                                                    row 6
+        {
+            let row_idx = lines.len();
+            let trail_row = format!("  Trail   {}  {:.1}%", trail_bar, trail_percent);
+            lines.push(format!(
+                "{:<cw$}",
+                Self::build_two_col_row(
+                    &format!("  Preset  {:>18}", truncate_ellipsis(preset_name, 18)),
+                    &trail_row
+                )
+            ));
+            // Two-col right side starts at LEFT_COL + 3 (" │ ").
+            // Within the right side: "  Trail   " = 10 chars; gauge at right_start + 10
+            let trail_gauge_col = Self::LEFT_COL + 3 + 10;
+            gauge_overrides.push((row_idx, trail_gauge_col, trail_gauge_rich));
+        }
 
-        // Palette | Entropy bar
-        let entropy_row = format!("  Entropy {}  {:.1}", entropy_bar, entropy);
-        lines.push(format!(
-            "{:<cw$}",
-            Self::build_two_col_row(
-                &format!("  Palette {:>18}", Self::truncate(palette_name, 18)),
-                &entropy_row
-            )
-        ));
+        // Palette | Entropy                                                 row 7
+        {
+            let row_idx = lines.len();
+            let entropy_row = format!("  Entropy {}  {:.1}", entropy_bar, entropy);
+            lines.push(format!(
+                "{:<cw$}",
+                Self::build_two_col_row(
+                    &format!("  Palette {:>18}", truncate_ellipsis(palette_name, 18)),
+                    &entropy_row
+                )
+            ));
+            // "  Entropy " = 10 chars
+            let entropy_gauge_col = Self::LEFT_COL + 3 + 10;
+            gauge_overrides.push((row_idx, entropy_gauge_col, entropy_gauge_rich));
+        }
 
-        // Grid | Agents
+        // Grid | Agents                                                     row 8
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(
@@ -1120,7 +1382,7 @@ impl DashboardOverlay {
             )
         ));
 
-        // Term | Max Trail
+        // Term | Max Trail                                                  row 9
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(
@@ -1129,11 +1391,11 @@ impl DashboardOverlay {
             )
         ));
 
-        // Seed | Frames
+        // Seed | Frames                                                     row 10
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(
-                &format!("  Seed    {:>18}", Self::truncate(&seed_str, 18)),
+                &format!("  Seed    {:>18}", truncate_ellipsis(&seed_str, 18)),
                 &format!(
                     "  Frames        {:>10}",
                     Self::format_count(frame_count as usize)
@@ -1141,7 +1403,7 @@ impl DashboardOverlay {
             )
         ));
 
-        // Init | Time
+        // Init | Time                                                       row 11
         lines.push(format!(
             "{:<cw$}",
             Self::build_two_col_row(
@@ -1150,65 +1412,94 @@ impl DashboardOverlay {
             )
         ));
 
-        // ── SYSTEM (full-width header) ──
+        // ── SYSTEM ──                                                      rows 12-14
         lines.push(format!("{:<cw$}", ""));
         lines.push(format!("{:<cw$}", Self::build_section_header("SYSTEM", cw)));
         lines.push(format!("{:<cw$}", ""));
 
-        // CPU bar (left) | SIMD status (right)
-        let cpu_row = format!("  CPU   {}  {:.0}%", cpu_bar, cpu_percent);
-        lines.push(format!(
-            "{:<cw$}",
-            Self::build_two_col_row(
-                &cpu_row,
-                &format!("  SIMD          {:>10}", Self::build_status(simd_enabled))
-            )
-        ));
-
-        // Mem bar (left) | Auto Reset (right)
-        let mem_label = format!("{:.1} MB", memory_mb);
-        let mem_row = format!("  Mem   {}  {}", mem_bar, mem_label);
-        let auto_reset_right = format!("  Auto Reset    {:>10}", Self::build_status(auto_reset));
-        lines.push(format!(
-            "{:<cw$}",
-            Self::build_two_col_row(&mem_row, &auto_reset_right)
-        ));
-
-        // Color | Charset (always separate columns)
-        lines.push(format!(
-            "{:<cw$}",
-            Self::build_two_col_row(
-                &format!("  Color   {:>18}", Self::truncate(color_mode, 18)),
-                &format!("  Charset       {:>10}", Self::truncate(charset, 10))
-            )
-        ));
-
-        // Optional food source row
-        if let Some(food_display) = food_str.as_deref() {
+        // CPU | SIMD                                                        row 15
+        {
+            let row_idx = lines.len();
+            let cpu_row = format!("  CPU   {}  {:.0}%", cpu_bar, cpu_percent);
             lines.push(format!(
                 "{:<cw$}",
                 Self::build_two_col_row(
-                    &format!("  Food    {:>18}", Self::truncate(food_display, 18)),
-                    ""
+                    &cpu_row,
+                    &format!("  SIMD          {:>10}", Self::build_status(simd_enabled))
                 )
             ));
+            // "  CPU   " = 8 chars
+            gauge_overrides.push((row_idx, 8, cpu_gauge_rich));
         }
 
-        // Extra info: species/attractors/obstacles (left) | empty (right)
-        if attractor_count > 0 || obstacle_count > 0 || species_count > 1 {
+        // Mem | Auto Reset                                                  row 16
+        {
+            let row_idx = lines.len();
+            let mem_label = format!("{:.1} MB", memory_mb);
+            let mem_row = format!("  Mem   {}  {}", mem_bar, mem_label);
+            let auto_reset_right =
+                format!("  Auto Reset    {:>10}", Self::build_status(auto_reset));
             lines.push(format!(
                 "{:<cw$}",
+                Self::build_two_col_row(&mem_row, &auto_reset_right)
+            ));
+            // "  Mem   " = 8 chars
+            gauge_overrides.push((row_idx, 8, mem_gauge_rich));
+        }
+
+        // Color | Charset                                                   row 17
+        lines.push(format!(
+            "{:<cw$}",
+            Self::build_two_col_row(
+                &format!("  Color   {:>18}", truncate_ellipsis(color_mode, 18)),
+                &format!("  Charset       {:>10}", truncate_ellipsis(charset, 10))
+            )
+        ));
+
+        // Food row (always emitted; blank when no food source)             row 18
+        {
+            let row_str = if let Some(food_display) = food_str.as_deref() {
+                Self::build_two_col_row(
+                    &format!("  Food    {:>18}", truncate_ellipsis(food_display, 18)),
+                    "",
+                )
+            } else {
+                String::new()
+            };
+            lines.push(format!("{:<cw$}", row_str));
+        }
+
+        // Extras row (always emitted; blank when no extras)                row 19
+        {
+            let row_str = if attractor_count > 0 || obstacle_count > 0 || species_count > 1 {
+                #[cfg(feature = "multi-species")]
+                let spc_segment = format!("Spc:{} ", species_count);
+                #[cfg(not(feature = "multi-species"))]
+                let spc_segment = String::new();
                 Self::build_two_col_row(
                     &format!(
-                        "  Spc:{} Att:{} Obs:{}",
-                        species_count, attractor_count, obstacle_count
+                        "  {}Att:{} Obs:{}",
+                        spc_segment, attractor_count, obstacle_count
                     ),
-                    ""
+                    "",
                 )
-            ));
+            } else {
+                String::new()
+            };
+            lines.push(format!("{:<cw$}", row_str));
         }
 
-        // ── PALETTE strip ──
+        // Legend row                                                        row 20
+        {
+            let row_idx = lines.len();
+            // Indent 2 to align with other content rows
+            let legend_padded = format!("  {}", legend_str);
+            lines.push(format!("{:<cw$}", legend_padded));
+            // Offset 2 for the "  " prefix
+            legend_overrides.push((row_idx, 2, legend_cells));
+        }
+
+        // ── PALETTE ──                                                     rows 21-23
         lines.push(format!("{:<cw$}", ""));
         lines.push(format!(
             "{:<cw$}",
@@ -1218,7 +1509,15 @@ impl DashboardOverlay {
         let palette_strip: String = (0..cw).map(|_| '▄').collect();
         lines.push(format!("{:<cw$}", palette_strip));
 
-        // Build the overlay via PanelBuilder using raw lines
+        debug_assert_eq!(
+            lines.len(),
+            Self::BODY_ROWS,
+            "build_overlay: line count {} != BODY_ROWS {}",
+            lines.len(),
+            Self::BODY_ROWS
+        );
+
+        // ── Assemble overlay ──────────────────────────────────────────────────
         let mut overlay = PanelBuilder::new(cw, None)
             .with_padding(Padding::new(2, 0, 2, 2))
             .with_title("DASHBOARD")
@@ -1235,21 +1534,10 @@ impl DashboardOverlay {
             accent,
             panel_style,
             palette_colors,
+            &gauge_overrides,
+            &legend_overrides,
         ));
         rendered
-    }
-
-    fn truncate(s: &str, max: usize) -> &str {
-        let len = s.chars().count();
-        if len <= max {
-            s
-        } else {
-            // Find the byte offset of the `max`-th character boundary
-            match s.char_indices().nth(max) {
-                Some((byte_pos, _)) => &s[..byte_pos],
-                None => s,
-            }
-        }
     }
 
     fn format_count(n: usize) -> String {
@@ -1270,19 +1558,39 @@ impl DashboardOverlay {
     }
 
     /// Generates per-cell color overrides for the dashboard rich rendering.
+    ///
+    /// `gauge_overrides` and `legend_overrides` map body line indices
+    /// (0-based in the raw `lines` vec) to `(content_col_offset, cells)` pairs.
+    /// PanelBuilder prepends 1 top-border row + 2 top-padding rows, so body line
+    /// `b` maps to rendered line `b + 3`.
     fn generate_rich_lines(
         lines: &[String],
         _fps: f32,
         accent: RgbColor,
         panel_style: &PanelStyle,
         palette_colors: &[RgbColor],
+        gauge_overrides: &[GaugeOverride],
+        legend_overrides: &[GaugeOverride],
     ) -> Vec<Vec<RichCell>> {
         let muted = panel_style.muted;
         let text_secondary = panel_style.text_secondary;
 
+        // Build lookups: (rendered_line_idx, content_col_offset, cells_ref)
+        // PanelBuilder build() applies top border (1) + top padding (2) = 3 offset, so body line b → rendered line b+3.
+        // (title_box is a separate RenderedOverlay field, not in lines)
+        let gauge_lookup: Vec<GaugeLookupEntry<'_>> = gauge_overrides
+            .iter()
+            .map(|(body_idx, col_offset, cells)| (body_idx + 3, *col_offset, cells.as_slice()))
+            .collect();
+        let legend_lookup: Vec<GaugeLookupEntry<'_>> = legend_overrides
+            .iter()
+            .map(|(body_idx, col_offset, cells)| (body_idx + 3, *col_offset, cells.as_slice()))
+            .collect();
+
         lines
             .iter()
-            .map(|line| {
+            .enumerate()
+            .map(|(rendered_line_idx, line)| {
                 let chars: Vec<char> = line.chars().collect();
                 let n = chars.len();
                 // Content starts at col 3 (border=1, padding.left=2)
@@ -1306,12 +1614,36 @@ impl DashboardOverlay {
                 let is_palette_strip = content_start < content_end
                     && chars[content_start..content_end].iter().all(|&c| c == '▄');
 
-                // Detect FPS row
+                // Detect FPS row (still needed for digit coloring after the gauge)
                 let is_fps_row = content_start + 5 < n
                     && chars[content_start + 2..].starts_with(&['F', 'P', 'S']);
 
-                // Detect divider row (contains '│' at approx col 40)
-                let divider_col = chars.iter().position(|&c| c == '│');
+                // Detect divider row (contains '│' at approx col 40 — the column separator)
+                // Only the two-col divider; gauge '│' ticks are in gauge cells, not plain '│'.
+                // Find the divider-col '│' that is NOT inside any gauge region on this row.
+                let gauge_ranges_this_row: Vec<(usize, usize)> = gauge_lookup
+                    .iter()
+                    .filter(|(ri, _, _)| *ri == rendered_line_idx)
+                    .map(|(_, col_offset, cells)| {
+                        let abs_start = content_start + col_offset;
+                        (abs_start, abs_start + cells.len())
+                    })
+                    .collect();
+                let divider_col = chars.iter().enumerate().position(|(i, &c)| {
+                    c == '│' && !gauge_ranges_this_row.iter().any(|(s, e)| i >= *s && i < *e)
+                });
+
+                // Check if this row has gauge overrides
+                let gauge_this_row: Option<(usize, &[(char, RgbColor)])> = gauge_lookup
+                    .iter()
+                    .find(|(ri, _, _)| *ri == rendered_line_idx)
+                    .map(|(_, col_offset, cells)| (*col_offset, *cells));
+
+                // Check if this row has legend overrides
+                let legend_this_row: Option<(usize, &[(char, RgbColor)])> = legend_lookup
+                    .iter()
+                    .find(|(ri, _, _)| *ri == rendered_line_idx)
+                    .map(|(_, col_offset, cells)| (*col_offset, *cells));
 
                 if is_palette_strip {
                     // Per-char palette color from sampled gradient
@@ -1345,50 +1677,56 @@ impl DashboardOverlay {
                             (c, fg, None)
                         })
                         .collect()
-                } else if is_fps_row {
+                } else {
+                    // Generic / gauge / legend / FPS row.
+                    // Priority: gauge cells > legend cells > FPS digit > divider > status dots.
                     chars
                         .iter()
                         .enumerate()
                         .map(|(i, &c)| {
-                            let col = i.saturating_sub(content_start);
-                            // FPS value: digits after bar — "  FPS   [bar]  N  avg N"
-                            let fg = if i >= content_start
-                                && i < content_end
-                                && (8..52).contains(&col)
-                                && (c.is_ascii_digit() || c == '.')
-                            {
-                                Some(accent)
-                            } else if matches!(c, '█' | '░')
+                            let content_col = i.saturating_sub(content_start);
+
+                            // Gauge override: apply pre-computed threshold-colored cells.
+                            if let Some((gauge_col, gauge_cells)) = gauge_this_row {
+                                if i >= content_start {
+                                    let gauge_start = content_start + gauge_col;
+                                    let gauge_end = gauge_start + gauge_cells.len();
+                                    if i >= gauge_start && i < gauge_end {
+                                        let g_idx = i - gauge_start;
+                                        return (c, Some(gauge_cells[g_idx].1), None);
+                                    }
+                                }
+                            }
+
+                            // Legend override: apply pre-computed colored cells.
+                            if let Some((leg_col, leg_cells)) = legend_this_row {
+                                if i >= content_start {
+                                    let leg_start = content_start + leg_col;
+                                    let leg_end = leg_start + leg_cells.len();
+                                    if i >= leg_start && i < leg_end {
+                                        let l_idx = i - leg_start;
+                                        return (c, Some(leg_cells[l_idx].1), None);
+                                    }
+                                }
+                            }
+
+                            // FPS value digits (after the gauge bar)
+                            let fg = if is_fps_row
                                 && i >= content_start
                                 && i < content_end
+                                && (41..60).contains(&content_col)
+                                && (c.is_ascii_digit() || c == '.')
                             {
-                                // Progress bar coloring (accent fills, muted empties)
-                                if c == '█' {
-                                    Some(accent)
-                                } else {
-                                    Some(muted)
-                                }
-                            } else {
-                                None
-                            };
-                            (c, fg, None)
-                        })
-                        .collect()
-                } else {
-                    // Generic row: color divider, status dots, progress bars
-                    chars
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &c)| {
-                            let fg = if Some(i) == divider_col {
+                                // FPS value digits appear after the 32-wide gauge bar
+                                // "  FPS   [32 gauge chars]  N  avg N"
+                                // col 0..1 = "  ", col 2..4 = "FPS", col 5..8 = "   ",
+                                // col 9..40 = gauge (32), col 41+ = "  N  avg N"
+                                Some(accent)
+                            } else if Some(i) == divider_col {
                                 Some(muted)
                             } else if c == '◦' {
                                 Some(accent)
                             } else if c == '○' {
-                                Some(muted)
-                            } else if c == '█' && i >= content_start && i < content_end {
-                                Some(accent)
-                            } else if c == '░' && i >= content_start && i < content_end {
                                 Some(muted)
                             } else {
                                 None
@@ -1606,6 +1944,273 @@ mod dashboard_tests {
         assert_eq!(format_elapsed_time(3661.0), "1:01:01");
         assert_eq!(format_elapsed_time(0.0), "0:00");
     }
+
+    /// Helper: builds a dashboard overlay with a set of representative values.
+    fn build_test_overlay(is_paused: bool) -> super::RenderedOverlay {
+        let palette_colors = make_palette_colors();
+        let accent = RgbColor {
+            r: 57,
+            g: 211,
+            b: 83,
+        };
+        DashboardOverlay::build_overlay(
+            50000,     // agent_count
+            1234567.0, // trail_sum
+            8000000.0, // trail_capacity
+            8.5,       // trail_max
+            5.5,       // entropy
+            50.0,      // fps (warn band: 45 ≤ fps < 55)
+            48.0,      // avg_fps
+            1234,      // frame_count
+            125.5,     // elapsed_seconds
+            400,       // grid_width
+            400,       // grid_height
+            0,         // attractor_count
+            0,         // obstacle_count
+            1,         // species_count
+            12.5,      // memory_mb
+            45.0,      // cpu_percent
+            is_paused,
+            "Organic",
+            "Heat",
+            &palette_colors,
+            120,         // term_width
+            40,          // term_height
+            "Random",    // init_mode
+            "TrueColor", // color_mode
+            "HalfBlock", // charset
+            true,        // simd_enabled
+            0.90,        // _decay_factor
+            22.5,        // _sensor_angle
+            42,          // seed
+            &None,       // food_source
+            0,           // _warmup_frames
+            false,       // auto_reset
+            accent,
+            &GRUVBOX_DARK,
+        )
+    }
+
+    /// UX-win D: gauge glyphs (█ ░ │ ▲) must appear in gauge rows.
+    #[test]
+    fn dashboard_gauges_use_canonical_glyphs() {
+        let rendered = build_test_overlay(false);
+        let all_text: String = rendered.lines.join(
+            "
+",
+        );
+        // The gauge widget uses │ (value tick) and ▲ (default tick).
+        assert!(
+            all_text.contains('│'),
+            "Gauge value-tick │ must appear in dashboard"
+        );
+        assert!(
+            all_text.contains('▲'),
+            "Gauge default-tick ▲ must appear in dashboard"
+        );
+        // Fill and empty chars.
+        assert!(all_text.contains('█'), "Gauge fill █ must appear");
+        assert!(all_text.contains('░'), "Gauge empty ░ must appear");
+    }
+
+    /// UX-win D: body line count must be constant whether paused or running.
+    #[test]
+    fn dashboard_body_is_constant_height_paused_vs_running() {
+        let running = build_test_overlay(false);
+        let paused = build_test_overlay(true);
+        assert_eq!(
+            running.lines.len(),
+            paused.lines.len(),
+            "Dashboard must be constant height paused ({}) vs running ({})",
+            paused.lines.len(),
+            running.lines.len()
+        );
+    }
+
+    /// UX-win D: legend row must be present and contain all four band labels.
+    #[test]
+    fn dashboard_legend_row_present() {
+        let rendered = build_test_overlay(false);
+        let all_text: String = rendered.lines.join(
+            "
+",
+        );
+        assert!(all_text.contains("good"), "Legend must contain 'good'");
+        assert!(all_text.contains("warn"), "Legend must contain 'warn'");
+        assert!(all_text.contains("crit"), "Legend must contain 'crit'");
+        assert!(
+            all_text.contains("default"),
+            "Legend must contain 'default'"
+        );
+    }
+
+    /// UX-win D: gauge rich_lines must apply threshold colors (not uniform accent_active).
+    /// For fps=50 (warn band: 45 ≤ fps < 55), the fill cells should use accent_warning.
+    #[test]
+    fn dashboard_gauge_rich_lines_apply_threshold_colors() {
+        let rendered = build_test_overlay(false);
+        let rich = rendered
+            .rich_lines
+            .as_ref()
+            .expect("rich_lines must be Some");
+        // PanelBuilder build() applies top border (1) + top padding (2) = 3 offset.
+        // Body line 2 (FPS) → rendered line 5. (title_box is a separate RenderedOverlay field)
+        // Content starts at rendered col 3; gauge starts at content_col 9, so rendered col 12.
+        let fps_rich_row = &rich[5];
+        // Find a '█' fill cell in the FPS gauge region (rendered cols 12..44)
+        let fill_cell = fps_rich_row
+            .iter()
+            .enumerate()
+            .find(|(i, (c, fg, _))| *c == '█' && *i >= 12 && fg.is_some());
+        assert!(
+            fill_cell.is_some(),
+            "FPS gauge fill cell must be present in rich row 5; row = {:?}",
+            fps_rich_row.iter().map(|(c, _, _)| c).collect::<String>()
+        );
+        let (_, (_, fill_color, _)) = fill_cell.unwrap();
+        // fps=50 → warn band (45 ≤ fps < 55) → accent_warning
+        assert_eq!(
+            *fill_color,
+            Some(GRUVBOX_DARK.accent_warning),
+            "fps=50 is in warn band; fill should be accent_warning"
+        );
+    }
+    /// UX-win D: gauge fill cells in good band (fps ≥ 55) should use accent_success.
+    #[test]
+    fn dashboard_gauge_rich_lines_good_band_threshold_color() {
+        let palette_colors = make_palette_colors();
+        let accent = RgbColor {
+            r: 57,
+            g: 211,
+            b: 83,
+        };
+        let rendered = DashboardOverlay::build_overlay(
+            50000,
+            1234567.0,
+            8000000.0,
+            8.5,
+            5.5,
+            60.0, // fps in good band (≥ 55)
+            58.0,
+            1234,
+            125.5,
+            400,
+            400,
+            0,
+            0,
+            1,
+            12.5,
+            45.0,
+            false,
+            "Organic",
+            "Heat",
+            &palette_colors,
+            120,
+            40,
+            "Random",
+            "TrueColor",
+            "HalfBlock",
+            true,
+            0.90,
+            22.5,
+            42,
+            &None,
+            0,
+            false,
+            accent,
+            &GRUVBOX_DARK,
+        );
+        let rich = rendered
+            .rich_lines
+            .as_ref()
+            .expect("rich_lines must be Some");
+        let fps_rich_row = &rich[5];
+        // Find a '█' fill cell in the FPS gauge region (rendered cols 12..44), avoiding the tick
+        let fill_cell = fps_rich_row.iter().enumerate().find(|(i, (c, fg, _))| {
+            *c == '█' && *i >= 12 && *i < 40 && fg.is_some() // exclude rightmost cols near tick
+        });
+        assert!(
+            fill_cell.is_some(),
+            "FPS gauge fill cell must be present in good-band row; row = {:?}",
+            fps_rich_row.iter().map(|(c, _, _)| c).collect::<String>()
+        );
+        let (_, (_, fill_color, _)) = fill_cell.unwrap();
+        // fps=60 → good band (≥ 55) → accent_success
+        assert_eq!(
+            *fill_color,
+            Some(GRUVBOX_DARK.accent_success),
+            "fps=60 is in good band; fill should be accent_success"
+        );
+    }
+
+    /// UX-win D: gauge fill cells in crit band (fps < 45) should use accent_error.
+    #[test]
+    fn dashboard_gauge_rich_lines_crit_band_threshold_color() {
+        let palette_colors = make_palette_colors();
+        let accent = RgbColor {
+            r: 57,
+            g: 211,
+            b: 83,
+        };
+        let rendered = DashboardOverlay::build_overlay(
+            50000,
+            1234567.0,
+            8000000.0,
+            8.5,
+            5.5,
+            30.0, // fps in crit band (< 45)
+            28.0,
+            1234,
+            125.5,
+            400,
+            400,
+            0,
+            0,
+            1,
+            12.5,
+            45.0,
+            false,
+            "Organic",
+            "Heat",
+            &palette_colors,
+            120,
+            40,
+            "Random",
+            "TrueColor",
+            "HalfBlock",
+            true,
+            0.90,
+            22.5,
+            42,
+            &None,
+            0,
+            false,
+            accent,
+            &GRUVBOX_DARK,
+        );
+        let rich = rendered
+            .rich_lines
+            .as_ref()
+            .expect("rich_lines must be Some");
+        let fps_rich_row = &rich[5];
+        // Find a '█' fill cell in the FPS gauge region (rendered cols 12..44)
+        let fill_cell = fps_rich_row
+            .iter()
+            .enumerate()
+            .find(|(i, (c, fg, _))| *c == '█' && *i >= 12 && *i < 30 && fg.is_some());
+        assert!(
+            fill_cell.is_some(),
+            "FPS gauge fill cell must be present in crit-band row; row = {:?}",
+            fps_rich_row.iter().map(|(c, _, _)| c).collect::<String>()
+        );
+        let (_, (_, fill_color, _)) = fill_cell.unwrap();
+        // fps=30 → crit band (< 45) → accent_error
+        assert_eq!(
+            *fill_color,
+            Some(GRUVBOX_DARK.accent_error),
+            "fps=30 is in crit band; fill should be accent_error"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1629,6 +2234,7 @@ mod status_line_tests {
             false,
             false,
             None,
+            &crate::render::theme::GRUVBOX_DARK,
         );
         // At 40 cols: should only have preset and time
         assert!(status.contains("Organic"));
@@ -1651,6 +2257,7 @@ mod status_line_tests {
             false,
             false,
             None,
+            &crate::render::theme::GRUVBOX_DARK,
         );
         // At 80 cols: should have preset, time, palette, and population
         assert!(status.contains("Network"));
@@ -1677,6 +2284,7 @@ mod status_line_tests {
             false,
             false,
             None,
+            &crate::render::theme::GRUVBOX_DARK,
         );
         // At 120 cols: should have everything including help
         assert!(status.contains("Exploratory"));
@@ -1689,6 +2297,7 @@ mod status_line_tests {
 
     #[test]
     fn test_status_line_paused() {
+        let st = &crate::render::theme::GRUVBOX_DARK;
         let (status, colors) = OverlayRenderer::build_status_line(
             true,
             Preset::Organic,
@@ -1701,15 +2310,11 @@ mod status_line_tests {
             false,
             false,
             None,
+            st,
         );
         assert!(status.contains("⏸ PAUSED"));
-        // PAUSED should have amber color overrides
-        let amber = RgbColor {
-            r: 215,
-            g: 153,
-            b: 33,
-        };
-        assert!(colors.iter().any(|(_, c)| *c == amber));
+        // PAUSED should have accent_warning color overrides
+        assert!(colors.iter().any(|(_, c)| *c == st.accent_warning));
     }
 
     #[test]
@@ -1729,6 +2334,7 @@ mod status_line_tests {
             false,
             false,
             None,
+            &crate::render::theme::GRUVBOX_DARK,
         );
         assert!(status.contains("D 0.5×"));
     }
@@ -1747,19 +2353,80 @@ mod status_line_tests {
             false,
             false,
             None,
+            &crate::render::theme::GRUVBOX_DARK,
         );
         // Should still work without population or diffusion kernel
         assert!(status.contains("Organic"));
         assert!(status.contains("1.0×"));
     }
 
+    fn overlay_to_string(overlay: &RenderedOverlay) -> String {
+        overlay.lines.join("\n")
+    }
+
+    #[test]
+    fn keyboard_hints_show_live_binds() {
+        use crate::keybind_manager::BindTarget;
+        use crate::simulation::config::Preset;
+        use std::collections::HashMap;
+        let mut binds = HashMap::new();
+        binds.insert('4', BindTarget::Preset(Preset::Fire));
+        let overlay = KeyboardHintsOverlay::build_overlay(
+            RgbColor::new(255, 255, 255),
+            &crate::render::theme::GRUVBOX_DARK,
+            &binds,
+        );
+        let text = overlay_to_string(&overlay);
+        assert!(text.contains("Fire"), "user bind name shown");
+        assert!(
+            text.contains("unbound"),
+            "an empty 4-7 slot shows 'unbound'"
+        );
+    }
+
+    #[test]
+    fn keyboard_hints_utf8_config_truncation() {
+        use crate::keybind_manager::BindTarget;
+        use std::collections::HashMap;
+        let mut binds = HashMap::new();
+        // Multi-byte UTF-8 name longer than 10 bytes; byte index 10 falls
+        // inside a 3-byte UTF-8 char, triggering panic if byte-sliced
+        binds.insert('4', BindTarget::Config("abc日本語設定テスト".to_string()));
+        // Should not panic on multi-byte UTF-8 char boundary
+        let overlay = KeyboardHintsOverlay::build_overlay(
+            RgbColor::new(255, 255, 255),
+            &crate::render::theme::GRUVBOX_DARK,
+            &binds,
+        );
+        let text = overlay_to_string(&overlay);
+        assert!(text.contains("cfg:"), "config label present");
+    }
+
+    #[test]
+    fn test_keyboard_hints_lists_frame_and_chrome() {
+        let overlay = KeyboardHintsOverlay::build_overlay(
+            RgbColor::new(255, 255, 255),
+            &crate::render::theme::GRUVBOX_DARK,
+            &std::collections::HashMap::new(),
+        );
+        let joined = overlay.lines.join("\n");
+        assert!(joined.contains("Window frame"), "missing window-frame hint");
+        assert!(joined.contains("( / )"), "missing window-frame keybind");
+        assert!(joined.contains("Cycle chrome"), "missing chrome hint");
+        assert!(joined.contains("F10"), "missing chrome keybind");
+    }
+
     #[test]
     fn test_keyboard_hints_overlay_format() {
-        let hints_lines = KeyboardHintsOverlay::build_overlay(RgbColor {
-            r: 180,
-            g: 220,
-            b: 100,
-        });
+        let hints_lines = KeyboardHintsOverlay::build_overlay(
+            RgbColor {
+                r: 180,
+                g: 220,
+                b: 100,
+            },
+            &crate::render::theme::GRUVBOX_DARK,
+            &std::collections::HashMap::new(),
+        );
 
         // Solid-block borders
         for line in &hints_lines.lines {
@@ -1788,20 +2455,134 @@ mod status_line_tests {
     }
 
     #[test]
+    fn test_keyboard_hints_controls_depth_grammar() {
+        let overlay = KeyboardHintsOverlay::build_overlay(
+            RgbColor::new(255, 255, 255),
+            &crate::render::theme::GRUVBOX_DARK,
+            &std::collections::HashMap::new(),
+        );
+        let joined = overlay.lines.join("\n");
+
+        // New grammar: Tab toggles depth (Tuner ⇄ Console)
+        assert!(joined.contains("Tab"), "missing Tab keybind");
+        assert!(
+            joined.contains("Tuner") || joined.contains("Console") || joined.contains("depth"),
+            "Tab hint should reference Tuner, Console, or depth"
+        );
+
+        // New grammar: [ ] for prev/next category
+        assert!(joined.contains("["), "missing [ keybind for prev category");
+        assert!(joined.contains("]"), "missing ] keybind for next category");
+        assert!(joined.contains("category"), "missing category hint");
+
+        // New grammar: ← → for adjust focused param
+        assert!(
+            joined.contains("←") || joined.contains("→") || joined.contains("adjust"),
+            "should reference arrow keys for adjust"
+        );
+
+        // Old grammar: Tab should NOT say "Cycle category" anymore
+        assert!(
+            !joined.contains("Tab        Cycle category"),
+            "Tab should no longer cycle category"
+        );
+    }
+
+    #[test]
+    fn test_keyboard_hints_dev_entry_uses_muted_token() {
+        // Dev-only entries (containing "(dev)") must use st.muted for the
+        // right column, not a hardcoded gray, so the color adapts across themes.
+        //
+        // The row in question has two columns:
+        //   left:  "( / )      Window frame"   → keybind colored with accent
+        //   right: "{ }        Dither (dev)"   → all non-space chars colored muted
+        let accent = RgbColor::new(200, 100, 50);
+        let gruvbox = crate::render::theme::GRUVBOX_DARK;
+        let overlay = KeyboardHintsOverlay::build_overlay(
+            accent,
+            &gruvbox,
+            &std::collections::HashMap::new(),
+        );
+        let rich_lines = overlay
+            .rich_lines
+            .expect("KeyboardHints must have rich_lines");
+
+        let dev_row_idx = overlay
+            .lines
+            .iter()
+            .position(|l| l.contains("(dev)"))
+            .expect("hints must contain a (dev) row");
+
+        let rich = &rich_lines[dev_row_idx];
+        // Content starts at index 7 (border + padding). The right column
+        // starts at CONTENT_START + col_width = 7 + 37 = 44.
+        const RIGHT_COL_START: usize = 7 + 37;
+        let right_colored: Vec<RgbColor> = rich
+            .iter()
+            .skip(RIGHT_COL_START)
+            .filter(|(c, fg, _)| *c != ' ' && *c != '█' && fg.is_some())
+            .filter_map(|(_, fg, _)| *fg)
+            .collect();
+
+        assert!(
+            !right_colored.is_empty(),
+            "dev right column must have colored non-space cells"
+        );
+        for color in &right_colored {
+            assert_eq!(
+                *color, gruvbox.muted,
+                "dev entry right column must equal st.muted, got {:?}",
+                color
+            );
+            // Verify token-based: not the old hardcoded gray.
+            assert_ne!(
+                *color,
+                RgbColor::new(128, 128, 128),
+                "dev entry must not use hardcoded gray (128,128,128)"
+            );
+        }
+        // Ensure accent ≠ muted so the test is discriminating.
+        assert_ne!(
+            gruvbox.muted, accent,
+            "test accent must differ from gruvbox.muted"
+        );
+    }
+
+    #[test]
+    fn test_keyboard_hints_key_tokens_use_accent() {
+        // Key tokens (the keybind portion of each row) must be colored with the accent.
+        let accent = RgbColor::new(200, 100, 50);
+        let st = crate::render::theme::GRUVBOX_DARK;
+        let overlay =
+            KeyboardHintsOverlay::build_overlay(accent, &st, &std::collections::HashMap::new());
+        let rich_lines = overlay
+            .rich_lines
+            .expect("KeyboardHints must have rich_lines");
+
+        // Find a keybind row, e.g. one containing "Space" for Pause/Resume.
+        let space_row = overlay
+            .lines
+            .iter()
+            .position(|l| l.contains("Space") && l.contains("Pause"))
+            .expect("hints must contain Space/Pause row");
+        let rich = &rich_lines[space_row];
+        // The "Space" key text starts after the border+padding (7 chars in).
+        // Verify at least one cell in that row has the accent color.
+        let has_accent = rich.iter().any(|(_, fg, _)| *fg == Some(accent));
+        assert!(has_accent, "key token 'Space' must be colored with accent");
+    }
+
+    #[test]
     fn test_preset_comparison_overlay() {
         use crate::cli::PauseStyle;
-        use crate::render::palette::IntensityMapping;
         use crate::simulation::config::{InitMode, SimConfig};
 
         let mut state = crate::terminal::control::RuntimeState::new(
             42,
             InitMode::Random,
             Preset::Organic,
-            0,
-            0,
             crate::terminal::control::MouseInteractionMode::Disabled,
             0.0,
-            IntensityMapping::linear(),
             &SimConfig::default(),
             PauseStyle::Vignette,
             false,
@@ -1809,7 +2590,10 @@ mod status_line_tests {
         );
         state.sensor_angle = 90.0; // Changed from default
 
-        let lines = PresetComparisonOverlay::build_overlay(&state, Preset::Organic);
+        let lines = PresetComparisonOverlay::build_overlay(
+            &state,
+            &crate::terminal::state::ComparisonTarget::Preset(Preset::Organic),
+        );
         assert!(!lines.lines.is_empty());
         let content_lines = lines
             .lines
@@ -1821,89 +2605,31 @@ mod status_line_tests {
         assert!(content_lines[0].contains('⚙'));
     }
 
+    fn make_named_profile(name: &str) -> crate::config_manager::NamedProfile {
+        use crate::profile_overrides::ProfileOverrides;
+        use crate::render::palette::Palette;
+        crate::config_manager::NamedProfile {
+            name: name.to_string(),
+            description: None,
+            overrides: ProfileOverrides {
+                population: Some(10000),
+                palette: Some(Palette::Forest),
+                ..Default::default()
+            },
+        }
+    }
+
     #[test]
     fn test_config_browser_overlay_items() {
-        let configs = vec![crate::config_manager::SavedConfig {
-            name: "Test Config".to_string(),
-            description: None,
-            population: 10000,
-            sensor_angle: 0.0,
-            sensor_distance: 0.0,
-            rotation_angle: 0.0,
-            step_size: 0.0,
-            decay_factor: 0.0,
-            deposit_amount: 0.0,
-            max_brightness: 0.0,
-            diffusion_kernel: "mean3x3".to_string(),
-            diffusion_sigma: 0.0,
-            palette: "Forest".to_string(),
-            charset: "ascii".to_string(),
-            reverse_palette: false,
-            invert_palette: false,
-            warmup_frames: 0,
-            food_persist: false,
-            auto_reset: false,
-            grid: false,
-            grid_style: None,
-            init_mode: "random".to_string(),
-            food_path: None,
-            background_color: None,
-            intensity_mapping: None,
-            intensity_mapping_base: None,
-            intensity_mapping_gamma: None,
-            intensity_mapping_levels: None,
-            window_frame: "frame".to_string(),
-            chrome_style: "minimal".to_string(),
-            aspect: "3:2".to_string(),
-            window_padding: "auto".to_string(),
-            show_status_bar: false,
-            min_sim_size: "20x10".to_string(),
-            min_frame_size: "12x6".to_string(),
-        }];
+        let configs = vec![make_named_profile("Test Config")];
 
         let lines = ConfigBrowserOverlay::build_overlay(&configs, 0);
         assert!(lines.lines.iter().any(|l| l.contains("Test Config")));
         assert!(lines.lines.iter().any(|l| l.contains("10k agents")));
     }
 
-    fn make_saved_config(name: &str) -> crate::config_manager::SavedConfig {
-        crate::config_manager::SavedConfig {
-            name: name.to_string(),
-            description: None,
-            population: 10000,
-            sensor_angle: 0.0,
-            sensor_distance: 0.0,
-            rotation_angle: 0.0,
-            step_size: 0.0,
-            decay_factor: 0.0,
-            deposit_amount: 0.0,
-            max_brightness: 0.0,
-            diffusion_kernel: "mean3x3".to_string(),
-            diffusion_sigma: 0.0,
-            palette: "Forest".to_string(),
-            charset: "ascii".to_string(),
-            reverse_palette: false,
-            invert_palette: false,
-            warmup_frames: 0,
-            food_persist: false,
-            auto_reset: false,
-            grid: false,
-            grid_style: None,
-            init_mode: "random".to_string(),
-            food_path: None,
-            background_color: None,
-            intensity_mapping: None,
-            intensity_mapping_base: None,
-            intensity_mapping_gamma: None,
-            intensity_mapping_levels: None,
-            window_frame: "frame".to_string(),
-            chrome_style: "minimal".to_string(),
-            aspect: "3:2".to_string(),
-            window_padding: "auto".to_string(),
-            show_status_bar: false,
-            min_sim_size: "20x10".to_string(),
-            min_frame_size: "12x6".to_string(),
-        }
+    fn make_saved_config(name: &str) -> crate::config_manager::NamedProfile {
+        make_named_profile(name)
     }
 
     #[test]
@@ -2201,14 +2927,8 @@ impl ExpandedChromeOverlay {
     /// Builds the 2-row title block shown at the top of the window chrome.
     ///
     /// Returns `[row1, row2]` as plain strings (no ANSI). Row 1 contains the
-    /// app name and preset. Row 2 contains palette, charset, and agent count.
-    ///
-    /// # Parameters
-    /// - `preset`: Active simulation preset
-    /// - `palette`: Active color palette
-    /// - `charset_str`: Human-readable charset name (e.g. "HalfBlock")
-    /// - `population`: Number of agents (used to compute k-value)
-    /// - `_width`: Terminal width (reserved for future truncation logic)
+    /// app name and preset; row 2 the palette, charset, and agent count.
+    /// `_width` is reserved for future truncation logic.
     pub fn build_title_block(
         preset: Preset,
         palette: Palette,
@@ -2245,6 +2965,7 @@ impl ExpandedChromeOverlay {
         can_undo: bool,
         can_redo: bool,
         accent: Option<RgbColor>,
+        st: &PanelStyle,
     ) -> (String, Vec<(usize, RgbColor)>) {
         OverlayRenderer::build_status_line(
             is_paused,
@@ -2258,24 +2979,32 @@ impl ExpandedChromeOverlay {
             can_undo,
             can_redo,
             accent,
+            st,
         )
     }
 
     /// Builds footer row 2: context-sensitive keybind hints.
     ///
-    /// When `is_modal_open` is true (e.g. config browser overlay is showing),
-    /// the hints switch to modal navigation keys. Otherwise, the standard
-    /// running-mode shortcuts are displayed.
-    ///
-    /// # Parameters
-    /// - `is_modal_open`: Whether a modal overlay is currently focused
-    /// - `_width`: Terminal width (reserved for future truncation logic)
+    /// When `is_modal_open` is true (e.g. config browser showing), the hints
+    /// switch to modal navigation keys; otherwise the standard running-mode
+    /// shortcuts are shown. `_width` is reserved for future truncation logic.
     pub fn build_footer_keybinds(is_modal_open: bool, _width: usize) -> String {
         if is_modal_open {
-            "  \u{2191}\u{2193} navigate \u{00B7} enter select \u{00B7} esc close".to_string()
+            format!(
+                "  {}",
+                footer_hints(&[("↑↓", "navigate"), ("↵", "select"), ("esc", "close")])
+            )
         } else {
-            "  q quit \u{00B7} h help \u{00B7} space pause \u{00B7} c cycle palette \u{00B7} \\ dashboard"
-                .to_string()
+            format!(
+                "  {}",
+                footer_hints(&[
+                    ("q", "quit"),
+                    ("h", "help"),
+                    ("space", "pause"),
+                    ("c", "cycle palette"),
+                    ("\\", "dashboard"),
+                ])
+            )
         }
     }
 }

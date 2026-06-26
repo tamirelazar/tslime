@@ -1,6 +1,9 @@
-//! Implements Floyd-Steinberg error diffusion dithering.
+//! Floyd-Steinberg error diffusion dithering.
 //!
 //! Maintains error buffers for the current and next row to propagate quantization errors.
+//!
+//! Floyd, R. W., & Steinberg, L. (1976). "An Adaptive Algorithm for Spatial
+//! Grayscale." Proceedings of the Society for Information Display, 17(2), 75-77.
 
 /// Floyd-Steinberg error diffusion coefficients (left-to-right scan).
 /// The 16 divisor is implicit: right = 7/16, down_left = 3/16, down = 5/16, down_right = 1/16
@@ -11,13 +14,10 @@ mod fs_coeff {
     pub const DOWN_RIGHT: f32 = 1.0 / 16.0;
 
     /// Coefficients for serpentine (right-to-left) scanning.
+    /// Vertical coefficients (down, down_right) are shared with the parent module.
     pub mod serpentine {
         pub const RIGHT: f32 = 3.0 / 16.0;
         pub const DOWN_LEFT: f32 = 7.0 / 16.0;
-        #[allow(dead_code)]
-        pub const DOWN: f32 = 5.0 / 16.0;
-        #[allow(dead_code)]
-        pub const DOWN_RIGHT: f32 = 1.0 / 16.0;
     }
 }
 
@@ -108,16 +108,10 @@ impl ErrorDiffusion {
         }
     }
 
-    /// Applies error diffusion to a single pixel.
-    ///
-    /// # Arguments
-    /// * `x`, `y` - Pixel coordinates.
-    /// * `brightness` - Original brightness value.
-    /// * `quantized` - The chosen quantized value.
-    /// * `is_top` - Whether this is the top or bottom subpixel (for half-block charsets).
-    /// * `serpentine` - If true, alternates error distribution direction.
-    ///
-    /// Returns the quantized value (passed through).
+    /// Distributes the quantization error for one pixel to its neighbors and
+    /// returns `quantized` unchanged. `is_top` selects the top/bottom subpixel
+    /// buffer (half-block charsets); `serpentine` swaps the horizontal
+    /// coefficients on odd rows.
     pub fn apply_and_distribute(
         &mut self,
         x: usize,

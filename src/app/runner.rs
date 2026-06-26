@@ -5,6 +5,8 @@
 
 use std::io::{self, Write};
 
+use clap::Parser as _;
+
 use crate::app::{
     apply_live_params, apply_random_config, extract_species_rgb_colors, REFERENCE_TIME_STEP,
 };
@@ -17,13 +19,14 @@ use crate::food_image::FOOD_IMAGE_PNG;
 use crate::overlay::{OverlayInputManager, OverlayInputResult, OverlayType};
 use crate::palette_manager;
 use crate::render::adaptive_brightness::AdaptiveBrightness;
+use crate::render::ambient::{AmbientState, BaseStatus};
 use crate::render::charset::Charset;
+use crate::render::controls::registry::RegistryCtx;
 use crate::render::dither::DitherMode;
 use crate::render::downsample::downsample;
 use crate::render::grid::{GridRenderer, GridStyle};
-use crate::render::options_overlay::ControlsOverlay;
 use crate::render::overlay::{
-    build_notification_panel, ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay,
+    ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay, DirtyGuardOverlay,
     KeyboardHintsOverlay, OverlayRenderer, PauseOverlay, PresetComparisonOverlay, RenderedOverlay,
 };
 use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
@@ -37,7 +40,7 @@ use crate::simulation::Simulation;
 use crate::terminal::control::num_palettes;
 use crate::terminal::control::{
     charset_name, handle_key_event, palette_name, preset_name, ControlAction, MouseInteractionMode,
-    PaletteShiftSpeed, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
+    PaletteShiftSpeed, PendingSwap, RuntimeState, ALL_CHARSETS, ALL_PALETTES,
 };
 use crate::terminal::detection::{log_capabilities, TerminalCapabilities};
 use crate::terminal::frame_buffer::FrameBuffer;
@@ -49,52 +52,23 @@ use crate::terminal::timing::FrameTimer;
 use crossterm::event::Event;
 use memory_stats::memory_stats;
 
-/// Target frame time in milliseconds for 30 FPS (33.333ms)
+/// Target frame time at 30 FPS, in milliseconds.
 const TARGET_FRAME_TIME_MS: f32 = 33.333;
-
-/// Data structure holding all overlay states for rendering.
-#[derive(Default)]
-#[allow(dead_code)]
-#[allow(clippy::type_complexity)]
-struct OverlayData {
-    pause_logo: Option<RenderedOverlay>,
-    pause_logo_pos: (usize, usize),
-    controls: Option<RenderedOverlay>,
-    controls_pos: (usize, usize),
-    status: Option<(String, usize, Vec<(usize, RgbColor)>)>,
-    notification: Option<(RenderedOverlay, usize, usize)>,
-    dashboard: Option<RenderedOverlay>,
-    dashboard_pos: (usize, usize),
-    config_browser: Option<RenderedOverlay>,
-    config_browser_pos: (usize, usize),
-    config_save: Option<RenderedOverlay>,
-    config_save_pos: (usize, usize),
-    keyboard_hints: Option<RenderedOverlay>,
-    keyboard_hints_pos: (usize, usize),
-    preset_comparison: Option<RenderedOverlay>,
-    preset_comparison_pos: (usize, usize),
-    palette_editor: Option<RenderedOverlay>,
-    palette_editor_pos: (usize, usize),
-}
 
 /// Updates food persistence attractors with fade-out effect.
 ///
 /// Gradually reduces the strength of food attractors over time using
 /// quadratic easing for a smooth fade-out effect.
-fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeState, args: &Args) {
-    if !runtime_state.food_persist_enabled
-        || runtime_state.is_paused
-        || args.food_persist_duration == 0
-    {
+fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeState) {
+    let duration = runtime_state.app.food_persist_duration;
+    if !runtime_state.food_persist_enabled || runtime_state.is_paused || duration == 0 {
         return;
     }
 
     runtime_state.food_persist_counter += 1;
 
-    if runtime_state.food_persist_counter <= args.food_persist_duration {
-        // Calculate fade factor using quadratic easing
-        let progress =
-            runtime_state.food_persist_counter as f32 / args.food_persist_duration as f32;
+    if runtime_state.food_persist_counter <= duration {
+        let progress = runtime_state.food_persist_counter as f32 / duration as f32;
         let fade_factor: f32 = (1.0 - progress).powi(2); // Quadratic fade-out
 
         // Update attractor strengths without cloning entire config
@@ -104,10 +78,17 @@ fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeStat
             .map(|a| Attractor::new(a.x, a.y, a.strength * fade_factor))
             .collect();
         sim.update_attractors(attractors);
-    } else if runtime_state.food_persist_counter == args.food_persist_duration + 1 {
+    } else if runtime_state.food_persist_counter == duration + 1 {
         // Remove all food attractors when duration expires
         sim.update_attractors(Vec::new());
     }
+}
+
+/// The init mode to actually seed with. The constellation figure is chosen by
+/// the seeded simulation RNG inside `Simulation::new`, so reset stays
+/// deterministic and every preset uses its stable baseline init mode.
+pub(crate) fn effective_init_mode(base: InitMode) -> InitMode {
+    base
 }
 
 /// Checks if simulation should auto-reset based on entropy collapse.
@@ -117,28 +98,37 @@ fn update_food_persistence(sim: &mut Simulation, runtime_state: &mut RuntimeStat
 fn check_auto_reset(
     sim: &mut Simulation,
     runtime_state: &mut RuntimeState,
-    args: &Args,
     entropy: f32,
-    init_mode: InitMode,
+    blended_trail: &[f32],
 ) {
-    if !args.auto_reset || runtime_state.is_paused {
+    if !runtime_state.app.auto_reset || runtime_state.is_paused {
         return;
     }
 
-    let should_reset = runtime_state.track_entropy(
+    // Collapse fires on either signal: entropy falling away (the field dies out)
+    // or the pattern stagnating (a near-static shape that stops evolving even
+    // while entropy stays healthy, e.g. a frozen diagonal line).
+    let entropy_collapse = runtime_state.track_entropy(
         entropy,
-        args.collapse_entropy_threshold,
-        args.collapse_duration_frames,
+        runtime_state.app.auto_reset_entropy_threshold,
+        runtime_state.app.auto_reset_duration_frames,
     );
+    let stagnation_collapse = runtime_state.track_stagnation(
+        blended_trail,
+        crate::config_defaults::auto_reset::DEFAULT_STAGNATION_EPSILON,
+        crate::config_defaults::auto_reset::DEFAULT_STAGNATION_FRAMES,
+    );
+    let should_reset = entropy_collapse || stagnation_collapse;
 
     if should_reset {
-        // Generate new seed
         let new_seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
 
-        // Reset simulation
+        // Use the live original init mode (the apply seam updates it on restart),
+        // NOT the startup `init_mode` local which is stale after a config load.
+        let init_mode = effective_init_mode(runtime_state.original_init_mode);
         sim.reset(new_seed, init_mode);
         runtime_state.reset_collapse_counter();
         runtime_state.reset_warmup();
@@ -150,6 +140,744 @@ fn check_auto_reset(
     }
 }
 
+/// Returns `true` when a key event should immediately exit the application
+/// in screensaver mode.
+///
+/// Any key press exits; key release/repeat events (emitted on some platforms,
+/// e.g. Windows) are ignored so a single keystroke does not double-fire.
+fn screensaver_exit_on_key(mode: &Mode, key_event: &crossterm::event::KeyEvent) -> bool {
+    *mode == Mode::Screensaver && key_event.kind == crossterm::event::KeyEventKind::Press
+}
+
+/// Outcome of [`apply_controls_action`].
+///
+/// Controls-overlay interaction is split into a pure state mutation (focus,
+/// depth) and an optional "real" [`ControlAction`] that must be re-dispatched
+/// through the main action match (because adjusting the focused parameter is
+/// exactly the same as pressing its hotkey, which can touch the simulation,
+/// renderer, timer, etc. that live in the run loop).
+enum ControlsDispatch {
+    /// The action was not a controls-overlay action; let the main match handle it.
+    Passthrough,
+    /// The action was fully handled by mutating [`RuntimeState`]; nothing else to do.
+    Handled,
+    /// Re-dispatch this real [`ControlAction`] through the main action match.
+    Redispatch(ControlAction),
+}
+
+/// Returns `true` when a *competing* (interactive, non-Controls) overlay is the
+/// foreground overlay.
+///
+/// Overlays are mutually exclusive (`OverlayState` holds a single active slot),
+/// so "another overlay is open" is simply: the active overlay is `Some(x)` where
+/// `x` is neither `Controls` nor a non-interactive badge.
+///
+/// Used to suppress controls-interaction meta-actions (`Tab`/arrows/`Enter`)
+/// while e.g. the Dashboard is open, so they don't silently flip controls depth
+/// or mutate the simulation behind an overlay that doesn't render controls. The
+/// spec-mandated auto-promote-from-Closed behaviour (←→/Tab with NO overlay
+/// open) is preserved because that case has no active overlay at all.
+fn other_overlay_open(state: &RuntimeState) -> bool {
+    match state.overlay_state.active() {
+        // Controls itself is not a competitor.
+        Some(OverlayType::Controls) => false,
+        // Non-interactive badges never block controls interaction.
+        Some(OverlayType::PauseBadge) | Some(OverlayType::PauseLogo) => false,
+        // Any other interactive overlay (Help, Dashboard, ConfigBrowser,
+        // ConfigSave, DirtyGuard, PresetComparison, KeyboardHints,
+        // PaletteEditor) competes for the foreground.
+        Some(_) => true,
+        None => false,
+    }
+}
+
+/// Applies the controls-overlay interaction actions (depth toggle, focus
+/// movement, focused adjust/activate) to [`RuntimeState`], and performs
+/// in-category focus retargeting for plain per-param hotkeys.
+///
+/// The five interaction meta-actions (`ToggleControlsDepth`, `ControlsFocusNext`,
+/// `ControlsFocusPrev`, `ControlsAdjustFocused`, `ControlsActivateFocused`) only
+/// act when Controls is the foreground overlay OR no competing overlay is open
+/// (see [`other_overlay_open`]); otherwise they `Passthrough` without mutating
+/// depth/focus or auto-promoting, so e.g. arrows don't silently tweak the
+/// simulation behind the Dashboard.
+///
+/// Returns:
+/// - [`ControlsDispatch::Handled`] when the action was a pure state mutation.
+/// - [`ControlsDispatch::Redispatch`] with the real action to re-run (focused
+///   adjust/activate resolve to the focused parameter's hotkey action).
+/// - [`ControlsDispatch::Passthrough`] otherwise (the main match handles it),
+///   after retargeting focus if the hotkey's parameter is in the current
+///   category.
+fn apply_controls_action(
+    state: &mut RuntimeState,
+    action: &ControlAction,
+    ctx: &RegistryCtx,
+) -> ControlsDispatch {
+    use crate::render::controls::registry;
+    use crate::render::controls::ControlsDepth;
+
+    let category = state.controls_category_idx;
+
+    // Gate controls-interaction meta-actions behind the active overlay. We act
+    // only when Controls is the foreground overlay, OR no competing overlay is
+    // open (the latter preserves the spec's auto-promote-from-Closed behaviour
+    // for ←→/Tab when nothing is open). When a competing overlay (e.g. the
+    // Dashboard) is foreground, the five interaction meta-actions and the
+    // open-case category clamp are suppressed (Passthrough, no depth/focus
+    // mutation, no auto-promote).
+    let may_interact =
+        state.overlay_state.is_open(OverlayType::Controls) || !other_overlay_open(state);
+
+    // Defensive clamp: if a conditional row disappeared (e.g. Gaussian toggled
+    // off removes Diff Sigma; mouse disabled removes Mouse Timeout) the focus
+    // index can be stale. Correct it before any action so that navigation and
+    // adjust always land on a real row.
+    let visible_len = registry::visible_params(category, ctx).len();
+    if visible_len > 0 {
+        state.controls_focus = state.controls_focus.min(visible_len - 1);
+    }
+
+    match action {
+        ControlAction::ToggleControlsDepth => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
+            state.controls_depth = match state.controls_depth {
+                ControlsDepth::Closed => ControlsDepth::Console,
+                ControlsDepth::Console => ControlsDepth::Tuner,
+                ControlsDepth::Tuner => ControlsDepth::Console,
+            };
+            ControlsDispatch::Handled
+        }
+        ControlAction::ControlsFocusNext => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
+            let len = registry::visible_params(category, ctx).len();
+            if len > 0 {
+                state.controls_focus = (state.controls_focus + 1).min(len - 1);
+            }
+            ControlsDispatch::Handled
+        }
+        ControlAction::ControlsFocusPrev => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
+            state.controls_focus = state.controls_focus.saturating_sub(1);
+            ControlsDispatch::Handled
+        }
+        ControlAction::ControlsAdjustFocused(sign) => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
+            // Auto-promote: a focused adjust from Closed opens the Tuner first.
+            if state.controls_depth == ControlsDepth::Closed {
+                state.controls_depth = ControlsDepth::Tuner;
+            }
+            let params = registry::visible_params(category, ctx);
+            let Some(desc) = params.get(state.controls_focus.min(params.len().saturating_sub(1)))
+            else {
+                return ControlsDispatch::Handled;
+            };
+            match registry::action_for(desc.id, *sign) {
+                Some(real) => ControlsDispatch::Redispatch(real),
+                None => ControlsDispatch::Handled,
+            }
+        }
+        ControlAction::ControlsActivateFocused => {
+            if !may_interact {
+                return ControlsDispatch::Passthrough;
+            }
+            let params = registry::visible_params(category, ctx);
+            let Some(desc) = params.get(state.controls_focus.min(params.len().saturating_sub(1)))
+            else {
+                return ControlsDispatch::Handled;
+            };
+            match registry::activate_action_for(desc.id) {
+                Some(real) => ControlsDispatch::Redispatch(real),
+                None => ControlsDispatch::Handled,
+            }
+        }
+        // Category cycling: when the controls overlay is open, cycle the category
+        // here and clamp focus to the new category's visible row count, then
+        // return Handled so the runner's match arm is skipped (no double-cycle).
+        // When the overlay is closed, return Passthrough so the runner's arm can
+        // open the overlay and set depth=Console.
+        ControlAction::CycleOptionsCategory => {
+            if state.overlay_state.is_open(OverlayType::Controls) {
+                state.cycle_controls_category(true);
+                let new_len = registry::visible_params(state.controls_category_idx, ctx).len();
+                state.controls_focus = state.controls_focus.min(new_len.saturating_sub(1));
+                ControlsDispatch::Handled
+            } else {
+                ControlsDispatch::Passthrough
+            }
+        }
+        ControlAction::CycleOptionsCategoryReverse => {
+            if state.overlay_state.is_open(OverlayType::Controls) {
+                state.cycle_controls_category(false);
+                let new_len = registry::visible_params(state.controls_category_idx, ctx).len();
+                state.controls_focus = state.controls_focus.min(new_len.saturating_sub(1));
+                ControlsDispatch::Handled
+            } else {
+                ControlsDispatch::Passthrough
+            }
+        }
+        // Any other action: if it's a per-param hotkey whose parameter is in the
+        // CURRENT category, retarget focus to it (silent cross-category rule:
+        // parameters in other categories never change focus or category).
+        other => {
+            if let Some(id) = registry::param_id_for_action(other) {
+                if let Some((cat, idx)) = registry::locate(id, ctx) {
+                    if cat == category {
+                        state.controls_focus = idx;
+                    }
+                }
+            }
+            ControlsDispatch::Passthrough
+        }
+    }
+}
+
+/// Builds the [`ParamView`] list for the currently-visible parameters of the
+/// active controls category, sourcing every value from live [`RuntimeState`].
+///
+/// Value formatting, gauge ranges, and modified/default detection follow the
+/// same logic as [`build_param_views`] / the controls module so the Console
+/// reads identically to the old controls overlay.
+///
+/// `ratio`/`def_ratio` are filled only for [`ParamKind::Numeric`] rows; for all
+/// other kinds they are `None`. `state` is:
+/// - [`ParamState::Cli`] for CLI-readonly rows (Population),
+/// - [`ParamState::Display`] for display-only rows (Mouse Timeout, Dither),
+/// - otherwise [`ParamState::Modified`] / [`ParamState::Default`] by comparing
+///   the live value against `runtime_state.default_values` (float tolerance for
+///   numerics; only the fields present in [`DefaultValues`] can show modified —
+///   params without a tracked default always read as Default, matching the old
+///   overlay's blank marker).
+fn build_param_views(
+    runtime_state: &RuntimeState,
+    ctx: &RegistryCtx,
+    population: usize,
+) -> Vec<crate::render::controls::ParamView> {
+    build_param_views_for_category(
+        runtime_state,
+        runtime_state.controls_category_idx,
+        ctx,
+        population,
+    )
+}
+
+/// Like [`build_param_views`] but for an explicit `category` index rather than
+/// the live `controls_category_idx`. Used by TUNE surfacing to build the view
+/// for an adjusted param that may live in any category.
+fn build_param_views_for_category(
+    runtime_state: &RuntimeState,
+    category: usize,
+    ctx: &RegistryCtx,
+    population: usize,
+) -> Vec<crate::render::controls::ParamView> {
+    use crate::render::controls::registry::{visible_params, ParamId, ParamKind};
+    use crate::render::controls::{ParamState, ParamView};
+
+    let defaults = &runtime_state.default_values;
+    // Float-equality tolerance for modified detection (matches old eps choices).
+    let near = |a: f32, b: f32, eps: f32| (a - b).abs() <= eps;
+    // Clamp helper for gauge ratios.
+    let ratio = |v: f32, min: f32, max: f32| ((v - min) / (max - min)).clamp(0.0, 1.0);
+
+    let palette_name = runtime_state
+        .current_palette(&ALL_PALETTES)
+        .name()
+        .to_string();
+    let charset = charset_name(&runtime_state.current_charset()).to_string();
+    let color_aa = runtime_state.current_color_aa().as_label().to_string();
+    let theme = runtime_state.current_theme_name().to_string();
+
+    let shift_name = match runtime_state.palette_shift_speed {
+        PaletteShiftSpeed::Off => "Off",
+        PaletteShiftSpeed::Slow => "Slow",
+        PaletteShiftSpeed::Medium => "Medium",
+        PaletteShiftSpeed::Fast => "Fast",
+    };
+    let mouse_mode_name = match runtime_state.mouse_mode {
+        MouseInteractionMode::Disabled => "Disabled",
+        MouseInteractionMode::Attract => "Attract",
+        MouseInteractionMode::Repel => "Repel",
+    };
+    let terrain_name = match runtime_state.terrain_type {
+        TerrainType::None => "None",
+        TerrainType::Smooth => "Smooth",
+        TerrainType::Turbulent => "Turbulent",
+        TerrainType::Mixed => "Mixed",
+    };
+    let kernel_name = match runtime_state.diffusion_kernel {
+        DiffusionKernel::Mean3x3 => "Mean3x3",
+        DiffusionKernel::Gaussian => "Gaussian",
+    };
+
+    visible_params(category, ctx)
+        .into_iter()
+        .map(|desc| {
+            // (value_text, ratio, def_ratio, state)
+            let (value_text, r, dr, state): (String, Option<f32>, Option<f32>, ParamState) =
+                match desc.id {
+                    // ── SIM ───────────────────────────────────────────────────
+                    ParamId::SensorAngle => {
+                        let v = runtime_state.sensor_angle;
+                        let d = defaults.sensor_angle;
+                        (
+                            format!("{v:.1}°"),
+                            Some(ratio(v, 5.0, 90.0)),
+                            Some(ratio(d, 5.0, 90.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::SensorDistance => {
+                        let v = runtime_state.sensor_distance;
+                        let d = defaults.sensor_distance;
+                        (
+                            format!("{v:.1}px"),
+                            Some(ratio(v, 1.0, 50.0)),
+                            Some(ratio(d, 1.0, 50.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::TurnAngle => {
+                        let v = runtime_state.rotation_angle;
+                        let d = defaults.rotation_angle;
+                        (
+                            format!("{v:.1}°"),
+                            Some(ratio(v, 5.0, 90.0)),
+                            Some(ratio(d, 5.0, 90.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::StepSize => {
+                        let v = runtime_state.step_size;
+                        let d = defaults.step_size;
+                        (
+                            format!("{v:.1}px"),
+                            Some(ratio(v, 0.5, 5.0)),
+                            Some(ratio(d, 0.5, 5.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::Decay => {
+                        let v = runtime_state.decay_factor;
+                        let d = defaults.decay_factor;
+                        (
+                            format!("{v:.3}"),
+                            Some(ratio(v, 0.5, 0.99)),
+                            Some(ratio(d, 0.5, 0.99)),
+                            if near(v, d, 0.001) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::Deposit => {
+                        let v = runtime_state.deposit_amount;
+                        let d = defaults.deposit_amount;
+                        (
+                            format!("{v:.1}×"),
+                            Some(ratio(v, 1.0, 20.0)),
+                            Some(ratio(d, 1.0, 20.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::TimeScale => {
+                        // No tracked default → always Default (matches old blank marker).
+                        let v = runtime_state.time_scale;
+                        (
+                            format!("{v:.1}×"),
+                            Some(ratio(v, 0.5, 4.0)),
+                            Some(ratio(1.0, 0.5, 4.0)),
+                            ParamState::Default,
+                        )
+                    }
+                    // ── ENV ───────────────────────────────────────────────────
+                    ParamId::DiffusionKernel => {
+                        let modified = format!("{:?}", runtime_state.diffusion_kernel)
+                            != format!("{:?}", defaults.diffusion_kernel);
+                        (
+                            kernel_name.to_string(),
+                            None,
+                            None,
+                            if modified {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::DiffusionSigma => {
+                        let v = runtime_state.diffusion_sigma;
+                        let d = defaults.diffusion_sigma;
+                        (
+                            format!("{v:.2}"),
+                            Some(ratio(v, 0.5, 4.0)),
+                            Some(ratio(d, 0.5, 4.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::Wind => {
+                        let modified = format!("{:?}", runtime_state.wind_direction)
+                            != format!("{:?}", defaults.wind_direction);
+                        (
+                            runtime_state.wind_direction.name().to_string(),
+                            None,
+                            None,
+                            if modified {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::TerrainType => {
+                        let modified = format!("{:?}", runtime_state.terrain_type)
+                            != format!("{:?}", defaults.terrain_type);
+                        (
+                            terrain_name.to_string(),
+                            None,
+                            None,
+                            if modified {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::TerrainStrength => {
+                        let v = runtime_state.terrain_strength;
+                        let d = defaults.terrain_strength;
+                        (
+                            format!("{v:.1}×"),
+                            Some(ratio(v, 0.1, 5.0)),
+                            Some(ratio(d, 0.1, 5.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::Attractor => {
+                        let v = runtime_state.attractor_strength;
+                        let d = defaults.attractor_strength;
+                        (
+                            format!("{v:.1}×"),
+                            Some(ratio(v, 0.1, 10.0)),
+                            Some(ratio(d, 0.1, 10.0)),
+                            if near(v, d, 0.01) {
+                                ParamState::Default
+                            } else {
+                                ParamState::Modified
+                            },
+                        )
+                    }
+                    ParamId::MouseMode => {
+                        // No tracked default → always Default (old marker is blank).
+                        (mouse_mode_name.to_string(), None, None, ParamState::Default)
+                    }
+                    ParamId::MouseTimeout => (
+                        format!("{:.1}s", runtime_state.mouse_timeout),
+                        None,
+                        None,
+                        ParamState::Display,
+                    ),
+                    // ── APP ───────────────────────────────────────────────────
+                    ParamId::Theme => (theme.clone(), None, None, ParamState::Default),
+                    ParamId::Palette => (palette_name.clone(), None, None, ParamState::Default),
+                    ParamId::Charset => (charset.clone(), None, None, ParamState::Default),
+                    ParamId::ColorAa => (color_aa.clone(), None, None, ParamState::Default),
+                    ParamId::PaletteShift => {
+                        (shift_name.to_string(), None, None, ParamState::Default)
+                    }
+                    ParamId::Invert => (
+                        if runtime_state.invert_palette {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::Reverse => (
+                        if runtime_state.reverse_palette {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::StatusLine => (
+                        if runtime_state.show_status_bar {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::WindowFrame => (
+                        format!("{:?}", runtime_state.window_frame),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::Chrome => (
+                        format!("{:?}", runtime_state.chrome_style),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    // ── PST ───────────────────────────────────────────────────
+                    ParamId::IntensityMapping => (
+                        runtime_state.intensity_mapping_name().to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::Dither => (
+                        runtime_state.dither_mode.name().to_string(),
+                        None,
+                        None,
+                        // Display (muted), not Cli (red "restart to change") —
+                        // matches the old "(dev)" row semantics.
+                        ParamState::Display,
+                    ),
+                    ParamId::AutoNormalize => {
+                        let v = runtime_state.auto_normalize;
+                        (
+                            if v { "On" } else { "Off" }.to_string(),
+                            None,
+                            None,
+                            if v != defaults.auto_normalize {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::MotionBlur => {
+                        let v = runtime_state.motion_blur_frames;
+                        (
+                            format!("{v} fr"),
+                            Some((v as f32 / 7.0).clamp(0.0, 1.0)),
+                            Some((defaults.motion_blur_frames as f32 / 7.0).clamp(0.0, 1.0)),
+                            if v != defaults.motion_blur_frames {
+                                ParamState::Modified
+                            } else {
+                                ParamState::Default
+                            },
+                        )
+                    }
+                    ParamId::Brightness => {
+                        // Brightness shown as gain; default (1.0×) sits mid-bar.
+                        let v = runtime_state.max_brightness;
+                        let d = defaults.max_brightness;
+                        if runtime_state.auto_normalize {
+                            (
+                                "auto".to_string(),
+                                Some(0.0),
+                                Some(
+                                    (crate::config_defaults::trail::brightness_gain(d) / 2.0)
+                                        .clamp(0.0, 1.0),
+                                ),
+                                if near(v, d, 0.01) {
+                                    ParamState::Default
+                                } else {
+                                    ParamState::Modified
+                                },
+                            )
+                        } else {
+                            let gain = crate::config_defaults::trail::brightness_gain(v);
+                            let def_gain = crate::config_defaults::trail::brightness_gain(d);
+                            (
+                                format!("{gain:.1}×"),
+                                Some((gain / 2.0).clamp(0.0, 1.0)),
+                                Some((def_gain / 2.0).clamp(0.0, 1.0)),
+                                if near(v, d, 0.01) {
+                                    ParamState::Default
+                                } else {
+                                    ParamState::Modified
+                                },
+                            )
+                        }
+                    }
+                    ParamId::TrailAge => {
+                        let value = if runtime_state.trail_age_enabled {
+                            if runtime_state.trail_age_reverse {
+                                format!("On ({} rev)", runtime_state.trail_age_mode.name())
+                            } else {
+                                format!("On ({})", runtime_state.trail_age_mode.name())
+                            }
+                        } else {
+                            "Off".to_string()
+                        };
+                        (value, None, None, ParamState::Default)
+                    }
+                    ParamId::TrailDelta => (
+                        if runtime_state.trail_delta_enabled {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::EdgeGlow => (
+                        if runtime_state.gradient_magnitude_enabled {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    // ── PRF ───────────────────────────────────────────────────
+                    ParamId::FastMode => (
+                        if runtime_state.fast_mode_enabled {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                        .to_string(),
+                        None,
+                        None,
+                        ParamState::Default,
+                    ),
+                    ParamId::Population => (
+                        format!("{}k", population / 1000),
+                        None,
+                        None,
+                        ParamState::Cli,
+                    ),
+                    // ── SYS (action rows) ─────────────────────────────────────
+                    ParamId::SaveFrame => ("(PNG)".to_string(), None, None, ParamState::Default),
+                    ParamId::Reset => ("Defaults".to_string(), None, None, ParamState::Default),
+                    ParamId::Randomize => ("Params".to_string(), None, None, ParamState::Default),
+                };
+
+            // Numeric rows keep their ratio pair; everything else clears it.
+            let (ratio, def_ratio) = if desc.kind == ParamKind::Numeric {
+                (r, dr)
+            } else {
+                (None, None)
+            };
+
+            ParamView {
+                desc,
+                value_text,
+                ratio,
+                def_ratio,
+                state,
+            }
+        })
+        .collect()
+}
+
+/// Build a [`TuneView`] for the parameter a just-dispatched [`ControlAction`]
+/// adjusted, sourcing the value/range/default/state from the same registry +
+/// [`build_param_views_for_category`] path the Controls surface uses.
+///
+/// Returns `None` when the action is not a single-param adjust (overlay/global
+/// actions), or when the param has no gauge-able view (action rows like
+/// Save/Reset/Randomize, or display-only rows). Numeric params surface a real
+/// gauge; Enum/Toggle params surface a flat marker (normalized 0 with the
+/// formatted value text carrying the meaning).
+fn tune_view_for_action(
+    runtime_state: &RuntimeState,
+    action: &ControlAction,
+    ctx: &RegistryCtx,
+    population: usize,
+) -> Option<crate::render::ambient::TuneView> {
+    use crate::render::controls::registry::{self, ParamId};
+
+    let id = registry::param_id_for_action(action)?;
+    // Action rows are MSG/activation events, not tunable params.
+    if matches!(id, ParamId::SaveFrame | ParamId::Reset | ParamId::Randomize) {
+        return None;
+    }
+
+    let (category, idx) = registry::locate(id, ctx)?;
+    let views = build_param_views_for_category(runtime_state, category, ctx, population);
+    let pv = views.get(idx)?;
+
+    // Numeric rows carry normalized ratio/def_ratio for the gauge; non-numeric
+    // rows have none — surface them at the bottom of the gauge with the value
+    // text carrying the state. Gauge values are already normalized to [0, 1].
+    let (value, default, show_gauge) = match (pv.ratio, pv.def_ratio) {
+        (Some(r), Some(d)) => (r, d, true),
+        _ => (0.0, 0.0, false),
+    };
+
+    Some(crate::render::ambient::TuneView {
+        label: pv.desc.label.to_string(),
+        value_text: pv.value_text.clone(),
+        value,
+        range: (0.0, 1.0),
+        default,
+        state: pv.state,
+        show_gauge,
+        kind: pv.desc.kind,
+    })
+}
+
+/// Resolves a quick-key press to a bind target.
+///
+/// User binds (from `~/.config/tslime/keybinds.toml`) take precedence over
+/// built-in preset defaults. Returns `None` when the key has no binding.
+fn resolve_bind(
+    c: char,
+    user_binds: &std::collections::HashMap<char, crate::keybind_manager::BindTarget>,
+) -> Option<crate::keybind_manager::BindTarget> {
+    use crate::keybind_manager::BindTarget;
+    if let Some(t) = user_binds.get(&c) {
+        return Some(t.clone());
+    }
+    crate::simulation::config::preset_for_set_key(c).map(BindTarget::Preset)
+}
+
 /// Runs the interactive simulation loop (Live or Screensaver mode).
 ///
 /// Handles terminal setup, input processing, simulation updates, and rendering
@@ -158,7 +886,7 @@ fn check_auto_reset(
 pub fn run_simulation(
     sim: &mut Simulation,
     args: &Args,
-    _mode: Mode,
+    mode: Mode,
     palette: cli::Palette,
     charset: Charset,
 ) -> io::Result<()> {
@@ -187,9 +915,9 @@ pub fn run_simulation(
 
     let color_mode = capabilities.auto_select_color_mode(args.color_mode().ok());
 
-    let config = args
-        .to_sim_config()
+    let startup_profile = crate::profile::Profile::resolve_from_args(args)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let config = startup_profile.sim.clone();
     let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
 
     let init_mode = args
@@ -209,6 +937,9 @@ pub fn run_simulation(
     );
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
     renderer.set_dither_mode(dither_mode);
+    // Dither is dev-only for v0.1.0: runtime keys work only when it was
+    // explicitly enabled at startup via the (hidden) CLI flags.
+    let dither_unlocked = !matches!(dither_mode, DitherMode::None);
     renderer.set_ascii_contrast(args.ascii_contrast);
     renderer.set_window_frame(config.window_frame);
     let mut timer = FrameTimer::with_time_scale(args.fps, args.frame_delay, args.time_scale);
@@ -218,10 +949,13 @@ pub fn run_simulation(
     let (mut term_width, mut term_height) = screen.get_size()?;
     renderer.set_dimensions(term_width as usize, term_height as usize);
 
-    // Compute initial window layout for windowed (non-fullscreen) chrome styles
-    let window = crate::render::window::Window {
+    // Compute initial window layout for windowed (non-fullscreen) chrome styles.
+    // `mut` because the config-load apply seam recomputes it on load.
+    let mut window = crate::render::window::Window {
         aspect: config.aspect,
         padding: config.window_padding,
+        ring_cols: config.frame_matte_cols + 1,
+        ring_rows: config.frame_matte_rows + 1,
         min_sim_size: config.min_sim_size,
         min_frame_size: config.min_frame_size,
     };
@@ -248,40 +982,45 @@ pub fn run_simulation(
     });
 
     let initial_preset = args.preset.unwrap_or(Preset::Organic);
-    let initial_palette = args.palette().unwrap_or(cli::Palette::Moss);
-    let initial_palette_index = if let cli::Palette::Custom(_) = initial_palette {
-        4 // Default to Forest for custom palettes
-    } else {
-        ALL_PALETTES
-            .iter()
-            .position(|p| *p == initial_palette)
-            .unwrap_or(4)
-    };
 
-    let initial_intensity_mapping = args
-        .intensity_mapping()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-
-    renderer.set_intensity_mapping(Some(initial_intensity_mapping.clone()));
-
-    let initial_charset_index = ALL_CHARSETS.iter().position(|c| c == &charset).unwrap_or(0);
+    let resolved = startup_profile.render.clone();
 
     let mut runtime_state = RuntimeState::new(
         seed,
         init_mode,
         initial_preset,
-        initial_palette_index,
-        initial_charset_index,
         mouse_mode,
         args.mouse_timeout,
-        initial_intensity_mapping,
         &config,
         args.pause_style,
         args.pause_logo,
         args.pause_pulse_draw_mode,
     );
+    // Classify the startup invocation: bare `--preset <p>` (no other overrides, no seed pin)
+    // → Preset(p); anything more complex (extra flags, seed, no preset) → StartupCli.
+    let startup_ov = crate::profile_overrides::ProfileOverrides::from_args(args)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    runtime_state.active_source = if let Some(p) = args.preset {
+        // Build a clap-parsed template for bare `--preset <name>` to get correct clap
+        // defaults (not Rust struct defaults which differ on fps, time_scale, etc.).
+        let preset_name = crate::terminal::control::preset_name(p);
+        let template_args = Args::parse_from(["tslime", "--preset", preset_name]);
+        let template = crate::profile_overrides::ProfileOverrides::from_args(&template_args)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        match startup_ov.bare_preset_against(&template) {
+            Some(preset) => crate::profile::ProfileSource::Preset(preset),
+            None => crate::profile::ProfileSource::StartupCli,
+        }
+    } else {
+        crate::profile::ProfileSource::StartupCli
+    };
+    // Seed the live app-runtime config + active overrides from the startup profile so
+    // the runner reads warmup/auto-reset/grid/food from rs.app (the single live source).
+    runtime_state.app = startup_profile.app.clone();
+    runtime_state.active_overrides = startup_ov;
     runtime_state.preload_pause_logo(term_width as usize, term_height as usize);
     runtime_state.dither_mode = dither_mode;
+    runtime_state.notifications_enabled = !args.no_notifications;
     runtime_state.trail_age_enabled = args.trail_age;
     runtime_state.trail_delta_enabled = args.trail_delta;
     runtime_state.gradient_magnitude_enabled = args.gradient_magnitude;
@@ -294,6 +1033,8 @@ pub fn run_simulation(
     };
     runtime_state.trail_age_reverse = args.trail_age_reverse;
     runtime_state.trail_delta_strength = args.trail_delta_strength;
+    // decay_gamma / diffuse_weight come from the assembled config via
+    // RuntimeState::new — do not re-clobber them from raw CLI args here.
     if args.stats {
         runtime_state.overlay_state.open(OverlayType::Dashboard);
     }
@@ -306,7 +1047,8 @@ pub fn run_simulation(
     if args.gradient_magnitude {
         sim.set_compute_gradient_magnitude(true);
     }
-    renderer.set_dither_mode(dither_mode);
+    crate::app::apply_render_config(&resolved, &mut runtime_state, &mut renderer, sim);
+    runtime_state.set_render_baseline(resolved.clone());
 
     // Initialize food persistence
     if args.food_persist && init_mode == InitMode::Food {
@@ -317,11 +1059,10 @@ pub fn run_simulation(
             &args.food,
             args.food_invert,
             args.food_scale,
-            args.food_persist_strength,
+            runtime_state.app.food_persist_strength,
             0.3,
         );
 
-        // Apply initial food attractors to simulation
         let mut new_config = sim.config().clone();
         new_config
             .attractors
@@ -329,19 +1070,19 @@ pub fn run_simulation(
         sim.update_config(new_config);
     }
 
-    // let config = args.to_sim_config().unwrap(); // Already parsed above
-    if args.species_colors {
+    if args.species_colors_enabled() {
         let species_rgb_colors = extract_species_rgb_colors(&config);
         renderer.set_species_colors(true, species_rgb_colors);
     }
 
+    // apply_render_config (above) has already set runtime_state.auto_normalize from
+    // the resolved render config, so a preset may default it ON. Seed the loop-local
+    // and the AdaptiveBrightness from rs, not the raw CLI flag.
+    let mut current_auto_normalize = runtime_state.auto_normalize;
     let mut adaptive_brightness =
-        AdaptiveBrightness::new(args.normalize_window, args.auto_normalize);
+        AdaptiveBrightness::new(args.normalize_window, current_auto_normalize);
     let mut hue_offset: f32 = 0.0;
 
-    let mut current_auto_normalize = args.auto_normalize;
-
-    // Apply initial randomization if requested
     if args.random {
         runtime_state.randomize_params();
         apply_random_config(&runtime_state, sim, &mut renderer, &ALL_PALETTES);
@@ -349,26 +1090,10 @@ pub fn run_simulation(
 
     let start_time = std::time::Instant::now();
 
-    // Initialize grid renderer if enabled
-    let mut grid_renderer = if args.grid {
-        let grid_style = args.grid_style.parse().unwrap_or(GridStyle::Cross);
-        let grid_color = hex_to_rgb(&args.grid_color).unwrap_or(RgbColor {
-            r: 255,
-            g: 255,
-            b: 255,
-        });
-        let mut renderer = GridRenderer::new(
-            grid_style,
-            args.grid_size,
-            grid_color,
-            args.grid_opacity,
-            args.grid_adaptive,
-        );
-        renderer.initialize(term_width as usize, term_height as usize);
-        Some(renderer)
-    } else {
-        None
-    };
+    let mut grid_renderer = crate::app::build_grid_renderer(
+        &runtime_state.app,
+        (term_width as usize, term_height as usize),
+    );
 
     // Compute sim render dimensions (may be smaller than terminal in windowed mode)
     let compute_render_dims = |tw: usize, th: usize| -> (usize, usize) {
@@ -399,6 +1124,135 @@ pub fn run_simulation(
     };
     let mut blended_trail_buffer: Vec<f32> = Vec::new();
 
+    // Resize the sim render buffers to new dimensions. Must run on EVERY change to
+    // render dims — terminal resize AND chrome-mode change — or `blur_field`'s
+    // `src.len() == width*height` invariant breaks (e.g. F10 into Fullscreen grows
+    // the sim while the buffers stay windowed-sized → panic in antialiasing.rs).
+    fn resize_render_frames(
+        downsampled: &mut crate::render::downsample::DownsampledFrame,
+        aux: &mut crate::render::downsample::AuxFrame,
+        w: usize,
+        h: usize,
+    ) {
+        *downsampled = crate::render::downsample::DownsampledFrame::new(w, h);
+        aux.width = w;
+        aux.height = h;
+        aux.cells = vec![crate::render::downsample::AuxCell::default(); w * h];
+    }
+
+    // Resolve the ambient surface overlay + its screen position for this frame.
+    //   • Controls Tuner depth → the focused param renders as a persistent
+    //     centered modal (the interactive tuner surface).
+    //   • Controls Console depth → ambient hidden (the console IS the surface).
+    //   • A live TUNE/MSG event (controls closed) → a transient centered modal.
+    //   • Otherwise, when the always-on status line is enabled, a compact base row
+    //     docks at the bottom interior of the frame (skipped in Expanded chrome,
+    //     whose legacy footer already serves that role). Pause renders nothing
+    //     extra here — the pause screen already presents its own surface.
+    //   • Default: nothing (clean frame).
+    // Shared by the main render path and the pause re-render path.
+    fn compute_ambient_overlay(
+        runtime_state: &RuntimeState,
+        base_status: &crate::render::ambient::BaseStatus,
+        window: &crate::render::window::Window,
+        term_width: usize,
+        term_height: usize,
+        agent_count: usize,
+    ) -> Option<(crate::render::panel::RenderedOverlay, usize, usize)> {
+        use crate::render::ambient::{build_ambient_modal, build_base_row, resolve, AmbientState};
+        use crate::render::window::FallbackMode;
+        use crate::simulation::config::ChromeStyle;
+
+        let now = runtime_state.phase_clock;
+        let controls_open = runtime_state.overlay_state.is_open(OverlayType::Controls)
+            && !runtime_state.overlay_state.is_open(OverlayType::Dashboard);
+        let mode = ambient_mode(controls_open, runtime_state.controls_depth);
+        let st = &runtime_state.panel_style;
+
+        let center = |ov: &crate::render::panel::RenderedOverlay| {
+            let w = ov.lines.first().map(|l| l.chars().count()).unwrap_or(0);
+            let h = ov.lines.len();
+            (
+                term_width.saturating_sub(w) / 2,
+                term_height.saturating_sub(h) / 2,
+            )
+        };
+
+        match mode {
+            // Console open: the console is the full surface; no ambient overlay.
+            AmbientMode::Hidden => None,
+            // Tuner depth: render the focused param as a persistent centered modal.
+            AmbientMode::Tuner => {
+                let ctx = RegistryCtx {
+                    diffusion_gaussian: matches!(
+                        runtime_state.diffusion_kernel,
+                        DiffusionKernel::Gaussian
+                    ),
+                    mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
+                };
+                let params = build_param_views(runtime_state, &ctx, agent_count);
+                let idx = runtime_state
+                    .controls_focus
+                    .min(params.len().saturating_sub(1));
+                let pv = params.get(idx)?;
+                let (value, default, show_gauge) = match (pv.ratio, pv.def_ratio) {
+                    (Some(r), Some(d)) => (r, d, true),
+                    _ => (0.0, 0.0, false),
+                };
+                let tune = AmbientState::Tune {
+                    param: crate::render::ambient::TuneView {
+                        label: pv.desc.label.to_string(),
+                        value_text: pv.value_text.clone(),
+                        value,
+                        range: (0.0, 1.0),
+                        default,
+                        state: pv.state,
+                        show_gauge,
+                        kind: pv.desc.kind,
+                    },
+                    until: f32::MAX,
+                };
+                let ov = build_ambient_modal(&tune, st, now);
+                let (x, y) = center(&ov);
+                Some((ov, x, y))
+            }
+            // Controls closed: live TUNE/MSG event → transient centered modal;
+            // else optional always-on base row.
+            AmbientMode::Normal => {
+                let resolved = resolve(&runtime_state.ambient_states, now).clone();
+                if matches!(
+                    resolved,
+                    AmbientState::Tune { .. } | AmbientState::Msg { .. }
+                ) {
+                    let ov = build_ambient_modal(&resolved, st, now);
+                    let (x, y) = center(&ov);
+                    return Some((ov, x, y));
+                }
+                if !runtime_state.show_status_bar {
+                    return None;
+                }
+                let (bx, by, bw) = if matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
+                {
+                    (0usize, term_height.saturating_sub(1), term_width)
+                } else {
+                    let l = window.compute_rects(term_width, term_height);
+                    if matches!(l.fallback, FallbackMode::Fullscreen) {
+                        (0usize, term_height.saturating_sub(1), term_width)
+                    } else {
+                        (l.sim_x, l.sim_y + l.sim_h.saturating_sub(1), l.sim_w)
+                    }
+                };
+                // Expanded chrome's legacy footer already occupies the bottom row.
+                if matches!(runtime_state.chrome_style, ChromeStyle::Expanded) {
+                    None
+                } else {
+                    let ov = build_base_row(bw, st, base_status);
+                    Some((ov, bx, by))
+                }
+            }
+        }
+    }
+
     #[cfg(feature = "audio")]
     let mut choir: Option<crate::audio::Choir> = if args.choir {
         match crate::audio::Choir::try_new(args.choir_volume.clamp(0.0, 1.0)) {
@@ -411,12 +1265,159 @@ pub fn run_simulation(
     } else {
         None
     };
-    #[cfg(not(feature = "audio"))]
-    {
-        if args.choir {
-            eprintln!("--choir requires building with --features audio");
+
+    // The SINGLE swap executor. Both the clean path (is_dirty == false → call
+    // immediately) and the post-confirm path (Enter on the dirty guard) route
+    // through this so they can never diverge. Transactional: each variant commits
+    // provenance (active_source/active_overrides) only after a successful apply.
+    #[allow(clippy::too_many_arguments)]
+    fn do_swap(
+        pending: PendingSwap,
+        rs: &mut RuntimeState,
+        renderer: &mut TerminalRenderer,
+        sim: &mut Simulation,
+        timer: &mut FrameTimer,
+        grid_renderer: &mut Option<crate::render::grid::GridRenderer>,
+        window: &mut crate::render::window::Window,
+        downsampled_frame: &mut crate::render::downsample::DownsampledFrame,
+        aux_frame: &mut crate::render::downsample::AuxFrame,
+        term_size: (usize, usize),
+    ) -> io::Result<()> {
+        match pending {
+            PendingSwap::Preset(preset) => {
+                switch_preset(
+                    preset,
+                    rs,
+                    renderer,
+                    sim,
+                    timer,
+                    grid_renderer,
+                    window,
+                    downsampled_frame,
+                    aux_frame,
+                    term_size,
+                )?;
+                // Trademark is the logo preset. The big FIGLET name is unreadable
+                // over its dense bright field (and redundant — the logo *is* the
+                // announcement), so suppress the figlet switch entirely. TYPE
+                // (dimmed band) and the plain toast still read fine, so keep them.
+                use crate::simulation::config::{Preset, TransitionStyle};
+                let suppress = matches!(preset, Preset::Trademark)
+                    && rs.transition_style == TransitionStyle::Figlet;
+                if !suppress {
+                    rs.announce_preset_switch(
+                        crate::terminal::control::preset_name(preset),
+                        crate::terminal::input::preset_tagline(preset),
+                    );
+                }
+            }
+            PendingSwap::Config(config) => {
+                // The config was already resolved at selection time and carried
+                // through the pending swap, so load it through the apply seam
+                // directly, committing provenance only on success (transactional).
+                match crate::app::apply_overrides(
+                    &config.overrides,
+                    rs,
+                    renderer,
+                    sim,
+                    timer,
+                    grid_renderer,
+                    window,
+                    downsampled_frame,
+                    aux_frame,
+                    term_size,
+                    true,
+                ) {
+                    Ok(()) => {
+                        rs.active_source =
+                            crate::profile::ProfileSource::SavedConfig(config.name.clone());
+                        rs.active_overrides = config.overrides.clone();
+                        rs.show_notification(format!("Config '{}' loaded", config.name));
+                    }
+                    Err(e) => {
+                        rs.show_notification(format!("Failed to load '{}': {}", config.name, e));
+                    }
+                }
+            }
+            PendingSwap::Reset => {
+                let ov = rs.active_overrides.clone();
+                rs.reset_transient();
+                match crate::app::apply_overrides(
+                    &ov,
+                    rs,
+                    renderer,
+                    sim,
+                    timer,
+                    grid_renderer,
+                    window,
+                    downsampled_frame,
+                    aux_frame,
+                    term_size,
+                    true,
+                ) {
+                    Ok(()) => {
+                        rs.show_notification("Reset to defaults".to_string());
+                    }
+                    Err(e) => {
+                        rs.show_notification(format!("Reset failed: {e}"));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // Dirty-guard-or-swap: the single place that decides between parking a swap
+    // behind the dirty guard and applying it immediately. Returns true when it
+    // swapped now (clean path), false when it parked (dirty path). Callers that
+    // need clean-path-only side effects (e.g. zeroing hue) branch on the bool.
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_swap(
+        pending: PendingSwap,
+        rs: &mut RuntimeState,
+        renderer: &mut TerminalRenderer,
+        sim: &mut Simulation,
+        timer: &mut FrameTimer,
+        grid_renderer: &mut Option<crate::render::grid::GridRenderer>,
+        window: &mut crate::render::window::Window,
+        downsampled_frame: &mut crate::render::downsample::DownsampledFrame,
+        aux_frame: &mut crate::render::downsample::AuxFrame,
+        term_size: (usize, usize),
+        current_auto_normalize: &mut bool,
+        adaptive_brightness: &mut AdaptiveBrightness,
+        normalize_window: usize,
+    ) -> io::Result<bool> {
+        if rs.is_dirty(
+            sim.config(),
+            rs.live_palette.clone(),
+            rs.live_charset.clone(),
+        ) {
+            rs.pending_swap = Some(pending);
+            rs.close_all_overlays();
+            rs.overlay_state.open(OverlayType::DirtyGuard);
+            rs.on_modal_open();
+            Ok(false)
+        } else {
+            do_swap(
+                pending,
+                rs,
+                renderer,
+                sim,
+                timer,
+                grid_renderer,
+                window,
+                downsampled_frame,
+                aux_frame,
+                term_size,
+            )?;
+            *current_auto_normalize = rs.auto_normalize;
+            *adaptive_brightness =
+                AdaptiveBrightness::new(normalize_window, *current_auto_normalize);
+            Ok(true)
         }
     }
+
+    let user_binds = crate::keybind_manager::load_keybinds();
 
     loop {
         if is_shutdown_requested() {
@@ -436,16 +1437,20 @@ pub fn run_simulation(
                 // to avoid calling compute_rects a second time.
                 let (new_render_w, new_render_h) = {
                     use crate::simulation::config::ChromeStyle;
-                    let new_layout = if matches!(config.chrome_style, ChromeStyle::Fullscreen) {
-                        None
-                    } else {
-                        let l = window.compute_rects(term_width as usize, term_height as usize);
-                        if matches!(l.fallback, crate::render::window::FallbackMode::Fullscreen) {
+                    // Read LIVE chrome (a loaded config may have changed it); the frozen
+                    // startup `config.chrome_style` would size buffers against stale chrome.
+                    let new_layout =
+                        if matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen) {
                             None
                         } else {
-                            Some(l)
-                        }
-                    };
+                            let l = window.compute_rects(term_width as usize, term_height as usize);
+                            if matches!(l.fallback, crate::render::window::FallbackMode::Fullscreen)
+                            {
+                                None
+                            } else {
+                                Some(l)
+                            }
+                        };
                     // Derive render dims from the computed layout before moving it into renderer
                     let dims = new_layout
                         .as_ref()
@@ -459,14 +1464,12 @@ pub fn run_simulation(
                     grid.initialize(term_width as usize, term_height as usize);
                 }
                 // Resize frame buffers to sim render dimensions (may differ in windowed mode)
-                downsampled_frame =
-                    crate::render::downsample::DownsampledFrame::new(new_render_w, new_render_h);
-                aux_frame.width = new_render_w;
-                aux_frame.height = new_render_h;
-                aux_frame.cells = vec![
-                    crate::render::downsample::AuxCell::default();
-                    new_render_w * new_render_h
-                ];
+                resize_render_frames(
+                    &mut downsampled_frame,
+                    &mut aux_frame,
+                    new_render_w,
+                    new_render_h,
+                );
             }
         }
 
@@ -475,12 +1478,14 @@ pub fn run_simulation(
             continue;
         }
 
-        // Wall-clock delta: used for FPS stats and UI (chrome fade), which should
-        // track real time. NOT used to step the simulation — see sim_dt below.
+        // Per-frame elapsed time, scaled by time_scale (NOT raw wall clock). Used
+        // for UI effects (hue shift, chrome fade via dt_wall below) — never to step
+        // the simulation, which uses the fixed timestep sim_dt.
         let dt = timer.delta_time();
 
         // Clamp dt to avoid UI animation jumps during lag spikes (max 0.1s / 10 FPS)
         let dt = dt.min(0.1);
+        runtime_state.advance_phase(dt);
 
         // Fixed simulation timestep, decoupled from frame-write jitter. A blocked
         // write (e.g. terminal back-pressure while holding a key) inflates wall `dt`
@@ -488,22 +1493,21 @@ pub fn run_simulation(
         // flicker. Stepping by a fixed amount keeps motion smooth regardless of I/O.
         let sim_dt = timer.fixed_delta();
 
-        // Advance chrome fade-out animation each frame (500ms collapse animation).
-        // Chrome is UI, not simulation — animate at wall-clock speed regardless of time scale.
+        // Chrome fade-out (500ms collapse) is UI, not simulation — divide the
+        // time_scale back out so it animates at wall-clock speed.
         let dt_wall = dt / runtime_state.time_scale.max(f32::EPSILON);
         runtime_state.advance_fade(dt_wall);
 
-        // Check if we're in warmup phase
-        let in_warmup = !args.skip_warmup && runtime_state.is_in_warmup(args.warmup_frames);
+        let in_warmup = !runtime_state.app.skip_warmup
+            && runtime_state.is_in_warmup(runtime_state.app.warmup_frames);
 
-        // Calculate transition fade factor for smooth warmup→normal transition
-        // Uses WARMUP_SPEED_MULTIPLIER and TRANSITION_DURATION_FRAMES from config_defaults
         let frames_since_warmup = runtime_state
             .warmup_counter
-            .saturating_sub(args.warmup_frames);
+            .saturating_sub(runtime_state.app.warmup_frames);
         let in_transition = frames_since_warmup < TRANSITION_DURATION_FRAMES;
 
-        // Fade factor: 0.0 during warmup, interpolates 0.0→1.0 over 30 frames, then 1.0
+        // Warmup→normal handoff: 0.0 during warmup, ramps 0→1 over
+        // TRANSITION_DURATION_FRAMES, then holds at 1.0.
         let fade_factor = if in_warmup {
             0.0
         } else if in_transition {
@@ -515,21 +1519,20 @@ pub fn run_simulation(
         if !runtime_state.is_paused {
             timer.start_sim();
 
-            // Apply smooth speed transition from 0.3x to 1.0x
+            // Ramp sim speed from WARMUP_SPEED_MULTIPLIER up to 1.0 as warmup ends.
             let speed_multiplier =
                 WARMUP_SPEED_MULTIPLIER + (1.0 - WARMUP_SPEED_MULTIPLIER) * fade_factor;
 
-            // Sanity check speed multiplier to ensure it stays within valid bounds [0.3, 1.0]
-            // This prevents any floating point drift that could cause simulation instability
+            // Clamp against floating-point drift.
             let speed_multiplier = speed_multiplier.clamp(WARMUP_SPEED_MULTIPLIER, 1.0);
 
             let adjusted_dt = sim_dt * speed_multiplier;
             sim.update(adjusted_dt / REFERENCE_TIME_STEP);
 
-            // Harden warmup logic: Explicitly cap the counter to avoid runaway increment
-            // Previously relied on in_transition boolean which could be fragile
-            if !args.skip_warmup
-                && runtime_state.warmup_counter < args.warmup_frames + TRANSITION_DURATION_FRAMES
+            // Cap the counter so it stops once warmup + transition are complete.
+            if !runtime_state.app.skip_warmup
+                && runtime_state.warmup_counter
+                    < runtime_state.app.warmup_frames + TRANSITION_DURATION_FRAMES
             {
                 runtime_state.increment_warmup();
             }
@@ -556,7 +1559,6 @@ pub fn run_simulation(
             }
         }
 
-        // Extract basic sim data
         let sim_width = sim.width();
         let sim_height = sim.height();
         let sim_dims = sim_width * sim_height;
@@ -564,6 +1566,11 @@ pub fn run_simulation(
 
         // Get blended trail first (takes &mut self)
         sim.trail_map_blended(&mut blended_trail_buffer);
+        crate::app::fold_afterglow(
+            &mut blended_trail_buffer,
+            sim.afterglow_lag(),
+            runtime_state.afterglow,
+        );
         // Use sim render dimensions from downsampled_frame (may differ from terminal in windowed mode)
         let render_w = downsampled_frame.width();
         let render_h = downsampled_frame.height();
@@ -576,11 +1583,11 @@ pub fn run_simulation(
             &mut downsampled_frame,
         );
 
-        // Compute auxiliary frame for trail age / temporal delta / gradient
-        // These calls happen AFTER blended_trail is dropped from the scope above
+        // Compute auxiliary frame for trail age / temporal delta / gradient / temporal color
         let current_aux_frame = if runtime_state.trail_age_enabled
             || runtime_state.trail_delta_enabled
             || runtime_state.gradient_magnitude_enabled
+            || runtime_state.temporal_color > 0.0
         {
             let trail_age = if runtime_state.trail_age_enabled {
                 sim.trail_age()
@@ -602,6 +1609,7 @@ pub fn run_simulation(
                 trail_age,
                 trail_delta,
                 gradient_mag,
+                sim.temporal_diff(),
                 sim_width,
                 sim_height,
                 render_w,
@@ -624,10 +1632,18 @@ pub fn run_simulation(
             runtime_state.trail_age_mode,
             runtime_state.trail_age_reverse,
         );
+        renderer.set_temporal(
+            runtime_state.temporal_color,
+            runtime_state.temporal_mode,
+            runtime_state.temporal_accent,
+        );
 
-        let current_config = args
-            .to_sim_config()
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        // Narrow live reads instead of cloning the whole SimConfig (which carries heap Vecs
+        // including obstacle masks). Species colors are the only Vec consumers, collected once
+        // here and reused at both render sites. (DiffusionKernel is read directly via sim.config()
+        // where needed.)
+        let current_species_rgb: Vec<crate::render::palette::RgbColor> =
+            extract_species_rgb_colors(sim.config());
 
         adaptive_brightness.update(downsampled_frame.cells());
         let mut max_brightness = if current_auto_normalize {
@@ -636,15 +1652,15 @@ pub fn run_simulation(
             runtime_state.max_brightness
         };
 
-        // Apply warmup brightness multiplier with smooth transition
-        // Uses the same fade_factor as speed transition for consistency
+        // Warmup brightness boost, eased out with the same fade_factor as the
+        // speed ramp.
         if in_warmup || in_transition {
-            // Brightness fade_factor: 1.0 during warmup, then 1.0→0.0 over 30 frames
-            // Inverted from speed fade_factor since we want brightness to decrease
+            // Inverse of fade_factor: 1.0 during warmup, easing to 0.0 as the
+            // boost fades out.
             let brightness_fade = 1.0 - fade_factor;
 
-            // Interpolate between normal and warmup brightness
-            let multiplier = 1.0 + (args.warmup_brightness_multiplier - 1.0) * brightness_fade;
+            let multiplier =
+                1.0 + (runtime_state.app.warmup_brightness_multiplier - 1.0) * brightness_fade;
             max_brightness *= multiplier;
         }
 
@@ -667,9 +1683,6 @@ pub fn run_simulation(
 
         renderer.set_hue_shift(hue_offset);
 
-        // Help lines are no longer used (deprecated), passing None to renderer
-        // The renderer handles None gracefully by skipping the overlay
-
         // Build preset comparison overlay (Shift+1-7 keys)
         let preset_comparison_lines: Option<RenderedOverlay> = if runtime_state
             .overlay_state
@@ -678,7 +1691,7 @@ pub fn run_simulation(
         {
             Some(PresetComparisonOverlay::build_overlay(
                 &runtime_state,
-                runtime_state.comparison_preset,
+                &runtime_state.comparison_target,
             ))
         } else {
             None
@@ -714,9 +1727,7 @@ pub fn run_simulation(
             (0, 0)
         };
 
-        // Calculate controls position (centered)
-        let (controls_x, controls_y) =
-            ControlsOverlay::calculate_position(term_width as usize, term_height as usize);
+        // Controls position is computed below from the built overlay's own dims.
 
         // Palette accent colour used for key-binding highlights and title badges.
         let ui_accent = palette_accent_color(
@@ -733,116 +1744,171 @@ pub fn run_simulation(
             .is_open(OverlayType::KeyboardHints)
             && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
         {
-            Some(KeyboardHintsOverlay::build_overlay(ui_accent))
+            Some(KeyboardHintsOverlay::build_overlay(
+                ui_accent,
+                &runtime_state.panel_style,
+                &user_binds,
+            ))
         } else {
             None
         };
-        let (keyboard_hints_x, keyboard_hints_y) = if keyboard_hints_lines.is_some() {
-            KeyboardHintsOverlay::calculate_position(term_width as usize, term_height as usize)
+        let (keyboard_hints_x, keyboard_hints_y) = if let Some(ref ov) = keyboard_hints_lines {
+            KeyboardHintsOverlay::calculate_position(
+                term_width as usize,
+                term_height as usize,
+                ov.lines.len(),
+            )
         } else {
             (0, 0)
         };
 
-        // Build controls overlay (h key)
-        let controls_lines: Option<RenderedOverlay> =
+        // Build controls overlay (h key). The Controls surface is gated by the
+        // overlay open-state (so esc / CloseOverlays / exclusivity keep working),
+        // while `controls_depth` selects which depth (Console / Tuner) renders.
+        //
+        // Tuner depth is handled entirely by the ambient strip (see
+        // ambient_overlay_built below). Only Console depth renders a separate
+        // composite here; Tuner returns (None, 0, 0) so the bottom rows belong
+        // exclusively to the ambient strip.
+        let (controls_lines, controls_x, controls_y): (Option<RenderedOverlay>, usize, usize) =
             if runtime_state.overlay_state.is_open(OverlayType::Controls)
                 && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
             {
-                Some(ControlsOverlay::build_overlay(
-                    runtime_state.controls_category_idx,
-                    runtime_state.sensor_angle,
-                    runtime_state.sensor_distance,
-                    runtime_state.rotation_angle,
-                    runtime_state.step_size,
-                    runtime_state.decay_factor,
-                    runtime_state.deposit_amount,
-                    runtime_state.time_scale,
-                    runtime_state.diffusion_kernel,
-                    runtime_state.diffusion_sigma,
-                    runtime_state.attractor_strength,
-                    match runtime_state.mouse_mode {
-                        MouseInteractionMode::Disabled => "Disabled",
-                        MouseInteractionMode::Attract => "Attract",
-                        MouseInteractionMode::Repel => "Repel",
-                    },
-                    runtime_state.mouse_timeout,
-                    runtime_state.wind_direction,
-                    runtime_state.terrain_type,
-                    runtime_state.terrain_strength,
-                    runtime_state.auto_normalize,
-                    runtime_state.motion_blur_frames,
-                    runtime_state.max_brightness,
-                    runtime_state.fast_mode_enabled,
-                    runtime_state.current_palette(&ALL_PALETTES).name(),
-                    charset_name(&runtime_state.current_charset()),
-                    runtime_state.palette_shift_speed,
-                    runtime_state.invert_palette,
-                    runtime_state.reverse_palette,
-                    runtime_state.dither_mode.name(),
-                    term_width as usize,
-                    runtime_state.default_values,
-                    agent_count,
-                    ui_accent,
-                    runtime_state.current_theme_name(),
-                    &runtime_state.panel_style,
-                    runtime_state.shift_held,
-                    runtime_state.trail_age_enabled,
-                    runtime_state.trail_age_mode,
-                    runtime_state.trail_age_reverse,
-                    runtime_state.trail_delta_enabled,
-                    runtime_state.gradient_magnitude_enabled,
-                ))
+                use crate::render::controls::{build_controls, ControlsDepth};
+                // Defensive: an open surface with a stale `Closed` depth renders Console.
+                let depth = match runtime_state.controls_depth {
+                    ControlsDepth::Closed => ControlsDepth::Console,
+                    other => other,
+                };
+                // Tuner depth: ambient strip owns the bottom rows — no separate composite.
+                if depth == ControlsDepth::Tuner {
+                    (None, 0, 0)
+                } else {
+                    let ctx = RegistryCtx {
+                        diffusion_gaussian: matches!(
+                            runtime_state.diffusion_kernel,
+                            DiffusionKernel::Gaussian
+                        ),
+                        mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
+                    };
+                    let params = build_param_views(&runtime_state, &ctx, agent_count);
+                    let truecolor = matches!(color_mode, ColorMode::TrueColor);
+                    let overlay = build_controls(
+                        depth,
+                        runtime_state.controls_category_idx,
+                        runtime_state.controls_focus,
+                        &params,
+                        &runtime_state.panel_style,
+                        ui_accent,
+                        truecolor,
+                        term_width as usize,
+                    );
+                    // Console → centered on screen.
+                    let (x, y) = match overlay.as_ref() {
+                        Some(ov) => {
+                            let w = ov.lines.first().map(|l| l.chars().count()).unwrap_or(0);
+                            let h = ov.lines.len();
+                            (
+                                (term_width as usize).saturating_sub(w) / 2,
+                                (term_height as usize).saturating_sub(h) / 2,
+                            )
+                        }
+                        None => (0, 0),
+                    };
+                    (overlay, x, y)
+                }
             } else {
-                None
+                (None, 0, 0)
             };
 
-        // Build status line (shown when any overlay visible or paused)
-        let diffusion_kernel_name = match runtime_state.diffusion_kernel {
-            DiffusionKernel::Mean3x3 => "Mean3x3",
-            DiffusionKernel::Gaussian => "Gaussian",
+        // Ambient surface model (redesign):
+        //   • Default (always_on = false): clean sim frame at rest. The ambient
+        //     surface appears only as a CENTERED MODAL on a live event — TUNE,
+        //     MSG (notification), or pause — then dismisses back to the clean frame.
+        //   • always_on (show_status_bar = true): a compact single-row BASE status
+        //     line is docked at the bottom interior of the frame, in addition to
+        //     the event modals. Consistent across Minimal/Fullscreen; in Expanded
+        //     the legacy footer already serves as the status line.
+
+        // Build ambient BASE status context (used by the compact base row).
+        let dither_label = match runtime_state.dither_mode {
+            crate::render::dither::DitherMode::None => None,
+            crate::render::dither::DitherMode::Ordered { intensity, .. } => {
+                Some(format!("D {:.1}×", intensity))
+            }
+            crate::render::dither::DitherMode::ErrorDiffusion { .. } => Some("ED".to_string()),
+            crate::render::dither::DitherMode::Hybrid { intensity, .. } => {
+                Some(format!("H {:.1}×", intensity))
+            }
         };
-        let (status_line, status_colors) = OverlayRenderer::build_status_line(
-            runtime_state.is_paused,
-            runtime_state.current_preset,
-            runtime_state.time_scale,
-            current_palette.clone(),
-            runtime_state.dither_mode,
+        let ambient_base_status = BaseStatus {
+            preset_name: preset_name(runtime_state.current_preset).to_string(),
+            palette_name: palette_name(current_palette.clone()).to_string(),
+            time_scale_text: format!("{:.1}×", runtime_state.time_scale),
+            population: Some(agent_count),
+            dither_label,
+            can_undo: !runtime_state.undo_stack.is_empty(),
+            can_redo: !runtime_state.redo_stack.is_empty(),
+            accent: ui_accent,
+            is_paused: runtime_state.is_paused,
+        };
+        // Resolve the highest-priority live ambient state for this frame. Drop
+        // expired non-sticky entries first so the Vec stays small; the Base
+        // sentinel always survives (it never expires).
+        {
+            let now = runtime_state.phase_clock;
+            runtime_state
+                .ambient_states
+                .retain(|s| crate::render::ambient::ambient_state_is_live(s, now));
+            if !runtime_state
+                .ambient_states
+                .iter()
+                .any(|s| matches!(s, AmbientState::Base))
+            {
+                runtime_state.ambient_states.push(AmbientState::Base);
+            }
+        }
+        // Resolve the ambient surface (event modal / optional base row / nothing).
+        let ambient_overlay_built = compute_ambient_overlay(
+            &runtime_state,
+            &ambient_base_status,
+            &window,
             term_width as usize,
-            Some(agent_count),
-            Some(diffusion_kernel_name),
-            !runtime_state.undo_stack.is_empty(),
-            !runtime_state.redo_stack.is_empty(),
-            Some(ui_accent),
+            term_height as usize,
+            agent_count,
         );
-        let status_x = OverlayRenderer::status_line_x(&status_line, term_width as usize);
-        // In windowed mode the expanded chrome footer replaces the status bar.
-        // Only show the legacy status bar in fullscreen mode, or when explicitly
-        // enabled via `show_status_bar`.
-        let show_status = {
-            use crate::simulation::config::ChromeStyle;
-            matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
-                || runtime_state.show_status_bar
-        };
-        let status_data =
-            if show_status && (runtime_state.any_overlay_open() || runtime_state.is_paused) {
-                Some((status_line, status_x, status_colors))
-            } else {
-                None
-            };
+        let ambient_data = ambient_overlay_built.as_ref().map(|(v, x, y)| (v, *x, *y));
 
-        let notification_overlay: Option<RenderedOverlay> = runtime_state
-            .current_notification_full()
-            .map(|(msg, level)| build_notification_panel(msg, level, &runtime_state.panel_style));
-        let notification_data = notification_overlay.as_ref().map(|overlay| {
-            let outer_w = overlay.lines.first().map_or(0, |l| l.chars().count());
-            let notif_x = if outer_w < term_width as usize {
-                (term_width as usize - outer_w) / 2
-            } else {
-                0
-            };
-            let notif_y = (term_height as usize).saturating_sub(5);
-            (overlay, notif_x, notif_y)
-        });
+        // Preset-switch transition (figlet/type): build a view for this frame while
+        // the animation is live; drop the state once it has fully elapsed.
+        let transition_view = {
+            let now = runtime_state.phase_clock;
+            let v = runtime_state.active_transition.as_ref().and_then(|a| {
+                let elapsed = now - a.start;
+                (elapsed < crate::render::transition::TRANSITION_SECS).then(|| {
+                    crate::render::transition::TransitionView {
+                        style: a.style,
+                        name: a.name.clone(),
+                        tagline: a.tagline.clone(),
+                        elapsed,
+                    }
+                })
+            });
+            if v.is_none() {
+                runtime_state.active_transition = None;
+            }
+            v
+        };
+
+        // Legacy single-row status_data: only used by the PAUSE path renderer (see below).
+        // In the MAIN path we pass None — the ambient strip takes its place.
+        #[allow(clippy::type_complexity)]
+        let status_data: Option<(String, usize, Vec<(usize, RgbColor)>)> = None;
+
+        // Legacy notification path removed — all toasts now route through
+        // ambient MSG (push_msg). notification_data kept as None for callers
+        // that still reference it.
+        let notification_data: Option<(&RenderedOverlay, usize, usize)> = None;
 
         // Dashboard overlay (merged stats + info)
         let entropy = DashboardOverlay::calculate_entropy(&blended_trail_buffer, 100);
@@ -866,7 +1932,10 @@ pub fn run_simulation(
                 let frame_time_ms = timer.last_frame_ms();
                 let cpu_percent = (frame_time_ms / TARGET_FRAME_TIME_MS) * 100.0;
 
-                let init_mode_name = match init_mode {
+                // Use the live original_init_mode (updated by apply_overrides on config load),
+                // not the startup-time `init_mode` local which is stale after a config load.
+                let live_init_mode = runtime_state.original_init_mode;
+                let init_mode_name = match live_init_mode {
                     InitMode::Random => "Random",
                     InitMode::CentralBurst => "Central",
                     InitMode::Circle => "Circle",
@@ -876,6 +1945,8 @@ pub fn run_simulation(
                     InitMode::RandomClusters => "Clusters",
                     InitMode::Food => "Food",
                     InitMode::Petri => "Petri",
+                    InitMode::Constellation => "Constellation",
+                    InitMode::FoodConstellation => "Logo",
                 };
 
                 let color_mode_name = match color_mode {
@@ -897,7 +1968,7 @@ pub fn run_simulation(
                     Charset::CustomAscii(_) => "Custom",
                 };
 
-                let food_source = if init_mode == InitMode::Food {
+                let food_source = if live_init_mode == InitMode::Food {
                     Some(args.food.clone())
                 } else {
                     None
@@ -952,8 +2023,8 @@ pub fn run_simulation(
                     current_config.sensor_angle,
                     seed,
                     &food_source,
-                    args.warmup_frames,
-                    args.auto_reset,
+                    runtime_state.app.warmup_frames,
+                    runtime_state.app.auto_reset,
                     ui_accent,
                     &runtime_state.panel_style,
                 ))
@@ -976,9 +2047,14 @@ pub fn run_simulation(
                     runtime_state.config_browser_selected_index = runtime_state
                         .config_browser_selected_index
                         .min(configs.len().saturating_sub(1));
-                    Some(ConfigBrowserOverlay::build_overlay(
+                    let active_name = match &runtime_state.active_source {
+                        crate::profile::ProfileSource::SavedConfig(n) => Some(n.as_str()),
+                        _ => None,
+                    };
+                    Some(crate::render::ratatui_adapter::build_config_browser(
                         &configs,
                         runtime_state.config_browser_selected_index,
+                        active_name,
                     ))
                 }
                 Err(_) => {
@@ -1001,8 +2077,11 @@ pub fn run_simulation(
             if runtime_state.overlay_state.is_open(OverlayType::ConfigSave)
                 && !runtime_state.overlay_state.is_open(OverlayType::Dashboard)
             {
-                Some(ConfigSaveOverlay::build_overlay(
-                    &runtime_state.config_save_name_input,
+                // tui_input-backed field with a rendered caret.
+                Some(crate::render::ratatui_adapter::build_config_save(
+                    runtime_state.config_save_name_input.value(),
+                    runtime_state.config_save_name_input.cursor(),
+                    &runtime_state.panel_style,
                 ))
             } else {
                 None
@@ -1013,13 +2092,20 @@ pub fn run_simulation(
             (0, 0)
         };
 
-        // Food persistence fade-out
-        update_food_persistence(sim, &mut runtime_state, args);
+        let dirty_guard_overlay: Option<RenderedOverlay> =
+            if runtime_state.overlay_state.is_open(OverlayType::DirtyGuard) {
+                Some(DirtyGuardOverlay::build_overlay())
+            } else {
+                None
+            };
+        let (dirty_guard_x, dirty_guard_y) = if dirty_guard_overlay.is_some() {
+            DirtyGuardOverlay::calculate_position(term_width as usize, term_height as usize)
+        } else {
+            (0, 0)
+        };
 
-        // Update focused overlay state before rendering
-
-        // Entropy-based auto-reset
-        check_auto_reset(sim, &mut runtime_state, args, entropy, init_mode);
+        update_food_persistence(sim, &mut runtime_state);
+        check_auto_reset(sim, &mut runtime_state, entropy, &blended_trail_buffer);
 
         // Update pause frame counter for animated pause effects
         if runtime_state.is_paused {
@@ -1028,7 +2114,8 @@ pub fn run_simulation(
             runtime_state.pause_frame_counter = 0;
         }
 
-        // VCR pause overlays: dim logo + blinking badge
+        // VCR-style pause overlay: dimmed logo centered in the drawable area
+        // (the status bar shows PAUSED; no separate badge).
         let (pause_logo_overlay, pause_logo_x, pause_logo_y) = if runtime_state.is_paused
             && !runtime_state.any_overlay_open()
             && runtime_state.pause_logo_enabled
@@ -1088,7 +2175,6 @@ pub fn run_simulation(
 
             (Some(logo), lx, ly)
         } else {
-            // Frame counter handled above
             (None, 0, 0)
         };
 
@@ -1113,12 +2199,13 @@ pub fn run_simulation(
             });
         }
 
-        if args.species_colors && sim.config().separate_species_trails {
+        renderer.set_phase_clock(runtime_state.phase_clock);
+
+        if args.species_colors_enabled() && sim.config().separate_species_trails {
             let species_trail_maps = sim.trail_maps_for_species_colors();
-            let species_rgb_colors = extract_species_rgb_colors(&current_config);
             let combined: Vec<_> = species_trail_maps
                 .iter()
-                .zip(species_rgb_colors.iter())
+                .zip(current_species_rgb.iter())
                 .map(|(tm, color)| (*tm, *color))
                 .collect();
             renderer.render_multi_species_with_overlay(
@@ -1148,6 +2235,9 @@ pub fn run_simulation(
                 config_save_overlay
                     .as_ref()
                     .map(|v| (v, config_save_x, config_save_y)),
+                dirty_guard_overlay
+                    .as_ref()
+                    .map(|v| (v, dirty_guard_x, dirty_guard_y)),
                 keyboard_hints_lines
                     .as_ref()
                     .map(|v| (v, keyboard_hints_x, keyboard_hints_y)),
@@ -1157,6 +2247,7 @@ pub fn run_simulation(
                 palette_editor_overlay
                     .as_ref()
                     .map(|v| (v, palette_editor_x, palette_editor_y)),
+                ambient_data,
                 Some(&runtime_state.panel_style),
                 runtime_state.overlay_state.active(),
                 runtime_state.pause_style,
@@ -1188,6 +2279,9 @@ pub fn run_simulation(
                 config_save_overlay
                     .as_ref()
                     .map(|v| (v, config_save_x, config_save_y)),
+                dirty_guard_overlay
+                    .as_ref()
+                    .map(|v| (v, dirty_guard_x, dirty_guard_y)),
                 keyboard_hints_lines
                     .as_ref()
                     .map(|v| (v, keyboard_hints_x, keyboard_hints_y)),
@@ -1197,6 +2291,8 @@ pub fn run_simulation(
                 palette_editor_overlay
                     .as_ref()
                     .map(|v| (v, palette_editor_x, palette_editor_y)),
+                ambient_data,
+                transition_view.as_ref(),
                 Some(&runtime_state.panel_style),
                 runtime_state.overlay_state.active(),
                 runtime_state.pause_style,
@@ -1219,6 +2315,14 @@ pub fn run_simulation(
                             key_event.modifiers.contains(KeyModifiers::SHIFT);
                     }
 
+                    // Screensaver mode: any key press exits (mouse events and
+                    // resizes do not). Checked before overlay/control dispatch so
+                    // no other handler can swallow the event.
+                    if screensaver_exit_on_key(&mode, &key_event) {
+                        should_exit = true;
+                        break;
+                    }
+
                     // GLOBAL EXIT HANDLING -- always allow 'q' to quit regardless of overlay
                     if InputPoller::is_exit_key(&key_event) {
                         should_exit = true;
@@ -1232,17 +2336,42 @@ pub fn run_simulation(
 
                     // Skip warmup on any key press
                     if in_warmup {
-                        runtime_state.warmup_counter = args.warmup_frames; // Skip to end
+                        runtime_state.warmup_counter = runtime_state.app.warmup_frames;
                     }
 
-                    // Centralized overlay input handling - SINGLE SOURCE OF TRUTH
-                    // This handles: toggle keys, Escape, and blocking other keys
+                    // Centralized overlay input handling: toggle keys, Escape, and
+                    // blocking other keys while an overlay is open.
                     match OverlayInputManager::handle_input(
                         &runtime_state.overlay_state,
                         &key_event,
                     ) {
                         OverlayInputResult::CloseOverlay => {
-                            runtime_state.overlay_state.close();
+                            let active = runtime_state.overlay_state.active();
+                            let was_dirty_guard = active == Some(OverlayType::DirtyGuard);
+                            let was_controls = active == Some(OverlayType::Controls);
+                            let was_palette_editor = active == Some(OverlayType::PaletteEditor);
+
+                            // PaletteEditor needs its sub-state cleared on close.
+                            if was_palette_editor {
+                                runtime_state.overlay_state.close_palette_editor();
+                            } else {
+                                runtime_state.overlay_state.close();
+                            }
+
+                            // Reset Controls depth when Controls is closed via toggle/Esc.
+                            if was_controls {
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Closed;
+                            }
+
+                            // DirtyGuard cancel: clear the parked swap.
+                            if was_dirty_guard {
+                                runtime_state.pending_swap = None;
+                                runtime_state.show_notification("Switch cancelled".to_string());
+                            }
+
+                            // Always update chrome state when an overlay closes.
+                            runtime_state.on_modal_close();
                             continue;
                         }
                         OverlayInputResult::Consumed => {
@@ -1254,56 +2383,119 @@ pub fn run_simulation(
                         }
                     }
 
+                    // Handle dirty-state guard input. Escape was already handled by
+                    // the centralized manager (→ CloseOverlay → cancels). Here we only
+                    // act on Enter (confirm); all other keys are swallowed so the modal
+                    // stays blocking. Both the confirm path and the clean path route
+                    // through the SAME `do_swap`, so they cannot diverge.
+                    if runtime_state.overlay_state.is_open(OverlayType::DirtyGuard) {
+                        use crossterm::event::KeyCode;
+                        if key_event.code == KeyCode::Enter {
+                            runtime_state.overlay_state.close();
+                            runtime_state.on_modal_close();
+                            if let Some(pending) = runtime_state.pending_swap.take() {
+                                let is_reset = matches!(pending, PendingSwap::Reset);
+                                do_swap(
+                                    pending,
+                                    &mut runtime_state,
+                                    &mut renderer,
+                                    sim,
+                                    &mut timer,
+                                    &mut grid_renderer,
+                                    &mut window,
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    (term_width as usize, term_height as usize),
+                                )?;
+                                if is_reset {
+                                    // Reset-specific loop-local side effects.
+                                    hue_offset = 0.0;
+                                }
+                                // do_swap → apply_render_config may flip auto_normalize
+                                // (preset/config can default it ON); re-sync the
+                                // loop-local + rebuild AdaptiveBrightness for any swap.
+                                current_auto_normalize = runtime_state.auto_normalize;
+                                adaptive_brightness = AdaptiveBrightness::new(
+                                    args.normalize_window,
+                                    current_auto_normalize,
+                                );
+                            }
+                        }
+                        continue;
+                    }
+
                     // Handle config save dialog input
                     if runtime_state.overlay_state.is_open(OverlayType::ConfigSave) {
                         use crossterm::event::{KeyCode, KeyModifiers};
+                        use tui_input::InputRequest;
+                        // Map crossterm keys → tui_input requests ourselves (tui-input's
+                        // own crossterm backend is disabled to avoid version coupling).
+                        let input = &mut runtime_state.config_save_name_input;
                         match key_event.code {
                             KeyCode::Char(c)
                                 if !key_event.modifiers.contains(KeyModifiers::CONTROL) =>
                             {
-                                if runtime_state.config_save_name_input.len() < 26 {
-                                    runtime_state.config_save_name_input.push(c);
+                                if input.value().chars().count() < 26 {
+                                    input.handle(InputRequest::InsertChar(c));
                                 }
                                 continue;
                             }
                             KeyCode::Backspace => {
-                                runtime_state.config_save_name_input.pop();
+                                input.handle(InputRequest::DeletePrevChar);
+                                continue;
+                            }
+                            KeyCode::Delete => {
+                                input.handle(InputRequest::DeleteNextChar);
+                                continue;
+                            }
+                            KeyCode::Left => {
+                                input.handle(InputRequest::GoToPrevChar);
+                                continue;
+                            }
+                            KeyCode::Right => {
+                                input.handle(InputRequest::GoToNextChar);
+                                continue;
+                            }
+                            KeyCode::Home => {
+                                input.handle(InputRequest::GoToStart);
+                                continue;
+                            }
+                            KeyCode::End => {
+                                input.handle(InputRequest::GoToEnd);
                                 continue;
                             }
                             KeyCode::Enter => {
-                                if !runtime_state.config_save_name_input.is_empty() {
-                                    // Save config
-                                    let saved_config = config_manager::SavedConfig::from_runtime(
-                                        runtime_state.config_save_name_input.clone(),
-                                        sim.config(),
-                                        runtime_state.current_palette(&ALL_PALETTES),
-                                        charset.clone(),
-                                        args.reverse_palette,
-                                        args.invert_palette,
-                                        args.warmup_frames,
-                                        args.food_persist,
-                                        args.auto_reset,
-                                        args.grid,
-                                        if args.grid {
-                                            Some(args.grid_style.clone())
-                                        } else {
-                                            None
-                                        },
-                                        init_mode,
-                                        if init_mode == InitMode::Food {
-                                            Some(args.food.clone())
-                                        } else {
-                                            None
-                                        },
-                                        Some(&runtime_state.intensity_mapping),
-                                    );
+                                if !runtime_state.config_save_name_input.value().is_empty() {
+                                    let named_profile = config_manager::NamedProfile {
+                                        name: runtime_state
+                                            .config_save_name_input
+                                            .value()
+                                            .to_string(),
+                                        description: None,
+                                        overrides: config_manager::capture_overrides(
+                                            sim.config(),
+                                            // Save the EXACT live palette/charset (incl. Custom),
+                                            // not the lossy index or the stale launch charset.
+                                            runtime_state.live_palette.clone(),
+                                            runtime_state.live_charset.clone(),
+                                            &runtime_state,
+                                        ),
+                                    };
 
-                                    match config_manager::save_config(saved_config) {
-                                        Ok(_) => {
-                                            runtime_state.show_notification(format!(
-                                                "Config '{}' saved successfully",
-                                                runtime_state.config_save_name_input
-                                            ));
+                                    match config_manager::save_config(named_profile) {
+                                        Ok(warning) => {
+                                            let msg = match warning {
+                                                Some(w) => format!(
+                                                    "Config '{}' saved ({})",
+                                                    runtime_state.config_save_name_input.value(),
+                                                    w
+                                                ),
+                                                None => format!(
+                                                    "Config '{}' saved successfully",
+                                                    runtime_state.config_save_name_input.value()
+                                                ),
+                                            };
+                                            runtime_state.show_notification(msg);
                                         }
                                         Err(e) => {
                                             runtime_state.show_notification(format!(
@@ -1327,24 +2519,27 @@ pub fn run_simulation(
                     {
                         use crossterm::event::KeyCode;
                         if key_event.code == KeyCode::Enter {
-                            // Apply the comparison preset
-                            let preset = runtime_state.comparison_preset;
-                            runtime_state.set_preset(preset);
-                            let mut new_config = SimConfig::from(preset);
-                            // Maintain existing environment/setup
-                            new_config.attractors = sim.config().attractors.clone();
-                            new_config.attractor_strength = sim.config().attractor_strength;
-                            new_config.food_image_path = sim.config().food_image_path.clone();
-                            new_config.food_image_invert = sim.config().food_image_invert;
-                            new_config.obstacles = sim.config().obstacles.clone();
-                            new_config.obstacle_masks = sim.config().obstacle_masks.clone();
-                            sim.update_config(new_config);
-
-                            runtime_state.show_notification(format!(
-                                "Applied preset: {}",
-                                crate::terminal::control::preset_name(preset)
-                            ));
+                            use crate::terminal::state::ComparisonTarget;
+                            let pending = match &runtime_state.comparison_target {
+                                ComparisonTarget::Preset(p) => PendingSwap::Preset(*p),
+                                ComparisonTarget::Config(np) => PendingSwap::Config(np.clone()),
+                            };
                             runtime_state.overlay_state.close();
+                            dispatch_swap(
+                                pending,
+                                &mut runtime_state,
+                                &mut renderer,
+                                sim,
+                                &mut timer,
+                                &mut grid_renderer,
+                                &mut window,
+                                &mut downsampled_frame,
+                                &mut aux_frame,
+                                (term_width as usize, term_height as usize),
+                                &mut current_auto_normalize,
+                                &mut adaptive_brightness,
+                                args.normalize_window,
+                            )?;
                             continue;
                         }
                         // Note: Other keys are blocked by centralized handler
@@ -1376,41 +2571,37 @@ pub fn run_simulation(
                                 continue;
                             }
                             KeyCode::Enter => {
-                                // Load selected config
-                                if let Ok(configs) = config_manager::list_configs() {
-                                    if let Some(config) =
-                                        configs.get(runtime_state.config_browser_selected_index)
-                                    {
-                                        match config.apply_to_runtime_state(&mut runtime_state) {
-                                            Ok(_) => {
-                                                // Apply every live param (sim + renderer caches)
-                                                // through the shared path so charset, intensity
-                                                // mapping, sigma, brightness all take effect.
-                                                apply_live_params(
-                                                    &runtime_state,
-                                                    sim,
-                                                    &mut renderer,
-                                                );
-
-                                                runtime_state.show_notification(format!(
-                                                    "Config '{}' loaded successfully",
-                                                    config.name
-                                                ));
-                                            }
-                                            Err(e) => {
-                                                runtime_state.show_notification(format!(
-                                                    "Failed to load '{}': {}",
-                                                    config.name, e
-                                                ));
-                                            }
-                                        }
-                                    }
-                                }
+                                // Resolve the selected config (in full), close the
+                                // browser, then gate the load on dirty state: dirty →
+                                // park behind the guard; clean → load now via the single
+                                // executor. Carrying the resolved config avoids a
+                                // redundant disk re-read inside do_swap.
+                                let selected_config =
+                                    config_manager::list_configs().ok().and_then(|mut configs| {
+                                        let idx = runtime_state.config_browser_selected_index;
+                                        (idx < configs.len()).then(|| configs.swap_remove(idx))
+                                    });
                                 runtime_state.overlay_state.close();
+                                if let Some(config) = selected_config {
+                                    dispatch_swap(
+                                        PendingSwap::Config(Box::new(config)),
+                                        &mut runtime_state,
+                                        &mut renderer,
+                                        sim,
+                                        &mut timer,
+                                        &mut grid_renderer,
+                                        &mut window,
+                                        &mut downsampled_frame,
+                                        &mut aux_frame,
+                                        (term_width as usize, term_height as usize),
+                                        &mut current_auto_normalize,
+                                        &mut adaptive_brightness,
+                                        args.normalize_window,
+                                    )?;
+                                }
                                 continue;
                             }
                             KeyCode::Delete => {
-                                // Delete selected config
                                 if let Ok(configs) = config_manager::list_configs() {
                                     if let Some(config) =
                                         configs.get(runtime_state.config_browser_selected_index)
@@ -1453,11 +2644,9 @@ pub fn run_simulation(
                         let mut should_close = false;
                         let mut notification: Option<String> = None;
 
-                        // Use the OverlayInputHandler trait for key handling
                         if let Some(ref mut state) = runtime_state.overlay_state.palette_editor {
                             let was_modified = state.is_modified;
 
-                            // Handle key using trait implementation
                             let handled = state.handle_key(&key_event);
 
                             // Check if we need to close (Esc or Enter in Editing mode returned false)
@@ -1478,10 +2667,9 @@ pub fn run_simulation(
                                 // Apply palette changes after each adjustment
                                 renderer.set_palette(state.to_palette());
 
-                                // Handle save dialog completion
                                 if matches!(state.mode, EditorMode::SaveDialog) {
-                                    // Check if save dialog just completed (we detect this by checking
-                                    // if save_name_input was just cleared after having content)
+                                    // No-op: save completion is detected via the
+                                    // is_modified transition below.
                                 }
                             }
 
@@ -1511,7 +2699,23 @@ pub fn run_simulation(
                         break;
                     }
 
-                    let action = handle_key_event(&key_event);
+                    let mut action = handle_key_event(&key_event);
+                    // Build the registry visibility context from current runtime state.
+                    let registry_ctx = RegistryCtx {
+                        diffusion_gaussian: matches!(
+                            runtime_state.diffusion_kernel,
+                            DiffusionKernel::Gaussian
+                        ),
+                        mouse_enabled: runtime_state.mouse_mode != MouseInteractionMode::Disabled,
+                    };
+                    // Controls-overlay interaction is intercepted first. Focused
+                    // adjust/activate resolve to a real action that is then
+                    // re-dispatched through the same match below (one hop).
+                    match apply_controls_action(&mut runtime_state, &action, &registry_ctx) {
+                        ControlsDispatch::Handled => continue,
+                        ControlsDispatch::Redispatch(real) => action = real,
+                        ControlsDispatch::Passthrough => {}
+                    }
                     match action {
                         ControlAction::Quit => {
                             should_exit = true;
@@ -1526,29 +2730,92 @@ pub fn run_simulation(
                             }
                         }
                         ControlAction::Restart => {
-                            sim.reset(
-                                runtime_state.original_seed,
-                                runtime_state.original_init_mode,
-                            );
+                            let init_mode = effective_init_mode(runtime_state.original_init_mode);
+                            // Re-roll the seed on each manual restart so seed-driven
+                            // choices (e.g. the Constellation figure) vary — UNLESS a
+                            // seed was pinned via `--seed`, which stays reproducible.
+                            let seed = match args.seed {
+                                Some(pinned) => pinned,
+                                None => crate::app::fresh_seed(),
+                            };
+                            runtime_state.original_seed = seed;
+                            sim.reset(seed, init_mode);
                         }
-                        ControlAction::SetPreset(preset) => {
-                            runtime_state.set_preset(preset);
-                            let mut new_config = SimConfig::from(preset);
-                            new_config.attractors = sim.config().attractors.clone();
-                            new_config.attractor_strength = sim.config().attractor_strength;
-                            new_config.food_image_path = sim.config().food_image_path.clone();
-                            new_config.food_image_invert = sim.config().food_image_invert;
-                            new_config.obstacles = sim.config().obstacles.clone();
-                            new_config.obstacle_masks = sim.config().obstacle_masks.clone();
-                            sim.update_config(new_config);
-                            timer.set_time_scale(runtime_state.time_scale);
-                        }
-                        ControlAction::ComparePreset(preset) => {
-                            runtime_state.toggle_preset_comparison(preset);
-                            if runtime_state.any_overlay_open() {
-                                runtime_state.on_modal_open();
-                            } else {
-                                runtime_state.on_modal_close();
+                        ControlAction::QuickKey(c) => match resolve_bind(c, &user_binds) {
+                            Some(crate::keybind_manager::BindTarget::Preset(preset)) => {
+                                dispatch_swap(
+                                    PendingSwap::Preset(preset),
+                                    &mut runtime_state,
+                                    &mut renderer,
+                                    sim,
+                                    &mut timer,
+                                    &mut grid_renderer,
+                                    &mut window,
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    (term_width as usize, term_height as usize),
+                                    &mut current_auto_normalize,
+                                    &mut adaptive_brightness,
+                                    args.normalize_window,
+                                )?;
+                            }
+                            Some(crate::keybind_manager::BindTarget::Config(name)) => {
+                                match config_manager::load_config(&name) {
+                                    Ok(config) => {
+                                        dispatch_swap(
+                                            PendingSwap::Config(Box::new(config)),
+                                            &mut runtime_state,
+                                            &mut renderer,
+                                            sim,
+                                            &mut timer,
+                                            &mut grid_renderer,
+                                            &mut window,
+                                            &mut downsampled_frame,
+                                            &mut aux_frame,
+                                            (term_width as usize, term_height as usize),
+                                            &mut current_auto_normalize,
+                                            &mut adaptive_brightness,
+                                            args.normalize_window,
+                                        )?;
+                                    }
+                                    Err(e) => {
+                                        runtime_state.show_notification(format!(
+                                            "Failed to load '{name}': {e}"
+                                        ));
+                                    }
+                                }
+                            }
+                            None => {
+                                runtime_state.show_notification(format!(
+                                    "Key {c} unbound — set in ~/.config/tslime/keybinds.toml"
+                                ));
+                            }
+                        },
+                        ControlAction::CompareQuickKey(c) => {
+                            use crate::keybind_manager::BindTarget;
+                            use crate::terminal::state::ComparisonTarget;
+                            let target = match resolve_bind(c, &user_binds) {
+                                Some(BindTarget::Preset(p)) => Some(ComparisonTarget::Preset(p)),
+                                Some(BindTarget::Config(name)) => {
+                                    match config_manager::load_config(&name) {
+                                        Ok(np) => Some(ComparisonTarget::Config(Box::new(np))),
+                                        Err(e) => {
+                                            runtime_state.show_notification(format!(
+                                                "Failed to load '{name}': {e}"
+                                            ));
+                                            None
+                                        }
+                                    }
+                                }
+                                None => None,
+                            };
+                            if let Some(target) = target {
+                                runtime_state.toggle_comparison(target);
+                                if runtime_state.any_overlay_open() {
+                                    runtime_state.on_modal_open();
+                                } else {
+                                    runtime_state.on_modal_close();
+                                }
                             }
                         }
                         ControlAction::AdjustTimeScale(delta) => {
@@ -1568,6 +2835,7 @@ pub fn run_simulation(
                         ControlAction::CycleCharset => {
                             runtime_state.cycle_charset();
                             renderer.set_charset(runtime_state.current_charset());
+                            renderer.set_color_aa(runtime_state.current_color_aa());
                             runtime_state.show_notification(format!(
                                 "Charset: {}",
                                 charset_name(&runtime_state.current_charset())
@@ -1576,22 +2844,59 @@ pub fn run_simulation(
                         ControlAction::CycleCharsetReverse => {
                             runtime_state.cycle_charset_reverse();
                             renderer.set_charset(runtime_state.current_charset());
+                            renderer.set_color_aa(runtime_state.current_color_aa());
                             runtime_state.show_notification(format!(
                                 "Charset: {}",
                                 charset_name(&runtime_state.current_charset())
                             ));
                         }
+                        ControlAction::CycleColorAa => {
+                            if runtime_state.cycle_color_aa() {
+                                renderer.set_color_aa(runtime_state.current_color_aa());
+                                runtime_state.show_notification(format!(
+                                    "Color AA ({}): {}",
+                                    charset_name(&runtime_state.current_charset()),
+                                    runtime_state.current_color_aa().as_label()
+                                ));
+                            } else {
+                                runtime_state.show_notification(format!(
+                                    "Color AA not applicable to {}",
+                                    charset_name(&runtime_state.current_charset())
+                                ));
+                            }
+                        }
                         ControlAction::ToggleDither => {
-                            runtime_state.toggle_dither();
-                            renderer.set_dither_mode(runtime_state.dither_mode);
+                            if dither_unlocked {
+                                runtime_state.toggle_dither();
+                                renderer.set_dither_mode(runtime_state.dither_mode);
+                            } else {
+                                runtime_state.show_notification(
+                                    "Dither is dev-only - see help-wanted issues on GitHub"
+                                        .to_string(),
+                                );
+                            }
                         }
                         ControlAction::CycleDitherMode => {
-                            runtime_state.cycle_dither_mode();
-                            renderer.set_dither_mode(runtime_state.dither_mode);
+                            if dither_unlocked {
+                                runtime_state.cycle_dither_mode();
+                                renderer.set_dither_mode(runtime_state.dither_mode);
+                            } else {
+                                runtime_state.show_notification(
+                                    "Dither is dev-only - see help-wanted issues on GitHub"
+                                        .to_string(),
+                                );
+                            }
                         }
                         ControlAction::AdjustDitherIntensity(delta) => {
-                            runtime_state.adjust_dither_intensity(delta);
-                            renderer.set_dither_mode(runtime_state.dither_mode);
+                            if dither_unlocked {
+                                runtime_state.adjust_dither_intensity(delta);
+                                renderer.set_dither_mode(runtime_state.dither_mode);
+                            } else {
+                                runtime_state.show_notification(
+                                    "Dither is dev-only - see help-wanted issues on GitHub"
+                                        .to_string(),
+                                );
+                            }
                         }
                         ControlAction::ToggleKeyboardHints => {
                             runtime_state.toggle_keyboard_hints();
@@ -1603,6 +2908,15 @@ pub fn run_simulation(
                         }
                         ControlAction::ToggleControls => {
                             runtime_state.toggle_controls();
+                            // Opening the surface enters the Console depth; closing
+                            // resets it. Tab then cycles Console↔Tuner per the grammar.
+                            if runtime_state.overlay_state.is_open(OverlayType::Controls) {
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Console;
+                            } else {
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Closed;
+                            }
                             if runtime_state.any_overlay_open() {
                                 runtime_state.on_modal_open();
                             } else {
@@ -1612,22 +2926,58 @@ pub fn run_simulation(
                         ControlAction::CloseOverlays => {
                             if runtime_state.any_overlay_open() {
                                 runtime_state.close_all_overlays();
+                                // Closing all overlays also resets the Controls depth.
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Closed;
                                 runtime_state.on_modal_close();
+                            } else {
+                                // No overlays open: Esc clears a sticky error MSG if one
+                                // is the resolved foreground state.
+                                let now = runtime_state.phase_clock;
+                                let resolved = crate::render::ambient::resolve(
+                                    &runtime_state.ambient_states,
+                                    now,
+                                );
+                                let is_sticky_error = matches!(
+                                    resolved,
+                                    AmbientState::Msg {
+                                        level: crate::terminal::state::NotificationLevel::Error,
+                                        sticky: true,
+                                        ..
+                                    }
+                                );
+                                if is_sticky_error {
+                                    runtime_state.ambient_states.retain(|s| {
+                                        !matches!(
+                                            s,
+                                            AmbientState::Msg {
+                                                level: crate::terminal::state::NotificationLevel::Error,
+                                                sticky: true,
+                                                ..
+                                            }
+                                        )
+                                    });
+                                }
                             }
-                            // If no overlays open, Esc does nothing (doesn't quit)
                         }
                         ControlAction::CycleOptionsCategory => {
+                            // Only reached when the overlay is CLOSED: open it into Console depth.
+                            // The open-overlay case (cycle category + clamp focus) is handled earlier
+                            // in apply_controls_action, which returns Handled so this arm is skipped.
                             if !runtime_state.overlay_state.is_open(OverlayType::Controls) {
                                 runtime_state.toggle_controls();
-                            } else {
-                                runtime_state.cycle_controls_category(true);
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Console;
                             }
                         }
                         ControlAction::CycleOptionsCategoryReverse => {
+                            // Only reached when the overlay is CLOSED: open it into Console depth.
+                            // The open-overlay case (cycle category + clamp focus) is handled earlier
+                            // in apply_controls_action, which returns Handled so this arm is skipped.
                             if !runtime_state.overlay_state.is_open(OverlayType::Controls) {
                                 runtime_state.toggle_controls();
-                            } else {
-                                runtime_state.cycle_controls_category(false);
+                                runtime_state.controls_depth =
+                                    crate::render::controls::ControlsDepth::Console;
                             }
                         }
                         ControlAction::AdjustSensorAngle(delta) => {
@@ -1746,9 +3096,9 @@ pub fn run_simulation(
                         }
                         ControlAction::CycleWindDirection => {
                             runtime_state.cycle_wind_direction();
-                            sim.with_config_mut(|c| {
-                                c.wind = runtime_state.wind_direction.to_wind()
-                            });
+                            // Coarse cycle PRODUCES the precise vector; store it losslessly.
+                            runtime_state.wind = runtime_state.wind_direction.to_wind();
+                            sim.with_config_mut(|c| c.wind = runtime_state.wind);
                             runtime_state.show_notification(format!(
                                 "Wind: {}",
                                 runtime_state.wind_direction.name()
@@ -1756,9 +3106,8 @@ pub fn run_simulation(
                         }
                         ControlAction::CycleWindDirectionReverse => {
                             runtime_state.cycle_wind_direction_reverse();
-                            sim.with_config_mut(|c| {
-                                c.wind = runtime_state.wind_direction.to_wind()
-                            });
+                            runtime_state.wind = runtime_state.wind_direction.to_wind();
+                            sim.with_config_mut(|c| c.wind = runtime_state.wind);
                             runtime_state.show_notification(format!(
                                 "Wind: {}",
                                 runtime_state.wind_direction.name()
@@ -1808,9 +3157,13 @@ pub fn run_simulation(
                             if current_auto_normalize {
                                 // Auto-normalize drives the white-point from the
                                 // adaptive peak, so the manual control is inert.
-                                runtime_state.show_notification(
+                                // Warning level so it outranks the tuner that the
+                                // adjust surfaces — the inert gauge alone would
+                                // mislead; this message explains why.
+                                runtime_state.show_notification_with_level(
                                     "Brightness is auto-normalized (press B to disable)"
                                         .to_string(),
+                                    crate::terminal::state::NotificationLevel::Warning,
                                 );
                             } else {
                                 let at_bound = runtime_state.adjust_max_brightness(delta);
@@ -1832,6 +3185,11 @@ pub fn run_simulation(
                         ControlAction::SaveFrameToPng => {
                             use crate::export::png::save_frame_as_png;
 
+                            let png_aux_cells = if runtime_state.temporal_color > 0.0 {
+                                Some(aux_frame.cells.as_slice())
+                            } else {
+                                None
+                            };
                             match save_frame_as_png(
                                 downsampled_frame.cells(),
                                 term_width as usize,
@@ -1840,7 +3198,13 @@ pub fn run_simulation(
                                 runtime_state.reverse_palette,
                                 runtime_state.invert_palette,
                                 hue_offset,
-                                max_brightness,
+                                Some(&runtime_state.intensity_mapping),
+                                max_brightness.max(1.0),
+                                runtime_state.temporal_color,
+                                runtime_state.temporal_mode,
+                                png_aux_cells,
+                                runtime_state.palette_cycle,
+                                None,
                             ) {
                                 Ok(filename) => {
                                     runtime_state
@@ -1882,6 +3246,17 @@ pub fn run_simulation(
                             runtime_state.toggle_reverse_palette();
                             renderer.set_reverse_palette(runtime_state.reverse_palette);
                         }
+                        ControlAction::ToggleStatusBar => {
+                            runtime_state.show_status_bar = !runtime_state.show_status_bar;
+                            runtime_state.show_notification(format!(
+                                "Status line: {}",
+                                if runtime_state.show_status_bar {
+                                    "on"
+                                } else {
+                                    "off"
+                                }
+                            ));
+                        }
                         ControlAction::CycleIntensityMapping => {
                             runtime_state.cycle_intensity_mapping(false);
                             runtime_state.show_notification(format!(
@@ -1903,25 +3278,24 @@ pub fn run_simulation(
                             ));
                         }
                         ControlAction::ResetToDefaults => {
-                            runtime_state.reset_to_defaults();
-                            // Rebuild the sim from the launch snapshot (initial run params,
-                            // including CLI flags), not the bare preset, then overlay the
-                            // restored runtime-state live fields and push renderer caches.
-                            let base = runtime_state
-                                .cli_overrides
-                                .clone()
-                                .unwrap_or_else(|| SimConfig::from(runtime_state.current_preset));
-                            sim.update_config(base);
-                            apply_live_params(&runtime_state, sim, &mut renderer);
-                            timer.set_time_scale(runtime_state.time_scale);
-                            hue_offset = 0.0;
-                            current_auto_normalize = runtime_state.auto_normalize;
-                            let notification = if runtime_state.cli_overrides.is_some() {
-                                "Reset to CLI parameters"
-                            } else {
-                                "Reset to defaults"
-                            };
-                            runtime_state.show_notification(notification.to_string());
+                            let applied = dispatch_swap(
+                                PendingSwap::Reset,
+                                &mut runtime_state,
+                                &mut renderer,
+                                sim,
+                                &mut timer,
+                                &mut grid_renderer,
+                                &mut window,
+                                &mut downsampled_frame,
+                                &mut aux_frame,
+                                (term_width as usize, term_height as usize),
+                                &mut current_auto_normalize,
+                                &mut adaptive_brightness,
+                                args.normalize_window,
+                            )?;
+                            if applied {
+                                hue_offset = 0.0;
+                            }
                         }
                         ControlAction::ToggleDashboard => {
                             runtime_state.toggle_dashboard();
@@ -1931,17 +3305,27 @@ pub fn run_simulation(
                                 runtime_state.on_modal_close();
                             }
                         }
+                        ControlAction::ToggleNotifications => {
+                            runtime_state.notifications_enabled =
+                                !runtime_state.notifications_enabled;
+                            // Confirm only when turning them back ON — push_msg is
+                            // a no-op while disabled, so an "off" toast can't show.
+                            if runtime_state.notifications_enabled {
+                                runtime_state.show_notification("Notifications on".to_string());
+                            }
+                        }
                         ControlAction::SetIntensityMapping(_) => {}
                         ControlAction::ShowConfigBrowser => {
                             runtime_state.close_all_overlays();
                             runtime_state.overlay_state.open(OverlayType::ConfigBrowser);
-                            runtime_state.config_browser_selected_index = 0;
+                            // Intentionally do NOT reset config_browser_selected_index here —
+                            // persisting the selection across reopen is UX-win F.
                             runtime_state.on_modal_open();
                         }
                         ControlAction::ShowConfigSaveDialog => {
                             runtime_state.close_all_overlays();
                             runtime_state.overlay_state.open(OverlayType::ConfigSave);
-                            runtime_state.config_save_name_input.clear();
+                            runtime_state.config_save_name_input.reset();
                             runtime_state.on_modal_open();
                         }
                         ControlAction::RandomizeParams => {
@@ -2050,6 +3434,37 @@ pub fn run_simulation(
                                 }
                             ));
                         }
+                        ControlAction::CycleChrome => {
+                            use crate::render::window::FallbackMode;
+                            use crate::simulation::config::ChromeStyle;
+                            runtime_state.cycle_chrome_style();
+                            let layout =
+                                if matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen) {
+                                    None
+                                } else {
+                                    let (tw, th) = crossterm::terminal::size()
+                                        .map(|(w, h)| (w as usize, h as usize))
+                                        .unwrap_or((80, 24));
+                                    let l = window.compute_rects(tw, th);
+                                    if matches!(l.fallback, FallbackMode::Fullscreen) {
+                                        None
+                                    } else {
+                                        Some(l)
+                                    }
+                                };
+                            // Resize render buffers to match the new chrome's sim dims
+                            // BEFORE moving `layout` into the renderer (else blur_field panics).
+                            let (rw, rh) = layout
+                                .as_ref()
+                                .map(|l| (l.sim_w, l.sim_h))
+                                .unwrap_or((term_width as usize, term_height as usize));
+                            resize_render_frames(&mut downsampled_frame, &mut aux_frame, rw, rh);
+                            renderer.set_window_layout(layout);
+                            runtime_state.show_notification(format!(
+                                "Chrome: {:?}",
+                                runtime_state.chrome_style
+                            ));
+                        }
                         ControlAction::ToggleFullscreen => {
                             use crate::render::window::FallbackMode;
                             use crate::simulation::config::ChromeStyle;
@@ -2065,46 +3480,88 @@ pub fn run_simulation(
                                 } else {
                                     Some(l)
                                 };
+                                let (rw, rh) = layout
+                                    .as_ref()
+                                    .map(|l| (l.sim_w, l.sim_h))
+                                    .unwrap_or((term_width as usize, term_height as usize));
+                                resize_render_frames(
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    rw,
+                                    rh,
+                                );
                                 renderer.set_window_layout(layout);
                             } else {
                                 // Switch to fullscreen
                                 runtime_state.chrome_style = ChromeStyle::Fullscreen;
                                 runtime_state.chrome_state =
                                     crate::terminal::state::ChromeState::Minimal;
+                                resize_render_frames(
+                                    &mut downsampled_frame,
+                                    &mut aux_frame,
+                                    term_width as usize,
+                                    term_height as usize,
+                                );
                                 renderer.set_window_layout(None);
                             }
                         }
+                        #[cfg(feature = "audio")]
                         ControlAction::ToggleChoir => {
-                            #[cfg(feature = "audio")]
-                            {
-                                if choir.is_some() {
-                                    choir = None;
-                                    runtime_state.show_notification("Choir mode: off".to_string());
-                                } else {
-                                    match crate::audio::Choir::try_new(
-                                        args.choir_volume.clamp(0.0, 1.0),
-                                    ) {
-                                        Ok(c) => {
-                                            choir = Some(c);
-                                            runtime_state
-                                                .show_notification("Choir mode: on".to_string());
-                                        }
-                                        Err(e) => {
-                                            runtime_state.show_notification(format!(
-                                                "Choir init failed: {e}"
-                                            ));
-                                        }
+                            if choir.is_some() {
+                                choir = None;
+                                runtime_state.show_notification("Choir mode: off".to_string());
+                            } else {
+                                match crate::audio::Choir::try_new(
+                                    args.choir_volume.clamp(0.0, 1.0),
+                                ) {
+                                    Ok(c) => {
+                                        choir = Some(c);
+                                        runtime_state
+                                            .show_notification("Choir mode: on".to_string());
+                                    }
+                                    Err(e) => {
+                                        runtime_state
+                                            .show_notification(format!("Choir init failed: {e}"));
                                     }
                                 }
                             }
-                            #[cfg(not(feature = "audio"))]
-                            {
-                                runtime_state.show_notification(
-                                    "Choir requires --features audio".to_string(),
-                                );
-                            }
                         }
                         ControlAction::None => {}
+                        // Controls-overlay interaction actions are intercepted by
+                        // `apply_controls_action` above (they either mutate state
+                        // and `continue`, or re-dispatch a real action), so they
+                        // never reach this match. These arms keep it exhaustive.
+                        ControlAction::ToggleControlsDepth
+                        | ControlAction::ControlsFocusNext
+                        | ControlAction::ControlsFocusPrev
+                        | ControlAction::ControlsAdjustFocused(_)
+                        | ControlAction::ControlsActivateFocused => {}
+                    }
+
+                    // ── TUNE surfacing ───────────────────────────────────────
+                    // When the dispatched action adjusted a single sim/render
+                    // param, surface it in the ambient TUNE state (debounced):
+                    // each adjust refreshes the hold so rapid adjusts extend it,
+                    // then it eases back to BASE. This REPLACES any on-adjust
+                    // toast (none existed — param adjusts only notify at bounds).
+                    let tune_view = if runtime_state.notifications_enabled {
+                        tune_view_for_action(&runtime_state, &action, &registry_ctx, agent_count)
+                    } else {
+                        None
+                    };
+                    if let Some(tune) = tune_view {
+                        const TUNE_HOLD_SECS: f32 = 2.5;
+                        let now = runtime_state.phase_clock;
+                        // Surface the focused param (debounced) and drop the
+                        // redundant value-echo Info toast the handler pushed so
+                        // the tuner is always the visible feedback. Relevant
+                        // Warning/Error messages survive and momentarily win.
+                        crate::render::ambient::surface_tune(
+                            &mut runtime_state.ambient_states,
+                            tune,
+                            now,
+                            TUNE_HOLD_SECS,
+                        );
                     }
                 }
                 Event::Mouse(mouse_event) => {
@@ -2251,48 +3708,53 @@ pub fn run_simulation(
 
                     (Some(logo), lx, ly)
                 } else {
-                    // Frame counter handled above
                     (None, 0, 0)
                 };
 
-            // Build status line
-            let diffusion_kernel_name = match current_config.diffusion_kernel {
-                DiffusionKernel::Mean3x3 => "Mean3x3",
-                DiffusionKernel::Gaussian => "Gaussian",
+            // Pause re-render path: resolve the ambient surface with the same
+            // shared logic as the main path (pause → centered modal, etc.).
+            let pause_dither_label = match runtime_state.dither_mode {
+                crate::render::dither::DitherMode::None => None,
+                crate::render::dither::DitherMode::Ordered { intensity, .. } => {
+                    Some(format!("D {:.1}×", intensity))
+                }
+                crate::render::dither::DitherMode::ErrorDiffusion { .. } => Some("ED".to_string()),
+                crate::render::dither::DitherMode::Hybrid { intensity, .. } => {
+                    Some(format!("H {:.1}×", intensity))
+                }
             };
-            let (status_line, status_colors) = OverlayRenderer::build_status_line(
-                runtime_state.is_paused,
-                runtime_state.current_preset,
-                runtime_state.time_scale,
-                current_palette.clone(),
-                runtime_state.dither_mode,
+            let pause_base_status = BaseStatus {
+                preset_name: preset_name(runtime_state.current_preset).to_string(),
+                palette_name: palette_name(current_palette.clone()).to_string(),
+                time_scale_text: format!("{:.1}×", runtime_state.time_scale),
+                population: Some(sim.agent_count()),
+                dither_label: pause_dither_label,
+                can_undo: !runtime_state.undo_stack.is_empty(),
+                can_redo: !runtime_state.redo_stack.is_empty(),
+                accent: ui_accent,
+                is_paused: runtime_state.is_paused,
+            };
+            let pause_ambient_overlay = compute_ambient_overlay(
+                &runtime_state,
+                &pause_base_status,
+                &window,
                 term_width as usize,
-                Some(sim.agent_count()),
-                Some(diffusion_kernel_name),
-                !runtime_state.undo_stack.is_empty(),
-                !runtime_state.redo_stack.is_empty(),
-                Some(ui_accent),
+                term_height as usize,
+                sim.agent_count(),
             );
-            let status_x = OverlayRenderer::status_line_x(&status_line, term_width as usize);
-            // Suppress status bar in windowed mode unless explicitly enabled.
-            let show_status_pause = {
-                use crate::simulation::config::ChromeStyle;
-                matches!(runtime_state.chrome_style, ChromeStyle::Fullscreen)
-                    || runtime_state.show_status_bar
-            };
-            let status_data = if show_status_pause {
-                Some((status_line, status_x, status_colors))
-            } else {
-                None
-            };
+            #[allow(clippy::type_complexity)]
+            let status_data: Option<(
+                String,
+                usize,
+                Vec<(usize, crate::render::palette::RgbColor)>,
+            )> = None;
 
             // Re-render with updated pause state
-            if args.species_colors && sim.config().separate_species_trails {
+            if args.species_colors_enabled() && sim.config().separate_species_trails {
                 let species_trail_maps = sim.trail_maps_for_species_colors();
-                let species_rgb_colors = extract_species_rgb_colors(&current_config);
                 let combined: Vec<_> = species_trail_maps
                     .iter()
-                    .zip(species_rgb_colors.iter())
+                    .zip(current_species_rgb.iter())
                     .map(|(tm, color)| (*tm, *color))
                     .collect();
                 renderer.render_multi_species_with_overlay(
@@ -2319,6 +3781,8 @@ pub fn run_simulation(
                     None,
                     None,
                     None,
+                    None,
+                    pause_ambient_overlay.as_ref().map(|(v, x, y)| (v, *x, *y)),
                     Some(&runtime_state.panel_style),
                     runtime_state.overlay_state.active(),
                     runtime_state.pause_style,
@@ -2347,6 +3811,9 @@ pub fn run_simulation(
                     None,
                     None,
                     None,
+                    None,
+                    pause_ambient_overlay.as_ref().map(|(v, x, y)| (v, *x, *y)),
+                    None, // no preset transition during pause
                     Some(&runtime_state.panel_style),
                     runtime_state.overlay_state.active(),
                     runtime_state.pause_style,
@@ -2382,7 +3849,6 @@ pub fn run_simulation(
             timer.fps_adjusted_notification = false;
         }
 
-        runtime_state.update_notifications();
         timer.tick();
     }
 
@@ -2390,6 +3856,59 @@ pub fn run_simulation(
         let _ = crate::terminal::disable_mouse_tracking();
     }
 
+    Ok(())
+}
+
+/// Live preset-switch: applies the bare preset through the ONE total apply seam,
+/// wiping the trail (restart: true). CLI args are NOT sticky after a swap.
+#[allow(clippy::too_many_arguments)]
+fn switch_preset(
+    new_preset: Preset,
+    rs: &mut RuntimeState,
+    renderer: &mut TerminalRenderer,
+    sim: &mut Simulation,
+    timer: &mut FrameTimer,
+    grid_renderer: &mut Option<crate::render::grid::GridRenderer>,
+    window: &mut crate::render::window::Window,
+    downsampled_frame: &mut crate::render::downsample::DownsampledFrame,
+    aux_frame: &mut crate::render::downsample::AuxFrame,
+    term_size: (usize, usize),
+) -> io::Result<()> {
+    let ov = crate::profile_overrides::ProfileOverrides {
+        preset: Some(new_preset),
+        // Carry the user's transition preference across the switch — it's a global
+        // UX setting, not a per-preset sim lever, so a bare preset resolve must not
+        // reset it to the default (toast).
+        transition_style: Some(rs.transition_style),
+        transition_tagline: Some(rs.transition_tagline),
+        // Likewise carry the active chrome (fullscreen/expanded/minimal). It's a
+        // global display mode chosen at launch or via F10/F11, not a per-preset
+        // lever; without this a bare preset resolve resets chrome to the preset
+        // default, silently dropping the user out of fullscreen. Most presets fill
+        // the frame regardless via the edge-hug fallback, but presets with a small
+        // `min_sim_size` (Constellation, Trademark) fall back to the centered 3:2
+        // layout and visibly letterbox on switch.
+        chrome_style: Some(rs.chrome_style),
+        ..Default::default()
+    };
+    crate::app::apply_overrides(
+        &ov,
+        rs,
+        renderer,
+        sim,
+        timer,
+        grid_renderer,
+        window,
+        downsampled_frame,
+        aux_frame,
+        term_size,
+        true,
+    )
+    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    // Commit provenance ONLY after successful apply (transactional).
+    rs.set_preset(new_preset);
+    rs.active_source = crate::profile::ProfileSource::Preset(new_preset);
+    rs.active_overrides = ov;
     Ok(())
 }
 
@@ -2409,5 +3928,536 @@ pub fn get_terminal_size() -> (usize, usize) {
     match crossterm::terminal::size() {
         Ok((w, h)) => (w as usize, h as usize),
         Err(_) => (80, 24),
+    }
+}
+
+/// Which bottom-surface mode the ambient strip should take this frame.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum AmbientMode {
+    /// Console overlay is open — hide the ambient strip (M1).
+    Hidden,
+    /// Controls are at Tuner depth — show the persistent TUNE surface.
+    Tuner,
+    /// Controls closed or not open — BASE/MSG normal resolution.
+    Normal,
+}
+
+/// Resolve which ambient mode applies for this frame.
+///
+/// `controls_open` — true when the Controls overlay is open and Dashboard is not.
+/// `controls_depth` — the current depth within the controls panel.
+///
+/// The `Closed`-while-open defensive case (controls reported open but depth is
+/// `Closed`) maps to `Hidden` (treats it as Console), preserving prior behaviour.
+fn ambient_mode(
+    controls_open: bool,
+    controls_depth: crate::render::controls::ControlsDepth,
+) -> AmbientMode {
+    use crate::render::controls::ControlsDepth;
+    if controls_open {
+        match controls_depth {
+            ControlsDepth::Closed => AmbientMode::Hidden,
+            ControlsDepth::Console => AmbientMode::Hidden,
+            ControlsDepth::Tuner => AmbientMode::Tuner,
+        }
+    } else {
+        AmbientMode::Normal
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn key(code: KeyCode, kind: KeyEventKind) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    fn controls_test_state() -> RuntimeState {
+        use crate::cli::PauseStyle;
+        use crate::simulation::config::SimConfig;
+        RuntimeState::new(
+            42,
+            InitMode::Random,
+            Preset::Organic,
+            MouseInteractionMode::Disabled,
+            3.0,
+            &SimConfig::default(),
+            PauseStyle::Vignette,
+            false,
+            false,
+        )
+    }
+
+    fn controls_test_ctx() -> RegistryCtx {
+        RegistryCtx {
+            diffusion_gaussian: false,
+            mouse_enabled: false,
+        }
+    }
+
+    #[test]
+    fn tune_view_for_numeric_adjust_is_some_with_gauge() {
+        let state = controls_test_state();
+        let ctx = controls_test_ctx();
+        let tv = tune_view_for_action(&state, &ControlAction::AdjustSensorAngle(1.0), &ctx, 50_000)
+            .expect("sensor-angle adjust must surface a TuneView");
+        assert_eq!(tv.label, "Sensor Angle");
+        assert_eq!(tv.range, (0.0, 1.0)); // normalized gauge
+        assert!((0.0..=1.0).contains(&tv.value));
+        assert!(!tv.value_text.is_empty());
+    }
+
+    #[test]
+    fn tune_view_for_non_param_action_is_none() {
+        let state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // TogglePause has no registry ParamId → no TUNE surfacing.
+        assert!(tune_view_for_action(&state, &ControlAction::TogglePause, &ctx, 0).is_none());
+    }
+
+    #[test]
+    fn tune_view_for_action_rows_is_none() {
+        let state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // Action rows (Save/Reset/Randomize) are MSG/activation events, not TUNE.
+        assert!(tune_view_for_action(&state, &ControlAction::ResetToDefaults, &ctx, 0).is_none());
+        assert!(tune_view_for_action(&state, &ControlAction::SaveFrameToPng, &ctx, 0).is_none());
+    }
+
+    #[test]
+    fn controls_depth_toggle_cycles_console_tuner() {
+        use crate::render::controls::ControlsDepth;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        assert_eq!(state.controls_depth, ControlsDepth::Closed);
+
+        // Closed -> Console
+        assert!(matches!(
+            apply_controls_action(&mut state, &ControlAction::ToggleControlsDepth, &ctx),
+            ControlsDispatch::Handled
+        ));
+        assert_eq!(state.controls_depth, ControlsDepth::Console);
+
+        // Console -> Tuner
+        apply_controls_action(&mut state, &ControlAction::ToggleControlsDepth, &ctx);
+        assert_eq!(state.controls_depth, ControlsDepth::Tuner);
+
+        // Tuner -> Console
+        apply_controls_action(&mut state, &ControlAction::ToggleControlsDepth, &ctx);
+        assert_eq!(state.controls_depth, ControlsDepth::Console);
+    }
+
+    #[test]
+    fn controls_focus_next_clamps_to_last_visible() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // SIM category (index 0) has 7 params; focus must clamp at 6.
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        for _ in 0..20 {
+            apply_controls_action(&mut state, &ControlAction::ControlsFocusNext, &ctx);
+        }
+        assert_eq!(state.controls_focus, 6);
+
+        for _ in 0..20 {
+            apply_controls_action(&mut state, &ControlAction::ControlsFocusPrev, &ctx);
+        }
+        assert_eq!(state.controls_focus, 0);
+    }
+
+    #[test]
+    fn controls_adjust_focused_redispatches_real_action() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // SIM[0] = SensorAngle. A forward adjust must re-dispatch AdjustSensorAngle(+1.0).
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        match apply_controls_action(&mut state, &ControlAction::ControlsAdjustFocused(1.0), &ctx) {
+            ControlsDispatch::Redispatch(ControlAction::AdjustSensorAngle(d)) => {
+                assert_eq!(d, 1.0)
+            }
+            _ => panic!("expected Redispatch(AdjustSensorAngle(1.0))"),
+        }
+    }
+
+    #[test]
+    fn controls_adjust_suppressed_when_competing_overlay_open() {
+        use crate::overlay::OverlayType;
+        use crate::render::controls::ControlsDepth;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // A competing overlay (Dashboard) is the foreground, Controls is closed.
+        state.overlay_state.open(OverlayType::Dashboard);
+        state.controls_depth = ControlsDepth::Closed;
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        // ←→ adjust must NOT auto-promote or redispatch; it passes through.
+        assert!(matches!(
+            apply_controls_action(&mut state, &ControlAction::ControlsAdjustFocused(1.0), &ctx),
+            ControlsDispatch::Passthrough
+        ));
+        // Depth must remain Closed (no silent auto-promote / sim mutation).
+        assert_eq!(state.controls_depth, ControlsDepth::Closed);
+    }
+
+    #[test]
+    fn controls_adjust_auto_promotes_when_no_overlay_open() {
+        use crate::render::controls::ControlsDepth;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // No overlay open at all → spec-mandated auto-promote-from-Closed.
+        assert!(!state.overlay_state.any_open());
+        state.controls_depth = ControlsDepth::Closed;
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        // SIM[0] = SensorAngle: forward adjust auto-promotes to Tuner and
+        // redispatches the real AdjustSensorAngle(+1.0).
+        match apply_controls_action(&mut state, &ControlAction::ControlsAdjustFocused(1.0), &ctx) {
+            ControlsDispatch::Redispatch(ControlAction::AdjustSensorAngle(d)) => {
+                assert_eq!(d, 1.0)
+            }
+            _ => panic!("expected Redispatch(AdjustSensorAngle(1.0))"),
+        }
+        assert_eq!(state.controls_depth, ControlsDepth::Tuner);
+    }
+
+    #[test]
+    fn controls_in_category_hotkey_retargets_focus() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // In SIM category, pressing the StepSize hotkey (SIM index 3) must move
+        // focus to 3 and pass the action through to the main match.
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        assert!(matches!(
+            apply_controls_action(&mut state, &ControlAction::AdjustStepSize(0.1), &ctx),
+            ControlsDispatch::Passthrough
+        ));
+        assert_eq!(state.controls_focus, 3);
+    }
+
+    #[test]
+    fn controls_cross_category_hotkey_does_not_retarget() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // In SIM category (0), a Palette hotkey (APP category) must NOT change
+        // focus or category; it just passes through.
+        state.controls_category_idx = 0;
+        state.controls_focus = 2;
+        assert!(matches!(
+            apply_controls_action(&mut state, &ControlAction::CyclePalette, &ctx),
+            ControlsDispatch::Passthrough
+        ));
+        assert_eq!(state.controls_focus, 2);
+        assert_eq!(state.controls_category_idx, 0);
+    }
+
+    // ── Controls focus / auto-promote tests ────────────────────────────────────
+
+    /// ControlsAdjustFocused from Closed must auto-promote depth to Tuner and
+    /// then continue to dispatch the focused parameter's adjust action.
+    #[test]
+    fn arrow_from_closed_promotes_to_tuner() {
+        use crate::render::controls::ControlsDepth;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // Start fully closed (RuntimeState::new sets depth=Closed).
+        assert_eq!(state.controls_depth, ControlsDepth::Closed);
+        state.controls_category_idx = 0;
+        state.controls_focus = 0;
+        // A focused adjust must auto-promote depth to Tuner.
+        apply_controls_action(&mut state, &ControlAction::ControlsAdjustFocused(1.0), &ctx);
+        assert_eq!(state.controls_depth, ControlsDepth::Tuner);
+    }
+
+    /// After cycling to a category with fewer visible rows than the current
+    /// focus index, controls_focus must be clamped to the new category's last
+    /// row (no stale out-of-bounds index).
+    #[test]
+    fn category_change_clamps_focus() {
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        // Open the controls overlay so CycleOptionsCategory is handled inside
+        // apply_controls_action (not just the closed→open branch in the runner).
+        state
+            .overlay_state
+            .open(crate::overlay::OverlayType::Controls);
+        // SIM (category 0) has 7 rows; set focus to the last row (index 6).
+        state.controls_category_idx = 0;
+        state.controls_focus = 6;
+        // Cycle through all categories until we reach SYS (index 5, 3 rows).
+        // SIM→ENV→APP→PST→PRF→SYS = 5 forward cycles.
+        for _ in 0..5 {
+            apply_controls_action(&mut state, &ControlAction::CycleOptionsCategory, &ctx);
+        }
+        assert_eq!(state.controls_category_idx, 5); // SYS
+                                                    // SYS has 3 rows (indices 0-2); focus must be clamped to at most 2.
+        let sys_len = crate::render::controls::registry::visible_params(5, &ctx).len();
+        assert!(
+            state.controls_focus < sys_len,
+            "focus {} out of bounds for SYS len {}",
+            state.controls_focus,
+            sys_len,
+        );
+    }
+
+    /// When ctx shrinks the current category's visible list (e.g. Gaussian
+    /// toggled off removes Diff Sigma from ENV), the defensive clamp at the
+    /// top of apply_controls_action must correct a stale focus index before
+    /// the action runs.
+    #[test]
+    fn conditional_row_disappearance_clamps_focus() {
+        let mut state = controls_test_state();
+        // Start in ENV (category 1) with Gaussian ON — that adds Diff Sigma,
+        // giving 7 rows (indices 0-6). Set focus to the last row.
+        let ctx_gaussian_on = RegistryCtx {
+            diffusion_gaussian: true,
+            mouse_enabled: false,
+        };
+        state.controls_category_idx = 1; // ENV
+        let len_with_sigma =
+            crate::render::controls::registry::visible_params(1, &ctx_gaussian_on).len();
+        state.controls_focus = len_with_sigma - 1; // last row
+                                                   // Now ctx flips to Gaussian OFF — Diff Sigma disappears, shorter list.
+        let ctx_gaussian_off = RegistryCtx {
+            diffusion_gaussian: false,
+            mouse_enabled: false,
+        };
+        let len_without_sigma =
+            crate::render::controls::registry::visible_params(1, &ctx_gaussian_off).len();
+        assert!(
+            len_without_sigma < len_with_sigma,
+            "gaussian off must shrink ENV row count"
+        );
+        // Any action dispatched with the new (shorter) ctx must clamp focus.
+        apply_controls_action(
+            &mut state,
+            &ControlAction::ControlsFocusPrev, // innocuous action
+            &ctx_gaussian_off,
+        );
+        assert!(
+            state.controls_focus < len_without_sigma,
+            "focus {} must be within new ENV len {}",
+            state.controls_focus,
+            len_without_sigma,
+        );
+    }
+
+    #[test]
+    fn build_param_views_sim_count_and_default_state() {
+        use crate::render::controls::ParamState;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        state.controls_category_idx = 0; // SIM
+        let views = build_param_views(&state, &ctx, 50_000);
+        // SIM has 7 numeric params, all unmodified at preset defaults.
+        assert_eq!(views.len(), 7);
+        let sensor = &views[0];
+        assert_eq!(sensor.value_text, format!("{:.1}°", state.sensor_angle));
+        assert_eq!(sensor.state, ParamState::Default);
+        assert!(sensor.ratio.is_some(), "numeric param must carry a ratio");
+        assert!(sensor.def_ratio.is_some());
+    }
+
+    #[test]
+    fn build_param_views_modified_numeric_flags_modified() {
+        use crate::render::controls::ParamState;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        state.controls_category_idx = 0;
+        // Push sensor_angle well off its default → must read as Modified.
+        state.sensor_angle = state.default_values.sensor_angle + 20.0;
+        let views = build_param_views(&state, &ctx, 50_000);
+        assert_eq!(views[0].state, ParamState::Modified);
+    }
+
+    #[test]
+    fn build_param_views_population_is_cli() {
+        use crate::render::controls::registry::ParamId;
+        use crate::render::controls::ParamState;
+        let mut state = controls_test_state();
+        let ctx = controls_test_ctx();
+        state.controls_category_idx = 4; // PRF
+        let views = build_param_views(&state, &ctx, 50_000);
+        let pop = views
+            .iter()
+            .find(|v| v.desc.id == ParamId::Population)
+            .expect("Population row present in PRF");
+        assert_eq!(pop.state, ParamState::Cli);
+        assert_eq!(pop.value_text, "50k");
+        assert!(pop.ratio.is_none());
+    }
+
+    #[test]
+    fn build_param_views_mouse_timeout_is_display() {
+        use crate::render::controls::registry::ParamId;
+        use crate::render::controls::ParamState;
+        let mut state = controls_test_state();
+        // Mouse Timeout only appears when mouse is enabled.
+        state.mouse_mode = MouseInteractionMode::Attract;
+        let ctx = RegistryCtx {
+            diffusion_gaussian: false,
+            mouse_enabled: true,
+        };
+        state.controls_category_idx = 1; // ENV
+        let views = build_param_views(&state, &ctx, 50_000);
+        let mt = views
+            .iter()
+            .find(|v| v.desc.id == ParamId::MouseTimeout)
+            .expect("Mouse Timeout row present when mouse enabled");
+        assert_eq!(mt.state, ParamState::Display);
+        assert!(mt.ratio.is_none());
+        assert!(mt.value_text.ends_with('s'));
+    }
+
+    #[test]
+    fn screensaver_exits_on_any_key_press() {
+        for code in [
+            KeyCode::Char('a'),
+            KeyCode::Char(' '),
+            KeyCode::Enter,
+            KeyCode::Esc,
+            KeyCode::Up,
+            KeyCode::F(1),
+        ] {
+            assert!(
+                screensaver_exit_on_key(&Mode::Screensaver, &key(code, KeyEventKind::Press)),
+                "expected screensaver exit for {:?}",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn screensaver_ignores_key_release_and_repeat() {
+        let release = key(KeyCode::Char('a'), KeyEventKind::Release);
+        let repeat = key(KeyCode::Char('a'), KeyEventKind::Repeat);
+        assert!(!screensaver_exit_on_key(&Mode::Screensaver, &release));
+        assert!(!screensaver_exit_on_key(&Mode::Screensaver, &repeat));
+    }
+
+    #[test]
+    fn non_screensaver_modes_never_exit_on_key() {
+        let press = key(KeyCode::Char('a'), KeyEventKind::Press);
+        for mode in [Mode::Default, Mode::Live, Mode::Print] {
+            assert!(!screensaver_exit_on_key(&mode, &press));
+        }
+    }
+
+    /// `switch_preset` builds a bare `ProfileOverrides { preset: Some(p), ..Default::default() }`,
+    /// so the resulting overrides carry NO previously-set CLI fields.
+    /// This test verifies the contract at the `ProfileOverrides` level: a CLI-startup
+    /// override (with sensor_angle set) is NOT what a preset switch produces.
+    #[test]
+    fn switch_preset_ignores_cli() {
+        use crate::profile_overrides::ProfileOverrides;
+        use crate::simulation::config::Preset;
+
+        // Simulated CLI startup: preset=Network, sensor_angle=42.0 (non-default CLI override).
+        let cli_ov = ProfileOverrides {
+            preset: Some(Preset::Network),
+            sensor_angle: Some(42.0),
+            ..Default::default()
+        };
+
+        // What switch_preset actually builds — a bare preset override with NO CLI fields.
+        let switched_ov = ProfileOverrides {
+            preset: Some(Preset::Organic),
+            ..Default::default()
+        };
+
+        // The switched override must NOT carry the CLI sensor_angle.
+        assert_eq!(
+            switched_ov.sensor_angle, None,
+            "switch_preset must not carry forward CLI sensor_angle"
+        );
+        // And the two overrides are not equal (different preset, no CLI field).
+        assert_ne!(
+            cli_ov, switched_ov,
+            "CLI override must differ from bare-preset override"
+        );
+        // sensor_angle was set in the CLI override but not in the switched one.
+        assert_eq!(
+            cli_ov.sensor_angle,
+            Some(42.0),
+            "CLI override retains sensor_angle"
+        );
+    }
+
+    // ── Ambient mode resolution tests ───────────────────────────────────────────
+
+    #[test]
+    fn ambient_hidden_when_controls_depth_is_console() {
+        use crate::render::controls::ControlsDepth;
+        // Console open → ambient_mode returns Hidden.
+        assert_eq!(
+            ambient_mode(true, ControlsDepth::Console),
+            AmbientMode::Hidden,
+            "ambient must be hidden when Console depth is active"
+        );
+        // Defensive: Closed-while-open → also Hidden.
+        assert_eq!(
+            ambient_mode(true, ControlsDepth::Closed),
+            AmbientMode::Hidden,
+            "ambient must be hidden for Closed-while-open defensive case"
+        );
+    }
+
+    #[test]
+    fn ambient_shows_tuner_depth_when_controls_tuner() {
+        use crate::render::controls::ControlsDepth;
+        // Tuner open → ambient_mode returns Tuner.
+        assert_eq!(
+            ambient_mode(true, ControlsDepth::Tuner),
+            AmbientMode::Tuner,
+            "ambient must be Tuner when Tuner depth is active"
+        );
+        // Controls not open → Normal regardless of depth.
+        assert_eq!(
+            ambient_mode(false, ControlsDepth::Tuner),
+            AmbientMode::Normal,
+            "ambient must be Normal when controls are not open"
+        );
+    }
+
+    #[test]
+    fn constellation_reset_is_now_stable() {
+        use crate::simulation::config::InitMode;
+        // Constellation must NOT re-roll a random init mode anymore.
+        assert_eq!(
+            effective_init_mode(InitMode::Constellation),
+            InitMode::Constellation
+        );
+    }
+}
+
+#[cfg(test)]
+mod keybind_resolution_tests {
+    use super::resolve_bind;
+    use crate::keybind_manager::BindTarget;
+    use crate::simulation::config::Preset;
+    use std::collections::HashMap;
+
+    #[test]
+    fn user_bind_overrides_builtin_default() {
+        let mut m = HashMap::new();
+        m.insert('1', BindTarget::Preset(Preset::Fire));
+        assert_eq!(
+            resolve_bind('1', &m),
+            Some(BindTarget::Preset(Preset::Fire))
+        );
+        assert_eq!(resolve_bind('5', &m), None);
+        m.insert('5', BindTarget::Config("mynight".to_string()));
+        assert_eq!(
+            resolve_bind('5', &m),
+            Some(BindTarget::Config("mynight".to_string()))
+        );
     }
 }

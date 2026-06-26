@@ -12,11 +12,10 @@ pub struct GifExporter {
 impl GifExporter {
     /// Creates a new GIF exporter.
     ///
-    /// # Arguments
-    /// * `width` - Frame width.
-    /// * `height` - Frame height.
-    /// * `_output_path` - Output path (unused in new, used in finish).
-    /// * `fps` - Frames per second.
+    /// The output path argument is ignored here; pass the path to
+    /// [`finish`](Self::finish) instead. `fps` is converted to the GIF frame
+    /// delay in hundredths of a second; an fps of 0 falls back to a delay of
+    /// 10 (i.e., 10 fps).
     pub fn new(
         width: usize,
         height: usize,
@@ -39,7 +38,8 @@ impl GifExporter {
 
     /// Adds a frame to the animation.
     ///
-    /// The pixels should be a flat byte slice of RGB data.
+    /// `pixels` must be a flat RGB byte slice of length `width * height * 3`;
+    /// frames of any other length are silently dropped.
     pub fn add_frame_rgb(&mut self, pixels: &[u8]) {
         if pixels.len() == self.width * self.height * 3 {
             self.frames.push(pixels.to_vec());

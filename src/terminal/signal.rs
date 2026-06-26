@@ -10,8 +10,7 @@ pub static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 /// Signal that the application should shut down.
 ///
-/// This is typically called from signal handlers in `screen.rs` or from the main loop
-/// when the user presses 'q'.
+/// Called from the SIGINT/SIGTERM handlers registered in `screen.rs`.
 #[cfg(unix)]
 pub fn request_shutdown() {
     SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);

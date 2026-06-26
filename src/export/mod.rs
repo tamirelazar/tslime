@@ -2,7 +2,7 @@
 //!
 //! This module provides various export formats for saving the simulation output:
 //!
-//! - **GIF**: Animated GIF export with configurable frame rate and duration
+//! - **GIF**: Animated GIF export with configurable frame rate
 //! - **PNG**: Single frame capture as PNG image
 //! - **WebM**: Video export using FFmpeg (requires FFmpeg to be installed)
 //!

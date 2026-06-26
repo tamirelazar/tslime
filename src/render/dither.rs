@@ -11,12 +11,12 @@ pub enum DitherMatrix {
 }
 
 impl DitherMatrix {
-    /// Returns the maximum value in the matrix (matrix size squared minus 1).
-    /// Used for normalizing Bayer matrix values to [0.0, 1.0].
+    /// Returns the matrix cell count (16 or 64), used as the divisor that
+    /// normalizes matrix entries to [0.0, 1.0).
     pub fn max_value(self) -> f32 {
         match self {
-            DitherMatrix::Bayer4x4 => 16.0, // 4×4 = 16
-            DitherMatrix::Bayer8x8 => 64.0, // 8×8 = 64
+            DitherMatrix::Bayer4x4 => 16.0,
+            DitherMatrix::Bayer8x8 => 64.0,
         }
     }
 }
@@ -61,6 +61,9 @@ impl DitherMode {
         }
     }
 }
+
+// Bayer, B. E. (1973). "An optimum method for two-level rendition of
+// continuous-tone pictures." IEEE Int. Conf. on Communications, Vol. 1, 11-15.
 
 /// 4×4 Bayer ordered dithering matrix.
 pub const BAYER_4X4: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
@@ -110,9 +113,8 @@ pub fn quantize_to_levels(brightness: f32, num_levels: usize) -> f32 {
     quantized as f32 / levels_minus_one as f32
 }
 
-/// Calculates the local variance of brightness in a region.
-///
-/// Used for edge detection in hybrid dithering modes.
+/// Returns the local standard deviation (not variance) of brightness in a
+/// (2×radius+1)² neighborhood. Used for edge detection in hybrid dithering.
 pub fn local_variance(
     downsampled: &[crate::render::downsample::Cell],
     width: usize,

@@ -3,6 +3,10 @@
 //! The trail map is a 2D grid where agents deposit pheromones. The map
 //! undergoes diffusion (spreading) and decay each frame to create organic
 //! patterns.
+//!
+//! The 3x3 mean filter is the trail diffusion step from Jones (2010) — see
+//! the [`crate::simulation`] module docs for the full citation. The 5x5
+//! Gaussian is a standard image-processing alternative for smoother spread.
 
 /// A 2D grid storing pheromone trail values.
 ///
@@ -18,6 +22,12 @@ pub struct TrailMap {
     sigma: f32,
     trail_sum: f32,
     boundary_mode: super::config::BoundaryMode,
+    /// Pre-allocated snapshot buffer for the Lague diffuse-weight blend.
+    /// Only populated (and only used) when `diffuse_weight < 1.0`.
+    blend_src: Vec<f32>,
+    /// Per-frame deposit-accumulation scratch buffer (lever 4). Empty until the
+    /// nonlinear-deposit path is active; reused across frames (hot-path rule).
+    accum: Vec<f32>,
 }
 
 const GAUSSIAN_KERNEL_SIZE: usize = 5;
@@ -59,6 +69,8 @@ impl TrailMap {
             sigma: 1.0,
             trail_sum: 0.0,
             boundary_mode: super::config::BoundaryMode::Bounce,
+            blend_src: Vec::new(),
+            accum: Vec::new(),
         }
     }
 
@@ -75,6 +87,8 @@ impl TrailMap {
             sigma,
             trail_sum: 0.0,
             boundary_mode: super::config::BoundaryMode::Bounce,
+            blend_src: Vec::new(),
+            accum: Vec::new(),
         }
     }
 
@@ -96,6 +110,8 @@ impl TrailMap {
             sigma,
             trail_sum: 0.0,
             boundary_mode,
+            blend_src: Vec::new(),
+            accum: Vec::new(),
         }
     }
 
@@ -197,7 +213,7 @@ impl TrailMap {
         self.trail_sum
     }
 
-    /// Apply 3x3 mean diffusion.
+    /// Apply 3x3 mean-filter diffusion (the trail diffusion from Jones 2010).
     pub fn diffuse(&mut self) {
         let width = self.width;
         let height = self.height;
@@ -208,7 +224,7 @@ impl TrailMap {
         scratch.copy_from_slice(current);
 
         if is_wrap {
-            // Wrap-around diffusion - process all pixels with wrapping
+            // Toroidal: neighbors wrap across edges, all pixels processed
             let w = width as i32;
             let h = height as i32;
             for y in 0..height {
@@ -238,7 +254,7 @@ impl TrailMap {
                 }
             }
         } else {
-            // Clamp-based diffusion - skip edges
+            // Bounce: leave the 1-pixel border undiffused
             for y in 1..height - 1 {
                 let row_offset = y * width;
                 for x in 1..width - 1 {
@@ -293,31 +309,20 @@ impl TrailMap {
         }
     }
 
-    /// AVX-optimized 3x3 mean filter diffusion.
+    /// AVX-optimized 3x3 mean filter.
     ///
-    /// This function applies a box blur (mean filter) using AVX2 SIMD instructions.
-    /// For each pixel, it computes the average of the 3x3 neighborhood (9 pixels total).
-    ///
-    /// # Algorithm
-    ///
-    /// 1. Process pixels in chunks of 8 using AVX 256-bit registers
-    /// 2. Load 3 rows of 8 pixels each (with 1-pixel overlap for neighbors)
-    /// 3. Sum all 9 values using `_mm256_add_ps` (8 additions chained)
-    /// 4. Divide by 9 using `_mm256_div_ps`
-    /// 5. Store result back to scratch buffer
-    /// 6. Process remaining pixels with scalar fallback
-    ///
-    /// # Why Unaligned Loads (`_mm256_loadu_ps`)
-    ///
-    /// We use unaligned loads because the starting x position (1) is not guaranteed
-    /// to be 32-byte aligned. Unaligned loads have minimal performance penalty on
-    /// modern x86_64 CPUs (Sandy Bridge and later).
+    /// Processes 8 pixels per iteration in 256-bit registers: load the three
+    /// neighboring rows, sum the nine taps, divide by 9. Columns past the
+    /// last full chunk fall through to a scalar tail. Unaligned loads
+    /// (`_mm256_loadu_ps`) are deliberate — the starting column (1) is not
+    /// 32-byte aligned, and the penalty is negligible on modern x86_64.
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `current` and `scratch` slices have a length
-    /// of at least `width * height`. `width` must be at least 9 to accommodate
-    /// the SIMD vector width and boundary conditions.
+    /// The caller must ensure that `current` and `scratch` slices have a
+    /// length of at least `width * height` and that AVX is available on the
+    /// target CPU. Widths too small for a full SIMD chunk are handled
+    /// entirely by the scalar tail.
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx")]
     unsafe fn diffuse_avx_impl(current: &[f32], scratch: &mut [f32], width: usize, height: usize) {
@@ -389,11 +394,13 @@ impl TrailMap {
         }
     }
 
+    /// NEON port of [`Self::diffuse_avx_impl`] (4-wide instead of 8-wide).
+    ///
     /// # Safety
     ///
-    /// The caller must ensure that `current` and `scratch` slices have a length
-    /// of at least `width * height`. `width` must be at least 5 to accommodate
-    /// the NEON vector width and boundary conditions.
+    /// The caller must ensure that `current` and `scratch` slices have a
+    /// length of at least `width * height` and that NEON is available.
+    /// Widths too small for a full SIMD chunk are handled by the scalar tail.
     #[cfg(target_arch = "aarch64")]
     #[target_feature(enable = "neon")]
     #[allow(unused_variables, dead_code)]
@@ -520,7 +527,7 @@ impl TrailMap {
         scratch.copy_from_slice(&self.current);
 
         if is_wrap {
-            // Wrap-around Gaussian diffusion - process all pixels with wrapping
+            // Toroidal: neighbors wrap across edges, all pixels processed
             let w = width as i32;
             let h = height as i32;
             let current = &self.current;
@@ -544,7 +551,7 @@ impl TrailMap {
                 }
             }
         } else {
-            // Clamp-based Gaussian diffusion - skip edges
+            // Bounce: leave the 2-pixel border undiffused
             let current = &self.current;
             for y in 2..height - 2 {
                 let row_offset = y * width;
@@ -605,26 +612,12 @@ impl TrailMap {
         }
     }
 
-    /// AVX-optimized 5x5 Gaussian blur diffusion.
+    /// AVX-optimized 5x5 Gaussian blur.
     ///
-    /// This function applies a Gaussian blur using a 5x5 kernel with AVX2 SIMD.
-    /// Unlike the mean filter, each pixel in the neighborhood has a different weight
-    /// based on the Gaussian distribution.
-    ///
-    /// # Algorithm
-    ///
-    /// 1. Pre-load all 25 kernel weights into AVX registers (broadcast to all 8 lanes)
-    /// 2. For each pixel, load a 5x5 neighborhood (25 values total)
-    /// 3. Multiply each value by its corresponding kernel weight using `_mm256_mul_ps`
-    /// 4. Accumulate results using `_mm256_add_ps` (24 additions total)
-    /// 5. Store the weighted sum back to scratch buffer
-    /// 6. Process remaining pixels with scalar fallback
-    ///
-    /// # Memory Access Pattern
-    ///
-    /// We load 5 rows of data, 3 registers per row (covering x-2 to x+2),
-    /// with the middle register containing the main pixel data.
-    /// This minimizes memory loads while covering the full 5x5 neighborhood.
+    /// Same structure as [`Self::diffuse_avx_impl`], but with 25 weighted
+    /// taps: the kernel weights are broadcast into registers up front, then
+    /// each chunk of 8 pixels accumulates multiply-adds over the 5x5
+    /// neighborhood. Remaining columns fall through to a scalar tail.
     ///
     /// # Safety
     ///
@@ -643,7 +636,7 @@ impl TrailMap {
     ) {
         use std::arch::x86_64::*;
 
-        // Load all 25 kernel weights into AVX registers (broadcast to all 8 lanes)
+        // Broadcast all 25 kernel weights into registers up front
         let k0 = _mm256_set1_ps(kernel[0]);
         let k1 = _mm256_set1_ps(kernel[1]);
         let k2 = _mm256_set1_ps(kernel[2]);
@@ -715,7 +708,7 @@ impl TrailMap {
                 let p2_m = _mm256_loadu_ps(current.as_ptr().add(row_plus_2 + x - 1));
                 let p2_r = _mm256_loadu_ps(current.as_ptr().add(row_plus_2 + x));
 
-                // Compute weighted sum using multiply-add operations
+                // Weighted sum, row by row
                 // Row y-2: kernels 0-4
                 let mut sum = _mm256_mul_ps(m2_l, k0);
                 sum = _mm256_add_ps(sum, _mm256_mul_ps(m2_m, k1));
@@ -811,7 +804,6 @@ impl TrailMap {
                     ),
                 );
 
-                // Store result
                 _mm256_storeu_ps(scratch.as_mut_ptr().add(idx), sum);
 
                 x += simd_width;
@@ -843,11 +835,13 @@ impl TrailMap {
         }
     }
 
+    /// NEON port of [`Self::diffuse_gaussian_avx_impl`] (4-wide instead of 8-wide).
+    ///
     /// # Safety
     ///
-    /// The caller must ensure that `current` and `scratch` slices have a length
-    /// of at least `width * height`. `width` must be at least 6 to accommodate
-    /// the NEON vector width and 5x5 kernel boundary conditions.
+    /// The caller must ensure that `current` and `scratch` slices have a
+    /// length of at least `width * height` and that NEON is available.
+    /// Widths too small for a full SIMD chunk are handled by the scalar tail.
     #[cfg(target_arch = "aarch64")]
     #[target_feature(enable = "neon")]
     #[allow(unused_variables, dead_code)]
@@ -1062,14 +1056,94 @@ impl TrailMap {
         self.swap_buffers();
     }
 
-    /// Dispatch to the appropriate diffusion implementation.
-    pub fn diffuse_with_kernel(&mut self, use_simd: bool, use_gaussian: bool) {
-        // When using wrap boundary mode, fall back to scalar implementations
-        // since SIMD versions don't handle wrap-around efficiently
+    /// Separable Gaussian blur (two 1D passes) for the wider sigma range (sigma > 2.0).
+    /// `O(2r)` per cell vs `O(r²)`. Uses bounce/wrap boundary consistent with the
+    /// other diffusion paths. radius = ceil(3·sigma).
+    pub fn diffuse_gaussian_separable(&mut self, sigma: f32) {
+        let width = self.width;
+        let height = self.height;
+        let sigma = sigma.max(0.1);
+        let radius = (3.0 * sigma).ceil() as i32;
+        // Build normalized 1D kernel.
+        let kernel_len = (2 * radius + 1) as usize;
+        let mut kernel = Vec::with_capacity(kernel_len);
+        let two_sigma2 = 2.0 * sigma * sigma;
+        let mut ksum = 0.0f32;
+        for k in -radius..=radius {
+            let w = (-(k as f32 * k as f32) / two_sigma2).exp();
+            kernel.push(w);
+            ksum += w;
+        }
+        for w in &mut kernel {
+            *w /= ksum;
+        }
+        let is_wrap = matches!(self.boundary_mode, super::config::BoundaryMode::Wrap);
+        let clampi = |v: i32, n: i32| -> usize {
+            if is_wrap {
+                (((v % n) + n) % n) as usize
+            } else {
+                v.clamp(0, n - 1) as usize
+            }
+        };
+        // Horizontal pass: current -> scratch.
+        for y in 0..height {
+            for x in 0..width {
+                let mut sum = 0.0f32;
+                for (ki, k) in (-radius..=radius).enumerate() {
+                    let nx = clampi(x as i32 + k, width as i32);
+                    sum += self.current[y * width + nx] * kernel[ki];
+                }
+                self.scratch[y * width + x] = sum;
+            }
+        }
+        // Vertical pass: scratch -> current.
+        for y in 0..height {
+            for x in 0..width {
+                let mut sum = 0.0f32;
+                for (ki, k) in (-radius..=radius).enumerate() {
+                    let ny = clampi(y as i32 + k, height as i32);
+                    sum += self.scratch[ny * width + x] * kernel[ki];
+                }
+                self.current[y * width + x] = sum;
+            }
+        }
+    }
+
+    /// Dispatch diffusion, then apply the Lague diffuse-weight blend.
+    ///
+    /// `diffuse_weight == 1.0` ⇒ full blur (byte-identical to the pre-blend behavior,
+    /// no snapshot taken).  `diffuse_weight == 0.0` ⇒ no-op.
+    /// The blend `new = old·(1−w) + blur·w` is applied only when `0 < w < 1`.
+    ///
+    /// Routes to the separable path when `use_gaussian && sigma > 2.0`.
+    pub fn diffuse_with_kernel(
+        &mut self,
+        use_simd: bool,
+        use_gaussian: bool,
+        diffuse_weight: f32,
+        sigma: f32,
+    ) {
+        let w = diffuse_weight.clamp(0.0, 1.0);
+        if w <= 0.0 {
+            return; // no diffusion at all
+        }
+
+        // Snapshot the pre-blur trail for the blend only when needed (no alloc at w==1).
+        if w < 1.0 {
+            let size = self.width * self.height;
+            if self.blend_src.len() != size {
+                self.blend_src.resize(size, 0.0);
+            }
+            self.blend_src.copy_from_slice(&self.current);
+        }
+
+        // SIMD paths don't implement wrap-around, so wrap mode always takes the scalar path.
         let use_scalar =
             !use_simd || matches!(self.boundary_mode, super::config::BoundaryMode::Wrap);
 
-        if use_scalar {
+        if use_gaussian && sigma > 2.0 {
+            self.diffuse_gaussian_separable(sigma);
+        } else if use_scalar {
             if use_gaussian {
                 self.diffuse_gaussian();
             } else {
@@ -1080,6 +1154,13 @@ impl TrailMap {
         } else {
             self.diffuse_simd();
         }
+
+        // Apply blend only for partial weight (w==1.0 fast path: no blend math).
+        if w < 1.0 {
+            for (cur, &src) in self.current.iter_mut().zip(self.blend_src.iter()) {
+                *cur = src * (1.0 - w) + *cur * w;
+            }
+        }
     }
 
     /// Apply global exponential decay to all trail values.
@@ -1088,6 +1169,71 @@ impl TrailMap {
             *value *= factor;
         }
         self.trail_sum *= factor;
+    }
+
+    /// Value-dependent decay (lever 7). With `gamma == 1.0` this is identical to
+    /// `decay(factor)`. With `gamma < 1.0`, faint cells decay less than bright cells
+    /// (longer faint tails) by scaling the removed fraction by `(value/peak)^(1−γ)`.
+    pub fn decay_gamma(&mut self, factor: f32, gamma: f32) {
+        if (gamma - 1.0).abs() < f32::EPSILON {
+            self.decay(factor);
+            return;
+        }
+        let peak = self
+            .current
+            .iter()
+            .copied()
+            .fold(0.0f32, f32::max)
+            .max(1e-6);
+        let s = 1.0 - factor; // removed fraction at gamma=1
+        let exp = 1.0 - gamma;
+        let mut new_sum = 0.0f32;
+        for value in &mut self.current {
+            if *value > 0.0 {
+                let norm = (*value / peak).clamp(0.0, 1.0);
+                let removed_frac = (s * norm.powf(exp)).clamp(0.0, 1.0);
+                *value *= 1.0 - removed_frac;
+            }
+            new_sum += *value;
+        }
+        self.trail_sum = new_sum;
+    }
+
+    /// Mutable access to the deposit-accumulation buffer, sized to the grid
+    /// (zero-filled on first use / resize). Agents accumulate into this when
+    /// the nonlinear-deposit path is active.
+    pub fn accum_mut(&mut self) -> &mut [f32] {
+        let size = self.width * self.height;
+        if self.accum.len() != size {
+            self.accum.resize(size, 0.0);
+        }
+        &mut self.accum
+    }
+
+    /// Fold the accumulated deposits into the current trail using the curve:
+    /// `current[i] += min(curve(accum[i])·scale, cap)`; then zero the buffer.
+    /// `cap <= 0.0` disables clamping. No-op if the buffer is unsized.
+    pub fn fold_deposits(
+        &mut self,
+        curve: super::config::DepositCurve,
+        scale: f32,
+        gamma: f32,
+        cap: f32,
+    ) {
+        let size = self.width * self.height;
+        if self.accum.len() != size {
+            return;
+        }
+        for (cur, acc) in self.current.iter_mut().zip(self.accum.iter_mut()) {
+            if *acc != 0.0 {
+                let mut v = curve.apply(*acc, gamma) * scale;
+                if cap > 0.0 {
+                    v = v.min(cap);
+                }
+                *cur += v;
+                *acc = 0.0;
+            }
+        }
     }
 }
 
@@ -1101,6 +1247,40 @@ mod tests {
         assert_eq!(trail.width(), 400);
         assert_eq!(trail.height(), 400);
         assert_eq!(trail.size(), 160000);
+    }
+
+    #[test]
+    fn decay_gamma_one_matches_plain_decay() {
+        let mut a = TrailMap::new(8, 8);
+        let mut b = TrailMap::new(8, 8);
+        for i in 0..64 {
+            a.current_mut()[i] = (i as f32) * 0.1;
+            b.current_mut()[i] = (i as f32) * 0.1;
+        }
+        a.decay(0.9);
+        b.decay_gamma(0.9, 1.0);
+        for (x, y) in a.current().iter().zip(b.current().iter()) {
+            assert!((x - y).abs() < 1e-6, "gamma=1 must equal plain decay");
+        }
+    }
+
+    #[test]
+    fn decay_gamma_below_one_preserves_faint_more_than_baseline() {
+        let mut base = TrailMap::new(8, 8);
+        let mut g = TrailMap::new(8, 8);
+        // a faint cell and a bright (peak) cell
+        base.current_mut()[0] = 0.1;
+        base.current_mut()[1] = 1.0;
+        g.current_mut()[0] = 0.1;
+        g.current_mut()[1] = 1.0;
+        base.decay(0.9);
+        g.decay_gamma(0.9, 0.5);
+        // faint cell retains MORE with gamma<1; peak cell ~unchanged.
+        assert!(g.current()[0] > base.current()[0], "faint persists longer");
+        assert!(
+            (g.current()[1] - base.current()[1]).abs() < 1e-3,
+            "peak ~unchanged"
+        );
     }
 
     #[test]
@@ -1255,7 +1435,8 @@ mod tests {
         trail1.set(5, 5, 9.0);
         trail2.set(5, 5, 9.0);
 
-        trail1.diffuse_with_kernel(false, false);
+        // weight=1.0, sigma<=2.0 → must be byte-identical to diffuse()
+        trail1.diffuse_with_kernel(false, false, 1.0, 1.0);
         trail2.diffuse();
 
         assert_eq!(trail1.current(), trail2.current());
@@ -1264,7 +1445,8 @@ mod tests {
         trail2.clear();
         trail1.set(5, 5, 9.0);
         trail2.set(5, 5, 9.0);
-        trail1.diffuse_with_kernel(false, true);
+        // weight=1.0, sigma<=2.0, gaussian → byte-identical to diffuse_gaussian()
+        trail1.diffuse_with_kernel(false, true, 1.0, 1.0);
         trail2.diffuse_gaussian();
         assert_eq!(trail1.current(), trail2.current());
     }
@@ -1345,6 +1527,30 @@ mod tests {
         // With width 4 and 5x5 kernel (radius 2), no pixels are processed as "inner" pixels.
         // So the value should remain unchanged.
         assert_eq!(trail.get(1, 1), 9.0);
+    }
+
+    #[test]
+    fn fold_deposits_applies_curve_scale_cap_and_clears() {
+        use crate::simulation::config::DepositCurve;
+        let mut tm = TrailMap::new(2, 1);
+        {
+            let accum = tm.accum_mut();
+            accum[0] = 9.0;
+            accum[1] = 100.0;
+        }
+        // sqrt(9)=3 *2 = 6 ; sqrt(100)=10 *2 = 20 -> capped at 8
+        tm.fold_deposits(DepositCurve::Sqrt, 2.0, 1.0, 8.0);
+        let cur = tm.current();
+        assert!((cur[0] - 6.0).abs() < 1e-5);
+        assert!((cur[1] - 8.0).abs() < 1e-5);
+        // buffer cleared after fold
+        assert_eq!(tm.accum_mut(), &[0.0, 0.0]);
+    }
+
+    #[test]
+    fn accum_mut_initializes_zeroed() {
+        let mut tm = TrailMap::new(3, 2);
+        assert_eq!(tm.accum_mut(), &[0.0; 6]);
     }
 
     #[test]
@@ -1449,5 +1655,33 @@ mod prop_tests {
                 prop_assert!(v >= 0.0);
             }
         }
+    }
+
+    #[test]
+    fn diffuse_weight_zero_is_noop() {
+        let mut tm = TrailMap::new(16, 16);
+        tm.current_mut()[8 * 16 + 8] = 1.0;
+        let before = tm.current().to_vec();
+        tm.diffuse_with_kernel(false, false, 0.0, 1.0); // weight=0 ⇒ no change
+        assert_eq!(
+            tm.current(),
+            &before[..],
+            "weight=0 must leave the trail unchanged"
+        );
+    }
+
+    #[test]
+    fn separable_gaussian_conserves_mass_and_spreads() {
+        let mut tm = TrailMap::new(32, 32);
+        tm.current_mut()[16 * 32 + 16] = 9.0;
+        let sum_before: f32 = tm.current().iter().sum();
+        tm.diffuse_gaussian_separable(3.0);
+        let sum_after: f32 = tm.current().iter().sum();
+        assert!((sum_before - sum_after).abs() < 0.5, "blur ~conserves mass");
+        assert!(
+            tm.current()[16 * 32 + 16] < 9.0,
+            "energy spread out of the center"
+        );
+        assert!(tm.current()[16 * 32 + 17] > 0.0, "neighbor received energy");
     }
 }

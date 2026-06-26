@@ -5,7 +5,7 @@
 
 use crate::cli::Palette;
 use crate::render::charset::Charset;
-use crate::simulation::config::Preset;
+use crate::simulation::config::{compare_key_digit, Preset};
 use crate::terminal::state::ControlAction;
 pub use crate::terminal::state::MousePosition;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, MouseEventKind};
@@ -29,7 +29,6 @@ pub struct InputPoller {
 
 impl InputPoller {
     /// Create a new input poller with zero timeout (non-blocking).
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             poll_timeout: Duration::from_millis(0),
@@ -37,7 +36,6 @@ impl InputPoller {
     }
 
     /// Set the timeout duration for polling operations.
-    #[allow(dead_code)]
     pub fn set_poll_timeout(&mut self, timeout: Duration) {
         self.poll_timeout = timeout;
     }
@@ -47,7 +45,6 @@ impl InputPoller {
     /// Returns `Ok(Some(KeyEvent))` if a key was pressed within the timeout.
     /// Returns `Ok(None)` if no key was pressed.
     /// Returns `Err` if polling failed.
-    #[allow(dead_code)]
     pub fn poll_keypress(&self) -> io::Result<Option<KeyEvent>> {
         if event::poll(self.poll_timeout)? {
             if let Event::Key(key_event) = event::read()? {
@@ -63,7 +60,6 @@ impl InputPoller {
     ///
     /// Returns `Ok(Some((MousePosition, MouseEventType)))` if a relevant mouse event occurred.
     /// Ignores mouse up and scroll events for now.
-    #[allow(dead_code)]
     pub fn poll_mouse_event(&self) -> io::Result<Option<(MousePosition, MouseEventType)>> {
         if event::poll(self.poll_timeout)? {
             if let Event::Mouse(mouse_event) = event::read()? {
@@ -102,7 +98,7 @@ impl InputPoller {
 
     /// Check if the given key event corresponds to an exit command (e.g., 'q' or 'Q').
     pub fn is_exit_key(key_event: &KeyEvent) -> bool {
-        // Note: Esc is handled separately to close overlays first
+        // Esc is handled separately so it can close overlays before quitting
         matches!(key_event.code, KeyCode::Char('q') | KeyCode::Char('Q'))
     }
 }
@@ -130,6 +126,7 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
                 }
             }
             KeyCode::Char('y') | KeyCode::Char('Y') => return ControlAction::Redo,
+            KeyCode::Char('n') | KeyCode::Char('N') => return ControlAction::ToggleNotifications,
             _ => {}
         }
     }
@@ -138,20 +135,10 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char(' ') => ControlAction::TogglePause,
         KeyCode::Char('p') | KeyCode::Char('P') => ControlAction::ShowPaletteEditor,
         KeyCode::Char('r') | KeyCode::Char('R') => ControlAction::Restart,
-        KeyCode::Char('1') => ControlAction::SetPreset(Preset::Network),
-        KeyCode::Char('2') => ControlAction::SetPreset(Preset::Exploratory),
-        KeyCode::Char('3') => ControlAction::SetPreset(Preset::Tendrils),
-        KeyCode::Char('4') => ControlAction::SetPreset(Preset::Organic),
-        KeyCode::Char('5') => ControlAction::SetPreset(Preset::Minimal),
-        KeyCode::Char('6') => ControlAction::SetPreset(Preset::Moss),
-        KeyCode::Char('7') => ControlAction::SetPreset(Preset::Zen),
-        KeyCode::Char('!') => ControlAction::ComparePreset(Preset::Network),
-        KeyCode::Char('@') => ControlAction::ComparePreset(Preset::Exploratory),
-        KeyCode::Char('#') => ControlAction::ComparePreset(Preset::Tendrils),
-        KeyCode::Char('$') => ControlAction::ComparePreset(Preset::Organic),
-        KeyCode::Char('%') => ControlAction::ComparePreset(Preset::Minimal),
-        KeyCode::Char('^') => ControlAction::ComparePreset(Preset::Moss),
-        KeyCode::Char('&') => ControlAction::ComparePreset(Preset::Zen),
+        KeyCode::Char(c) if ('1'..='7').contains(&c) => ControlAction::QuickKey(c),
+        KeyCode::Char(c) if compare_key_digit(c).is_some() => {
+            ControlAction::CompareQuickKey(compare_key_digit(c).expect("guard ensures Some"))
+        }
         KeyCode::Char('8') => ControlAction::RandomizeParams,
         KeyCode::Char('9') => ControlAction::CycleTheme,
         KeyCode::Char('*') => ControlAction::CycleThemeReverse,
@@ -168,11 +155,17 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('D') => ControlAction::CycleDitherMode,
         KeyCode::Char('m') => ControlAction::CycleIntensityMapping,
         KeyCode::Char('M') => ControlAction::CycleIntensityMappingReverse,
-        KeyCode::Char('[') | KeyCode::Char('{') => ControlAction::AdjustDitherIntensity(-0.1),
-        KeyCode::Char(']') | KeyCode::Char('}') => ControlAction::AdjustDitherIntensity(0.1),
+        KeyCode::Char('[') => ControlAction::CycleOptionsCategoryReverse,
+        KeyCode::Char(']') => ControlAction::CycleOptionsCategory,
+        KeyCode::Char('{') => ControlAction::AdjustDitherIntensity(-0.1),
+        KeyCode::Char('}') => ControlAction::AdjustDitherIntensity(0.1),
         KeyCode::Char('q') | KeyCode::Char('Q') => ControlAction::Quit,
-        KeyCode::Tab => ControlAction::CycleOptionsCategory,
-        KeyCode::BackTab => ControlAction::CycleOptionsCategoryReverse,
+        KeyCode::Tab => ControlAction::ToggleControlsDepth,
+        KeyCode::Left => ControlAction::ControlsAdjustFocused(-1.0),
+        KeyCode::Right => ControlAction::ControlsAdjustFocused(1.0),
+        KeyCode::Up => ControlAction::ControlsFocusPrev,
+        KeyCode::Down => ControlAction::ControlsFocusNext,
+        KeyCode::Enter => ControlAction::ControlsActivateFocused,
         KeyCode::Char('A') | KeyCode::Char('a') => {
             if key_event.modifiers.contains(KeyModifiers::SHIFT) {
                 ControlAction::AdjustSensorAngle(-1.0)
@@ -265,12 +258,15 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
         KeyCode::Char('/') => ControlAction::ShowPaletteEditor,
         KeyCode::Char('`') => ControlAction::CycleCharset,
         KeyCode::Char('~') => ControlAction::CycleCharsetReverse,
+        KeyCode::Char('"') => ControlAction::CycleColorAa,
         KeyCode::Char('\'') => ControlAction::ToggleTrailAge,
         KeyCode::Char('.') => ControlAction::ToggleTrailDelta,
         KeyCode::Char('>') => ControlAction::ToggleGradientMagnitude,
         KeyCode::Char('(') => ControlAction::CycleWindowFrameReverse,
         KeyCode::Char(')') => ControlAction::CycleWindowFrame,
+        KeyCode::F(10) => ControlAction::CycleChrome,
         KeyCode::F(11) => ControlAction::ToggleFullscreen,
+        #[cfg(feature = "audio")]
         KeyCode::F(2) => ControlAction::ToggleChoir,
         _ => ControlAction::None,
     }
@@ -278,61 +274,17 @@ pub fn handle_key_event(key_event: &KeyEvent) -> ControlAction {
 
 /// Returns the display name of a preset.
 pub fn preset_name(preset: Preset) -> &'static str {
-    match preset {
-        Preset::Network => "Network",
-        Preset::Exploratory => "Exploratory",
-        Preset::Tendrils => "Tendrils",
-        Preset::Organic => "Organic",
-        Preset::Minimal => "Minimal",
-        Preset::Moss => "Moss",
-        Preset::Cosmic => "Cosmic",
-        Preset::Fire => "Fire",
-        Preset::Zen => "Zen",
-        Preset::Storm => "Storm",
-        Preset::River => "River",
-        Preset::Ethereal => "Ethereal",
-        Preset::PetriDish => "PetriDish",
-        Preset::Vortex => "Vortex",
-        Preset::Lightning => "Lightning",
-        Preset::Crystal => "Crystal",
-        Preset::ChaosEdge => "ChaosEdge",
-        Preset::Blob => "Blob",
-        Preset::Worm => "Worm",
-        Preset::Pulse => "Pulse",
-        Preset::Coral => "Coral",
-        Preset::Flocking => "Flocking",
-        Preset::Maze => "Maze",
-        Preset::Ripple => "Ripple",
-        Preset::Vortex36 => "Vortex36",
-        Preset::Chameleon => "Chameleon",
-        Preset::DynamicTendrils => "DynamicTendrils",
-        Preset::MorphingCoral => "MorphingCoral",
-        Preset::ReactiveSwarm => "ReactiveSwarm",
-        Preset::DuelingModulators => "DuelingModulators",
-    }
+    preset.name()
+}
+
+/// Returns the short character tagline of a preset.
+pub fn preset_tagline(preset: Preset) -> &'static str {
+    preset.tagline()
 }
 
 /// Returns the display name of a palette.
 pub fn palette_name(palette: Palette) -> &'static str {
-    match palette {
-        Palette::Organic => "Organic",
-        Palette::Heat => "Heat",
-        Palette::Ocean => "Ocean",
-        Palette::Mono => "Mono",
-        Palette::Forest => "Forest",
-        Palette::Neon => "Neon",
-        Palette::Warm => "Warm",
-        Palette::Vibrant => "Vibrant",
-        Palette::LegibleMono => "LegibleMono",
-        Palette::Slime => "Slime",
-        Palette::Mold => "Mold",
-        Palette::Fungus => "Fungus",
-        Palette::Swamp => "Swamp",
-        Palette::Moss => "Moss",
-        Palette::Cosmic => "Cosmic",
-        Palette::Ethereal => "Ethereal",
-        Palette::Custom(_) => "Custom",
-    }
+    palette.name()
 }
 
 /// Returns the display name of a charset.
@@ -405,7 +357,6 @@ mod tests {
     fn test_handle_key_event_basic() {
         use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
-        // Test space key
         let space = KeyEvent {
             code: KeyCode::Char(' '),
             modifiers: KeyModifiers::NONE,
@@ -417,7 +368,6 @@ mod tests {
             ControlAction::TogglePause
         ));
 
-        // Test 'c' key
         let c = KeyEvent {
             code: KeyCode::Char('c'),
             modifiers: KeyModifiers::NONE,
@@ -426,7 +376,6 @@ mod tests {
         };
         assert!(matches!(handle_key_event(&c), ControlAction::CyclePalette));
 
-        // Test 'q' key
         let q = KeyEvent {
             code: KeyCode::Char('q'),
             modifiers: KeyModifiers::NONE,
@@ -440,7 +389,6 @@ mod tests {
     fn test_handle_key_event_control() {
         use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
-        // Test Ctrl+S
         let ctrl_s = KeyEvent {
             code: KeyCode::Char('s'),
             modifiers: KeyModifiers::CONTROL,
@@ -452,7 +400,6 @@ mod tests {
             ControlAction::ShowConfigSaveDialog
         ));
 
-        // Test Ctrl+Z
         let ctrl_z = KeyEvent {
             code: KeyCode::Char('z'),
             modifiers: KeyModifiers::CONTROL,
@@ -466,7 +413,7 @@ mod tests {
     fn test_preset_name() {
         assert_eq!(preset_name(Preset::Network), "Network");
         assert_eq!(preset_name(Preset::Organic), "Organic");
-        assert_eq!(preset_name(Preset::Zen), "Zen");
+        assert_eq!(preset_name(Preset::Drift), "Drift");
     }
 
     #[test]
@@ -531,6 +478,71 @@ mod tests {
         assert!(matches!(
             handle_key_event(&event),
             ControlAction::ToggleFullscreen
+        ));
+    }
+
+    #[test]
+    fn test_f10_cycles_chrome() {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        let f10 = KeyEvent {
+            code: KeyCode::F(10),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert!(matches!(handle_key_event(&f10), ControlAction::CycleChrome));
+    }
+
+    #[test]
+    fn double_quote_cycles_color_aa() {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        let ev = KeyEvent {
+            code: KeyCode::Char('"'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert_eq!(handle_key_event(&ev), ControlAction::CycleColorAa);
+    }
+
+    #[test]
+    fn tab_toggles_depth_and_arrows_map() {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        let k = |c: KeyCode| {
+            handle_key_event(&KeyEvent {
+                code: c,
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::empty(),
+            })
+        };
+        assert_eq!(k(KeyCode::Tab), ControlAction::ToggleControlsDepth);
+        assert_eq!(k(KeyCode::Left), ControlAction::ControlsAdjustFocused(-1.0));
+        assert_eq!(k(KeyCode::Up), ControlAction::ControlsFocusPrev);
+        assert_eq!(k(KeyCode::Char(']')), ControlAction::CycleOptionsCategory);
+        assert_eq!(
+            k(KeyCode::Char('}')),
+            ControlAction::AdjustDitherIntensity(0.1)
+        );
+    }
+
+    #[test]
+    fn number_row_emits_quick_key_actions() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let ev = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE);
+        assert!(matches!(
+            handle_key_event(&ev),
+            ControlAction::QuickKey('1')
+        ));
+        let ev = KeyEvent::new(KeyCode::Char('!'), KeyModifiers::SHIFT);
+        assert!(matches!(
+            handle_key_event(&ev),
+            ControlAction::CompareQuickKey('1')
+        ));
+        let ev = KeyEvent::new(KeyCode::Char('4'), KeyModifiers::NONE);
+        assert!(matches!(
+            handle_key_event(&ev),
+            ControlAction::QuickKey('4')
         ));
     }
 }

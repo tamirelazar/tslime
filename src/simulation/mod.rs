@@ -1,5 +1,11 @@
 //! Simulation engine for Physarum polycephalum behavior.
 //!
+//! Implements the agent-based model from:
+//!
+//! Jones, J. (2010). "Characteristics of Pattern Formation and Evolution in
+//! Approximations of Physarum Transport Networks." Artificial Life, 16(2),
+//! 127-153. doi:10.1162/artl.2010.16.2.16202
+//!
 //! This module contains the core simulation logic including:
 //! - [`Simulation`]: The main simulation orchestrator
 //! - [`crate::simulation::agent`]: Individual agent behavior (sense, rotate, move)
@@ -9,6 +15,7 @@
 
 pub mod agent;
 pub mod config;
+pub mod constellations;
 pub mod food;
 pub mod trail_map;
 
@@ -63,11 +70,9 @@ impl TrailHistory {
             return;
         }
 
-        // Buffer is already pre-allocated, just copy data
         self.history[self.current_index].copy_from_slice(trail_map);
         self.current_index = (self.current_index + 1) % self.capacity;
 
-        // Update count until we reach capacity
         if self.count < self.capacity {
             self.count += 1;
         }
@@ -75,24 +80,21 @@ impl TrailHistory {
 
     /// Calculate the average of all frames in the history buffer.
     ///
-    /// Returns `None` if the history is empty.
-    /// The returned slice is valid until the next call to blended() or clear().
+    /// Returns `None` if the history is empty. The returned slice is
+    /// overwritten by the next call to `blended()`.
     pub fn blended(&mut self) -> Option<&[f32]> {
         if self.count == 0 {
             return None;
         }
 
-        // Reset blended buffer
         self.blended_buffer.fill(0.0);
 
-        // Sum all frames
         for frame in &self.history[..self.count] {
             for (i, &val) in frame.iter().enumerate() {
                 self.blended_buffer[i] += val;
             }
         }
 
-        // Average
         let weight = 1.0 / self.count as f32;
         for val in &mut self.blended_buffer {
             *val *= weight;
@@ -152,12 +154,19 @@ pub struct Simulation {
     trail_age: Option<Vec<f32>>,
     prev_trail: Option<Vec<f32>>,
     trail_delta: Option<Vec<f32>>,
+    temporal_lag: Option<Vec<f32>>,
+    temporal_diff: Option<Vec<f32>>,
+    temporal_alpha: f32,
+    afterglow_lag: Option<Vec<f32>>,
+    afterglow_alpha: f32,
     gradient_magnitude: Option<Vec<f32>>,
     /// Pre-allocated buffer for combining separate species trails.
     /// Only allocated when both `separate_species_trails` and trail history are enabled.
     combined_trail_buffer: Option<Vec<f32>>,
     /// Frame counter for deterministic respawn timing.
     frame_count: u64,
+    /// Rasterized constellation template for `InitMode::Constellation` (re-stamp + pre-seed).
+    constellation_template: Option<Vec<f32>>,
 }
 
 impl Simulation {
@@ -173,6 +182,32 @@ impl Simulation {
         let mut rng = Rng::seed_from_u64(seed);
         let total_population = config.total_population();
         let mut agents = Vec::with_capacity(total_population);
+
+        let constellation_layout = if matches!(init_mode, InitMode::Constellation) {
+            Some(constellations::build_layout(
+                &mut rng,
+                width,
+                height,
+                config.aspect,
+            ))
+        } else {
+            None
+        };
+
+        // Re-stamp template held each frame (see `constellation_restamp_floor`):
+        // the asterism glow for Constellation, the brightness image for
+        // FoodConstellation. Other modes have no template.
+        let restamp_template: Option<Vec<f32>> = match init_mode {
+            InitMode::Constellation => constellation_layout.as_ref().map(|l| l.template.clone()),
+            InitMode::FoodConstellation => constellations::build_food_template(
+                width,
+                height,
+                config.food_image_path.as_deref(),
+                config.food_image_invert,
+                config.food_image_scale,
+            ),
+            _ => None,
+        };
 
         let food_path = config.food_image_path.as_deref();
         let food_invert = config.food_image_invert;
@@ -190,6 +225,7 @@ impl Simulation {
                 food_path,
                 food_invert,
                 food_scale,
+                constellation_layout.as_ref(),
             );
         }
 
@@ -218,6 +254,16 @@ impl Simulation {
             ));
         }
 
+        if let Some(ref template) = restamp_template {
+            let scale = config.max_brightness;
+            for tm in &mut trail_maps {
+                let cur = tm.current_mut();
+                for (c, &t) in cur.iter_mut().zip(template.iter()) {
+                    *c = c.max(t * scale);
+                }
+            }
+        }
+
         let noise_seed = (seed % u64::MAX) as u32;
         let noise = NoiseWrapper::new(noise_seed);
 
@@ -239,32 +285,28 @@ impl Simulation {
             trail_age: None,
             prev_trail: None,
             trail_delta: None,
+            temporal_lag: None,
+            temporal_diff: None,
+            temporal_alpha: 0.2,
+            afterglow_lag: None,
+            afterglow_alpha: 0.05,
             gradient_magnitude: None,
             combined_trail_buffer,
             frame_count: 0,
+            constellation_template: restamp_template,
         }
     }
 
-    /// Compute gradient magnitude for edge glow effect.
-    ///
-    /// Computes the magnitude of the gradient using central differences on the
-    /// simulation-resolution trail map. This is used for the edge glow visual effect.
-    ///
-    /// # Arguments
-    /// * `trail_data` - The trail map data to compute gradient from
-    /// * `width` - Width of the trail map
-    /// * `height` - Height of the trail map
-    /// * `gradient` - Mutable slice to store the computed gradient magnitudes
+    /// Compute the gradient magnitude of `trail_data` into `gradient` using
+    /// central differences, normalized to [0, 1]. Used for the edge glow effect.
     fn compute_gradient_magnitude(
         trail_data: &[f32],
         width: usize,
         height: usize,
         gradient: &mut [f32],
     ) {
-        // Reset gradient buffer
         gradient.fill(0.0);
 
-        // Compute gradient using central differences
         for y in 1..height - 1 {
             for x in 1..width - 1 {
                 let idx = y * width + x;
@@ -273,11 +315,9 @@ impl Simulation {
                 let lt = y * width + (x - 1);
                 let rt = y * width + (x + 1);
 
-                // Central differences for gradient
                 let gx = (trail_data[rt] - trail_data[lt]) * 0.5;
                 let gy = (trail_data[dn] - trail_data[up]) * 0.5;
 
-                // Gradient magnitude
                 gradient[idx] = (gx * gx + gy * gy).sqrt();
             }
         }
@@ -303,6 +343,7 @@ impl Simulation {
         food_image_path: Option<&str>,
         food_image_invert: bool,
         food_image_scale: f32,
+        constellation_layout: Option<&constellations::ConstellationLayout>,
     ) {
         match init_mode {
             InitMode::Random => {
@@ -329,7 +370,10 @@ impl Simulation {
             InitMode::Petri => {
                 Self::init_petri(rng, width, height, agents, population, species_id);
             }
-            InitMode::Food => {
+            // FoodConstellation seeds agents identically to Food (from the
+            // brightness map); it differs only in that the image is also kept
+            // as a re-stamp template (built by the caller).
+            InitMode::Food | InitMode::FoodConstellation => {
                 if let Some(path) = food_image_path {
                     Self::init_from_food(
                         rng,
@@ -344,6 +388,13 @@ impl Simulation {
                     );
                 } else {
                     eprintln!("Warning: Food mode selected but no image path provided, falling back to random");
+                    Self::init_random(rng, width, height, agents, population, species_id);
+                }
+            }
+            InitMode::Constellation => {
+                if let Some(layout) = constellation_layout {
+                    constellations::seed_agents(rng, layout, agents, population, species_id);
+                } else {
                     Self::init_random(rng, width, height, agents, population, species_id);
                 }
             }
@@ -664,13 +715,11 @@ impl Simulation {
         self.config.species_configs.len()
     }
 
-    #[allow(dead_code)]
     /// Get references to all trail maps.
     pub fn trail_maps(&self) -> &[TrailMap] {
         &self.trail_maps
     }
 
-    #[allow(dead_code)]
     /// Get a reference to the primary trail map.
     pub fn trail_map(&self) -> &TrailMap {
         &self.trail_maps[0]
@@ -685,7 +734,6 @@ impl Simulation {
     /// This method writes to a pre-allocated buffer to avoid allocations.
     /// The buffer is cleared and reused on each call.
     pub fn trail_map_blended(&mut self, output: &mut Vec<f32>) {
-        // Check if we have history with blended data
         if let Some(blended) = self.trail_history.as_mut().and_then(|h| h.blended()) {
             let size = blended.len();
             if output.len() != size {
@@ -724,13 +772,11 @@ impl Simulation {
         self.trail_maps.iter().map(|tm| tm.current()).collect()
     }
 
-    #[allow(dead_code)]
     /// Get a mutable reference to the primary trail map.
     pub fn trail_map_mut(&mut self) -> &mut TrailMap {
         &mut self.trail_maps[0]
     }
 
-    #[allow(dead_code)]
     /// Get the current simulation configuration.
     pub fn config(&self) -> &SimConfig {
         &self.config
@@ -764,6 +810,12 @@ impl Simulation {
         let respawn_config = self.config.respawn_config;
         let sampling_mode = self.config.sampling_mode;
 
+        let deposit_active = self.config.deposit_active();
+        let deposit_curve = self.config.deposit_curve;
+        let deposit_scale = self.config.deposit_scale;
+        let deposit_gamma = self.config.deposit_gamma;
+        let deposit_cap = self.config.deposit_cap;
+
         if separate_trails {
             for species_idx in 0..self.config.species_configs.len() {
                 let species_config = &self.config.species_configs[species_idx];
@@ -777,7 +829,6 @@ impl Simulation {
                     .iter_mut()
                     .filter(|a| a.species_id as usize == species_idx)
                 {
-                    // Compute modulated parameters if enabled
                     let (sensor_angle, sensor_distance, rotation_angle, step_size) =
                         if has_modulation {
                             let x = agent.sample_trail_at_position(trail, width, height);
@@ -843,13 +894,17 @@ impl Simulation {
                     );
                 }
 
-                let trail_mut = self.trail_maps[trail_idx].current_mut();
+                let target = if deposit_active {
+                    self.trail_maps[trail_idx].accum_mut()
+                } else {
+                    self.trail_maps[trail_idx].current_mut()
+                };
                 for agent in self
                     .agents
                     .iter_mut()
                     .filter(|a| a.species_id as usize == species_idx)
                 {
-                    agent.deposit(trail_mut, width, height, species_config.deposit_amount * dt);
+                    agent.deposit(target, width, height, species_config.deposit_amount * dt);
                 }
             }
         } else {
@@ -864,7 +919,6 @@ impl Simulation {
 
             let trail = self.trail_maps[0].current();
             for agent in self.agents.iter_mut() {
-                // Compute modulated parameters if enabled
                 let (sensor_angle, sensor_distance, rotation_angle, step_size) = if has_modulation {
                     let x = agent.sample_trail_at_position(trail, width, height);
                     let params = modulation.compute_params(x);
@@ -929,9 +983,13 @@ impl Simulation {
                 );
             }
 
-            let trail_mut = self.trail_maps[0].current_mut();
+            let target = if deposit_active {
+                self.trail_maps[0].accum_mut()
+            } else {
+                self.trail_maps[0].current_mut()
+            };
             for agent in self.agents.iter_mut() {
-                agent.deposit(trail_mut, width, height, species_config.deposit_amount * dt);
+                agent.deposit(target, width, height, species_config.deposit_amount * dt);
             }
         }
 
@@ -945,11 +1003,15 @@ impl Simulation {
                     agent.progress = agent.progress.wrapping_add(1);
                     let mut probability = respawn_config.base_probability;
                     if respawn_config.trail_dependent {
-                        let x = agent.sample_trail_at_position(trail, width, height);
+                        // Normalize the raw pheromone value into [0, 1] before
+                        // applying the multiplier, so `max_probability_multiplier`
+                        // is an actual cap (raw trail is unbounded). Mirrors
+                        // `PointConfig`'s trail_rescale-then-clamp.
+                        let raw = agent.sample_trail_at_position(trail, width, height);
+                        let x = (raw * respawn_config.trail_rescale).clamp(0.0, 1.0);
                         probability *= 1.0 + x * (respawn_config.max_probability_multiplier - 1.0);
                     }
                     if self.rng.gen::<f32>() < probability * dt {
-                        // Respawn at random position
                         agent.x = self.rng.gen_range(0.0..width as f32);
                         agent.y = self.rng.gen_range(0.0..height as f32);
                         agent.heading = self.rng.gen_range(0.0..std::f32::consts::PI * 2.0);
@@ -963,14 +1025,29 @@ impl Simulation {
         }
 
         for trail_map in &mut self.trail_maps {
+            if deposit_active {
+                trail_map.fold_deposits(deposit_curve, deposit_scale, deposit_gamma, deposit_cap);
+            }
             trail_map.diffuse_with_kernel(
                 self.config.use_simd,
                 matches!(
                     self.config.diffusion_kernel,
                     crate::simulation::config::DiffusionKernel::Gaussian
                 ),
+                self.config.diffuse_weight,
+                self.config.diffusion_sigma,
             );
-            trail_map.decay(effective_decay);
+            trail_map.decay_gamma(effective_decay, self.config.decay_gamma);
+            if self.config.constellation_restamp_floor > 0.0 {
+                if let Some(ref template) = self.constellation_template {
+                    let floor = self.config.constellation_restamp_floor;
+                    let scale = self.config.max_brightness;
+                    let cur = trail_map.current_mut();
+                    for (c, &t) in cur.iter_mut().zip(template.iter()) {
+                        *c = c.max(t * scale * floor);
+                    }
+                }
+            }
         }
 
         // Compute trail age: increment where pheromone present, reset where absent
@@ -1001,7 +1078,28 @@ impl Simulation {
             }
         }
 
-        // Compute gradient magnitude for edge glow effect
+        // Compute EMA lag and signed temporal difference (lever 3).
+        // diff = trail - lag (raw, signed, un-normalized).
+        if let (Some(ref mut lag), Some(ref mut diff)) =
+            (&mut self.temporal_lag, &mut self.temporal_diff)
+        {
+            let current = self.trail_maps[0].current();
+            let a = self.temporal_alpha;
+            for ((l, d), &c) in lag.iter_mut().zip(diff.iter_mut()).zip(current.iter()) {
+                *l = a * c + (1.0 - a) * *l;
+                *d = c - *l;
+            }
+        }
+
+        // Afterglow EMA lag (lever 7): lag = α·trail + (1−α)·lag.
+        if let Some(ref mut lag) = self.afterglow_lag {
+            let current = self.trail_maps[0].current();
+            let a = self.afterglow_alpha;
+            for (l, &c) in lag.iter_mut().zip(current.iter()) {
+                *l = a * c + (1.0 - a) * *l;
+            }
+        }
+
         if let Some(ref mut gradient) = self.gradient_magnitude {
             // Use primary trail map directly to avoid allocation from trail_map_blended()
             Self::compute_gradient_magnitude(self.trail_maps[0].current(), width, height, gradient);
@@ -1027,7 +1125,6 @@ impl Simulation {
         }
     }
 
-    #[allow(dead_code)]
     /// Get a reference to the agent list.
     pub fn agents(&self) -> &[Agent] {
         &self.agents
@@ -1051,6 +1148,29 @@ impl Simulation {
         let food_invert = self.config.food_image_invert;
         let food_scale = self.config.food_image_scale;
 
+        let constellation_layout = if matches!(init_mode, InitMode::Constellation) {
+            Some(constellations::build_layout(
+                &mut self.rng,
+                width,
+                height,
+                self.config.aspect,
+            ))
+        } else {
+            None
+        };
+
+        let restamp_template: Option<Vec<f32>> = match init_mode {
+            InitMode::Constellation => constellation_layout.as_ref().map(|l| l.template.clone()),
+            InitMode::FoodConstellation => constellations::build_food_template(
+                width,
+                height,
+                self.config.food_image_path.as_deref(),
+                self.config.food_image_invert,
+                self.config.food_image_scale,
+            ),
+            _ => None,
+        };
+
         for (species_id, species_config) in self.config.species_configs.iter().enumerate() {
             Self::init_species(
                 &mut self.rng,
@@ -1063,12 +1183,24 @@ impl Simulation {
                 food_path,
                 food_invert,
                 food_scale,
+                constellation_layout.as_ref(),
             );
         }
 
         for trail_map in &mut self.trail_maps {
             trail_map.clear();
         }
+        if let Some(ref template) = restamp_template {
+            let scale = self.config.max_brightness;
+            for tm in &mut self.trail_maps {
+                let cur = tm.current_mut();
+                for (c, &t) in cur.iter_mut().zip(template.iter()) {
+                    *c = c.max(t * scale);
+                }
+            }
+        }
+        self.constellation_template = restamp_template;
+
         if let Some(ref mut history) = self.trail_history {
             history.clear();
         }
@@ -1085,7 +1217,6 @@ impl Simulation {
             buf.fill(0.0);
         }
 
-        // Re-seed noise
         let noise_seed = (seed % u64::MAX) as u32;
         self.noise = NoiseWrapper::new(noise_seed);
     }
@@ -1123,10 +1254,8 @@ impl Simulation {
             self.config.separate_species_trails && self.trail_history.is_some();
 
         if needs_combined_buffer && self.combined_trail_buffer.is_none() {
-            // Need to create the buffer
             self.combined_trail_buffer = Some(vec![0.0f32; self.width() * self.height()]);
         } else if !needs_combined_buffer && self.combined_trail_buffer.is_some() {
-            // No longer need the buffer
             self.combined_trail_buffer = None;
         } else if needs_combined_buffer
             && old_separate_trails != self.config.separate_species_trails
@@ -1148,14 +1277,16 @@ impl Simulation {
         self.update_config(config);
     }
 
-    /// Enable or disable trail age computation.
+    /// Enable trail age computation, allocating the buffer on first enable.
+    /// Passing `false` is currently a no-op.
     pub fn set_compute_trail_age(&mut self, enabled: bool) {
         if enabled && self.trail_age.is_none() {
             self.trail_age = Some(vec![0.0; self.width() * self.height()]);
         }
     }
 
-    /// Enable or disable trail delta computation.
+    /// Enable trail delta computation, allocating the buffers on first enable.
+    /// Passing `false` is currently a no-op.
     pub fn set_compute_trail_delta(&mut self, enabled: bool) {
         if enabled && self.trail_delta.is_none() {
             let size = self.width() * self.height();
@@ -1164,7 +1295,8 @@ impl Simulation {
         }
     }
 
-    /// Get the trail age buffer (normalized cumulative seconds above threshold).
+    /// Get the trail age buffer: per-cell seconds spent above the presence
+    /// threshold, capped at `AGE_MAX_SECONDS`.
     pub fn trail_age(&self) -> Option<&[f32]> {
         self.trail_age.as_deref()
     }
@@ -1174,7 +1306,60 @@ impl Simulation {
         self.trail_delta.as_deref()
     }
 
-    /// Enable or disable gradient magnitude computation.
+    /// Enable temporal-difference computation (lever 3). `alpha` is the EMA rate
+    /// per frame (smaller ⇒ longer lag). Allocates buffers on first enable;
+    /// passing `false` clears (deallocates) the buffers so the toggle is live.
+    pub fn set_compute_temporal(&mut self, enabled: bool, alpha: f32) {
+        self.temporal_alpha = alpha.clamp(0.0, 1.0);
+        if enabled {
+            if self.temporal_diff.is_none() {
+                let size = self.width() * self.height();
+                self.temporal_lag = Some(vec![0.0; size]);
+                self.temporal_diff = Some(vec![0.0; size]);
+            }
+        } else {
+            self.temporal_lag = None;
+            self.temporal_diff = None;
+        }
+    }
+
+    /// Whether temporal-color computation is active (buffer allocated).
+    pub fn compute_temporal(&self) -> bool {
+        self.temporal_diff.is_some()
+    }
+
+    /// Raw signed temporal difference (`trail - lag`), per cell. Not normalized.
+    pub fn temporal_diff(&self) -> Option<&[f32]> {
+        self.temporal_diff.as_deref()
+    }
+
+    /// Enable afterglow EMA computation (lever 7). `alpha` is the EMA rate per frame
+    /// (smaller ⇒ longer-lived glow). Allocates the buffer on first enable;
+    /// passing `false` clears (deallocates) the buffer so the toggle is live.
+    pub fn set_compute_afterglow(&mut self, enabled: bool, alpha: f32) {
+        self.afterglow_alpha = alpha.clamp(0.0, 1.0);
+        if enabled {
+            if self.afterglow_lag.is_none() {
+                let size = self.width() * self.height();
+                self.afterglow_lag = Some(vec![0.0; size]);
+            }
+        } else {
+            self.afterglow_lag = None;
+        }
+    }
+
+    /// Whether afterglow computation is active (buffer allocated).
+    pub fn compute_afterglow(&self) -> bool {
+        self.afterglow_lag.is_some()
+    }
+
+    /// EMA afterglow lag buffer (per cell). `None` until afterglow is enabled.
+    pub fn afterglow_lag(&self) -> Option<&[f32]> {
+        self.afterglow_lag.as_deref()
+    }
+
+    /// Enable gradient magnitude computation, allocating the buffer on first
+    /// enable. Passing `false` is currently a no-op.
     pub fn set_compute_gradient_magnitude(&mut self, enabled: bool) {
         if enabled && self.gradient_magnitude.is_none() {
             self.gradient_magnitude = Some(vec![0.0; self.width() * self.height()]);
@@ -1227,8 +1412,8 @@ impl Simulation {
 
         let mut attractors = Vec::new();
 
-        // Sample at lower resolution to avoid too many attractors
-        let step_size = 5; // Sample every 5 pixels
+        // Sample every 5th pixel to keep the attractor count manageable
+        let step_size = 5;
 
         for y in (0..height).step_by(step_size) {
             for x in (0..width).step_by(step_size) {
@@ -1237,7 +1422,7 @@ impl Simulation {
                     attractors.push(crate::simulation::config::Attractor::new(
                         x as f32,
                         y as f32,
-                        strength * brightness, // Scale strength by brightness
+                        strength * brightness,
                     ));
                 }
             }
@@ -1880,5 +2065,306 @@ mod tests {
             let sum: f32 = gradient.iter().sum();
             assert_eq!(sum, 0.0, "Gradient should be cleared after reset");
         }
+    }
+
+    #[test]
+    fn temporal_buffers_allocate_on_demand() {
+        let cfg = SimConfig::default();
+        let mut sim = Simulation::new(100, 100, cfg, 42, InitMode::Random, 0);
+        assert!(sim.temporal_diff().is_none());
+        sim.set_compute_temporal(true, 0.2);
+        assert!(sim.temporal_diff().is_some());
+        assert_eq!(
+            sim.temporal_diff().unwrap().len(),
+            sim.width() * sim.height()
+        );
+    }
+
+    #[test]
+    fn temporal_diff_is_signed_and_lags() {
+        let cfg = SimConfig::default();
+        let mut sim = Simulation::new(400, 400, cfg, 42, InitMode::Random, 0);
+        sim.set_compute_temporal(true, 0.5); // fast lag for a deterministic check
+        sim.update(1.0);
+        let diff = sim.temporal_diff().unwrap();
+        assert!(
+            diff.iter().any(|&d| d > 0.0),
+            "expected a positive growing front"
+        );
+        assert!(diff.iter().all(|&d| d.is_finite()));
+    }
+
+    #[test]
+    fn afterglow_lag_allocates_and_emas_toward_trail() {
+        let mut sim = Simulation::new(400, 400, SimConfig::default(), 42, InitMode::Random, 0);
+        assert!(sim.afterglow_lag().is_none(), "no buffer before enable");
+        sim.set_compute_afterglow(true, 0.5);
+        sim.update(1.0);
+        let lag = sim.afterglow_lag().expect("buffer after enable");
+        // EMA buffer exists, sized to the trail map.
+        assert_eq!(lag.len(), sim.width() * sim.height());
+        // lag rises toward the (non-negative) trail over repeated updates.
+        let sum0: f32 = lag.iter().copied().sum();
+        for _ in 0..5 {
+            sim.update(1.0);
+        }
+        let sum1: f32 = sim.afterglow_lag().unwrap().iter().copied().sum();
+        assert!(
+            sum1 >= sum0,
+            "afterglow lag should accumulate toward the trail"
+        );
+    }
+
+    #[test]
+    fn afterglow_lag_disabled_allocates_nothing() {
+        let mut sim = Simulation::new(400, 400, SimConfig::default(), 42, InitMode::Random, 0);
+        sim.update(1.0);
+        assert!(sim.afterglow_lag().is_none());
+    }
+
+    #[test]
+    fn deposit_off_path_is_deterministic() {
+        // Proves the off path (Linear + scale 1.0 + cap 0.0) is deterministic:
+        // two sims with identical config and seed must produce bit-identical trail maps.
+        let mut a = Simulation::new(40, 40, SimConfig::default(), 42, InitMode::Random, 0);
+        let mut b = Simulation::new(40, 40, SimConfig::default(), 42, InitMode::Random, 0);
+        for _ in 0..30 {
+            a.update(1.0);
+            b.update(1.0);
+        }
+        assert_eq!(a.trail_maps[0].current(), b.trail_maps[0].current());
+    }
+
+    #[test]
+    fn deposit_linear_accum_matches_direct_within_fp_tolerance() {
+        // Verifies that routing deposits through the accumulation buffer and then
+        // fold_deposits (active path) reproduces the direct deposit (off path) up to
+        // floating-point tolerance.  Exact equality is impossible because fold_deposits
+        // reassociates the additions (trail + (a+b) vs the off path's (trail+a)+b), which
+        // produces different rounding at the ulp level.
+        //
+        // Active path is triggered by deposit_cap > 0.0 (see deposit_active()).
+        // We use a huge cap (1e9) so it never clips, and scale=1.0 + Linear curve so
+        // fold_deposits is mathematically an identity — any cell difference is pure fp noise.
+        use crate::simulation::config::DepositCurve;
+
+        let off_cfg = SimConfig::default();
+        assert!(!off_cfg.deposit_active(), "off path sanity check");
+
+        let on_cfg = SimConfig {
+            deposit_curve: DepositCurve::Linear,
+            deposit_scale: 1.0,
+            deposit_cap: 1.0e9, // huge cap → never clips
+            ..Default::default()
+        };
+        assert!(
+            on_cfg.deposit_active(),
+            "cap > 0.0 must activate the accum path"
+        );
+
+        let mut off_sim = Simulation::new(40, 40, off_cfg, 42, InitMode::Random, 0);
+        let mut on_sim = Simulation::new(40, 40, on_cfg, 42, InitMode::Random, 0);
+        for _ in 0..30 {
+            off_sim.update(1.0);
+            on_sim.update(1.0);
+        }
+
+        let off_cells = off_sim.trail_maps[0].current();
+        let on_cells = on_sim.trail_maps[0].current();
+        assert_eq!(off_cells.len(), on_cells.len());
+        for (i, (a, b)) in off_cells.iter().zip(on_cells.iter()).enumerate() {
+            let diff = (a - b).abs();
+            // Off path does (((trail+a1)+a2)+...) per agent; active path folds
+            // accum=(a1+a2+...) then trail+accum. Same math, different float
+            // association order, so differences are bounded reassociation noise
+            // (magnitude-relative), not algorithmic. A wrong curve/scale would
+            // diverge by orders of magnitude and fail this bound.
+            let tol = 1e-4_f32 + 1e-4 * a.abs();
+            assert!(
+                diff <= tol,
+                "cell {i}: off={a} on={b} diff={diff} tol={tol} — accum path diverged from direct deposit"
+            );
+        }
+    }
+
+    #[test]
+    fn deposit_sqrt_curve_changes_output() {
+        let mut base = Simulation::new(40, 40, SimConfig::default(), 42, InitMode::Random, 0);
+        let cfg = SimConfig {
+            deposit_curve: crate::simulation::config::DepositCurve::Sqrt,
+            ..Default::default()
+        };
+        let mut curved = Simulation::new(40, 40, cfg, 42, InitMode::Random, 0);
+        for _ in 0..30 {
+            base.update(1.0);
+            curved.update(1.0);
+        }
+        assert_ne!(
+            base.trail_maps[0].current(),
+            curved.trail_maps[0].current(),
+            "sqrt curve must alter the trail"
+        );
+    }
+
+    #[test]
+    fn temporal_toggle_clears_buffer() {
+        let mut sim = Simulation::new(40, 20, SimConfig::default(), 42, InitMode::Random, 0);
+        sim.set_compute_temporal(true, 0.2);
+        assert!(sim.compute_temporal());
+        sim.set_compute_temporal(false, 0.2);
+        assert!(!sim.compute_temporal());
+    }
+
+    #[test]
+    fn afterglow_toggle_clears_buffer() {
+        let mut sim = Simulation::new(40, 20, SimConfig::default(), 42, InitMode::Random, 0);
+        sim.set_compute_afterglow(true, 0.05);
+        assert!(sim.compute_afterglow());
+        sim.set_compute_afterglow(false, 0.05);
+        assert!(!sim.compute_afterglow());
+    }
+
+    #[test]
+    fn constellation_init_seeds_trail_and_is_deterministic() {
+        let cfg = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 2000,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let a = Simulation::new(160, 100, cfg.clone(), 99, InitMode::Constellation, 0);
+        let b = Simulation::new(160, 100, cfg, 99, InitMode::Constellation, 0);
+        // Trail map is non-empty at frame 0 (figure pre-seeded).
+        let bright: f32 = a.trail_maps[0]
+            .current()
+            .iter()
+            .copied()
+            .fold(0.0, f32::max);
+        assert!(bright > 0.0, "trail not pre-seeded with figure");
+        // Same seed -> identical agent positions.
+        assert_eq!(a.agents.len(), b.agents.len());
+        assert_eq!(a.agents[0].x, b.agents[0].x);
+        assert_eq!(a.agents[0].y, b.agents[0].y);
+    }
+
+    // No agents; only re-stamp can maintain the figure against decay.
+    // count: 0 isolates the re-stamp mechanism — no agent deposits in play.
+    #[test]
+    fn static_restamp_reinforces_figure_drift_does_not() {
+        // scale == SimConfig::default().max_brightness (100.0).  Template values
+        // live in 0..=1; after pre-seeding they are scaled to trail-brightness
+        // units (0..=scale).  Re-stamp floor 1.0 means every cell is held at
+        // >= tval * scale * 1.0 each frame.
+        let scale = SimConfig::default().max_brightness;
+        let mut cfg = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 0,
+                ..Default::default()
+            }],
+            constellation_restamp_floor: 1.0,
+            ..Default::default()
+        };
+        let mut stat = Simulation::new(160, 100, cfg.clone(), 5, InitMode::Constellation, 0);
+        let template = stat.constellation_template.clone().unwrap();
+        // Find the brightest template cell.
+        let (idx, &tval) = template
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap();
+        // Run 20 frames; static re-stamp (floor 1.0) must hold the cell.
+        for _ in 0..20 {
+            stat.update(1.0);
+        }
+        let held = stat.trail_maps[0].current()[idx];
+        assert!(
+            held >= tval * scale * 1.0 - 1e-3,
+            "static re-stamp did not hold the figure (held={held}, expected>={e})",
+            e = tval * scale * 1.0 - 1e-3
+        );
+        // Scaling sanity: value must be well above 1.0 — the old (unscaled) bug left it <= 1.0.
+        assert!(
+            held > 1.5,
+            "scaling bug: held={held} should be >> 1.0 (scale={scale})"
+        );
+
+        // Drift (floor 0.0) does NOT re-stamp: the figure decays freely.
+        cfg.constellation_restamp_floor = 0.0;
+        let mut drift = Simulation::new(160, 100, cfg, 5, InitMode::Constellation, 0);
+        for _ in 0..20 {
+            drift.update(1.0);
+        }
+        assert!(drift.constellation_template.is_some());
+        // After 20 frames of decay-only the cell must sit below the static floor.
+        assert!(
+            drift.trail_maps[0].current()[idx] < tval * scale * 1.0,
+            "drift (floor 0.0) must not re-stamp: cell should have decayed"
+        );
+    }
+
+    // FoodConstellation seeds agents from the embedded logo brightness map and
+    // keeps that image as a re-stamp template, so the picture is pre-seeded into
+    // the trail and persists under re-stamp — the constellation mechanism with a
+    // food image instead of a star asterism.
+    #[test]
+    fn food_constellation_builds_template_and_holds_under_restamp() {
+        let scale = SimConfig::default().max_brightness;
+        let cfg = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 0, // isolate the re-stamp mechanism (no agent deposits)
+                ..Default::default()
+            }],
+            constellation_restamp_floor: 1.0,
+            // SimConfig::default() already points food_image_path at the embedded
+            // tslime logo with invert/scale defaults.
+            ..Default::default()
+        };
+        let mut sim = Simulation::new(160, 100, cfg, 11, InitMode::FoodConstellation, 0);
+        // Template was built from the logo image, not a star asterism.
+        let template = sim
+            .constellation_template
+            .clone()
+            .expect("FoodConstellation must build a re-stamp template");
+        let (idx, &tval) = template
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap();
+        assert!(tval > 0.0, "logo template is empty");
+        // Trail is pre-seeded with the picture at frame 0.
+        let bright0: f32 = sim.trail_maps[0]
+            .current()
+            .iter()
+            .copied()
+            .fold(0.0, f32::max);
+        assert!(bright0 > 0.0, "logo not pre-seeded into trail");
+        // Re-stamp (floor 1.0) holds the brightest cell against decay.
+        for _ in 0..20 {
+            sim.update(1.0);
+        }
+        let held = sim.trail_maps[0].current()[idx];
+        assert!(
+            held >= tval * scale - 1e-3,
+            "re-stamp did not hold the logo (held={held}, expected>={e})",
+            e = tval * scale - 1e-3
+        );
+    }
+
+    #[test]
+    fn food_constellation_is_deterministic() {
+        let cfg = SimConfig {
+            species_configs: vec![SpeciesConfig {
+                count: 3000,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let a = Simulation::new(160, 100, cfg.clone(), 77, InitMode::FoodConstellation, 0);
+        let b = Simulation::new(160, 100, cfg, 77, InitMode::FoodConstellation, 0);
+        assert_eq!(a.agents.len(), b.agents.len());
+        assert!(!a.agents.is_empty(), "logo seeding produced no agents");
+        assert_eq!(a.agents[0].x, b.agents[0].x);
+        assert_eq!(a.agents[0].y, b.agents[0].y);
     }
 }

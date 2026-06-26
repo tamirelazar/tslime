@@ -1,4 +1,5 @@
 use crate::render::gradients;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -8,31 +9,11 @@ fn get_gradient_stops_cache() -> &'static HashMap<Palette, Vec<GradientStop>> {
     static CACHE: OnceLock<HashMap<Palette, Vec<GradientStop>>> = OnceLock::new();
     CACHE.get_or_init(|| {
         let mut cache = HashMap::new();
-        let built_in_palettes = [
-            Palette::Organic,
-            Palette::Heat,
-            Palette::Ocean,
-            Palette::Mono,
-            Palette::Forest,
-            Palette::Neon,
-            Palette::Warm,
-            Palette::Vibrant,
-            Palette::LegibleMono,
-            Palette::Slime,
-            Palette::Mold,
-            Palette::Fungus,
-            Palette::Swamp,
-            Palette::Moss,
-            Palette::Cosmic,
-            Palette::Ethereal,
-        ];
-
-        for palette in built_in_palettes {
-            let oklch_stops = gradients::get_oklch_gradient(palette.clone());
+        for spec in PALETTES {
+            let oklch_stops = gradients::get_oklch_gradient(spec.palette.clone());
             let stops = oklch_stops_to_gradient(oklch_stops, 64);
-            cache.insert(palette, stops);
+            cache.insert(spec.palette.clone(), stops);
         }
-
         cache
     })
 }
@@ -72,38 +53,35 @@ pub enum Palette {
     Cosmic,
     /// Ghostly pale colors.
     Ethereal,
+    /// Mid-saturation jade green.
+    Jade,
+    /// Rich warm amber and honey tones.
+    Amber,
+    /// Cool stone grey, very low chroma.
+    Slate,
+    /// High-key airy pastel multi-hue.
+    Pastel,
+    /// Duotone ink-on-paper.
+    Ink,
+    /// Oxidized copper rust to verdigris teal.
+    Copper,
     /// Custom user-defined palette.
     Custom(Vec<RgbColor>),
 }
 
 impl Palette {
     /// Returns the string representation of the palette name.
-    pub fn name(&self) -> &str {
-        match self {
-            Palette::Organic => "Organic",
-            Palette::Heat => "Heat",
-            Palette::Ocean => "Ocean",
-            Palette::Mono => "Mono",
-            Palette::Forest => "Forest",
-            Palette::Neon => "Neon",
-            Palette::Warm => "Warm",
-            Palette::Vibrant => "Vibrant",
-            Palette::LegibleMono => "LegibleMono",
-            Palette::Slime => "Slime",
-            Palette::Mold => "Mold",
-            Palette::Fungus => "Fungus",
-            Palette::Swamp => "Swamp",
-            Palette::Moss => "Moss",
-            Palette::Cosmic => "Cosmic",
-            Palette::Ethereal => "Ethereal",
-            Palette::Custom(_) => "Custom",
-        }
+    pub fn name(&self) -> &'static str {
+        PALETTES
+            .iter()
+            .find(|spec| &spec.palette == self)
+            .map_or("Custom", |spec| spec.name)
     }
 }
 
 /// List of all available color palettes for cycling.
 /// This is the single source of truth for palette enumeration.
-pub const ALL_PALETTES: [Palette; 16] = [
+pub const ALL_PALETTES: [Palette; 22] = [
     Palette::Organic,
     Palette::Heat,
     Palette::Ocean,
@@ -120,6 +98,12 @@ pub const ALL_PALETTES: [Palette; 16] = [
     Palette::Moss,
     Palette::Cosmic,
     Palette::Ethereal,
+    Palette::Jade,
+    Palette::Amber,
+    Palette::Slate,
+    Palette::Pastel,
+    Palette::Ink,
+    Palette::Copper,
 ];
 
 /// The number of palettes in ALL_PALETTES.
@@ -130,7 +114,119 @@ pub fn num_palettes() -> usize {
     NUM_PALETTES
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// Static identity of one built-in palette: the enum variant and its
+/// human-facing display name (which doubles as the case-insensitive name
+/// accepted on the CLI).
+///
+/// [`PALETTES`] is the single source of truth for built-in palette *identity*:
+/// display names, CLI parsing, the saved-config palette index, and the gradient
+/// cache seed all derive from it. Gradient colour data itself still lives in
+/// [`crate::render::gradients`].
+pub struct PaletteSpec {
+    /// The palette this entry describes.
+    pub palette: Palette,
+    /// Display name; also the case-insensitive name accepted on the CLI.
+    pub name: &'static str,
+}
+
+/// Identity table for every built-in palette.
+///
+/// Must stay in the same order as [`ALL_PALETTES`] — `palettes_match_all_palettes`
+/// enforces this, because the saved-config palette index is the position in this
+/// list. Adding a palette means adding one row here (plus the [`Palette`] variant
+/// and its gradient `const` arrays in [`crate::render::gradients`]).
+pub const PALETTES: &[PaletteSpec] = &[
+    PaletteSpec {
+        palette: Palette::Organic,
+        name: "Organic",
+    },
+    PaletteSpec {
+        palette: Palette::Heat,
+        name: "Heat",
+    },
+    PaletteSpec {
+        palette: Palette::Ocean,
+        name: "Ocean",
+    },
+    PaletteSpec {
+        palette: Palette::Mono,
+        name: "Mono",
+    },
+    PaletteSpec {
+        palette: Palette::Forest,
+        name: "Forest",
+    },
+    PaletteSpec {
+        palette: Palette::Neon,
+        name: "Neon",
+    },
+    PaletteSpec {
+        palette: Palette::Warm,
+        name: "Warm",
+    },
+    PaletteSpec {
+        palette: Palette::Vibrant,
+        name: "Vibrant",
+    },
+    PaletteSpec {
+        palette: Palette::LegibleMono,
+        name: "LegibleMono",
+    },
+    PaletteSpec {
+        palette: Palette::Slime,
+        name: "Slime",
+    },
+    PaletteSpec {
+        palette: Palette::Mold,
+        name: "Mold",
+    },
+    PaletteSpec {
+        palette: Palette::Fungus,
+        name: "Fungus",
+    },
+    PaletteSpec {
+        palette: Palette::Swamp,
+        name: "Swamp",
+    },
+    PaletteSpec {
+        palette: Palette::Moss,
+        name: "Moss",
+    },
+    PaletteSpec {
+        palette: Palette::Cosmic,
+        name: "Cosmic",
+    },
+    PaletteSpec {
+        palette: Palette::Ethereal,
+        name: "Ethereal",
+    },
+    PaletteSpec {
+        palette: Palette::Jade,
+        name: "Jade",
+    },
+    PaletteSpec {
+        palette: Palette::Amber,
+        name: "Amber",
+    },
+    PaletteSpec {
+        palette: Palette::Slate,
+        name: "Slate",
+    },
+    PaletteSpec {
+        palette: Palette::Pastel,
+        name: "Pastel",
+    },
+    PaletteSpec {
+        palette: Palette::Ink,
+        name: "Ink",
+    },
+    PaletteSpec {
+        palette: Palette::Copper,
+        name: "Copper",
+    },
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// An RGB color value.
 pub struct RgbColor {
     /// Red component (0-255).
@@ -265,7 +361,8 @@ pub fn oklch_to_srgb(l: f32, c: f32, h_deg: f32) -> RgbColor {
     let b = c * h_rad.sin();
 
     // Step 2: OKLab → LMS (cube roots of cone responses)
-    // Coefficients from Björn Ottosson's OKLab paper (2020).
+    // Coefficients from Björn Ottosson, "A perceptual color space for image
+    // processing" (2020), https://bottosson.github.io/posts/oklab/
     let l_ = l + 0.396_337_8 * a + 0.215_803_76 * b;
     let m_ = l - 0.105_561_35 * a - 0.063_854_17 * b;
     let s_ = l - 0.089_484_18 * a - 1.291_485_5 * b;
@@ -275,6 +372,8 @@ pub fn oklch_to_srgb(l: f32, c: f32, h_deg: f32) -> RgbColor {
     let lms_s = s_ * s_ * s_;
 
     // Step 3: LMS → linear sRGB
+    // Red-row M/S constants predate Ottosson's 2021 matrix update (deltas ~1e-5,
+    // visually negligible); green/blue rows and srgb_to_oklch match the updated post.
     let r_lin = 4.076_741_7 * lms_l - 3.307_736_3 * lms_m + 0.230_910_13 * lms_s;
     let g_lin = -1.268_438 * lms_l + 2.609_757_4 * lms_m - 0.341_319_4 * lms_s;
     let b_lin = -0.004_196_077 * lms_l - 0.703_418_6 * lms_m + 1.707_614_7 * lms_s;
@@ -435,7 +534,7 @@ fn oklch_stops_to_gradient(stops: &[OklchStop], n: usize) -> Vec<GradientStop> {
 /// All functions guarantee: f(0) = 0, f(1) = 1, and monotonically increasing output.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub enum MappingFunction {
-    /// Linear: f(x) = x (current behavior)
+    /// Linear: f(x) = x
     #[default]
     Linear,
 
@@ -797,7 +896,7 @@ impl IntensityMapping {
 
 // Convenience constructors (pre-validated, cannot fail)
 impl IntensityMapping {
-    /// Linear mapping (current behavior).
+    /// Linear mapping.
     pub fn linear() -> Self {
         Self {
             segments: vec![MappingSegment {
@@ -919,6 +1018,18 @@ impl IntensityMapping {
             }],
         }
     }
+
+    /// Sigmoid (S-curve) mapping for punchy contrast. Higher `steepness`
+    /// sharpens the mid-tone transition.
+    pub fn sigmoid(steepness: f32) -> Self {
+        Self {
+            segments: vec![MappingSegment {
+                start: 0.0,
+                end: 1.0,
+                function: MappingFunction::Sigmoid { steepness },
+            }],
+        }
+    }
 }
 
 impl Default for IntensityMapping {
@@ -927,8 +1038,7 @@ impl Default for IntensityMapping {
     }
 }
 
-/// Interpolates smoothly between gradient stops
-/// Supports any number of control points for continuous color mapping
+/// Interpolates linearly between gradient stops; supports any number of control points.
 #[inline]
 pub fn interpolate_gradient(stops: &[GradientStop], t: f32) -> RgbColor {
     let t = t.clamp(0.0, 1.0);
@@ -2246,9 +2356,11 @@ pub fn rotate_hue(hsv: HsvColor, degrees: f32) -> HsvColor {
     }
 }
 
-/// Finds the nearest ANSI 256 color code for a given RGB color.
+/// Approximates the nearest ANSI 256 color code for an RGB color.
 ///
-/// Uses Euclidean distance in RGB space to find the best match.
+/// Near-gray colors snap to the grayscale ramp (232-255), close matches to the
+/// 16 system colors are taken directly, and everything else rounds into the
+/// 6×6×6 color cube — a fast heuristic, not an exhaustive nearest search.
 #[inline]
 pub fn rgb_to_256(rgb: RgbColor) -> u8 {
     let gray_diff = (rgb.r as i16 - rgb.g as i16).abs()
@@ -2362,17 +2474,11 @@ thread_local! {
     static CUSTOM_STOPS_CACHE: std::cell::RefCell<Option<(Vec<RgbColor>, Vec<GradientStop>)>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Get gradient stops for a palette (supports continuous interpolation).
+/// Returns gradient stops for a palette (always a cloned `Vec`).
 ///
-/// For built-in palettes, returns a reference to pre-computed stops from the static cache.
-/// For custom palettes, uses thread-local storage to avoid repeated allocations for the same palette.
-///
-/// # Arguments
-/// * `palette` - The palette to get gradient stops for
-///
-/// # Returns
-/// A slice of gradient stops. For built-in palettes, this is a reference to static data.
-/// For custom palettes, this may reference thread-local storage.
+/// Built-in palettes clone from the global static cache; custom palettes are
+/// cached in thread-local storage keyed on the color list, so repeated calls
+/// with the same palette avoid recomputing the stops.
 pub(crate) fn get_gradient_stops(palette: &Palette) -> Vec<GradientStop> {
     match palette {
         Palette::Custom(colors) => {
@@ -2418,18 +2524,7 @@ fn invert_color(color_code: u8) -> u8 {
     invert_256_color(color_code)
 }
 
-/// Computes RGB color for a given brightness from custom palette colors.
-///
-/// Performs linear interpolation between the palette colors based on the brightness value.
-/// This avoids memory leaks by computing the color on-demand rather than pre-computing
-/// and leaking a gradient array.
-///
-/// # Parameters
-/// - `colors`: The custom palette colors
-/// - `brightness`: Input intensity value (0.0 to 1.0)
-///
-/// # Returns
-/// The interpolated RGB color for the given brightness.
+/// Linearly interpolates between custom palette colors for a brightness in [0, 1].
 fn interpolate_custom_color(colors: &[RgbColor], brightness: f32) -> RgbColor {
     let num_colors = colors.len();
     if num_colors == 0 {
@@ -2457,27 +2552,42 @@ fn interpolate_custom_color(colors: &[RgbColor], brightness: f32) -> RgbColor {
     }
 }
 
-/// Maps brightness to an ANSI 256 color based on the selected palette.
+/// Maps brightness (0.0-1.0) to an ANSI 256 color code for the selected palette.
 ///
-/// Supports built-in palettes with pre-computed gradients and custom palettes
-/// with on-demand interpolation. Custom palette colors are interpolated
-/// directly without memory allocation or leaks.
+/// `reverse` flips the intensity before lookup, `invert` hue-rotates the final
+/// color by 180°, and `mapping` applies an optional non-linear intensity curve.
 ///
-/// # Parameters
-/// - `brightness`: Input intensity value (0.0 to 1.0)
-/// - `palette`: Color palette to use
-/// - `reverse`: If true, inverts the intensity (dark becomes bright)
-/// - `invert`: If true, inverts the final color
-/// - `mapping`: Optional non-linear intensity mapping
-///
-/// # Returns
-/// The ANSI 256 color code for the given brightness and palette settings.
+/// This is a thin wrapper around [`map_brightness_cycled`] with an identity
+/// [`PaletteCycle`]. All existing callers remain byte-identical.
 pub fn map_brightness(
     brightness: f32,
     palette: Palette,
     reverse: bool,
     invert: bool,
     mapping: Option<&IntensityMapping>,
+) -> u8 {
+    map_brightness_cycled(
+        brightness,
+        palette,
+        reverse,
+        invert,
+        mapping,
+        PaletteCycle::default(),
+    )
+}
+
+/// 256-color counterpart to [`map_brightness_rgb_cycled`].
+///
+/// Applies a [`PaletteCycle`] remap between the tone curve and the gradient
+/// lookup. The non-cycled wrapper delegates here with an identity cycle, so
+/// existing callers stay byte-identical.
+pub fn map_brightness_cycled(
+    brightness: f32,
+    palette: Palette,
+    reverse: bool,
+    invert: bool,
+    mapping: Option<&IntensityMapping>,
+    cycle: PaletteCycle,
 ) -> u8 {
     let mut brightness = brightness.clamp(0.0, 1.0);
 
@@ -2490,18 +2600,20 @@ pub fn map_brightness(
         brightness = mapping.apply(brightness);
     }
 
+    // Spatial palette repeat, applied before the gradient lookup.
+    let t = cycle.map(brightness);
+
     // Get the color based on palette type
     let color = match &palette {
         Palette::Custom(colors) => {
-            // For custom palettes, interpolate directly to RGB then convert to 256-color
-            // This avoids memory leaks from Box::leak
-            let rgb = interpolate_custom_color(colors, brightness);
+            // Custom palettes: interpolate to RGB, then convert to 256-color
+            let rgb = interpolate_custom_color(colors, t);
             rgb_to_256(rgb)
         }
         _ => {
             // For built-in palettes, use the pre-computed gradient
             let gradient = gradients::get_256_gradient(palette);
-            let position = brightness * (gradient.len() - 1) as f32;
+            let position = t * (gradient.len() - 1) as f32;
             let lower = position.floor() as usize;
             let upper = position.ceil() as usize;
             let fraction = position - lower as f32;
@@ -2529,17 +2641,14 @@ fn invert_rgb(rgb: RgbColor) -> RgbColor {
     }
 }
 
-/// Maps brightness to an RGB color based on the selected palette.
+/// Maps brightness (0.0-1.0) to an RGB color for the selected palette.
 ///
-/// Supports smooth gradients, reversing, inverting, hue shifting, and non-linear mapping.
+/// `reverse` flips the intensity before lookup, `invert` complements the final
+/// RGB color, `hue_shift` rotates the hue by that many degrees, and `mapping`
+/// applies an optional non-linear intensity curve.
 ///
-/// # Parameters
-/// - `brightness`: Input intensity value (0.0 to 1.0)
-/// - `palette`: Color palette to use
-/// - `reverse`: If true, inverts the intensity (dark becomes bright)
-/// - `invert`: If true, inverts the final color
-/// - `hue_shift`: Rotate the hue by this many degrees
-/// - `mapping`: Optional non-linear intensity mapping
+/// This is a thin wrapper around [`map_brightness_rgb_cycled`] with an identity
+/// [`PaletteCycle`]. All existing callers remain byte-identical.
 pub fn map_brightness_rgb(
     brightness: f32,
     palette: Palette,
@@ -2547,6 +2656,31 @@ pub fn map_brightness_rgb(
     invert: bool,
     hue_shift: f32,
     mapping: Option<&IntensityMapping>,
+) -> RgbColor {
+    map_brightness_rgb_cycled(
+        brightness,
+        palette,
+        reverse,
+        invert,
+        hue_shift,
+        mapping,
+        PaletteCycle::default(),
+    )
+}
+
+/// Same as [`map_brightness_rgb`] but applies a [`PaletteCycle`] remap at
+/// pass-order step 5 (between the tone curve and the gradient lookup). The
+/// non-cycled wrapper delegates here with an identity cycle, so existing
+/// callers stay byte-identical.
+#[allow(clippy::too_many_arguments)]
+pub fn map_brightness_rgb_cycled(
+    brightness: f32,
+    palette: Palette,
+    reverse: bool,
+    invert: bool,
+    hue_shift: f32,
+    mapping: Option<&IntensityMapping>,
+    cycle: PaletteCycle,
 ) -> RgbColor {
     let mut brightness = brightness.clamp(0.0, 1.0);
 
@@ -2559,9 +2693,12 @@ pub fn map_brightness_rgb(
         brightness = mapping.apply(brightness);
     }
 
+    // Spatial palette repeat, applied before the gradient lookup.
+    let t = cycle.map(brightness);
+
     // Use the new gradient interpolation system
     let stops = get_gradient_stops(&palette);
-    let mut final_color = interpolate_gradient(&stops, brightness);
+    let mut final_color = interpolate_gradient(&stops, t);
 
     if invert {
         final_color = invert_rgb(final_color);
@@ -2595,7 +2732,6 @@ pub fn palette_accent_color(
     map_brightness_rgb(0.85, palette.clone(), reverse, invert, hue_offset, mapping)
 }
 
-#[allow(dead_code)]
 /// Generates an ANSI escape sequence for a truecolor foreground or background.
 pub fn truecolor_ansi(r: u8, g: u8, b: u8, is_fg: bool) -> String {
     format!("\x1b[{};2;{};{};{}m", if is_fg { 38 } else { 48 }, r, g, b)
@@ -2611,9 +2747,365 @@ pub fn truecolor_ansi_bg(r: u8, g: u8, b: u8) -> String {
     truecolor_ansi(r, g, b, false)
 }
 
+/// Color-modulation mode for temporal-difference coloring (lever 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TemporalMode {
+    /// Rotate the base color's hue in OKLch by the (signed) temporal difference.
+    Hue,
+    /// Blend the base color toward a front-accent color (Bleuje-style).
+    Accent,
+}
+
+/// Spatial palette-repeat mode (lever 6). Remaps the gradient index `t`
+/// pre-lookup so the palette tiles across the brightness range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PaletteCycleMode {
+    /// Sawtooth `fract(t·n)` — seam unless the palette endpoints match.
+    Wrap,
+    /// Triangle `1 − |1 − fract(t·n)·2|` — ping-pong, seamless on any palette.
+    #[default]
+    Mirror,
+}
+
+impl std::fmt::Display for PaletteCycleMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PaletteCycleMode::Wrap => write!(f, "wrap"),
+            PaletteCycleMode::Mirror => write!(f, "mirror"),
+        }
+    }
+}
+
+/// Palette-cycle configuration: how many times the palette repeats across the
+/// brightness range and the repeat mode. `cycles = 1` (the default) is identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaletteCycle {
+    /// Number of palette repeats across `[0,1]`. `1` = no repeat (identity).
+    pub cycles: u32,
+    /// Repeat mode (wrap/sawtooth or mirror/triangle).
+    pub mode: PaletteCycleMode,
+}
+
+impl Default for PaletteCycle {
+    fn default() -> Self {
+        Self {
+            cycles: 1,
+            mode: PaletteCycleMode::Mirror,
+        }
+    }
+}
+
+impl PaletteCycle {
+    /// True when the remap is a no-op (`cycles ≤ 1`).
+    #[inline]
+    pub fn is_identity(&self) -> bool {
+        self.cycles <= 1
+    }
+
+    /// Remap a tone-mapped brightness `t` (0..1) to the cycled gradient index.
+    /// Identity when `cycles ≤ 1`.
+    #[inline]
+    pub fn map(&self, t: f32) -> f32 {
+        if self.is_identity() {
+            return t;
+        }
+        let n = self.cycles.max(1) as f32;
+        let saw = (t * n).fract();
+        match self.mode {
+            PaletteCycleMode::Wrap => saw,
+            PaletteCycleMode::Mirror => 1.0 - (1.0 - saw * 2.0).abs(),
+        }
+    }
+}
+
+/// Shared per-subpixel colorizer: the single colorize pass for ALL outputs —
+/// the TUI render path (`FrameBuffer::from_downsampled`, which also feeds GIF,
+/// WebM, headless print, and frame capture) and PNG export (`save_frame_as_png`).
+///
+/// `brightness` is the normalized 0..1 subpixel value. `mapping` applies the
+/// intensity tone curve. `diff_norm` is the white-point-normalized signed
+/// temporal difference (lever 3); `temporal_strength` 0.0 disables temporal
+/// modulation, making this byte-identical to `map_brightness_rgb`.
+/// `cycle` applies a [`PaletteCycle`] remap between the tone curve and the
+/// gradient lookup. Pass [`PaletteCycle::default()`] for identity behavior
+/// (byte-identical to the pre-cycle path).
+#[allow(clippy::too_many_arguments)]
+pub fn colorize_subpixel(
+    brightness: f32,
+    palette: Palette,
+    reverse: bool,
+    invert: bool,
+    hue_shift: f32,
+    mapping: Option<&IntensityMapping>,
+    diff_norm: f32,
+    temporal_strength: f32,
+    temporal_mode: TemporalMode,
+    cycle: PaletteCycle,
+    temporal_accent: Option<RgbColor>,
+) -> RgbColor {
+    let base = map_brightness_rgb_cycled(
+        brightness,
+        palette.clone(),
+        reverse,
+        invert,
+        hue_shift,
+        mapping,
+        cycle,
+    );
+    if temporal_strength <= 0.0 {
+        return base;
+    }
+    temporal_modulate(
+        base,
+        diff_norm,
+        temporal_mode,
+        temporal_strength,
+        palette,
+        temporal_accent,
+    )
+}
+
+/// Maximum hue rotation (degrees) at |blend| = 1, before strength scaling.
+const TEMPORAL_MAX_HUE_DEG: f32 = 60.0;
+/// tanh steepness for the white-point-normalized diff.
+const TEMPORAL_TANH_K: f32 = 6.0;
+
+fn temporal_modulate(
+    base: RgbColor,
+    diff_norm: f32,
+    mode: TemporalMode,
+    strength: f32,
+    palette: Palette,
+    accent: Option<RgbColor>,
+) -> RgbColor {
+    let blend = (TEMPORAL_TANH_K * diff_norm).tanh(); // -1..1; growing front ⇒ +, decaying ⇒ -
+    if blend == 0.0 || strength <= 0.0 {
+        return base;
+    }
+    match mode {
+        TemporalMode::Hue => {
+            let oklch = srgb_to_oklch(base);
+            // Achromatic colors (gray/white/black) have no hue to rotate
+            // (`srgb_to_oklch` returns NaN); leave them untouched.
+            if oklch.h.is_nan() {
+                return base;
+            }
+            let h = oklch.h + blend * TEMPORAL_MAX_HUE_DEG * strength;
+            oklch_to_srgb(oklch.l, oklch.c, h)
+        }
+        TemporalMode::Accent => {
+            // Front accent defaults to the palette's own vivid bright stop
+            // (brightness 0.85), NOT the hot end (brightness 1.0) — many palettes
+            // desaturate to white/gray at 1.0, which gives a washed, off-palette
+            // front. Sampling the palette keeps the accent on its own gradient.
+            // A hand-picked `accent` (CLI/preset) overrides this.
+            let accent =
+                accent.unwrap_or_else(|| palette_accent_color(&palette, false, false, 0.0, None));
+            let t = blend.max(0.0) * strength;
+            mix_oklch(base, accent, t)
+        }
+    }
+}
+
+/// Interpolate two OKLch hues (degrees) along the short arc, NaN-safe.
+///
+/// An achromatic endpoint (gray/white/black) has a "powerless" hue
+/// (`srgb_to_oklch` returns NaN). Interpolating toward NaN would poison the
+/// result (`NaN * t == NaN` for every `t`, including 0), so we fall back to the
+/// chromatic endpoint's hue — matching CSS Color 4 "missing component" rules.
+fn lerp_hue(a: f32, b: f32, t: f32) -> f32 {
+    match (a.is_nan(), b.is_nan()) {
+        (true, true) => 0.0, // both achromatic: hue irrelevant (chroma ~0)
+        (true, false) => b,
+        (false, true) => a,
+        (false, false) => {
+            let mut delta = b - a;
+            if delta > 180.0 {
+                delta -= 360.0;
+            } else if delta < -180.0 {
+                delta += 360.0;
+            }
+            a + delta * t
+        }
+    }
+}
+
+/// Linear interpolation of two sRGB colors through OKLch (t in 0..1).
+fn mix_oklch(a: RgbColor, b: RgbColor, t: f32) -> RgbColor {
+    let t = t.clamp(0.0, 1.0);
+    // Short-circuit the endpoints: avoids round-tripping `a`/`b` through OKLch
+    // (lossy, and a NaN hue on an achromatic endpoint would corrupt even t==0).
+    if t <= 0.0 {
+        return a;
+    }
+    if t >= 1.0 {
+        return b;
+    }
+    let oa = srgb_to_oklch(a);
+    let ob = srgb_to_oklch(b);
+    let l = oa.l + (ob.l - oa.l) * t;
+    let c = oa.c + (ob.c - oa.c) * t;
+    let h = lerp_hue(oa.h, ob.h, t);
+    oklch_to_srgb(l, c, h)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn palettes_match_all_palettes() {
+        // PALETTES is the identity table; ALL_PALETTES is what `palette_index`
+        // (and saved configs) index into. parse_palette_index derives the index
+        // from PALETTES position, so the two lists MUST stay in the same order.
+        assert_eq!(
+            PALETTES.len(),
+            ALL_PALETTES.len(),
+            "PALETTES and ALL_PALETTES differ in length"
+        );
+        for (i, (spec, palette)) in PALETTES.iter().zip(ALL_PALETTES.iter()).enumerate() {
+            assert_eq!(
+                &spec.palette, palette,
+                "PALETTES[{i}] ({:?}) != ALL_PALETTES[{i}] ({:?})",
+                spec.palette, palette
+            );
+        }
+    }
+
+    #[test]
+    fn palette_names_round_trip() {
+        // Every built-in palette's display name must parse back to itself
+        // (case-insensitively) and resolve to its own index.
+        for (i, spec) in PALETTES.iter().enumerate() {
+            assert_eq!(spec.palette.name(), spec.name);
+            let parsed = PALETTES
+                .iter()
+                .position(|s| s.name.eq_ignore_ascii_case(spec.name));
+            assert_eq!(parsed, Some(i), "name {} did not round-trip", spec.name);
+            assert_ne!(spec.name, "Custom", "built-in palette named Custom");
+        }
+    }
+
+    #[test]
+    fn custom_palette_name_is_custom() {
+        assert_eq!(Palette::Custom(vec![]).name(), "Custom");
+    }
+
+    #[test]
+    fn mix_oklch_achromatic_endpoint_preserves_chromatic_hue() {
+        // Regression: white/gray has a NaN ("powerless") OKLch hue. Mixing a
+        // saturated color toward it must NOT poison the result into the
+        // complement (the old `oa.h + (NaN - oa.h)*t` bug turned green→magenta,
+        // even at t==0). Endpoints must be exact, and a partial mix must stay
+        // on the green→white path (hue near green, never magenta).
+        let green = RgbColor { r: 0, g: 100, b: 6 };
+        let white = RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        };
+        assert_eq!(
+            mix_oklch(green, white, 0.0),
+            green,
+            "t=0 must be exact base"
+        );
+        assert_eq!(
+            mix_oklch(green, white, 1.0),
+            white,
+            "t=1 must be exact target"
+        );
+        let mid = mix_oklch(green, white, 0.5);
+        // A green→white blend is a desaturated green: green channel dominant,
+        // and crucially NOT red-dominant (magenta/red = the bug signature).
+        assert!(
+            mid.g >= mid.r && mid.g >= mid.b,
+            "green→white midpoint must stay greenish, got {mid:?}"
+        );
+    }
+
+    #[test]
+    fn temporal_modulate_accent_achromatic_hot_end_stays_in_palette() {
+        // Slime's hot end is pure white (chroma 0). Accent mode with the
+        // hot-end fallback must keep a green base greenish, never flip to
+        // magenta (the NaN-hue bug).
+        let green = RgbColor {
+            r: 0,
+            g: 120,
+            b: 10,
+        };
+        let out = temporal_modulate(green, 0.6, TemporalMode::Accent, 0.5, Palette::Slime, None);
+        assert!(
+            out.g >= out.r,
+            "growing front on Slime must not flip to magenta, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn temporal_modulate_hue_achromatic_base_is_identity() {
+        // A white/gray base has no hue; hue-mode rotation must leave it intact
+        // rather than producing NaN garbage.
+        let white = RgbColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        };
+        let out = temporal_modulate(white, 0.9, TemporalMode::Hue, 1.0, Palette::Slime, None);
+        assert_eq!(out, white, "achromatic base must be unchanged in hue mode");
+    }
+
+    #[test]
+    fn temporal_modulate_zero_diff_is_identity() {
+        let base = RgbColor {
+            r: 120,
+            g: 200,
+            b: 80,
+        };
+        let out = temporal_modulate(base, 0.0, TemporalMode::Hue, 1.0, Palette::Organic, None);
+        assert_eq!(out, base);
+    }
+
+    #[test]
+    fn temporal_modulate_hue_shifts_with_positive_diff() {
+        let base = RgbColor {
+            r: 120,
+            g: 200,
+            b: 80,
+        };
+        let out = temporal_modulate(base, 0.5, TemporalMode::Hue, 1.0, Palette::Organic, None);
+        assert_ne!(out, base, "a growing front should change hue");
+    }
+
+    #[test]
+    fn temporal_accent_some_overrides_hot_end() {
+        let base = RgbColor::new(10, 80, 40);
+        let custom = RgbColor::new(255, 180, 60);
+        // Accent mode, strong diff: with a custom accent the result blends toward it.
+        let with_custom = temporal_modulate(
+            base,
+            0.9,
+            TemporalMode::Accent,
+            1.0,
+            Palette::Slime,
+            Some(custom),
+        );
+        let palette_default =
+            temporal_modulate(base, 0.9, TemporalMode::Accent, 1.0, Palette::Slime, None);
+        assert_ne!(
+            with_custom, palette_default,
+            "custom accent must differ from the palette-derived accent"
+        );
+        // The None path blends toward the palette's own vivid stop
+        // (`palette_accent_color`, brightness 0.85), NOT the hot end (1.0).
+        let palette_accent = palette_accent_color(&Palette::Slime, false, false, 0.0, None);
+        let t = (TEMPORAL_TANH_K * 0.9_f32).tanh() * 1.0;
+        let expect_none = mix_oklch(base, palette_accent, t);
+        assert_eq!(
+            palette_default, expect_none,
+            "None must blend toward palette_accent_color"
+        );
+    }
 
     #[test]
     fn test_map_brightness_min() {
@@ -3604,5 +4096,139 @@ mod tests {
         if oklch.c < OKLCH_EPSILON {
             assert!(oklch.h.is_nan(), "When chroma < epsilon, hue should be NaN");
         }
+    }
+
+    #[test]
+    fn colorize_subpixel_matches_map_brightness_rgb_when_no_temporal() {
+        let p = Palette::Organic;
+        let expected = map_brightness_rgb(0.6, p.clone(), false, false, 0.0, None);
+        // strength 0.0 and identity cycle ⇒ identical to the legacy mapping
+        let got = colorize_subpixel(
+            0.6,
+            p,
+            false,
+            false,
+            0.0,
+            None,
+            0.0,
+            0.0,
+            TemporalMode::Hue,
+            PaletteCycle::default(),
+            None,
+        );
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn palette_cycle_identity_is_noop() {
+        let id = PaletteCycle::default();
+        assert!(id.is_identity());
+        for &t in &[0.0_f32, 0.25, 0.5, 0.75, 1.0] {
+            assert_eq!(id.map(t), t, "n=1 must be identity at t={t}");
+        }
+        // cycles=0 clamps to identity (defensive)
+        let zero = PaletteCycle {
+            cycles: 0,
+            mode: PaletteCycleMode::Wrap,
+        };
+        assert!(zero.is_identity());
+        assert_eq!(zero.map(0.4), 0.4);
+    }
+
+    #[test]
+    fn palette_cycle_wrap_is_sawtooth() {
+        let c = PaletteCycle {
+            cycles: 2,
+            mode: PaletteCycleMode::Wrap,
+        };
+        assert!((c.map(0.0) - 0.0).abs() < 1e-6);
+        assert!((c.map(0.25) - 0.5).abs() < 1e-6);
+        assert!((c.map(0.5) - 0.0).abs() < 1e-6); // seam: fract(1.0) = 0
+        assert!((c.map(0.75) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn palette_cycle_mirror_is_triangle() {
+        let c = PaletteCycle {
+            cycles: 2,
+            mode: PaletteCycleMode::Mirror,
+        };
+        assert!((c.map(0.0) - 0.0).abs() < 1e-6);
+        assert!((c.map(0.25) - 1.0).abs() < 1e-6); // peak at quarter
+        assert!((c.map(0.5) - 0.0).abs() < 1e-6); // trough at half
+        assert!((c.map(0.75) - 1.0).abs() < 1e-6);
+        // output stays in 0..1 across a sweep
+        for i in 0..=100 {
+            let t = i as f32 / 100.0;
+            let o = c.map(t);
+            assert!(
+                (0.0..=1.0).contains(&o),
+                "mirror out of range at t={t}: {o}"
+            );
+        }
+    }
+
+    #[test]
+    fn palette_cycle_mode_from_str() {
+        use std::str::FromStr;
+        assert_eq!(
+            PaletteCycleMode::from_str("wrap").unwrap(),
+            PaletteCycleMode::Wrap
+        );
+        assert_eq!(
+            PaletteCycleMode::from_str("MIRROR").unwrap(),
+            PaletteCycleMode::Mirror
+        );
+        assert!(PaletteCycleMode::from_str("bogus").is_err());
+    }
+
+    #[test]
+    fn cycled_core_identity_matches_legacy() {
+        // cycles=1 must be byte-identical to the legacy public fns (back-compat).
+        let id = PaletteCycle::default();
+        for &b in &[0.0_f32, 0.3, 0.6, 1.0] {
+            assert_eq!(
+                map_brightness_rgb_cycled(b, Palette::Organic, false, false, 0.0, None, id),
+                map_brightness_rgb(b, Palette::Organic, false, false, 0.0, None),
+            );
+            assert_eq!(
+                map_brightness_cycled(b, Palette::Organic, false, false, None, id),
+                map_brightness(b, Palette::Organic, false, false, None),
+            );
+        }
+    }
+
+    #[test]
+    fn cycled_core_changes_color_when_active() {
+        // A mid brightness under cycles=2 mirror maps to a different gradient index,
+        // so the resulting color must differ from the identity lookup.
+        let active = PaletteCycle {
+            cycles: 2,
+            mode: PaletteCycleMode::Mirror,
+        };
+        let id = PaletteCycle::default();
+        let on = map_brightness_rgb_cycled(0.25, Palette::Organic, false, false, 0.0, None, active);
+        let off = map_brightness_rgb_cycled(0.25, Palette::Organic, false, false, 0.0, None, id);
+        assert_ne!(on, off, "cycles=2 must remap the gradient index");
+    }
+
+    #[test]
+    fn colorize_subpixel_identity_cycle_matches_map_brightness_rgb() {
+        let id = PaletteCycle::default();
+        let got = colorize_subpixel(
+            0.6,
+            Palette::Organic,
+            false,
+            false,
+            0.0,
+            None,
+            0.0,
+            0.0,
+            TemporalMode::Hue,
+            id,
+            None,
+        );
+        let want = map_brightness_rgb(0.6, Palette::Organic, false, false, 0.0, None);
+        assert_eq!(got, want);
     }
 }

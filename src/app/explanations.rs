@@ -69,7 +69,8 @@ pub fn print_parameter_explanations() {
     println!("    Smoothness of Gaussian blur (only for gaussian kernel).");
     println!("    • Lower sigma (0.5-0.8): Less spreading, sharper details");
     println!("    • Higher sigma (1.0-2.0): More spreading, softer, blurred trails");
-    println!("    Range: 0.5-2.0");
+    println!("    • Higher sigma (2.0-4.0): broad, glowing diffusion (separable path)");
+    println!("    Range: 0.5-4.0");
 
     println!("\n  --max-brightness <FLOAT> (default: 100.0)");
     println!("    Fixed maximum brightness for normalization.");
@@ -99,13 +100,16 @@ pub fn print_parameter_explanations() {
     println!("    • clusters: Multiple random clusters");
     println!("    • food: Load from image (see --food)");
 
-    println!("\n  --species <SPEC>");
-    println!("    Define multiple species with different behaviors.");
-    println!("    Format: 'name:count@sensor_angle,rotation_angle,step_size,deposit:color'");
-    println!(
-        "    Example: --species 'red:20k@22.5,45,1.0,5.0:ff0000,blue:30k@30,60,1.5,3.0:0000ff'"
-    );
-    println!("    Enables multi-species simulations with distinct movement patterns.");
+    #[cfg(feature = "multi-species")]
+    {
+        println!("\n  --species <SPEC>");
+        println!("    Define multiple species with different behaviors.");
+        println!("    Format: 'name:count@sensor_angle,rotation_angle,step_size,deposit:color'");
+        println!(
+            "    Example: --species 'red:20k@22.5,45,1.0,5.0:ff0000,blue:30k@30,60,1.5,3.0:0000ff'"
+        );
+        println!("    Enables multi-species simulations with distinct movement patterns.");
+    }
 
     println!("\n\nENVIRONMENTAL FORCES");
     println!("─────────────────────────────────────────────────────────────────────────");
@@ -159,7 +163,18 @@ pub fn print_parameter_explanations() {
     println!("    Character set for rendering.");
     println!("    • --ascii: ASCII characters only (widest compatibility)");
     println!("    • --braille: Braille Unicode characters (2× vertical resolution)");
-    println!("    • --quadrant: Quadrant blocks (4× vertical resolution)");
+    println!("    • --quadrant: Quadrant blocks (2×2 subpixels per cell)");
+
+    println!("\n  --color-aa <off|subtle|strong> (default: auto)");
+    println!("    Color anti-aliasing for subcell-shape charsets (braille,");
+    println!("    quadrant, half-block, ascii). These render shape at higher");
+    println!("    resolution than color, so thin diagonal veins staircase in");
+    println!("    color. AA low-passes the per-cell color so it washes into a");
+    println!("    gradient while the glyph stays crisp.");
+    println!("    • off:    raw per-cell color (no blur)");
+    println!("    • subtle: gentle weighted-center 3×3 blur");
+    println!("    • strong: full 3×3 box blur");
+    println!("    Auto = strong for braille, off otherwise. Toggle live with \".");
 
     println!("\n  --resolution <WxH> (default: 400x200)");
     println!("    Internal simulation grid size.");
@@ -167,7 +182,7 @@ pub fn print_parameter_explanations() {
     println!("    • Default (400×200): Good balance");
     println!("    • Larger (800×400): Slower, more detail");
 
-    println!("\n  --dither-mode <MODE> (default: none)");
+    println!("\n  --dither-mode <MODE> (default: none) [dev-only]");
     println!("    Dithering algorithm for color quantization.");
     println!("    • none: No dithering");
     println!("    • ordered: Bayer matrix ordered dithering");
@@ -242,8 +257,11 @@ pub fn print_parameter_explanations() {
     println!("\n  # Chaotic exploration");
     println!("  tslime --sensor-angle 45 --rotation-angle 60 --sensor-distance 15");
 
-    println!("\n  # Multi-species competition");
-    println!("  tslime --species 'red:20k:ff0000,blue:20k:0000ff' --separate-species-trails");
+    #[cfg(feature = "multi-species")]
+    {
+        println!("\n  # Multi-species competition");
+        println!("  tslime --species 'red:20k:ff0000,blue:20k:0000ff' --separate-species-trails");
+    }
 
     println!("\n  # Wind-driven river pattern");
     println!("  tslime --preset river --wind 0.3,0.0");
@@ -251,6 +269,6 @@ pub fn print_parameter_explanations() {
     println!("\n  # High-res export");
     println!("  tslime --resolution 800x400 --export-gif output.gif --export-frames 100");
 
-    println!("\n\nFor more information, visit: https://github.com/yourusername/tslime");
+    println!("\n\nFor more information, visit: https://github.com/tamirelazar/tslime");
     println!();
 }

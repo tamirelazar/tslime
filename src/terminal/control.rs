@@ -3,8 +3,6 @@
 //! This module re-exports types from `state` and `input` modules for backwards compatibility.
 //! New code should use `terminal::state` and `terminal::input` directly.
 
-// Re-export everything from state module
 pub use crate::terminal::state::*;
 
-// Re-export input handling functions
 pub use crate::terminal::input::{charset_name, handle_key_event, palette_name, preset_name};

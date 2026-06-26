@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::num::ParseIntError;
 use std::str::FromStr;
 
@@ -12,8 +13,9 @@ use crate::config_defaults::{
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
-    Aspect, BoundaryMode, ChromeStyle, DiffusionKernel, InitMode, Obstacle, Preset, SimConfig,
-    TerminalSizeThreshold, TerrainType, Wind, WindowFrame, WindowPadding,
+    Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode, Obstacle,
+    PointConfig, Preset, SimConfig, TerminalSizeThreshold, TerrainType, TransitionStyle, Wind,
+    WindowFrame, WindowPadding,
 };
 use crate::validation::Validatable;
 
@@ -105,7 +107,7 @@ impl std::str::FromStr for PauseStyle {
 }
 
 // Re-export palette types from render module for backward compatibility
-pub use crate::render::palette::{num_palettes, Palette, ALL_PALETTES, NUM_PALETTES};
+pub use crate::render::palette::{num_palettes, Palette, ALL_PALETTES, NUM_PALETTES, PALETTES};
 
 #[derive(Debug, Clone)]
 /// Simulation grid resolution.
@@ -116,7 +118,7 @@ pub struct Resolution {
     pub height: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Configuration for a specific agent species.
 pub struct SpeciesArg {
     /// Name of the species.
@@ -133,6 +135,12 @@ pub struct SpeciesArg {
     pub deposit_amount: f32,
     /// RGB color.
     pub color: RgbColor,
+    /// Trail-based parameter modulation (36 Points). Persistence-only: carried
+    /// through saved-config TOML so trail-modulated presets (Pulse, Flocking, …)
+    /// survive a save/reload round-trip. The CLI string form does not set it
+    /// (`FromStr` leaves it `None`); it is sourced from the live `SpeciesConfig`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trail_modulation: Option<PointConfig>,
 }
 
 impl std::str::FromStr for SpeciesArg {
@@ -207,6 +215,7 @@ impl std::str::FromStr for SpeciesArg {
                 step_size,
                 deposit_amount,
                 color,
+                trail_modulation: None,
             })
         } else {
             let parts: Vec<&str> = rest.rsplitn(2, ':').collect();
@@ -230,6 +239,7 @@ impl std::str::FromStr for SpeciesArg {
                 step_size,
                 deposit_amount,
                 color,
+                trail_modulation: None,
             })
         }
     }
@@ -290,42 +300,13 @@ impl FromStr for Preset {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "network" => Ok(Preset::Network),
-            "exploratory" => Ok(Preset::Exploratory),
-            "tendrils" => Ok(Preset::Tendrils),
-            "organic" => Ok(Preset::Organic),
-            "minimal" => Ok(Preset::Minimal),
-            "moss" => Ok(Preset::Moss),
-            "cosmic" => Ok(Preset::Cosmic),
-            "fire" => Ok(Preset::Fire),
-            "zen" => Ok(Preset::Zen),
-            "storm" => Ok(Preset::Storm),
-            "river" => Ok(Preset::River),
-            "ethereal" => Ok(Preset::Ethereal),
-            "petri" | "petridish" => Ok(Preset::PetriDish),
-            "vortex" => Ok(Preset::Vortex),
-            "lightning" => Ok(Preset::Lightning),
-            "crystal" => Ok(Preset::Crystal),
-            "chaosedge" | "chaos-edge" | "chaos_edge" => Ok(Preset::ChaosEdge),
-            "blob" => Ok(Preset::Blob),
-            "worm" => Ok(Preset::Worm),
-            "pulse" => Ok(Preset::Pulse),
-            "coral" => Ok(Preset::Coral),
-            "flocking" => Ok(Preset::Flocking),
-            "maze" => Ok(Preset::Maze),
-            "ripple" => Ok(Preset::Ripple),
-            "vortex36" | "vortex-36" | "vortex_36" => Ok(Preset::Vortex36),
-            "chameleon" => Ok(Preset::Chameleon),
-            "dynamictendrils" | "dynamic-tendrils" | "dynamic_tendrils" => Ok(Preset::DynamicTendrils),
-            "morphingcoral" | "morphing-coral" | "morphing_coral" => Ok(Preset::MorphingCoral),
-            "reactiveswarm" | "reactive-swarm" | "reactive_swar" => Ok(Preset::ReactiveSwarm),
-            "duelingmodulators" | "dueling-modulators" | "dueling_modulators" => Ok(Preset::DuelingModulators),
-            _ => Err(format!(
-                "Invalid preset: {}. Must be one of: network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, petri, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon, dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators",
-                s
-            )),
-        }
+        crate::simulation::config::preset_from_name(s).ok_or_else(|| {
+            format!(
+                "Invalid preset: {}. Must be one of: {}",
+                s,
+                crate::simulation::config::preset_name_list()
+            )
+        })
     }
 }
 
@@ -343,15 +324,16 @@ impl FromStr for InitMode {
             "clusters" => Ok(InitMode::RandomClusters),
             "petri" => Ok(InitMode::Petri),
             "food" => Ok(InitMode::Food),
+            "foodconst" | "logo" | "logohold" => Ok(InitMode::FoodConstellation),
             _ => Err(format!(
-                "Invalid init mode: {}. Must be one of: random, central, circle, gradient, wave, spiral, clusters, petri, food",
+                "Invalid init mode: {}. Must be one of: random, central, circle, gradient, wave, spiral, clusters, petri, food, foodconst",
                 s
             )),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Configuration for a point attractor/repeller.
 pub struct AttractorArg {
     /// X coordinate.
@@ -388,7 +370,7 @@ impl std::str::FromStr for AttractorArg {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Configuration for wind force.
 pub struct WindArg {
     /// Horizontal wind component.
@@ -419,7 +401,7 @@ impl std::str::FromStr for WindArg {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Configuration for a physical obstacle.
 pub struct ObstacleArg {
     /// The obstacle definition.
@@ -561,6 +543,54 @@ impl FromStr for DiffusionKernel {
     }
 }
 
+impl FromStr for DepositCurve {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "linear" | "none" => Ok(DepositCurve::Linear),
+            "sqrt" => Ok(DepositCurve::Sqrt),
+            "log" => Ok(DepositCurve::Log),
+            "pow" => Ok(DepositCurve::Pow),
+            _ => Err(format!(
+                "Invalid deposit curve: {}. Must be one of: linear, sqrt, log, pow",
+                s
+            )),
+        }
+    }
+}
+
+impl FromStr for crate::render::palette::PaletteCycleMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "wrap" => Ok(crate::render::palette::PaletteCycleMode::Wrap),
+            "mirror" => Ok(crate::render::palette::PaletteCycleMode::Mirror),
+            _ => Err(format!(
+                "Invalid palette cycle mode: {}. Must be one of: wrap, mirror",
+                s
+            )),
+        }
+    }
+}
+
+impl FromStr for crate::render::charset::GlyphSelection {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "brightness" => Ok(crate::render::charset::GlyphSelection::Brightness),
+            "shape" => Ok(crate::render::charset::GlyphSelection::Shape),
+            "hybrid" => Ok(crate::render::charset::GlyphSelection::Hybrid),
+            _ => Err(format!(
+                "Invalid glyph selection: {}. Must be one of: brightness, shape, hybrid",
+                s
+            )),
+        }
+    }
+}
+
 #[derive(Parser, Debug, Clone)]
 #[command(name = "tslime")]
 #[command(about = "Terminal physarum simulation screensaver", long_about = None)]
@@ -654,7 +684,7 @@ pub struct Args {
         short = 'n',
         long = "population",
         value_name = "INT",
-        help = concat!("Number of agents [default: ", stringify!(population::DEFAULT_POPULATION), "]")
+        help = "Number of agents [default: 50000]"
     )]
     /// Number of agents in the simulation.
     pub population: Option<usize>,
@@ -662,7 +692,7 @@ pub struct Args {
     #[arg(
         long = "sensor-angle",
         value_name = "DEG",
-        help = concat!("Sensor spread angle in degrees [range: ", stringify!(agent::MIN_SENSOR_ANGLE), "-", stringify!(agent::MAX_SENSOR_ANGLE), "]")
+        help = "Sensor spread angle in degrees [range: 5-90]"
     )]
     /// Angle between sensors (in degrees).
     pub sensor_angle: Option<f32>,
@@ -670,7 +700,7 @@ pub struct Args {
     #[arg(
         long = "sensor-distance",
         value_name = "FLOAT",
-        help = concat!("Sensor range in pixels [range: ", stringify!(agent::MIN_SENSOR_DISTANCE), "-", stringify!(agent::MAX_SENSOR_DISTANCE), "]")
+        help = "Sensor range in pixels [range: 1-50]"
     )]
     /// Distance to sensors.
     pub sensor_distance: Option<f32>,
@@ -678,7 +708,7 @@ pub struct Args {
     #[arg(
         long = "rotation-angle",
         value_name = "DEG",
-        help = concat!("Turn amount per step in degrees [range: ", stringify!(agent::MIN_ROTATION_ANGLE), "-", stringify!(agent::MAX_ROTATION_ANGLE), "]")
+        help = "Turn amount per step in degrees [range: 5-90]"
     )]
     /// Maximum rotation angle per step (in degrees).
     pub rotation_angle: Option<f32>,
@@ -686,7 +716,7 @@ pub struct Args {
     #[arg(
         long = "step-size",
         value_name = "FLOAT",
-        help = concat!("Movement speed in pixels per step [range: ", stringify!(agent::MIN_STEP_SIZE), "-", stringify!(agent::MAX_STEP_SIZE), "]")
+        help = "Movement speed in pixels per step [range: 0.01-10]"
     )]
     /// Distance moved per step.
     pub step_size: Option<f32>,
@@ -694,15 +724,15 @@ pub struct Args {
     #[arg(
         long = "decay",
         value_name = "FLOAT",
-        help = concat!("Trail decay factor (0.0-1.0) [range: ", stringify!(trail::MIN_DECAY_FACTOR), "-", stringify!(trail::MAX_DECAY_FACTOR), "]")
+        help = "Trail decay factor [range: 0.5-0.9999]"
     )]
-    /// Trail decay factor (0.0-1.0).
+    /// Trail decay factor (validated range 0.5-0.9999).
     pub decay_factor: Option<f32>,
 
     #[arg(
         long = "deposit",
         value_name = "FLOAT",
-        help = concat!("Amount of pheromone deposited by agents per step [range: ", stringify!(agent::MIN_DEPOSIT_AMOUNT), "-", stringify!(agent::MAX_DEPOSIT_AMOUNT), "]")
+        help = "Amount of pheromone deposited by agents per step [range: 0.1-20]"
     )]
     /// Amount of pheromone deposited per step.
     pub deposit_amount: Option<f32>,
@@ -733,11 +763,46 @@ pub struct Args {
     pub diffusion_sigma: Option<f32>,
 
     #[arg(
+        long = "deposit-curve",
+        value_name = "CURVE",
+        help = "Nonlinear deposit curve (linear, sqrt, log, pow) [default: linear]"
+    )]
+    /// Nonlinear deposit curve.
+    pub deposit_curve: Option<DepositCurve>,
+
+    #[arg(
+        long = "deposit-scale",
+        value_name = "FLOAT",
+        help = "Multiplier applied after the deposit curve [range: 0.0-10.0, default: 1.0]"
+    )]
+    /// Deposit scale (post-curve multiplier).
+    pub deposit_scale: Option<f32>,
+
+    #[arg(
+        long = "deposit-gamma",
+        value_name = "FLOAT",
+        help = "Exponent for --deposit-curve pow [range: 0.1-4.0, default: 1.0]"
+    )]
+    /// Deposit gamma (Pow exponent).
+    pub deposit_gamma: Option<f32>,
+
+    #[arg(
+        long = "deposit-cap",
+        value_name = "FLOAT",
+        help = "Clamp cap for the folded deposit contribution (0 = off) [default: 0.0]"
+    )]
+    /// Deposit cap (0 = off).
+    pub deposit_cap: Option<f32>,
+
+    #[arg(
         long = "preset",
         value_name = "NAME",
-        help = "Use named preset (network, exploratory, tendrils, organic, minimal, moss, cosmic, fire, zen, storm, river, ethereal, vortex, lightning, crystal, chaosedge, blob, worm, pulse, coral, flocking, maze, ripple, vortex36, chameleon, dynamictendrils, morphingcoral, reactiveswarm, duelingmodulators)"
+        default_value = "organic",
+        help = "Use named preset (see README); defaults to 'organic'. Names are case-insensitive"
     )]
-    /// Named parameter preset.
+    /// Named parameter preset. A bare launch (no `--preset`) defaults to Organic,
+    /// so the default launch and `--preset organic` resolve identically — there is
+    /// no separate hard-coded default config set.
     pub preset: Option<Preset>,
 
     #[arg(
@@ -751,7 +816,7 @@ pub struct Args {
     #[arg(
         long = "window-frame",
         value_name = "MODE",
-        help = "Window frame display mode (none, negative, accented, glow, reactive, food, frame)"
+        help = "Window frame display mode (none, accented, glow, frame)"
     )]
     /// Window frame display mode for terminal visualization.
     pub window_frame: Option<WindowFrame>,
@@ -773,6 +838,28 @@ pub struct Args {
     pub chrome_style: Option<ChromeStyle>,
 
     #[arg(
+        long = "transition",
+        value_name = "STYLE",
+        help = "Preset-switch announcement: off (default), toast, figlet, or type"
+    )]
+    /// How a runtime preset switch is announced on screen.
+    pub transition: Option<TransitionStyle>,
+
+    #[arg(
+        long = "transition-tagline",
+        help = "Show the preset tagline during figlet/type transitions"
+    )]
+    /// Show the preset tagline during figlet/type transitions.
+    pub transition_tagline: bool,
+
+    #[arg(
+        long = "no-notifications",
+        help = "Suppress transient notifications (toasts + ambient param readouts); toggle at runtime with Ctrl+N"
+    )]
+    /// Start with transient notifications suppressed. Toggle live with `Ctrl+N`.
+    pub no_notifications: bool,
+
+    #[arg(
         long = "aspect",
         value_name = "RATIO",
         help = "Window aspect ratio: 3:2 (default), square, 4:3, 16:10, 16:9, or W:H"
@@ -787,6 +874,22 @@ pub struct Args {
     )]
     /// Outer padding between terminal edge and window frame.
     pub window_padding: Option<WindowPadding>,
+
+    #[arg(
+        long = "frame-matte-cols",
+        value_name = "COLS",
+        help = "Background gap (columns) between the frame border and the simulation (left/right)"
+    )]
+    /// Frame background matte width in columns (left/right).
+    pub frame_matte_cols: Option<usize>,
+
+    #[arg(
+        long = "frame-matte-rows",
+        value_name = "ROWS",
+        help = "Background gap (rows) between the frame border and the simulation (top/bottom)"
+    )]
+    /// Frame background matte height in rows (top/bottom).
+    pub frame_matte_rows: Option<usize>,
 
     #[arg(
         long = "show-status-bar",
@@ -850,7 +953,7 @@ pub struct Args {
         long = "food-scale",
         value_name = "FLOAT",
         default_value_t = food::DEFAULT_FOOD_SCALE,
-        help = concat!("Scale factor for food image relative to canvas [default: ", stringify!(food::DEFAULT_FOOD_SCALE), "]")
+        help = "Scale factor for food image relative to canvas"
     )]
     /// Scale factor for food image.
     pub food_scale: f32,
@@ -860,7 +963,7 @@ pub struct Args {
         long = "time",
         value_name = "FLOAT",
         default_value_t = time::DEFAULT_FRAME_DELAY,
-        help = concat!("Frame delay in seconds [default: ", stringify!(time::DEFAULT_FRAME_DELAY), "]")
+        help = "Frame delay in seconds"
     )]
     /// Frame delay in seconds.
     pub frame_delay: f32,
@@ -869,7 +972,7 @@ pub struct Args {
         long = "fps",
         value_name = "INT",
         default_value_t = time::DEFAULT_FPS as usize,
-        help = concat!("Target frames per second [default: ", stringify!(time::DEFAULT_FPS as usize), "]")
+        help = "Target frames per second"
     )]
     /// Target FPS.
     pub fps: usize,
@@ -878,7 +981,7 @@ pub struct Args {
         long = "time-scale",
         value_name = "FLOAT",
         default_value_t = time::DEFAULT_TIME_SCALE,
-        help = concat!("Time scaling factor [range: ", stringify!(time::MIN_TIME_SCALE), "-", stringify!(time::MAX_TIME_SCALE), "]")
+        help = "Time scaling factor [range: 0.1-10]"
     )]
     /// Simulation time scale.
     pub time_scale: f32,
@@ -992,26 +1095,25 @@ pub struct Args {
     #[arg(
         long = "palette-shift",
         value_name = "DEG",
-        default_value = "0",
-        help = "Rotate palette hue over time (degrees per second, negative for reverse rotation)"
+        help = "Rotate palette hue over time (degrees/sec, negative reverses)"
     )]
-    /// Palette hue shift speed (degrees/sec).
-    pub palette_shift: f32,
+    /// Palette hue shift speed (degrees/sec). None = use per-preset default or 0.
+    pub palette_shift: Option<f32>,
 
     #[arg(
         long = "intensity-mapping",
         value_name = "MODE",
-        default_value = intensity_mapping::DEFAULT_TYPE,
-        help = "Intensity-to-color mapping (linear, log, exp, sqrt, square, sigmoid, smoothstep, quantize, perlin, split)"
+        help = "Intensity-to-color mapping (linear, log, exp, sqrt, square, sigmoid, smoothstep, quantize, perlin, split) [default: per-preset, currently log]"
     )]
     /// Intensity mapping mode for non-linear color distribution.
-    pub intensity_mapping: String,
+    /// `None` means "use the per-preset render default" (see `RenderArtDefaults`).
+    pub intensity_mapping: Option<String>,
 
     #[arg(
         long = "intensity-mapping-base",
         value_name = "FLOAT",
         default_value_t = intensity_mapping::DEFAULT_LOG_BASE,
-        help = concat!("Base parameter for log/exp mapping [default: ", stringify!(intensity_mapping::DEFAULT_LOG_BASE), "]")
+        help = "Base parameter for log/exp mapping"
     )]
     /// Base for logarithmic/exponential intensity mapping.
     pub intensity_mapping_base: f32,
@@ -1020,7 +1122,7 @@ pub struct Args {
         long = "intensity-mapping-gamma",
         value_name = "FLOAT",
         default_value_t = intensity_mapping::DEFAULT_GAMMA,
-        help = concat!("Gamma for power mapping [default: ", stringify!(intensity_mapping::DEFAULT_GAMMA), "]")
+        help = "Gamma for power mapping"
     )]
     /// Gamma for power intensity mapping.
     pub intensity_mapping_gamma: f32,
@@ -1029,16 +1131,43 @@ pub struct Args {
         long = "intensity-mapping-levels",
         value_name = "INT",
         default_value_t = intensity_mapping::DEFAULT_LEVELS,
-        help = concat!("Levels for quantize mapping [default: ", stringify!(intensity_mapping::DEFAULT_LEVELS), "]")
+        help = "Levels for quantize mapping"
     )]
     /// Quantization levels for intensity mapping.
     pub intensity_mapping_levels: u8,
 
     #[arg(
+        long = "palette-cycles",
+        value_name = "N",
+        value_parser = clap::value_parser!(u32).range(1..=64),
+        help = "Repeat the palette N times across the brightness range (1 = off)"
+    )]
+    /// `None` means "use the per-preset render default" (see `RenderArtDefaults`).
+    pub palette_cycles: Option<u32>,
+
+    #[arg(
+        long = "palette-cycle-mode",
+        value_name = "MODE",
+        help = "Palette repeat mode: wrap (sawtooth) or mirror (triangle, default)"
+    )]
+    /// `None` means "use the per-preset render default" (mirror).
+    pub palette_cycle_mode: Option<String>,
+
+    /// Character-selection strategy (TUI/print only). `brightness` forces the
+    /// tonal ramp and `shape` the shape path on Ascii/Braille/Sculpted; `hybrid`
+    /// adds Sobel edge-orientation directional glyphs on Ascii only.
+    #[arg(long = "glyph-selection", value_name = "MODE")]
+    pub glyph_selection: Option<String>,
+
+    /// Sobel gradient-magnitude threshold for --glyph-selection hybrid (0.0..2.0).
+    #[arg(long = "glyph-edge-threshold", value_name = "T")]
+    pub glyph_edge_threshold: Option<f32>,
+
+    #[arg(
         long = "perlin-strength",
         value_name = "FLOAT",
         default_value_t = intensity_mapping::DEFAULT_PERLIN_STRENGTH,
-        help = concat!("Perlin noise amplitude/strength (0.0-1.0) [default: ", stringify!(intensity_mapping::DEFAULT_PERLIN_STRENGTH), "]")
+        help = "Perlin noise amplitude/strength (0.0-1.0)"
     )]
     /// Amplitude for perlin intensity mapping (affects both sim and logo).
     pub perlin_strength: f32,
@@ -1056,7 +1185,7 @@ pub struct Args {
         long = "logo-mapping-base",
         value_name = "FLOAT",
         default_value_t = intensity_mapping::DEFAULT_LOGO_BASE,
-        help = concat!("Base for logo log/exp mapping [default: ", stringify!(intensity_mapping::DEFAULT_LOGO_BASE), "]")
+        help = "Base for logo log/exp mapping"
     )]
     /// Base for the logo's logarithmic/exponential mapping.
     pub logo_mapping_base: f32,
@@ -1155,6 +1284,72 @@ pub struct Args {
     pub gradient_strength: f32,
 
     #[arg(
+        long = "temporal-color",
+        value_name = "VALUE",
+        help = "Temporal-color strength (0.0 = off). Colors the growing front."
+    )]
+    /// Temporal-color modulation strength (lever 3).
+    pub temporal_color: Option<f32>,
+
+    #[arg(
+        long = "temporal-lag",
+        value_name = "FRAMES",
+        help = "Temporal lag in frames (larger = longer-lived front color); values below 1 are treated as 1 frame"
+    )]
+    /// Temporal lag in frames; values below 1 are treated as 1 frame.
+    pub temporal_lag: Option<f32>,
+
+    #[arg(
+        long = "temporal-mode",
+        value_name = "MODE",
+        help = "Temporal color mode: \"hue\" or \"accent\""
+    )]
+    /// Temporal color modulation mode.
+    pub temporal_mode: Option<String>,
+
+    #[arg(
+        long = "temporal-accent",
+        value_name = "HEX",
+        help = "Hand-picked front accent color (Accent mode), e.g. ffb347; default = palette hot-end"
+    )]
+    /// Hand-picked front accent color hex (Accent mode).
+    pub temporal_accent: Option<String>,
+
+    #[arg(
+        long = "afterglow",
+        value_name = "VALUE",
+        help = "Afterglow strength (0.0 = off). Luminous lingering tails."
+    )]
+    /// Afterglow strength (glow_mix), lever 7.
+    pub afterglow: Option<f32>,
+
+    #[arg(
+        long = "afterglow-rate",
+        value_name = "ALPHA",
+        help = "Afterglow EMA rate (smaller = longer-lived glow)."
+    )]
+    /// Afterglow EMA rate (alpha per frame).
+    pub afterglow_rate: Option<f32>,
+
+    #[arg(
+        long = "decay-gamma",
+        value_name = "GAMMA",
+        help = "Decay gamma (default: 1.0 = uniform decay; <1.0 = faint cells decay less, \
+                longer tails). Unset lets the preset choose."
+    )]
+    /// Value-dependent decay exponent (None = use preset/default).
+    pub decay_gamma: Option<f32>,
+
+    #[arg(
+        long = "diffuse-weight",
+        value_name = "WEIGHT",
+        help = "Diffusion blend weight (default: 1.0 = full blur; 0.0 = no diffusion; \
+                intermediate values blend old and blurred trail). Unset lets the preset choose."
+    )]
+    /// Lague diffuse-weight blend factor 0.0–1.0 (None = use preset/default).
+    pub diffuse_weight: Option<f32>,
+
+    #[arg(
         long = "auto-normalize",
         help = "Enable adaptive brightness normalization to prevent flickering"
     )]
@@ -1190,7 +1385,7 @@ pub struct Args {
         long = "attractor-strength",
         value_name = "FLOAT",
         default_value_t = environment::DEFAULT_ATTRACTOR_STRENGTH,
-        help = concat!("Global multiplier for attractor/repeller strength [range: ", stringify!(environment::MIN_ATTRACTOR_STRENGTH), "-", stringify!(environment::MAX_ATTRACTOR_STRENGTH), "]")
+        help = "Global multiplier for attractor/repeller strength [range: 0.1-10]"
     )]
     /// Global strength multiplier for attractors.
     pub attractor_strength: f32,
@@ -1199,6 +1394,7 @@ pub struct Args {
         long = "dither-mode",
         value_name = "MODE",
         default_value = dithering::DEFAULT_MODE,
+        hide = true,
         help = "Dithering mode: none, ordered, error-diffusion, hybrid"
     )]
     /// Dithering algorithm mode.
@@ -1208,7 +1404,8 @@ pub struct Args {
         long = "dither-intensity",
         value_name = "FLOAT",
         default_value_t = dithering::DEFAULT_INTENSITY,
-        help = concat!("Dithering intensity for ordered/hybrid modes (0.0-1.0) [default: ", stringify!(dithering::DEFAULT_INTENSITY), "]")
+        hide = true,
+        help = "Dithering intensity for ordered/hybrid modes (0.0-1.0)"
     )]
     /// Intensity of dithering effect.
     pub dither_intensity: f32,
@@ -1217,6 +1414,7 @@ pub struct Args {
         long = "dither-matrix",
         value_name = "MATRIX",
         default_value = dithering::DEFAULT_MATRIX,
+        hide = true,
         help = "Dither matrix for ordered mode: 4x4, 8x8"
     )]
     /// Matrix size for ordered dithering.
@@ -1224,15 +1422,21 @@ pub struct Args {
 
     #[arg(
         long = "dither-swap",
+        hide = true,
         help = "Swap to next dither mode (cycle through none -> ordered -> error-diffusion -> hybrid)"
     )]
     /// Cycle through dither modes.
     pub dither_swap: bool,
 
-    #[arg(long = "error-diffusion-swap", help = "Toggle error diffusion mode")]
+    #[arg(
+        long = "error-diffusion-swap",
+        hide = true,
+        help = "Toggle error diffusion mode"
+    )]
     /// Toggle error diffusion dithering.
     pub error_diffusion_swap: bool,
 
+    #[cfg(feature = "multi-species")]
     #[arg(
         long = "species",
         value_name = "SPEC",
@@ -1241,6 +1445,7 @@ pub struct Args {
     /// List of agent species.
     pub species: Vec<SpeciesArg>,
 
+    #[cfg(feature = "multi-species")]
     #[arg(
         long = "separate-species-trails",
         help = "Each species maintains its own separate trail map (higher memory, allows species-specific patterns)"
@@ -1248,6 +1453,7 @@ pub struct Args {
     /// Use separate trail maps for each species.
     pub separate_species_trails: bool,
 
+    #[cfg(feature = "multi-species")]
     #[arg(
         long = "species-colors",
         help = "Enable species-specific rendering using each species' configured color. Automatically enables --separate-species-trails."
@@ -1283,7 +1489,7 @@ pub struct Args {
         long = "terrain-strength",
         value_name = "FLOAT",
         default_value_t = environment::DEFAULT_TERRAIN_STRENGTH,
-        help = concat!("Strength of terrain influence [range: ", stringify!(environment::MIN_TERRAIN_STRENGTH), "-", stringify!(environment::MAX_TERRAIN_STRENGTH), "]")
+        help = "Strength of terrain influence [range: 0.1-5]"
     )]
     /// Strength of terrain effect.
     pub terrain_strength: f32,
@@ -1308,7 +1514,7 @@ pub struct Args {
         long = "export-frames",
         value_name = "INT",
         default_value_t = export::DEFAULT_FRAMES,
-        help = concat!("Number of frames to capture for GIF export [default: ", stringify!(export::DEFAULT_FRAMES), "]")
+        help = "Number of frames to capture for GIF export"
     )]
     /// Number of frames to export.
     pub export_frames: usize,
@@ -1317,7 +1523,7 @@ pub struct Args {
         long = "export-fps",
         value_name = "INT",
         default_value_t = export::DEFAULT_FPS,
-        help = concat!("GIF playback speed (frames per second) [default: ", stringify!(export::DEFAULT_FPS), "]")
+        help = "GIF playback speed (frames per second)"
     )]
     /// FPS for exported animation.
     pub export_fps: usize,
@@ -1340,7 +1546,7 @@ pub struct Args {
         long = "mouse-timeout",
         value_name = "FLOAT",
         default_value_t = environment::DEFAULT_MOUSE_TIMEOUT,
-        help = concat!("Time in seconds before mouse-created attractors/repellers expire [default: ", stringify!(environment::DEFAULT_MOUSE_TIMEOUT), "]")
+        help = "Time in seconds before mouse-created attractors/repellers expire"
     )]
     /// Duration of mouse effects.
     pub mouse_timeout: f32,
@@ -1363,7 +1569,7 @@ pub struct Args {
         long = "warmup-frames",
         value_name = "INT",
         default_value_t = warmup::DEFAULT_WARMUP_FRAMES,
-        help = concat!("Number of frames to display logo before simulation (0 to disable) [default: ", stringify!(warmup::DEFAULT_WARMUP_FRAMES), "]")
+        help = "Number of frames to display logo before simulation (0 to disable)"
     )]
     /// Number of warmup frames.
     pub warmup_frames: usize,
@@ -1372,7 +1578,7 @@ pub struct Args {
         long = "warmup-brightness",
         value_name = "FLOAT",
         default_value_t = warmup::DEFAULT_BRIGHTNESS_MULTIPLIER,
-        help = concat!("Brightness multiplier during warmup phase [default: ", stringify!(warmup::DEFAULT_BRIGHTNESS_MULTIPLIER), "]")
+        help = "Brightness multiplier during warmup phase"
     )]
     /// Brightness multiplier during warmup.
     pub warmup_brightness_multiplier: f32,
@@ -1381,7 +1587,7 @@ pub struct Args {
         long = "warmup-decay",
         value_name = "FLOAT",
         default_value_t = warmup::DEFAULT_DECAY_FACTOR,
-        help = concat!("Decay factor during warmup (higher = logo persists longer) [default: ", stringify!(warmup::DEFAULT_DECAY_FACTOR), "]")
+        help = "Decay factor during warmup (higher = logo persists longer)"
     )]
     /// Trail decay during warmup.
     pub warmup_decay: f32,
@@ -1402,7 +1608,7 @@ pub struct Args {
         long = "food-persist-strength",
         value_name = "FLOAT",
         default_value_t = food_persist::DEFAULT_STRENGTH,
-        help = concat!("Strength of food persistence attractors (0.0-5.0) [default: ", stringify!(food_persist::DEFAULT_STRENGTH), "]")
+        help = "Strength of food persistence attractors (0.0-5.0)"
     )]
     /// Strength of food persistence.
     pub food_persist_strength: f32,
@@ -1411,7 +1617,7 @@ pub struct Args {
         long = "food-persist-radius",
         value_name = "FLOAT",
         default_value_t = food_persist::DEFAULT_RADIUS,
-        help = concat!("Radius of influence for food persistence attractors [default: ", stringify!(food_persist::DEFAULT_RADIUS), "]")
+        help = "Radius of influence for food persistence attractors"
     )]
     /// Radius of food persistence.
     pub food_persist_radius: f32,
@@ -1420,7 +1626,7 @@ pub struct Args {
         long = "food-persist-duration",
         value_name = "INT",
         default_value_t = food_persist::DEFAULT_DURATION,
-        help = concat!("Number of frames before food attractors fade out (0 = permanent) [default: ", stringify!(food_persist::DEFAULT_DURATION), "]")
+        help = "Number of frames before food attractors fade out (0 = permanent)"
     )]
     /// Duration of food persistence.
     pub food_persist_duration: usize,
@@ -1437,17 +1643,16 @@ pub struct Args {
     #[arg(
         long = "collapse-threshold",
         value_name = "FLOAT",
-        default_value_t = auto_reset::DEFAULT_ENTROPY_THRESHOLD,
-        help = concat!("Entropy threshold to detect collapse (0.0-1.0, higher = more sensitive) [default: ", stringify!(auto_reset::DEFAULT_ENTROPY_THRESHOLD), "]")
+        help = "Collapse when brightness entropy falls below this (range 0..8; healthy ~4-6, dead → 0; higher = more sensitive). Unset uses the preset default (Constellation: 0 = entropy detector off)."
     )]
-    /// Entropy threshold for collapse detection.
-    pub collapse_entropy_threshold: f32,
+    /// Entropy threshold for collapse detection. `None` defers to the preset default.
+    pub collapse_entropy_threshold: Option<f32>,
 
     #[arg(
         long = "collapse-duration",
         value_name = "INT",
         default_value_t = auto_reset::DEFAULT_DURATION_FRAMES,
-        help = concat!("Number of frames simulation must stay collapsed before auto-reset [default: ", stringify!(auto_reset::DEFAULT_DURATION_FRAMES), "]")
+        help = "Number of frames simulation must stay collapsed before auto-reset"
     )]
     /// Duration to wait before reset.
     pub collapse_duration_frames: usize,
@@ -1461,7 +1666,7 @@ pub struct Args {
         long = "grid-size",
         value_name = "INT",
         default_value_t = grid::DEFAULT_GRID_SIZE,
-        help = concat!("Grid cell size (number of cells per dimension) [default: ", stringify!(grid::DEFAULT_GRID_SIZE), "]")
+        help = "Grid cell size (number of cells per dimension)"
     )]
     /// Grid cell size.
     pub grid_size: usize,
@@ -1488,7 +1693,7 @@ pub struct Args {
         long = "grid-opacity",
         value_name = "FLOAT",
         default_value_t = grid::DEFAULT_GRID_OPACITY,
-        help = concat!("Grid opacity (0.0-1.0) [default: ", stringify!(grid::DEFAULT_GRID_OPACITY), "]")
+        help = "Grid opacity (0.0-1.0)"
     )]
     /// Grid opacity.
     pub grid_opacity: f32,
@@ -1513,10 +1718,18 @@ pub struct Args {
         long = "ascii-contrast",
         value_name = "FLOAT",
         default_value_t = ascii::DEFAULT_CONTRAST,
-        help = concat!("Shape-vector ASCII contrast exponent (1.0 = none, 3.0 = strong edge enhancement) [default: ", stringify!(ascii::DEFAULT_CONTRAST), "]")
+        help = "Shape-vector ASCII contrast exponent (1.0 = none, 2.0 = strong edge enhancement)"
     )]
     /// Contrast exponent for shape-vector ASCII rendering.
     pub ascii_contrast: f32,
+
+    #[arg(
+        long = "color-aa",
+        value_name = "MODE",
+        help = "Color anti-aliasing for subcell charsets: off | subtle | strong (default: auto — strong for braille, off otherwise)"
+    )]
+    /// Color anti-aliasing mode for subcell charsets.
+    pub color_aa: Option<crate::render::antialiasing::AaStrength>,
 
     #[arg(
         long = "bg-color",
@@ -1531,7 +1744,7 @@ pub struct Args {
         long = "pause-style",
         value_name = "STYLE",
         default_value = "minimal",
-        help = "Pause screen visual style: vcr, frosted, vignette, pulse, minimal, pixelate, edges, zoom"
+        help = "Pause screen visual style: vcr, frosted, vignette, pulse, minimal, pixelate, edges, zoom, snow, starfield, noise, matrix"
     )]
     /// Pause screen visual effect style.
     pub pause_style: PauseStyle,
@@ -1563,6 +1776,10 @@ pub struct Args {
     /// Explain parameters and exit.
     pub explain: bool,
 
+    #[arg(long = "dump-config", hide = true)]
+    /// Dev-only: print the assembled SimConfig field dump and exit (snapshot test net).
+    pub dump_config: bool,
+
     #[arg(
         long = "completions",
         value_name = "SHELL",
@@ -1571,13 +1788,15 @@ pub struct Args {
     /// Generate shell completions.
     pub completions: Option<String>,
 
+    #[cfg(feature = "audio")]
     #[arg(
         long = "choir",
-        help = "Enable choir-mode audio: sonify trail intensity at 8 fixed grid points (requires --features audio)"
+        help = "Enable choir-mode audio: sonify trail intensity at 8 fixed grid points"
     )]
     /// Enable choir-mode sonification.
     pub choir: bool,
 
+    #[cfg(feature = "audio")]
     #[arg(
         long = "choir-volume",
         value_name = "0.0-1.0",
@@ -1624,32 +1843,71 @@ impl Args {
         if self.palette.starts_with('#') || self.palette.contains(',') {
             return parse_custom_palette(&self.palette);
         }
-        match self.palette.as_str() {
-            "organic" => Ok(Palette::Organic),
-            "heat" => Ok(Palette::Heat),
-            "ocean" => Ok(Palette::Ocean),
-            "mono" => Ok(Palette::Mono),
-            "forest" => Ok(Palette::Forest),
-            "neon" => Ok(Palette::Neon),
-            "warm" => Ok(Palette::Warm),
-            "vibrant" => Ok(Palette::Vibrant),
-            "legiblemono" => Ok(Palette::LegibleMono),
-            "slime" => Ok(Palette::Slime),
-            "mold" => Ok(Palette::Mold),
-            "fungus" => Ok(Palette::Fungus),
-            "swamp" => Ok(Palette::Swamp),
-            "moss" => Ok(Palette::Moss),
-            "cosmic" => Ok(Palette::Cosmic),
-            "ethereal" => Ok(Palette::Ethereal),
-            _ => Err(format!("Invalid palette: {}", self.palette)),
+        PALETTES
+            .iter()
+            .find(|spec| spec.name.eq_ignore_ascii_case(&self.palette))
+            .map(|spec| spec.palette.clone())
+            .ok_or_else(|| format!("Invalid palette: {}", self.palette))
+    }
+
+    /// True when the user passed `--palette` (vs the clap default sentinel).
+    pub fn palette_explicitly_set(&self) -> bool {
+        self.palette != palette::DEFAULT_PALETTE_NAME
+    }
+
+    /// True when the user selected any charset flag (vs the HalfBlockDual default).
+    pub fn charset_explicitly_set(&self) -> bool {
+        self.sculpted
+            || self.quadrant
+            || self.shade
+            || self.points
+            || self.braille
+            || self.half_block_dual
+            || self.ascii
+            || self.ascii_chars.is_some()
+    }
+
+    /// Returns `Some(charset)` when the user passed a `--charset` flag, else `None`.
+    /// Used to distinguish "CLI set" from "use preset/default" during render resolution.
+    pub(crate) fn charset_parsed(&self) -> Result<Option<crate::render::charset::Charset>, String> {
+        if self.charset_explicitly_set() {
+            Ok(Some(crate::render::charset::Charset::from_args(self)))
+        } else {
+            Ok(None)
         }
+    }
+
+    /// Resolve color-AA strength for the launch charset. Explicit `--color-aa`
+    /// wins; otherwise auto: Strong for Braille, Off for everything else.
+    pub fn resolved_color_aa(
+        &self,
+        charset: &crate::render::charset::Charset,
+    ) -> crate::render::antialiasing::AaStrength {
+        use crate::render::antialiasing::AaStrength;
+        if let Some(aa) = self.color_aa {
+            return aa;
+        }
+        if matches!(charset, crate::render::charset::Charset::Braille) {
+            AaStrength::Strong
+        } else {
+            AaStrength::Off
+        }
+    }
+
+    /// The intensity-mapping type string, falling back to the historical
+    /// default when the flag is absent. Used by paths that always need a
+    /// concrete mapping (e.g. the pause-logo "sim" passthrough).
+    fn intensity_mapping_str(&self) -> &str {
+        self.intensity_mapping
+            .as_deref()
+            .unwrap_or(intensity_mapping::DEFAULT_TYPE)
     }
 
     /// Parses the intensity mapping configuration.
     pub fn intensity_mapping(&self) -> Result<crate::render::palette::IntensityMapping, String> {
         use crate::render::palette::{IntensityMapping, MappingFunction};
 
-        match self.intensity_mapping.to_lowercase().as_str() {
+        match self.intensity_mapping_str().to_lowercase().as_str() {
             "linear" => Ok(IntensityMapping::linear()),
             "log" | "logarithmic" => Ok(IntensityMapping::logarithmic(self.intensity_mapping_base)),
             "exp" | "exponential" => Ok(IntensityMapping::exponential(self.intensity_mapping_base)),
@@ -1692,7 +1950,7 @@ impl Args {
             )),
             _ => Err(format!(
                 "Invalid intensity mapping: {}",
-                self.intensity_mapping
+                self.intensity_mapping_str()
             )),
         }
     }
@@ -1749,6 +2007,65 @@ impl Args {
             ))),
             _ => Err(format!("Invalid logo mapping: {}", self.logo_mapping)),
         }
+    }
+
+    /// Species list from the CLI.
+    #[cfg(feature = "multi-species")]
+    pub fn species_list(&self) -> &[SpeciesArg] {
+        &self.species
+    }
+    /// Species list from the CLI (always empty; build with `--features multi-species` to enable).
+    #[cfg(not(feature = "multi-species"))]
+    pub fn species_list(&self) -> &[SpeciesArg] {
+        &[]
+    }
+
+    /// Whether each species keeps its own trail map.
+    #[cfg(feature = "multi-species")]
+    pub fn separate_species_trails_enabled(&self) -> bool {
+        self.separate_species_trails
+    }
+    /// Whether each species keeps its own trail map (always false without `--features multi-species`).
+    #[cfg(not(feature = "multi-species"))]
+    pub fn separate_species_trails_enabled(&self) -> bool {
+        false
+    }
+
+    /// Whether species-specific color rendering is enabled.
+    #[cfg(feature = "multi-species")]
+    pub fn species_colors_enabled(&self) -> bool {
+        self.species_colors
+    }
+    /// Whether species-specific color rendering is enabled (always false without `--features multi-species`).
+    #[cfg(not(feature = "multi-species"))]
+    pub fn species_colors_enabled(&self) -> bool {
+        false
+    }
+
+    /// Parses `--palette-cycle-mode`, returning `None` when unset.
+    pub fn palette_cycle_mode_parsed(
+        &self,
+    ) -> Result<Option<crate::render::palette::PaletteCycleMode>, String> {
+        match &self.palette_cycle_mode {
+            Some(s) => Ok(Some(s.parse()?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Resolves --glyph-selection / --glyph-edge-threshold into a GlyphConfig,
+    /// starting from `base` (the per-preset/default identity).
+    pub fn glyph_config_parsed(
+        &self,
+        base: crate::render::charset::GlyphConfig,
+    ) -> Result<crate::render::charset::GlyphConfig, String> {
+        let mut g = base;
+        if let Some(s) = &self.glyph_selection {
+            g.selection = Some(s.parse()?);
+        }
+        if let Some(t) = self.glyph_edge_threshold {
+            g.edge_threshold = t.clamp(0.0, 2.0);
+        }
+        Ok(g)
     }
 
     /// Parses the dither mode string.
@@ -1916,7 +2233,7 @@ impl Default for Args {
             init: Some(InitMode::Food),
             food: food_img_consts::DEFAULT_FOOD_PATH.to_string(),
             food_invert: food_img_consts::DEFAULT_FOOD_INVERT,
-            food_scale: food::DEFAULT_FOOD_SCALE, // Food image scale
+            food_scale: food::DEFAULT_FOOD_SCALE,
             frame_delay: time::DEFAULT_FRAME_DELAY,
             fps: time::DEFAULT_FPS as usize,
             time_scale: time_consts::DEFAULT_TIME_SCALE,
@@ -1937,11 +2254,15 @@ impl Default for Args {
             verbose: false,
             reverse_palette: false,
             invert_palette: false,
-            palette_shift: 0.0,
-            intensity_mapping: intensity_mapping::DEFAULT_TYPE.to_string(),
+            palette_shift: None,
+            intensity_mapping: None,
             intensity_mapping_base: intensity::DEFAULT_LOG_BASE,
             intensity_mapping_gamma: 2.2,
             intensity_mapping_levels: 8,
+            palette_cycles: None,
+            palette_cycle_mode: None,
+            glyph_selection: None,
+            glyph_edge_threshold: None,
             perlin_strength: 0.2,
             logo_mapping: "log".to_string(),
             logo_mapping_base: 4.0,
@@ -1960,8 +2281,11 @@ impl Default for Args {
             dither_matrix: "4x4".to_string(),
             dither_swap: false,
             error_diffusion_swap: false,
+            #[cfg(feature = "multi-species")]
             species: Vec::new(),
+            #[cfg(feature = "multi-species")]
             separate_species_trails: false,
+            #[cfg(feature = "multi-species")]
             species_colors: false,
             simd_off: false,
             wind: None,
@@ -1986,7 +2310,7 @@ impl Default for Args {
             food_persist_radius: 50.0,
             food_persist_duration: 300,
             auto_reset: false,
-            collapse_entropy_threshold: 0.95,
+            collapse_entropy_threshold: None,
             collapse_duration_frames: 90,
             grid: false,
             grid_size: 10,
@@ -1998,11 +2322,15 @@ impl Default for Args {
             ascii_contrast: ascii::DEFAULT_CONTRAST,
             random: false,
             explain: false,
+            dump_config: false,
             completions: None,
+            #[cfg(feature = "audio")]
             choir: false,
+            #[cfg(feature = "audio")]
             choir_volume: 0.5,
+            color_aa: None,
             bg_color: None,
-            pause_style: PauseStyle::Vignette,
+            pause_style: PauseStyle::Minimal,
             pause_logo: false,
             pause_pulse_draw_mode: false,
             trail_age: false,
@@ -2015,12 +2343,29 @@ impl Default for Args {
             trail_delta_strength: 0.5,
             gradient_magnitude: false,
             gradient_strength: 0.3,
+            temporal_color: None,
+            temporal_lag: None,
+            temporal_mode: None,
+            temporal_accent: None,
+            afterglow: None,
+            afterglow_rate: None,
+            decay_gamma: None,
+            diffuse_weight: None,
+            deposit_curve: None,
+            deposit_scale: None,
+            deposit_gamma: None,
+            deposit_cap: None,
             boundary_mode: None,
             window_frame: None,
             fullscreen: false,
             chrome_style: None,
+            transition: None,
+            transition_tagline: false,
+            no_notifications: false,
             aspect: None,
             window_padding: None,
+            frame_matte_cols: None,
+            frame_matte_rows: None,
             show_status_bar: false,
             min_sim_size: None,
             min_frame_size: None,
@@ -2569,5 +2914,387 @@ mod tests {
             ..Default::default()
         };
         assert!(args.palette().is_err());
+    }
+
+    #[test]
+    fn temporal_flags_parse() {
+        use clap::Parser;
+        let a = Args::try_parse_from([
+            "tslime",
+            "--temporal-color",
+            "0.7",
+            "--temporal-lag",
+            "12",
+            "--temporal-mode",
+            "accent",
+        ])
+        .unwrap();
+        assert!((a.temporal_color.unwrap() - 0.7).abs() < 1e-6);
+        assert!((a.temporal_lag.unwrap() - 12.0).abs() < 1e-6);
+        assert_eq!(a.temporal_mode.as_deref(), Some("accent"));
+    }
+
+    #[test]
+    fn temporal_flags_defaults() {
+        let a = Args::try_parse_from(["tslime"]).unwrap();
+        assert_eq!(a.temporal_color, None);
+        assert_eq!(a.temporal_lag, None);
+        assert_eq!(a.temporal_mode, None);
+    }
+
+    #[test]
+    fn temporal_resolves_from_preset_then_cli_override() {
+        // Bare run, default preset → temporal off (back-compat).
+        let a = Args::parse_from(["tslime"]);
+        let d = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(d.temporal_color, 0.0);
+        // Explicit CLI strength overrides.
+        let a = Args::parse_from(["tslime", "--temporal-color", "0.5"]);
+        let d = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(d.temporal_color, 0.5);
+    }
+
+    #[test]
+    fn deposit_curve_parses_case_insensitive() {
+        use crate::simulation::config::DepositCurve;
+        use std::str::FromStr;
+        assert_eq!(DepositCurve::from_str("SQRT").unwrap(), DepositCurve::Sqrt);
+        assert_eq!(DepositCurve::from_str("log").unwrap(), DepositCurve::Log);
+        assert_eq!(DepositCurve::from_str("Pow").unwrap(), DepositCurve::Pow);
+        assert_eq!(
+            DepositCurve::from_str("linear").unwrap(),
+            DepositCurve::Linear
+        );
+        assert!(DepositCurve::from_str("bogus").is_err());
+    }
+
+    #[test]
+    fn render_art_defaults_uses_preset_default_when_flag_absent() {
+        use crate::render::palette::IntensityMapping;
+        let args = Args {
+            preset: Some(crate::simulation::config::Preset::Vortex),
+            intensity_mapping: None,
+            ..Default::default()
+        };
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
+        // #32: every preset defaults to log10.
+        assert_eq!(art.intensity_mapping, IntensityMapping::logarithmic(10.0));
+    }
+
+    #[test]
+    fn render_art_defaults_cli_flag_overrides_preset() {
+        use crate::render::palette::IntensityMapping;
+        let args = Args {
+            preset: Some(crate::simulation::config::Preset::Vortex),
+            intensity_mapping: Some("linear".to_string()),
+            ..Default::default()
+        };
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
+        assert_eq!(art.intensity_mapping, IntensityMapping::linear());
+    }
+
+    #[test]
+    fn render_art_defaults_none_preset_falls_back_to_default() {
+        use crate::render::palette::IntensityMapping;
+        let args = Args {
+            preset: None,
+            intensity_mapping: None,
+            ..Default::default()
+        };
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
+        // No preset + no flag → RenderArtDefaults::default() == log10.
+        assert_eq!(art.intensity_mapping, IntensityMapping::logarithmic(10.0));
+    }
+
+    #[test]
+    fn palette_cycles_flag_overrides_render_default() {
+        let mut args = Args::parse_from(["tslime"]);
+        args.palette_cycles = Some(3);
+        args.palette_cycle_mode = Some("wrap".into());
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
+        assert_eq!(art.palette_cycle.cycles, 3);
+        assert_eq!(
+            art.palette_cycle.mode,
+            crate::render::palette::PaletteCycleMode::Wrap
+        );
+    }
+
+    #[test]
+    fn no_palette_cycle_flags_stay_identity() {
+        let args = Args::parse_from(["tslime"]);
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
+        assert!(art.palette_cycle.is_identity());
+    }
+
+    #[test]
+    fn glyph_selection_flag_overrides_render_default() {
+        let mut args = Args::parse_from(["tslime"]);
+        args.glyph_selection = Some("hybrid".into());
+        args.glyph_edge_threshold = Some(0.3);
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
+        assert_eq!(
+            art.glyph.selection,
+            Some(crate::render::charset::GlyphSelection::Hybrid)
+        );
+        assert_eq!(art.glyph.edge_threshold, 0.3);
+    }
+
+    #[test]
+    fn glyph_edge_threshold_clamps_to_range() {
+        let mut args = Args::parse_from(["tslime"]);
+        args.glyph_selection = Some("hybrid".into());
+        args.glyph_edge_threshold = Some(5.0);
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
+        assert_eq!(art.glyph.edge_threshold, 2.0);
+
+        let mut args = Args::parse_from(["tslime"]);
+        args.glyph_edge_threshold = Some(-1.0);
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
+        assert_eq!(art.glyph.edge_threshold, 0.0);
+    }
+
+    #[test]
+    fn no_glyph_flags_stay_identity() {
+        let args = Args::parse_from(["tslime"]);
+        let art = crate::profile::Profile::resolve_from_args(&args)
+            .unwrap()
+            .render;
+        assert_eq!(art.glyph.selection, None);
+    }
+
+    #[test]
+    fn glyph_selection_invalid_errors() {
+        let mut args = Args::parse_from(["tslime"]);
+        args.glyph_selection = Some("nope".into());
+        assert!(crate::profile::Profile::resolve_from_args(&args).is_err());
+    }
+
+    #[test]
+    fn explicit_setters_detect_cli_overrides() {
+        let a = Args::parse_from(["tslime"]);
+        assert!(!a.palette_explicitly_set());
+        assert!(!a.charset_explicitly_set());
+        let a = Args::parse_from(["tslime", "--palette", "heat"]);
+        assert!(a.palette_explicitly_set());
+        let a = Args::parse_from(["tslime", "--braille"]);
+        assert!(a.charset_explicitly_set());
+    }
+
+    #[test]
+    fn resolved_color_aa_auto_defaults() {
+        use crate::render::antialiasing::AaStrength;
+        use crate::render::charset::Charset;
+        let args = Args::parse_from(["tslime"]);
+        assert_eq!(args.color_aa, None);
+        // Auto: Braille → Strong, others → Off.
+        assert_eq!(
+            args.resolved_color_aa(&Charset::Braille),
+            AaStrength::Strong
+        );
+        assert_eq!(args.resolved_color_aa(&Charset::Quadrant), AaStrength::Off);
+    }
+
+    #[test]
+    fn resolved_color_aa_explicit_overrides() {
+        use crate::render::antialiasing::AaStrength;
+        use crate::render::charset::Charset;
+        let args = Args::parse_from(["tslime", "--color-aa", "subtle"]);
+        // Explicit applies to whatever charset is queried (CLI is scoped to launch charset).
+        assert_eq!(
+            args.resolved_color_aa(&Charset::Quadrant),
+            AaStrength::Subtle
+        );
+        assert_eq!(
+            args.resolved_color_aa(&Charset::Braille),
+            AaStrength::Subtle
+        );
+    }
+
+    #[test]
+    fn afterglow_unset_uses_preset() {
+        let a = Args::parse_from(["tslime", "--preset", "mold"]);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .afterglow,
+            0.3
+        );
+    }
+
+    #[test]
+    fn afterglow_cli_overrides_preset() {
+        let a = Args::parse_from(["tslime", "--preset", "mold", "--afterglow", "0"]);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .afterglow,
+            0.0
+        );
+    }
+
+    #[test]
+    fn afterglow_out_of_range_rejected() {
+        let a = Args::parse_from(["tslime", "--afterglow", "99"]);
+        assert!(crate::profile::Profile::resolve_from_args(&a).is_err());
+    }
+
+    #[test]
+    fn resolve_palette_cli_wins() {
+        let a = Args::parse_from(["tslime", "--palette", "ocean", "--preset", "mold"]);
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(r.palette, crate::cli::Palette::Ocean);
+    }
+
+    #[test]
+    fn resolve_palette_preset_default() {
+        let a = Args::parse_from(["tslime", "--preset", "mold"]);
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(r.palette, crate::cli::Palette::Mold);
+    }
+
+    #[test]
+    fn resolve_hue_cli_over_preset() {
+        let a = Args::parse_from(["tslime", "--preset", "tide", "--palette-shift", "20"]);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .hue_shift,
+            20.0
+        );
+    }
+
+    #[test]
+    fn resolve_hue_preset_when_no_flag() {
+        let a = Args::parse_from(["tslime", "--preset", "tide"]);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .hue_shift,
+            8.0
+        );
+    }
+
+    #[test]
+    fn resolve_color_aa_braille_default_is_strong() {
+        // No --color-aa, no preset override: Braille must keep its per-charset Strong default.
+        use crate::render::antialiasing::AaStrength;
+        let a = Args::parse_from(["tslime", "--braille"]);
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(r.color_aa, AaStrength::Strong);
+    }
+
+    #[test]
+    fn resolve_color_aa_halfblock_default_is_off() {
+        use crate::render::antialiasing::AaStrength;
+        // HalfBlock is the default substrate charset. A clap-parsed bare launch is now
+        // Organic (charset Braille), so reach the halfblock path via struct-default
+        // Args (preset None bypasses the clap default and resolves the bare substrate).
+        let a = Args {
+            preset: None,
+            ..Default::default()
+        };
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(r.color_aa, AaStrength::Off);
+    }
+
+    // --- switch/reset/Model-B/toggle resolution matrix ---
+
+    /// identity → art-on: Mold carries temporal and afterglow levers.
+    #[test]
+    fn switch_identity_to_art_on_enables_temporal_and_afterglow() {
+        let a = Args::parse_from(["tslime", "--preset", "mold"]);
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(r.palette, crate::cli::Palette::Mold);
+        assert!(r.temporal_color > 0.0, "mold must have temporal_color > 0");
+        assert!(r.afterglow > 0.0, "mold must have afterglow > 0");
+    }
+
+    /// art-on → identity: Network carries no art-on levers (temporal=0, afterglow=0).
+    /// Also verifies the sim toggle clears the buffer when set to false.
+    #[test]
+    fn switch_art_on_to_identity_disables_levers() {
+        use crate::simulation::config::{InitMode, SimConfig};
+        use crate::simulation::Simulation;
+
+        let a = Args::parse_from(["tslime", "--preset", "network"]);
+        let r = crate::profile::Profile::resolve_from_args(&a)
+            .unwrap()
+            .render;
+        assert_eq!(r.temporal_color, 0.0, "network must have temporal_color=0");
+        assert_eq!(r.afterglow, 0.0, "network must have afterglow=0");
+        // Verify sim toggle properly clears when turned off.
+        let mut sim = Simulation::new(40, 20, SimConfig::default(), 42, InitMode::Random, 0);
+        sim.set_compute_temporal(true, 0.2);
+        sim.set_compute_temporal(r.temporal_color > 0.0, 0.2);
+        assert!(
+            !sim.compute_temporal(),
+            "compute_temporal must be false after set to network's resolved value"
+        );
+    }
+
+    /// Model B: explicit --palette ocean persists when preset is switched after parse.
+    /// Simulates a live preset-switch where the Args retain the original CLI flags.
+    #[test]
+    fn model_b_cli_palette_persists() {
+        let mut a = Args::parse_from(["tslime", "--palette", "ocean", "--preset", "network"]);
+        a.preset = Some(crate::simulation::config::Preset::Mold);
+        assert_eq!(
+            crate::profile::Profile::resolve_from_args(&a)
+                .unwrap()
+                .render
+                .palette,
+            crate::cli::Palette::Ocean,
+            "--palette ocean must survive a preset switch to Mold"
+        );
+    }
+
+    /// Model B: explicit --sensor-angle 30 persists in re-assembled SimConfig
+    /// when the preset is switched after parse.
+    #[test]
+    fn model_b_cli_sensor_angle_persists() {
+        let mut a = Args::parse_from(["tslime", "--sensor-angle", "30", "--preset", "network"]);
+        a.preset = Some(crate::simulation::config::Preset::Mold);
+        let c = crate::profile_overrides::ProfileOverrides::from_args(&a)
+            .and_then(|o| o.resolve())
+            .unwrap()
+            .sim;
+        assert_eq!(
+            c.sensor_angle, 30.0,
+            "--sensor-angle 30 must survive a preset switch to Mold"
+        );
     }
 }

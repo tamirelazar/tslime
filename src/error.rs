@@ -1,7 +1,7 @@
 //! Error types for tslime.
 //!
-//! This module provides structured error types using `thiserror` for consistent
-//! error handling across the codebase when the `terminal` feature is enabled.
+//! The `thiserror` derives are gated on the `terminal` feature; without it,
+//! `Display` and `Error` are implemented by hand so the types work everywhere.
 
 #![allow(missing_docs)]
 
@@ -12,19 +12,19 @@ use thiserror::Error;
 #[cfg_attr(feature = "terminal", derive(Error))]
 #[derive(Debug)]
 pub enum TslimeError {
-    /// Validation error - configuration parameter is invalid.
+    /// A configuration parameter is invalid.
     #[cfg_attr(feature = "terminal", error("validation error: {0}"))]
     Validation(ValidationError),
 
-    /// Rendering error - problem during rendering.
+    /// Rendering failed.
     #[cfg_attr(feature = "terminal", error("rendering error: {0}"))]
     Render(String),
 
-    /// Export error - problem during GIF/PNG/WebM export.
+    /// GIF/PNG/WebM export failed.
     #[cfg_attr(feature = "terminal", error("export error: {0}"))]
     Export(String),
 
-    /// IO error - file system or terminal operation failed.
+    /// A file system or terminal operation failed.
     #[cfg_attr(feature = "terminal", error("io error: {0}"))]
     Io(std::io::Error),
 }

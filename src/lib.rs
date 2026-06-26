@@ -5,9 +5,9 @@
 //!
 //! ## Overview
 //!
-//! tslime implements the agent-based model from Jeff Jones' 2010 paper
-//! *"Characteristics of Pattern Formation and Evolution in Approximations of
-//! Physarum Transport Networks."*
+//! tslime implements the agent-based model from Jones (2010), *"Characteristics
+//! of Pattern Formation and Evolution in Approximations of Physarum Transport
+//! Networks"* (full citation in [`simulation`]).
 //!
 //! The simulation involves:
 //! 1. **Sense**: Agents sample pheromone trails at three points
@@ -41,13 +41,14 @@
 /// Application entry point and high-level logic.
 #[cfg(feature = "terminal")]
 pub mod app;
-/// Choir-mode audio (Miranda/Adamatzky/Jones 2011 sonification).
+/// Restart-only application-level runtime configuration (warmup, auto-reset, grid, food-persist).
+pub(crate) mod app_config;
+/// Choir-mode audio, after Miranda, Adamatzky & Jones (2011), "Sounds
+/// Synthesis with Slime Mould of Physarum Polycephalum".
 #[cfg(feature = "audio")]
 pub mod audio;
 /// Command-line argument parsing and configuration.
 pub mod cli;
-/// Configuration builder for creating SimConfig instances.
-pub mod config_builder;
 /// Centralized configuration defaults.
 pub mod config_defaults;
 /// Configuration management (load/save/delete).
@@ -61,14 +62,27 @@ pub mod exploration;
 /// Export functionality (GIF, WebM, PNG).
 #[cfg(feature = "terminal")]
 pub mod export;
+/// Keybind loader and validation.
+#[cfg(feature = "terminal")]
+pub mod keybind_manager;
 /// Overlay system (state management, rendering, input).
 #[cfg(feature = "terminal")]
 pub mod overlay;
 /// Saved palette management.
 #[cfg(feature = "terminal")]
 pub mod palette_manager;
+/// Per-preset app-runtime defaults.
+pub(crate) mod preset_app_defaults;
+/// Per-preset optional sim-layer overrides.
+pub(crate) mod preset_sim_defaults;
+/// Shared resolved lever set for presets and saved configs.
+pub(crate) mod profile;
+/// Single all-Option authored partial (sim ⊕ render ⊕ seed).
+pub(crate) mod profile_overrides;
 /// Rendering logic (ASCII/Unicode, color palettes, dithering).
 pub mod render;
+/// Per-preset render/art-layer defaults.
+pub(crate) mod render_art_defaults;
 /// Core simulation logic (agents, trail map).
 pub mod simulation;
 /// Terminal handling (input, output, raw mode).

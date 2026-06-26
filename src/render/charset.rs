@@ -1,4 +1,5 @@
 use crate::cli::Args;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Character set for rendering simulation trails.
@@ -67,6 +68,68 @@ impl Charset {
     }
 }
 
+/// Character-selection strategy for the glyph-by-shape lever (#34, lever 10).
+/// `None` (via [`GlyphConfig`]) preserves each charset's native behavior.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GlyphSelection {
+    /// Force the tonal brightness ramp (`map_brightness`) on shape-capable charsets.
+    Brightness,
+    /// Use the charset's native shape path (today's behavior for Ascii/Braille/Sculpted).
+    Shape,
+    /// Sobel edge-orientation: directional glyphs on high-gradient cells,
+    /// brightness buckets in flat regions. ASCII-family only.
+    Hybrid,
+}
+
+/// Bundled glyph-selection config threaded through the render path (one param,
+/// mirroring `PaletteCycle`). `selection: None` = native per-charset behavior.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GlyphConfig {
+    /// Glyph-selection strategy; `None` keeps each charset's native behavior.
+    pub selection: Option<GlyphSelection>,
+    /// Sobel gradient-magnitude threshold for edge-glyph selection (Hybrid mode).
+    pub edge_threshold: f32,
+}
+
+impl Default for GlyphConfig {
+    fn default() -> Self {
+        Self {
+            selection: None,
+            edge_threshold: crate::config_defaults::glyph_consts::DEFAULT_GLYPH_EDGE_THRESHOLD,
+        }
+    }
+}
+
+/// Sobel edge-orientation glyph for a row-major 3×3 brightness neighborhood
+/// (`n[4]` = center). Returns a directional glyph (`| / - \`) when gradient
+/// magnitude exceeds `threshold`, else `None` (caller falls back to a
+/// brightness bucket). Gradients are normalized to `[-1,1]`. (#34, lever 10.)
+///
+/// Uses the 3×3 Sobel operator (Sobel & Feldman 1968).
+pub fn sobel_edge_glyph(n: &[f32; 9], threshold: f32) -> Option<char> {
+    let gx = ((n[2] + 2.0 * n[5] + n[8]) - (n[0] + 2.0 * n[3] + n[6])) / 4.0;
+    let gy = ((n[6] + 2.0 * n[7] + n[8]) - (n[0] + 2.0 * n[1] + n[2])) / 4.0;
+    let mag = (gx * gx + gy * gy).sqrt();
+    if mag <= threshold {
+        return None;
+    }
+    let mut a = gx.atan2(gy).to_degrees();
+    if a < 0.0 {
+        a += 180.0;
+    }
+    let glyph = if !(22.5..157.5).contains(&a) {
+        '-'
+    } else if a < 67.5 {
+        '/'
+    } else if a < 112.5 {
+        '|'
+    } else {
+        '\\'
+    };
+    Some(glyph)
+}
+
 /// List of all available charsets for cycling.
 /// This is the single source of truth for charset enumeration.
 pub const ALL_CHARSETS: [Charset; 7] = [
@@ -78,6 +141,10 @@ pub const ALL_CHARSETS: [Charset; 7] = [
     Charset::Shade,
     Charset::Points,
 ];
+
+/// Number of distinct charsets. Single source of truth for any per-charset
+/// array (e.g. color-AA strength) so they stay locked to [`ALL_CHARSETS`].
+pub const NUM_CHARSETS: usize = ALL_CHARSETS.len();
 
 const HALF_BLOCK_CHARS: [char; 9] = [
     ' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
@@ -172,8 +239,9 @@ fn estimate_char_density(c: char) -> f32 {
 
 /// Maps two vertical subpixels to a Braille character.
 ///
-/// Uses Braille patterns to represent 2-pixel height with variable horizontal density.
-/// Note: This is a simplified mapping that uses dot patterns to approximate intensity.
+/// Simplified intensity mapping: `top` fills the left dot column and `bottom`
+/// the right column (0-3 dots each), approximating brightness rather than
+/// true subpixel layout.
 pub fn map_braille_subpixel(top: f32, bottom: f32, threshold: f32) -> char {
     let top = top.clamp(0.0, 1.0);
     let bottom = bottom.clamp(0.0, 1.0);
@@ -199,30 +267,16 @@ pub fn map_braille_subpixel(top: f32, bottom: f32, threshold: f32) -> char {
     char::from_u32(0x2800 + combined_mask as u32).unwrap_or(' ')
 }
 
-/// Maps brightness to a shade character (░▒▓█).
-///
-/// Uses averaged brightness for smooth density gradients.
-/// Returns one of 5 characters based on brightness level.
-///
-/// # Arguments
-/// * `brightness` - Value from 0.0 to 1.0
-///
-/// # Returns
-/// One of: ' ' (0-20%), '░' (20-40%), '▒' (40-60%), '▓' (60-80%), '█' (80-100%)
+/// Maps brightness (0.0-1.0) to one of 5 shade characters (' ' ░ ▒ ▓ █)
+/// by rounding to the nearest level (boundaries at 12.5%, 37.5%, 62.5%, 87.5%).
 pub fn map_shade(brightness: f32) -> char {
     let b = brightness.clamp(0.0, 1.0);
     let index = (b * (SHADE_CHARS.len() - 1) as f32).round() as usize;
     SHADE_CHARS[index]
 }
 
-/// Maps brightness to point character with threshold.
-///
-/// Returns ▪ if above threshold, space otherwise.
+/// Returns ▪ if `brightness` exceeds `threshold`, space otherwise.
 /// Best for sparse particle visualization.
-///
-/// # Arguments
-/// * `brightness` - Value from 0.0 to 1.0
-/// * `threshold` - Minimum brightness to show a point (e.g., 0.15)
 pub fn map_point(brightness: f32, threshold: f32) -> char {
     if brightness > threshold {
         POINT_CHAR
@@ -231,9 +285,8 @@ pub fn map_point(brightness: f32, threshold: f32) -> char {
     }
 }
 
-/// Maps four quadrant brightness values to a Unicode quadrant character
-/// Each quadrant can be either on (bright) or off (dark) based on a threshold
-/// Returns characters from U+1FB00-U+1FB0F (Legacy Computing Symbols)
+/// Maps four quadrant brightness values to a Unicode block element
+/// (U+2580-U+259F). Each quadrant is on or off based on `threshold`.
 pub fn map_quadrant(
     top_left: f32,
     top_right: f32,
@@ -275,10 +328,8 @@ pub fn map_quadrant(
 
 /// Maps a brightness value to a character from the selected charset.
 ///
-/// # Arguments
-/// * `top` - Brightness of the top subpixel (or overall cell).
-/// * `bottom` - Optional brightness of the bottom subpixel (for half-block/braille).
-/// * `charset` - The character set to use.
+/// `top` is the top-subpixel (or overall cell) brightness; `bottom` is the
+/// optional bottom-subpixel brightness used by braille/shade/points modes.
 pub fn map_brightness(top: f32, bottom: Option<f32>, charset: Charset) -> char {
     match charset {
         Charset::HalfBlock | Charset::HalfBlockDual => {
@@ -711,16 +762,10 @@ fn enhance_directional_contrast(v: &mut [f32; 6], neighbors: &[[f32; 6]], expone
 
 /// Maps spatial brightness distribution to an ASCII character using shape vectors.
 ///
-/// Constructs a 6D shape vector from the cell's quadrant values and finds the
-/// character whose visual density distribution best matches, using squared
-/// Euclidean distance.
-///
-/// # Arguments
-/// * `tl` - Top-left quadrant brightness (0.0-1.0)
-/// * `tr` - Top-right quadrant brightness
-/// * `bl` - Bottom-left quadrant brightness
-/// * `br` - Bottom-right quadrant brightness
-/// * `contrast` - Contrast enhancement exponent (1.0 = none, 2.0 = strong)
+/// Constructs a 6D shape vector from the cell's quadrant brightness values
+/// (0.0-1.0) and finds the character whose visual density distribution best
+/// matches, using squared Euclidean distance. `contrast` is the enhancement
+/// exponent (1.0 = none, 2.0 = strong).
 pub fn map_shape_ascii(tl: f32, tr: f32, bl: f32, br: f32, contrast: f32) -> char {
     // Construct 2×3 shape vector from 2×2 quadrant data
     // Middle row is estimated as the average of top and bottom halves
@@ -785,12 +830,8 @@ pub fn map_shape_ascii(tl: f32, tr: f32, bl: f32, br: f32, contrast: f32) -> cha
 
 /// Shape-vector ASCII matching with directional contrast using neighbor data.
 ///
-/// Like `map_shape_ascii` but takes neighboring cells to enhance boundaries.
-///
-/// # Arguments
-/// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values for this cell
-/// * `neighbor_quads` - Slice of `[tl, tr, bl, br]` arrays from adjacent cells
-/// * `contrast` - Contrast enhancement exponent (1.0 = none, 2.0 = strong)
+/// Like `map_shape_ascii`, but also sharpens boundaries against adjacent
+/// cells: `neighbor_quads` holds `[tl, tr, bl, br]` arrays for each neighbor.
 pub fn map_shape_ascii_with_neighbors(
     tl: f32,
     tr: f32,
@@ -880,13 +921,9 @@ pub fn map_shape_ascii_with_neighbors(
 
 /// Maps spatial brightness to a braille character using 8-position sampling.
 ///
-/// Interpolates the 4 quadrant values to 8 positions matching the 2×4
-/// braille dot layout, thresholds each independently, and returns the
-/// corresponding Unicode braille character (U+2800–U+28FF).
-///
-/// # Arguments
-/// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values (0.0–1.0)
-/// * `threshold` - Minimum brightness for a dot to be "on" (e.g. 0.05)
+/// Interpolates the 4 quadrant brightness values (0.0-1.0) to 8 positions
+/// matching the 2×4 braille dot layout, thresholds each dot independently,
+/// and returns the corresponding braille character (U+2800-U+28FF).
 pub fn map_shape_braille(tl: f32, tr: f32, bl: f32, br: f32, threshold: f32) -> char {
     // Interpolate 8 positions across the 2×4 braille grid.
     // Row weights: row0=1.0/0.0, row1=0.67/0.33, row2=0.33/0.67, row3=0.0/1.0
@@ -934,124 +971,6 @@ pub fn map_shape_braille(tl: f32, tr: f32, bl: f32, br: f32, threshold: f32) -> 
     char::from_u32(0x2800 + pattern as u32).unwrap_or(' ')
 }
 
-// ===== Shape-Vector Block Rendering =====
-//
-// Extends HalfBlock mode from brightness-only vertical fill (▁▂▃▄▅▆▇█)
-// to shape-aware selection from ~23 Unicode block elements including
-// quadrant blocks (▖▗▘▝), half blocks (▀▄▌▐), diagonals (▚▞),
-// and three-quarter blocks (▙▛▜▟).
-//
-// Uses the same 6D shape vector matching as ASCII mode.
-
-/// Shape vector table for Unicode block element characters.
-///
-/// Each entry maps a block character to its 2×3 spatial fill pattern,
-/// computed from the geometric coverage of each character within the cell.
-/// Note: Currently unused since `map_shape_block` uses threshold-based
-/// quadrant matching for consistent tiling. Retained for reference.
-#[allow(dead_code)]
-const BLOCK_SHAPE_TABLE: [ShapeEntry; 23] = [
-    // === Empty ===
-    ShapeEntry {
-        ch: ' ',
-        vector: [0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
-    },
-    // === Vertical fill from bottom (lower block elements) ===
-    ShapeEntry {
-        ch: '\u{2581}',
-        vector: [0.00, 0.00, 0.00, 0.00, 0.38, 0.38],
-    }, // ▁ 1/8
-    ShapeEntry {
-        ch: '\u{2582}',
-        vector: [0.00, 0.00, 0.00, 0.00, 0.75, 0.75],
-    }, // ▂ 1/4
-    ShapeEntry {
-        ch: '\u{2583}',
-        vector: [0.00, 0.00, 0.13, 0.13, 1.00, 1.00],
-    }, // ▃ 3/8
-    ShapeEntry {
-        ch: '\u{2584}',
-        vector: [0.00, 0.00, 0.50, 0.50, 1.00, 1.00],
-    }, // ▄ 1/2
-    ShapeEntry {
-        ch: '\u{2585}',
-        vector: [0.00, 0.00, 0.89, 0.89, 1.00, 1.00],
-    }, // ▅ 5/8
-    ShapeEntry {
-        ch: '\u{2586}',
-        vector: [0.25, 0.25, 1.00, 1.00, 1.00, 1.00],
-    }, // ▆ 3/4
-    ShapeEntry {
-        ch: '\u{2587}',
-        vector: [0.62, 0.62, 1.00, 1.00, 1.00, 1.00],
-    }, // ▇ 7/8
-    ShapeEntry {
-        ch: '\u{2588}',
-        vector: [1.00, 1.00, 1.00, 1.00, 1.00, 1.00],
-    }, // █ full
-    // === Upper half + upper 1/8 ===
-    ShapeEntry {
-        ch: '\u{2580}',
-        vector: [1.00, 1.00, 0.50, 0.50, 0.00, 0.00],
-    }, // ▀ upper half
-    ShapeEntry {
-        ch: '\u{2594}',
-        vector: [0.38, 0.38, 0.00, 0.00, 0.00, 0.00],
-    }, // ▔ upper 1/8
-    // === Left/right halves ===
-    ShapeEntry {
-        ch: '\u{258C}',
-        vector: [1.00, 0.00, 1.00, 0.00, 1.00, 0.00],
-    }, // ▌ left half
-    ShapeEntry {
-        ch: '\u{2590}',
-        vector: [0.00, 1.00, 0.00, 1.00, 0.00, 1.00],
-    }, // ▐ right half
-    // === Single quadrants ===
-    ShapeEntry {
-        ch: '\u{2598}',
-        vector: [1.00, 0.00, 0.50, 0.00, 0.00, 0.00],
-    }, // ▘ TL
-    ShapeEntry {
-        ch: '\u{259D}',
-        vector: [0.00, 1.00, 0.00, 0.50, 0.00, 0.00],
-    }, // ▝ TR
-    ShapeEntry {
-        ch: '\u{2596}',
-        vector: [0.00, 0.00, 0.50, 0.00, 1.00, 0.00],
-    }, // ▖ BL
-    ShapeEntry {
-        ch: '\u{2597}',
-        vector: [0.00, 0.00, 0.00, 0.50, 0.00, 1.00],
-    }, // ▗ BR
-    // === Diagonals ===
-    ShapeEntry {
-        ch: '\u{259A}',
-        vector: [1.00, 0.00, 0.50, 0.50, 0.00, 1.00],
-    }, // ▚ TL+BR
-    ShapeEntry {
-        ch: '\u{259E}',
-        vector: [0.00, 1.00, 0.50, 0.50, 1.00, 0.00],
-    }, // ▞ TR+BL
-    // === Three-quarter blocks ===
-    ShapeEntry {
-        ch: '\u{2599}',
-        vector: [1.00, 0.00, 1.00, 0.50, 1.00, 1.00],
-    }, // ▙ TL+BL+BR
-    ShapeEntry {
-        ch: '\u{259B}',
-        vector: [1.00, 1.00, 1.00, 0.50, 1.00, 0.00],
-    }, // ▛ TL+TR+BL
-    ShapeEntry {
-        ch: '\u{259C}',
-        vector: [1.00, 1.00, 0.50, 1.00, 0.00, 1.00],
-    }, // ▜ TL+TR+BR
-    ShapeEntry {
-        ch: '\u{259F}',
-        vector: [0.00, 1.00, 0.50, 1.00, 1.00, 1.00],
-    }, // ▟ TR+BL+BR
-];
-
 // ===== Sculpted Outline Rendering =====
 //
 // Used by the Sculpted charset mode for cells at the outline/edge of
@@ -1066,12 +985,9 @@ const BLOCK_SHAPE_TABLE: [ShapeEntry; 23] = [
 
 /// Selects an outline character based on quadrant brightness distribution.
 ///
-/// Uses quadrant blocks for corners, half blocks for straight edges,
-/// and triangle fills (◢◣◤◥) for diagonal contours. This is used
-/// by Sculpted mode for cells at the boundary of shapes.
-///
-/// # Arguments
-/// * `tl`, `tr`, `bl`, `br` - Quadrant brightness values (0.0–1.0)
+/// Uses quadrant blocks for corners, half blocks for straight edges, and
+/// triangle fills (◢◣◤◥) for diagonal contours. Used by Sculpted mode
+/// for cells at the boundary of shapes.
 pub fn map_sculpted_outline(tl: f32, tr: f32, bl: f32, br: f32) -> char {
     use crate::config_defaults::threshold;
 
@@ -2071,5 +1987,53 @@ mod tests {
             "Expected at least 8 distinct outline patterns, got {}",
             patterns.len()
         );
+    }
+
+    #[test]
+    fn glyph_config_default_is_identity() {
+        let g = GlyphConfig::default();
+        assert_eq!(g.selection, None);
+        assert_eq!(
+            g.edge_threshold,
+            crate::config_defaults::glyph_consts::DEFAULT_GLYPH_EDGE_THRESHOLD
+        );
+    }
+
+    #[test]
+    fn sobel_flat_field_is_none() {
+        // Uniform brightness → zero gradient → below any positive threshold.
+        let n = [0.5_f32; 9];
+        assert_eq!(sobel_edge_glyph(&n, 0.05), None);
+    }
+
+    #[test]
+    fn sobel_below_threshold_is_none() {
+        // Tiny step, high threshold → None.
+        let n = [0.0, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.0];
+        assert_eq!(sobel_edge_glyph(&n, 0.5), None);
+    }
+
+    #[test]
+    fn sobel_vertical_edge_is_pipe() {
+        // Left column dark, right column bright → horizontal gradient → vertical edge.
+        let n = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+        assert_eq!(sobel_edge_glyph(&n, 0.1), Some('|'));
+    }
+
+    #[test]
+    fn sobel_horizontal_edge_is_dash() {
+        // Top dark, bottom bright → vertical gradient → horizontal edge.
+        let n = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        assert_eq!(sobel_edge_glyph(&n, 0.1), Some('-'));
+    }
+
+    #[test]
+    fn sobel_diagonal_edges() {
+        // Gradient pointing down-right → "/" edge.
+        let down_right = [0.0, 0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 1.0, 1.0];
+        assert_eq!(sobel_edge_glyph(&down_right, 0.1), Some('/'));
+        // Gradient pointing down-left → "\" edge.
+        let down_left = [0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 1.0, 1.0, 0.0];
+        assert_eq!(sobel_edge_glyph(&down_left, 0.1), Some('\\'));
     }
 }

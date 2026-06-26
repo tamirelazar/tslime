@@ -1,673 +1,129 @@
-# tslime
+<p align="center">
+  <img src="assets/demos/hero.gif" alt="tslime growing the logo across the Organic, Constellation, Vinescii, and Trademark presets" width="50%">
+</p>
+<h1 align="center">TSLIME</h1>
 
-<div align="center">
+A terminal screensaver, simulation playground and keyboard fidget toy. It runs a Physarum polycephalum (slime mold) transport-network
+simulation. Tens of thousands of agents deposit and follow pheromone trails, and the
+resulting network is drawn straight into your terminal. It ships as a single static
+binary, runs on Linux, macOS, Windows, and over SSH. 
 
-**Terminal Slime Mold Simulation**
+## Install
 
-A lightweight terminal screensaver simulating the mesmerizing growth patterns of *Physarum polycephalum* (slime mold).
-
-[![Build Status](https://github.com/yourusername/tslime/workflows/CI/badge.svg)](https://github.com/yourusername/tslime/actions)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
-[![Network Demo](assets/demos/network.gif)] · [Screenshots](#screenshots) · [Installation](#installation) · [Usage](#usage)
-
-</div>
-
----
-
-## 🎬 Demo
-
-Watch the magic of slime mold in action:
-
-### Featured: Network Formation
-
-Dense, interconnected networks forming in real-time (400x400, 60 frames):
-
-![Network Demo](assets/demos/network.gif)
-
-### Presets in Action
-
-Each preset creates distinct visual patterns:
-
-| Network | Exploratory | Organic | Tendrils |
-|:-------:|:-----------:|:-------:|:--------:|
-| ![Network](assets/demos/network_small.gif) | ![Exploratory](assets/demos/exploratory_small.gif) | ![Organic](assets/demos/organic_small.gif) | ![Tendrils](assets/demos/tendrils_small.gif) |
-| Dense branching | Wide exploration | Balanced growth | Long arms |
-
-### Color Palettes
-
-Choose from 12+ built-in palettes for different moods:
-
-| Heat | Ocean | Neon | Slime |
-|:----:|:-----:|:----:|:-----:|
-| ![Heat](assets/demos/heat_small.gif) | ![Ocean](assets/demos/ocean_small.gif) | ![Neon](assets/demos/neon_small.gif) | ![Slime](assets/demos/slime_small.gif) |
-
-### Special Effects
-
-**Multi-species mode** - Different agents with distinct colors:
-
-![Species Demo](assets/demos/species.gif)
-
----
-
-## 🌿 Overview
-
-**tslime** brings the emergent, network-forming behavior of slime mold to any terminal emulator. Inspired by [cbonsai](https://gitlab.com/jallbrit/cbonsai), it encodes natural growth algorithms into beautiful terminal art.
-
-The simulation runs at higher resolution than the terminal display, downsampling to produce smooth, organic visuals that evolve continuously. Watch as branching, pulsing networks form, dissolve, and reform—perfect for idle terminals or aesthetic computing.
-
-### Key Features
-
-- **Beautiful Generative Art**: Organic, algorithmically-driven animations
-- **Lightweight**: < 5% CPU, < 10MB memory
-- **Cross-Platform**: Linux, macOS, Windows, and SSH
-- **Zero Runtime Dependencies**: Single static binary
-- **Configurable**: Multiple presets, palettes, and tunable parameters
-- **Multiple Modes**: Screensaver, live animation, print mode
-- **GIF Export**: Capture beautiful animations to share
-
----
-
-## 🚀 Quick Start
-
-### Installation
-
-#### Using Cargo (Recommended)
+From crates.io:
 
 ```bash
 cargo install tslime
 ```
 
-#### Build from Source
+From source (requires Rust 1.70 or later):
 
 ```bash
-git clone https://github.com/yourusername/tslime.git
+git clone https://github.com/tamirelazar/tslime.git
 cd tslime
 cargo build --release
-cargo install --path .
+./target/release/tslime
 ```
 
-#### Package Managers (Coming Soon)
+Prebuilt binaries for Linux, macOS, and Windows accompany each release.
 
-- **Homebrew** (macOS/Linux): `brew install tslime` — *Task 22 pending*
-- **AUR** (Arch Linux): `yay -S tslime` — *Task 23 pending*
+## Usage
 
-### Basic Usage
+Run with no arguments for the interactive mode:
 
-Run in screensaver mode (exit on any keypress):
+```bash
+tslime
+```
+
+Screensaver mode exits on the first keypress:
 
 ```bash
 tslime -S
 ```
 
-Press any key to exit, or `Ctrl+C` to quit.
+Some of the presets I use come pre-loaded and are bound to the `1`-`4` keys. You can bind any preset or saved-config to the number keys via a config file.
 
----
+In general, mature (= fun to play with) features will have runtime controls, while experimental features will be reachable through cli flags. I try to keep the really nascent stuff behind a compilation flag as well, but be aware that if something is not in the control console (reachable by pressing `h`) - it is not guaranteed to work.
 
-## 📸 Screenshots
+`tslime --help` lists every flag. `tslime --explain` walks through what each
+simulation parameter does and how the parameters interact.
 
-### Presets
+### Custom Keybinds
 
-tslime includes several carefully tuned presets for different visual styles. See the [Demo](#-demo) section for animated examples.
+Customize quick-keys `1`–`7` by creating a `~/.config/tslime/keybinds.toml` file with the following format:
 
-#### Network Preset
-Dense network formation with rapid branching.
+```toml
+[[keybind]]
+key = "4"
+preset = "fire"
 
-```bash
-tslime -S --preset network
+[[keybind]]
+key = "5"
+config = "my-night-config"
 ```
 
-#### Exploratory Preset
-Scattered, searching behavior with long tentacles.
-
-```bash
-tslime -S --preset exploratory
-```
-
-#### Organic Preset (Default)
-Balanced, natural appearance.
-
-```bash
-tslime -S --preset organic
-```
-
-#### Tendrils Preset
-Long branching arms stretching across the terminal.
-
-```bash
-tslime -S --preset tendrils
-```
-
-### Color Palettes
-
-Choose from 16 built-in color palettes for different moods:
-
-| Palette | Flag | Description |
-|---------|------|-------------|
-| Forest (default) | `--palette forest` | Natural greens |
-| Organic | `--palette organic` | Green/yellow gradient |
-| Heat | `--palette heat` | Black to red/orange |
-| Ocean | `--palette ocean` | Blue to cyan gradient |
-| Neon | `--palette neon` | Purple/pink electric |
-| Slime | `--palette slime` | Bright green glow |
-| Mono | `--palette mono` | Grayscale ramp |
-| LegibleMono | `--palette legiblemono` | High-contrast grayscale |
-| Warm | `--palette warm` | Earth tones |
-| Vibrant | `--palette vibrant` | Saturated colors |
-| Mold | `--palette mold` | Yellow/olive tones |
-| Fungus | `--palette fungus` | Brown/green fungi |
-| Swamp | `--palette swamp` | Dark murky greens |
-| Moss | `--palette moss` | Soft green moss tones |
-| Cosmic | `--palette cosmic` | Space-inspired purples |
-| Ethereal | `--palette ethereal` | Soft, ghostly pastels |
-
-You can also define custom palettes using hex colors:
-
-```bash
-tslime -S --palette "#000000,#ff0000,#ffff00"  # Black to red to yellow
-```
-
-Example:
-
-```bash
-tslime -S --palette ocean
-```
-
-### ASCII Mode
-
-For older terminals or pure text output:
-
-```bash
-tslime -S --ascii --colors 16
-```
-
----
-
-## 📖 Usage
-
-### Modes
-
-```bash
-tslime [OPTIONS]
-
-MODES:
-    (default)       Run simulation, exit on stable state or interrupt
-    -l, --live      Continuous animation mode
-    -S, --screensaver  Screensaver mode (exit on any keypress)
-    -p, --print     Print single frame and exit (for piping/screenshots)
-```
-
-### Exporting GIFs
-
-Generate high-quality GIF animations from the simulation:
-
-```bash
-# Basic GIF export
-tslime --export-gif output.gif --export-frames 50 --export-fps 30
-
-# With specific preset and resolution
-tslime --export-gif organic.gif --preset organic --resolution 400x400 --export-frames 100
-
-# With custom color palette
-tslime --export-gif heat_demo.gif --palette heat --export-frames 60 --export-fps 20
-```
-
-**Options:**
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--export-gif <PATH>` | — | Output GIF file path |
-| `--export-frames <N>` | 50 | Number of frames to capture |
-| `--export-fps <N>` | 30 | GIF playback speed (frames/second) |
-| `--frame-skip <N>` | 50 | Simulation steps between frames |
-
-### Common Examples
-
-**Reproducible simulation with specific seed:**
-
-```bash
-tslime -S --seed 12345
-```
-
-**Custom parameters for denser networks:**
-
-```bash
-tslime -S --sensor-angle 15 --decay 0.85 --population 100000
-```
-
-**High-resolution true color mode:**
-
-```bash
-tslime -S --colors true --resolution 800x800 --fps 60
-```
-
-**Export single frame to file:**
-
-```bash
-tslime -p --seed 42 > frame.txt
-```
-
-**Lower frame rate for slower terminals:**
-
-```bash
-tslime -S --fps 15
-```
-
-### Exit Modes
-
-- **Screensaver mode**: Press any key to exit
-- **Live/Default mode**: Press `q` or `Ctrl+C` to exit
-
----
- 
-## ⌨️ Runtime Controls
-
-In live or screensaver mode, you can adjust simulation parameters in real-time using keyboard shortcuts:
-
-### Essential Controls
-
-| Key | Action |
-|------|----------|
-| `p` | Pause/Resume simulation |
-| `r` | Restart with same seed |
-| `+` / `-` | Adjust time scale (0.5x - 4.0x) |
-| `c` | Cycle to next palette (Shift+C for reverse) |
-| `d` | Toggle dithering |
-| `h` | Toggle help overlay (quick → options → none) |
-| `q` / `Esc` | Quit |
-
-### Simulation Parameters
-
-| Key | Action | Range |
-|------|----------|--------|
-| `A` / `a` | Adjust sensor angle | 5° - 90° (±1°) |
-| `T` / `t` | Adjust turn angle | 5° - 90° (±1°) |
-| `S` / `s` | Adjust step size | 0.5 - 5.0 (±0.5) |
-| `E` / `e` | Adjust decay factor | 0.5 - 0.99 (±0.02) |
-| `I` / `i` | Adjust deposit amount | 1.0 - 20.0 (±1.0) |
-| `1`-`6` | Switch to preset | Network, Exploratory, Tendrils, Organic, Minimal, Moss |
-
-### Environment & Physics
-
-| Key | Action |
-|------|----------|
-| `K` | Cycle diffusion kernel | 3×3 mean ↔ Gaussian (5×5) |
-| `W` | Cycle wind direction | None → N → NE → E → SE → S → SW → W → NW → None |
-| `Y` / `y` | Adjust terrain strength | 0.1 - 5.0 (±0.5) |
-| `U` | Cycle terrain type | None → Smooth → Turbulent → Mixed |
-
-### Visual Effects
-
-| Key | Action |
-|------|----------|
-| `B` | Toggle auto-normalize brightness | On/Off |
-| `V` | Cycle motion blur | 0 → 3 → 5 → 7 → 0 frames |
-| `N` / `n` | Adjust max brightness | 1.0 - 100.0 (±5.0) |
-
-### Rendering Options
-
-| Key | Action |
-|------|----------|
-| `F` | Toggle fast mode | Skip every 2nd frame (performance) |
-| `O` | Cycle palette shift speed | Off → Slow (5°/s) → Medium (15°/s) → Fast (45°/s) |
-| `X` | Toggle invert palette | Complementary colors (180° hue rotation) |
-| `Z` | Toggle reverse palette | Swap gradient start/end |
-| `G` / `g` | Save frame to PNG | Timestamped filename |
-
-### Display & Navigation
-
-| Key | Action |
-|------|----------|
-| `Tab` | Cycle options category | Sim → Env → Vis → Ren → Dis (Shift+Tab for reverse) |
-| `0` | Reset to defaults | Restore preset settings and clear runtime state |
-
-**Note:** Press `h` to toggle help overlay showing current parameter values. Notifications appear for 2-3 seconds when values reach min/max bounds or actions complete.
-
----
- 
-## ⚙️ Configuration Reference
-
-### Simulation Parameters
-
-| Parameter | Flag | Type | Default | Range | Description |
-|-----------|------|------|---------|-------|-------------|
-| Population | `-n`, `--population` | int | 50,000 | 1,000–200,000 | Number of agents |
-| Sensor Angle | `--sensor-angle` | float | 22.5° | 5°–90° | Angle between sensors |
-| Sensor Distance | `--sensor-distance` | float | 9.0 | 1.0–50.0 | Distance to sensor points |
-| Rotation Angle | `--rotation-angle` | float | 45.0° | 5°–90° | Turn amount per step |
-| Step Size | `--step-size` | float | 1.0 | 0.5–5.0 | Movement per step |
-| Decay Factor | `--decay` | float | 0.9 | 0.5–0.99 | Trail persistence |
-| Deposit Amount | `--deposit` | float | 5.0 | 1.0–20.0 | Pheromone deposited |
-
-### Display Parameters
-
-| Parameter | Flag | Type | Default | Range | Description |
-|-----------|------|------|---------|-------|-------------|
-| Frame Delay | `-t`, `--time` | float | 0.033s | 0.001–1.0 | Frame delay in seconds |
-| Target FPS | `--fps` | int | 30 | 1–120 | Target frames per second |
-| Resolution | `--resolution` | WxH | 400×400 | 100×100–800×800 | Simulation resolution |
-| Color Mode | `--colors` | enum | 256 | 8, 16, 256, true | Color mode |
-| Character Mode | `--ascii`, `--braille` | flag | half-block | — | Character set |
-
-### Other Options
-
-| Parameter | Flag | Description |
-|-----------|------|-------------|
-| Seed | `-s`, `--seed INT` | Random seed for reproducibility |
-| Preset | `--preset NAME` | Use named preset (see [Presets](#-presets) section) |
-| Palette | `--palette NAME` | Color palette (see [Color Palettes](#color-palettes) section) |
-| Export GIF | `--export-gif PATH` | Export simulation to GIF file |
-| Export Frames | `--export-frames N` | Number of frames for GIF (default: 50) |
-| Export FPS | `--export-fps N` | GIF playback speed (default: 30) |
-| Verbose | `-v`, `--verbose` | Print performance stats to stderr |
-| Help | `-h`, `--help` | Print help information |
-| Version | `-V`, `--version` | Print version |
-
-### Window Mode
-
-tslime runs in **windowed mode** by default: the simulation is centered in your terminal inside a thin frame, with proportional padding.
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--fullscreen` | off | Render edge-to-edge without a window frame (same as before v0.2) |
-| `--chrome-style` | `minimal` | Chrome level: `minimal`, `expanded`, or `fullscreen` |
-| `--window-frame` | `frame` | Frame style: `frame`, `accented`, `glow`, `reactive`, `food`, `negative`, `none` |
-| `--aspect` | `3:2` | Window aspect ratio: `3:2`, `square`, `4:3`, `16:10`, `16:9`, or `W:H` |
-| `--window-padding` | `auto` | Outer padding in cells, or `auto` (5% of min terminal dim, ≥ 2) |
-| `--show-status-bar` | off | Force the legacy status bar visible in windowed mode |
-| `--min-sim-size` | `20x10` | Minimum sim area before dropping padding |
-| `--min-frame-size` | `12x6` | Minimum sim area before dropping the frame |
-
----
-
-## 🎨 Presets
-
-Presets combine multiple parameters for distinctive visual styles:
-
-### Network
-
-Creates dense, interconnected networks with rapid branching.
-
-```bash
-tslime -S --preset network
-```
-
-**Parameters:**
-- Sensor Angle: 15° (narrow sensing)
-- Decay: 0.85 (trails fade quickly)
-- Rotation: 30° (sharp turns)
-
-Best for: Seeing how agents form efficient transport networks.
-
-### Exploratory
-
-Agents explore widely with long, searching tentacles.
-
-```bash
-tslime -S --preset exploratory
-```
-
-**Parameters:**
-- Sensor Angle: 45° (wide sensing)
-- Decay: 0.96 (trails persist longer)
-- Rotation: 60° (wide turns)
-- Population: 30,000 (fewer agents)
-
-Best for: Watching exploratory behavior and space-filling patterns.
-
-### Tendrils
-
-Long branching arms stretch across the terminal.
-
-```bash
-tslime -S --preset tendrils
-```
-
-**Parameters:**
-- Sensor Angle: 30° (medium sensing)
-- Step Size: 2.0 (fast movement)
-- Decay: 0.90 (moderate persistence)
-- Population: 40,000
-
-Best for: Visualizing tendril-like growth patterns.
-
-### Organic (Default)
-
-Balanced, natural-looking growth.
-
-```bash
-tslime -S --preset organic
-```
-
-**Parameters:**
-- Sensor Angle: 22.5° (default)
-- Decay: 0.9 (default)
-- Rotation: 45° (default)
-
-Best for: Casual viewing and balanced aesthetics.
-
-### Additional Presets
-
-| Preset | Description | Best For |
-|--------|-------------|----------|
-| `minimal` | Sparse patterns with fewer agents | Subtle backgrounds |
-| `moss` | Organic moss-like growth | Nature-inspired visuals |
-| `cosmic` | Space-inspired ethereal patterns | Sci-fi aesthetics |
-| `fire` | Aggressive, fast-moving flames | Dynamic displays |
-| `zen` | Calm, meditative slow patterns | Relaxation |
-| `storm` | Dynamic, turbulent patterns | Energetic visuals |
-| `river` | Flowing, water-like patterns | Fluid simulations |
-| `ethereal` | Soft, ghostly patterns | Dreamy aesthetics |
-
----
-
-## 🔬 How It Works
-
-tslime implements the agent-based model from Jeff Jones' 2010 paper *"Characteristics of Pattern Formation and Evolution in Approximations of Physarum Transport Networks."*
-
-### The Algorithm
-
-1. **Sense**: Each agent samples the pheromone trail map at three positions (front-left, front-center, front-right)
-2. **Rotate**: Adjust heading based on sensed values—agents follow stronger trails
-3. **Move**: Update position based on heading and step size
-4. **Deposit**: Add pheromone to trail map at new position
-5. **Diffuse**: Apply 3×3 blur to spread pheromone
-6. **Decay**: Multiply all trail values by decay factor (0.75–0.99)
-
-### Rendering
-
-The simulation runs at 400×400 resolution (configurable) and is downsampled to fit the terminal. Output uses:
-
-- **Half-block characters** (▀▄█) for 2× vertical resolution
-- **256-color ANSI** gradients for smooth color transitions
-- **Average pooling** downsampling for organic appearance
-
----
-
-## 💻 Performance
-
-tslime is optimized for lightweight operation:
-
-| Metric | Target | Method |
-|--------|--------|--------|
-| Memory | < 10 MB | Pre-allocated buffers |
-| CPU (30 FPS) | < 5% | Efficient algorithms |
-| Startup | < 100ms | Minimal initialization |
-| Binary Size | < 3 MB | Stripped release build |
-
-### Optimization Strategies
-
-- **Cache-friendly iteration**: Row-major access patterns
-- **No allocations in hot loops**: Reused frame buffers
-- **Batch terminal writes**: Single `write()` per frame
-- **SIMD-ready diffusion**: Ready for future optimizations
-
----
-
-## 🖥️ Compatibility
-
-### Tested Terminals
-
-| Terminal | Platform | Status |
-|----------|----------|--------|
-| iTerm2 | macOS | ✅ Full support |
-| Terminal.app | macOS | ✅ Full support |
-| Alacritty | Cross | ✅ Full support |
-| GNOME Terminal | Linux | ✅ Full support |
-| Konsole | Linux | ✅ Full support |
-| Windows Terminal | Windows | ✅ Full support |
-| tmux | Cross | ✅ Full support |
-| PuTTY | Windows | ⚠️ 16-color only |
-| SSH | All | ✅ Full support |
-
-### Requirements
-
-- **Rust**: 1.70+ (for building from source)
-- **Terminal**: ANSI color support recommended
-- **Resolution**: Minimum 20×10 terminal cells
-
----
-
-## 🔧 Development
-
-### Building
-
-```bash
-# Debug build
-cargo build
-
-# Release build (optimized)
-cargo build --release
-```
-
-### Testing
-
-```bash
-# Run all tests
-cargo test
-
-# Run with output
-cargo test -- --nocapture
-
-# Run specific test
-cargo test test_agent_rotate
-```
-
-### Linting & Formatting
-
-```bash
-# Check code style
-cargo fmt --check
-
-# Format code
-cargo fmt
-
-# Lint with warnings as errors
-cargo clippy -- -D warnings
-```
-
-### Code Style
-
-- **Indentation**: 4 spaces
-- **Line limit**: 100 characters
-- **Naming**: `snake_case` for functions/variables, `PascalCase` for types
-- **No comments in production code** (self-documenting)
-
-### Visual Regression Tests
-
-Golden tests ensure consistent output across versions:
-
-```bash
-# Regenerate golden files (for intentional changes)
-UPDATE_GOLDEN=true cargo test
-
-# Run visual regression tests
-cargo test --test visual_regression
-```
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Areas of interest:
-
-- **GPU acceleration**: OpenCL/Metal compute shaders
-- **New presets**: Interesting parameter combinations
-- **Color palettes**: Additional gradient schemes
-- **Documentation**: Examples, tutorials, translations
-- **Optimization**: SIMD, parallelization, memory improvements
-
-### Development Workflow
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 🛡️ Security
-
-### Reporting Vulnerabilities
-If you discover a security vulnerability in tslime, please report it privately via email to the maintainers or open a draft security advisory on GitHub. Do not disclose vulnerabilities publicly until a fix is available.
-
-### Dependency Management
-- Dependencies are regularly audited using `cargo audit`.
-- The lockfile (`Cargo.lock`) is committed to version control to ensure reproducible builds.
-- Semantic versioning is used to track breaking changes.
-
-## ⚠️ Threat Model
-
-### Scope
-tslime is a CLI application that runs locally. It does not open network ports, bind listeners, or execute arbitrary code from remote sources.
-
-### Trusted Inputs
-- **CLI Arguments**: The user is trusted to provide valid command-line arguments.
-- **Configuration Files**: Local configuration files are assumed to be safe.
-- **Terminal Environment**: The hosting terminal emulator is assumed to be trusted.
-
-### Attack Surface
-1.  **Denial of Service (DoS)**:
-    -   *Risk*: Excessive resource consumption (CPU/RAM).
-    -   *Mitigation*: Memory usage is bounded by grid resolution (fixed at startup). CPU usage is limited by frame rate caps and sleep intervals.
-2.  **Terminal State Corruption**:
-    -   *Risk*: Leaving the terminal in an unusable state (hidden cursor, raw mode).
-    -   *Mitigation*: Signal handlers (SIGINT, SIGTERM) and `Drop` implementations ensure terminal state is restored on exit.
-3.  **Input Handling**:
-    -   *Risk*: Malformed input events causing crashes.
-    -   *Mitigation*: The `crossterm` crate handles low-level input parsing safely.
-
-### Out of Scope
--   Protection against malicious users with local shell access (who can already execute arbitrary code).
--   Vulnerabilities in the operating system or terminal emulator itself.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- **Jeff Jones**: For the original Physarum simulation algorithm
-- **cbonsai**: For inspiring the terminal-based approach
-- **crossterm**: For excellent cross-platform terminal handling
-
----
-
-## 📚 References
-
-1. Jones, J. (2010). "Characteristics of Pattern Formation and Evolution in Approximations of Physarum Transport Networks." *Artificial Life*, 16(2), 127-153.
-2. [cbonsai](https://gitlab.com/jallbrit/cbonsai)
-3. [crossterm](https://docs.rs/crossterm)
-4. [ANSI Escape Codes](https://en.wikipedia.org/wiki/ANSI_escape_code)
-
----
-
-<div align="center">
-
-Made with ❤️ by the tslime contributors
-
-[⬆ Back to top](#tslime)
-
-</div>
+- **Keys**: Bind to any digit `1`–`7`. Keys `1`–`4` default to Organic, Constellation, Vinescii, and Trademark; user entries override.
+- **Targets**: Bind to either a `preset` (any of ~31 named presets) or a `config` (any saved configuration from `Ctrl+S`).
+- **Comparison**: Press `Shift+1` through `Shift+7` to compare the bound preset or config against the current settings (A/B mode).
+- **Live bindings**: The `?` overlay shows current key bindings and their targets.
+
+## Gallery
+
+tslime is a live instrument, not a static screensaver — every visual is reshaped
+from the keyboard while it runs. A few of the controls:
+
+<table>
+<tr>
+<td width="50%"><img src="assets/demos/palette-cycle.gif" width="100%"><br><b>Palette cycling</b> — press <code>c</code> to sweep through palettes; the whole field recolors instantly.</td>
+<td width="50%"><img src="assets/demos/charset-cycle.gif" width="100%"><br><b>Character sets</b> — press <code>`</code> to re-render the same growth in a different glyph language.</td>
+</tr>
+<tr>
+<td width="50%"><img src="assets/demos/preset-transition.gif" width="100%"><br><b>Preset transitions</b> — quick-keys <code>1</code>–<code>7</code> switch presets with an optional figlet announcement.</td>
+<td width="50%"><img src="assets/demos/randomize.gif" width="100%"><br><b>Randomize</b> — press <code>8</code> to scramble every parameter into a fresh organism.</td>
+</tr>
+<tr>
+<td colspan="2" align="center"><img src="assets/demos/palette-editor.gif" width="50%"><br><b>Palette editor</b> — press <code>p</code> to reshape a palette by lightness, chroma, and hue.</td>
+</tr>
+</table>
+
+There are 31 named presets: network, exploratory, tendrils, organic, fire, river,
+petri, vortex, lightning, chaosedge, blob, slime, vines, vinescii, smoke, vortex36,
+dynamictendrils, mold, etching, drift, constellation, mosaic, marble, prism, vellum,
+forge, wane, gossamer, codex, tide, and trademark. Palettes and character sets are independent of
+the preset and can be cycled at runtime. Preset parameters are defined in
+`src/simulation/config.rs` and `src/preset_sim_defaults.rs`. Please note that a lot of them are WIP that is seeking feedback (from you!). Other than the 4 preset bound to `1`-`4`, which are the ones i actually use, i consider none of them to be "ready". 
+
+## Experimental Features 
+
+Most features aren't ready for the default experience. Each has a tracking issue describing current state (I hope) - which, in some cases, explains what's needed to make it work. 
+
+| Feature | Try it | Issue |
+|---|---|---|
+| Multi-species simulation | `cargo install tslime --features multi-species`, then `--species 'red:20k:ff0000' --species 'blue:20k:0000ff' --species-colors` | #8 |
+| Choir mode (audio) | `cargo install tslime --features audio`, then `--choir` | #9 |
+| GUI mode | `cargo build --features gui` | #10 |
+| WASM build | `tslime-wasm/` (standalone crate) | #11 |
+| Dithering | hidden flags: `--dither-mode ordered` (and `d`/`D`/`{`/`}` keys once enabled) | #12 |
+
+## Contributing
+
+Bug reports, terminal compatibility notes, and work on the experimental features
+are all welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing, and
+the lay of the codebase, or pick up one of the open
+[issues](https://github.com/tamirelazar/tslime/issues). We're clanker-friendly, up to a point - I probably won't read long slop PRs, and bad/weird code will be rejected (I HOPE).
+
+## License
+
+[MIT](LICENSE).
+
+## Citations
+
+1. Jones, J. (2010). "Characteristics of Pattern Formation and Evolution in Approximations of Physarum Transport Networks." *Artificial Life*, 16(2), 127-153. doi:10.1162/artl.2010.16.2.16202
+2. Miranda, E. R., Adamatzky, A., & Jones, J. (2011). "Sounds Synthesis with Slime Mould of Physarum Polycephalum." *Journal of Bionic Engineering*, 8(2), 107-113. doi:10.1016/S1672-6529(11)60016-4
+3. Ottosson, B. (2020). "A perceptual color space for image processing." https://bottosson.github.io/posts/oklab/
+
+## Software Inspirations
+- [cbonsai](https://gitlab.com/jallbrit/cbonsai)
+- [asciiquarium](https://github.com/cmatsuoka/asciiquarium)
+- [astroterm](https://github.com/da-luce/astroterm)
+- [crossterm](https://github.com/crossterm-rs/crossterm)

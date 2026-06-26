@@ -115,7 +115,7 @@ impl Padding {
         }
     }
 
-    /// Creates padding with horizontal and vertical values (alias for vertical).
+    /// Like [`Padding::vertical`], but takes the horizontal value first.
     pub fn horizontal(horizontal: usize, vertical: usize) -> Self {
         Self {
             top: vertical,
@@ -448,6 +448,14 @@ impl PanelBuilder {
     /// Adds an empty (blank) row.
     pub fn add_empty(mut self) -> Self {
         self.rows.push(PanelRow::Empty);
+        self
+    }
+
+    /// Adds `n` empty rows — use with `spacing::TIGHT`, `spacing::ROW`, or `spacing::SECTION`.
+    pub fn add_empty_n(mut self, n: usize) -> Self {
+        for _ in 0..n {
+            self.rows.push(PanelRow::Empty);
+        }
         self
     }
 
@@ -809,9 +817,54 @@ impl PanelBuilder {
     }
 }
 
+/// Format a modal action-hint footer.
+///
+/// Each `(key, verb)` pair renders as `"{key} {verb}"`, joined with `" · "`.
+/// Keys are compact glyphs (`↵`, `esc`, `↑↓`, `←→`, `del`) and verbs are
+/// lowercase. Single source of truth for footer hint grammar so wording stays
+/// consistent across overlays.
+///
+/// ```text
+/// footer_hints(&[("↵", "save"), ("esc", "cancel")]) == "↵ save · esc cancel"
+/// ```
+pub fn footer_hints(actions: &[(&str, &str)]) -> String {
+    actions
+        .iter()
+        .map(|(key, verb)| format!("{key} {verb}"))
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn footer_hints_joins_with_middle_dot() {
+        assert_eq!(
+            footer_hints(&[("↵", "save"), ("esc", "cancel")]),
+            "↵ save · esc cancel"
+        );
+    }
+
+    #[test]
+    fn footer_hints_single_and_empty() {
+        assert_eq!(footer_hints(&[("esc", "cancel")]), "esc cancel");
+        assert_eq!(footer_hints(&[]), "");
+    }
+
+    #[test]
+    fn footer_hints_multi_action_browser_grammar() {
+        assert_eq!(
+            footer_hints(&[
+                ("↑↓", "navigate"),
+                ("↵", "load"),
+                ("del", "delete"),
+                ("esc", "cancel")
+            ]),
+            "↑↓ navigate · ↵ load · del delete · esc cancel"
+        );
+    }
 
     #[test]
     fn test_total_width_with_border_and_padding() {

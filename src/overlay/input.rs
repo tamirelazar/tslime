@@ -62,14 +62,6 @@ pub trait OverlayInputHandler {
     ///
     /// Returns `true` if the event was consumed by this overlay,
     /// `false` if it should be passed to other handlers.
-    ///
-    /// # Parameters
-    ///
-    /// * `key` - The keyboard event to handle
-    ///
-    /// # Returns
-    ///
-    /// `true` if the key was handled, `false` to pass to next handler
     fn handle_key(&mut self, key: &KeyEvent) -> bool;
 
     /// Returns key binding hints for this overlay.
@@ -117,7 +109,7 @@ pub mod key_matchers {
         matches!(key.code, KeyCode::Enter | KeyCode::Char('\n'))
     }
 
-    /// Returns true if the key is an arrow key.
+    /// Returns the arrow direction, or `None` if the key is not an arrow key.
     pub fn is_arrow(key: &KeyEvent) -> Option<Direction> {
         match key.code {
             KeyCode::Up => Some(Direction::Up),
@@ -128,7 +120,7 @@ pub mod key_matchers {
         }
     }
 
-    /// Returns true if the key is a character with optional modifiers.
+    /// Returns true if the key is the given character with exactly the given modifiers.
     pub fn is_char(key: &KeyEvent, c: char, modifiers: KeyModifiers) -> bool {
         key.code == KeyCode::Char(c) && key.modifiers == modifiers
     }
@@ -148,8 +140,6 @@ pub mod key_matchers {
 }
 
 /// A composite input handler that tries multiple handlers in order.
-///
-/// Useful for overlays that want to try multiple sub-handlers.
 pub struct CompositeHandler {
     handlers: Vec<Box<dyn OverlayInputHandler>>,
 }

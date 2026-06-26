@@ -1,7 +1,8 @@
 //! Frame buffer for terminal rendering.
 //!
-//! This module provides a double-buffered screen buffer for terminal rendering,
-//! storing character and color information for each cell in the terminal grid.
+//! This module provides an off-screen cell grid that is rebuilt each frame,
+//! storing character and color information for each cell in the terminal grid,
+//! then emitted as a single ANSI string.
 
 use crate::cli::ColorMode;
 use crate::cli::Palette;
@@ -59,10 +60,10 @@ impl Cell {
     }
 }
 
-/// A double-buffered screen buffer for terminal rendering.
+/// An off-screen cell grid for terminal rendering.
 ///
-/// Stores character and color information for each cell in the terminal grid.
-/// Handles efficient updates and string building for output.
+/// Stores character and color information for each cell in the terminal grid;
+/// overlays draw into it before the whole frame is emitted as one ANSI string.
 pub struct FrameBuffer {
     /// Width of the frame buffer in cells.
     pub(crate) width: usize,
@@ -78,6 +79,13 @@ pub struct FrameBuffer {
     pub(crate) species_rgb_colors: Vec<RgbColor>,
     background_color: Option<RgbColor>,
     ascii_contrast: f32,
+    /// Resolved color-AA strength for this frame's charset (Off when disabled
+    /// or charset ineligible). Drives the blurred color fields below.
+    aa_strength: crate::render::antialiasing::AaStrength,
+    /// Per-cell blurred base brightness (color only); empty when AA inactive.
+    aa_brightness: Vec<f32>,
+    /// Per-cell blurred temporal diff_norm (accent color); empty when inactive.
+    aa_diff_norm: Vec<f32>,
 }
 
 impl FrameBuffer {
@@ -125,6 +133,9 @@ impl FrameBuffer {
             species_rgb_colors: Vec::new(),
             background_color,
             ascii_contrast: 1.5,
+            aa_strength: crate::render::antialiasing::AaStrength::Off,
+            aa_brightness: Vec::new(),
+            aa_diff_norm: Vec::new(),
         }
     }
 
@@ -135,24 +146,49 @@ impl FrameBuffer {
         }
     }
 
+    /// Resets every cell to the matte background (blank space + background color),
+    /// wiping any simulation content and window frame already drawn. Used to give
+    /// a clean backdrop behind a modal overlay that would otherwise overlap the
+    /// frame border and read as visual noise.
+    pub fn fill_background(&mut self) {
+        let (bg_color_256, bg_color_rgb) = match (self.background_color, self.color_mode) {
+            (Some(bg), ColorMode::TrueColor) => (None, Some(bg)),
+            (Some(bg), _) => (Some(palette::rgb_to_256(bg)), None),
+            (None, _) => (None, None),
+        };
+        let blank = Cell {
+            char: ' ',
+            fg_color_256: None,
+            bg_color_256,
+            fg_color_rgb: None,
+            bg_color_rgb,
+        };
+        for cell in &mut self.cells {
+            *cell = blank;
+        }
+    }
+
     #[cfg(test)]
-    fn get_cell(&self, x: usize, y: usize) -> &Cell {
+    pub(crate) fn get_cell(&self, x: usize, y: usize) -> &Cell {
         &self.cells[y * self.width + x]
     }
 
     /// Renders a window frame onto the frame buffer.
     ///
     /// Uses the provided window frame mode and accent color from the theme.
-    /// The activity parameter is used for reactive mode.
+    /// `background_color` fills the inner separator/negative ring.
     pub fn render_window_frame(
         &mut self,
         mode: crate::simulation::config::WindowFrame,
         accent_color: RgbColor,
-        activity: Option<&[f32]>,
+        background_color: Option<RgbColor>,
+        ring_cols: usize,
+        ring_rows: usize,
     ) {
         use crate::render::window_frame::WindowFrameRenderer;
-        let renderer = WindowFrameRenderer::new(mode, accent_color);
-        renderer.render(self, activity);
+        let renderer =
+            WindowFrameRenderer::new(mode, accent_color, background_color, ring_cols, ring_rows);
+        renderer.render(self);
     }
 
     /// Renders a window frame at an arbitrary position within the buffer.
@@ -169,13 +205,16 @@ impl FrameBuffer {
         y: usize,
         w: usize,
         h: usize,
-        activity: Option<&[f32]>,
+        background_color: Option<RgbColor>,
+        ring_cols: usize,
+        ring_rows: usize,
     ) {
         use crate::render::window_frame::WindowFrameRenderer;
         // Render into a sub-buffer, then blit non-blank cells into self at (x, y)
         let mut sub = Self::new(w, h, self.color_mode, None);
-        let renderer = WindowFrameRenderer::new(mode, accent_color);
-        renderer.render(&mut sub, activity);
+        let renderer =
+            WindowFrameRenderer::new(mode, accent_color, background_color, ring_cols, ring_rows);
+        renderer.render(&mut sub);
         for sy in 0..h {
             for sx in 0..w {
                 let src_cell = &sub.cells[sy * w + sx];
@@ -262,9 +301,8 @@ impl FrameBuffer {
         let idx = y * self.width + x;
         let cell = &self.cells[idx];
 
-        // Only render grid where there's no (or very dim) simulation content
-        // Check if this cell is essentially empty (dark background)
-        // A cell is empty if it displays a space character OR has no/dark foreground color
+        // Only render grid where there's no (or very dim) simulation content:
+        // a space character, or a foreground color close to black.
         let is_empty = cell.char == ' '
             || match self.color_mode {
                 ColorMode::TrueColor => cell.fg_color_rgb.map_or(true, |c| {
@@ -281,7 +319,6 @@ impl FrameBuffer {
             };
 
         if is_empty {
-            // Apply grid with opacity to empty cells
             let dimmed_color = RgbColor {
                 r: (grid_color.r as f32 * opacity) as u8,
                 g: (grid_color.g as f32 * opacity) as u8,
@@ -312,7 +349,7 @@ impl FrameBuffer {
                 }
             }
         }
-        // If cell is not empty, don't render grid (simulation takes precedence)
+        // Non-empty cells are left alone — simulation content takes precedence.
     }
 
     /// Draw a solid panel background with left focus indicator.
@@ -398,14 +435,14 @@ impl FrameBuffer {
 
         // Draw panel background first if specified
         if let (Some(bg), Some(ind), w) = (panel_bg_color, indicator_color, indicator_width) {
-            if w > 0 && start_y < self.height {
+            if w > 0 && start_y < self.height && start_x < self.width {
                 let panel_width = text_lines
                     .iter()
                     .map(|l| l.as_ref().chars().count())
                     .max()
                     .unwrap_or(0)
                     .saturating_add(start_x)
-                    .min(self.width - start_x);
+                    .min(self.width.saturating_sub(start_x));
 
                 let panel_height = text_lines.len().min(self.height.saturating_sub(start_y));
 
@@ -469,7 +506,24 @@ impl FrameBuffer {
     /// Only cells whose override is `Some(…)` are modified; the underlying character and
     /// the existing `bg_color` from a previous `draw_text_overlay` call are preserved for
     /// cells whose override is `None`.
+    ///
+    /// Thin wrapper around [`draw_rich_overlay_solid`] with `solid = false`.
     pub fn draw_rich_overlay(&mut self, rich: &[Vec<RichCell>], start_x: usize, start_y: usize) {
+        self.draw_rich_overlay_solid(rich, start_x, start_y, false);
+    }
+
+    /// Like [`draw_rich_overlay`] but with a `solid` flag controlling space cells.
+    ///
+    /// `solid = false` — space chars are transparent (the sim shows through).
+    /// `solid = true` — space chars are written too, so a bordered modal reads
+    /// as a filled box rather than a colored mask.
+    pub fn draw_rich_overlay_solid(
+        &mut self,
+        rich: &[Vec<RichCell>],
+        start_x: usize,
+        start_y: usize,
+        solid: bool,
+    ) {
         for (dy, row) in rich.iter().enumerate() {
             let y = start_y + dy;
             if y >= self.height {
@@ -481,8 +535,8 @@ impl FrameBuffer {
                     break;
                 }
                 let idx = y * self.width + x;
-                // Write character (space = transparent, let sim show through)
-                if ch != ' ' {
+                // Space stays transparent unless `solid` (see method doc).
+                if ch != ' ' || solid {
                     self.cells[idx].char = ch;
                 }
                 if let Some(fg) = fg_override {
@@ -501,12 +555,8 @@ impl FrameBuffer {
         }
     }
 
-    /// Calculates the maximum brightness in a frame.
-    ///
-    /// This helper function is currently only used in tests but is retained
-    /// as it may be useful for future features like automatic brightness normalization
-    /// or exposure adjustment.
-    #[allow(dead_code)]
+    /// Calculates the maximum brightness in a frame. Currently only used in tests.
+    #[cfg_attr(not(test), allow(dead_code))]
     fn max_brightness(frame: &[DownsampleCell]) -> f32 {
         frame
             .iter()
@@ -547,10 +597,62 @@ impl FrameBuffer {
         gradient_strength: f32,
         trail_age_mode: TrailAgeMode,
         trail_age_reverse: bool,
+        temporal_strength: f32,
+        temporal_mode: palette::TemporalMode,
+        palette_cycle: palette::PaletteCycle,
+        glyph: charset::GlyphConfig,
+        temporal_accent: Option<palette::RgbColor>,
+        aa_strength: crate::render::antialiasing::AaStrength,
     ) -> Self {
         let mut buffer = Self::new(width, height, color_mode, background_color);
         buffer.species_colors_enabled = species_colors_enabled;
         buffer.ascii_contrast = ascii_contrast;
+
+        // Color anti-aliasing: when active for this (frame-uniform) charset,
+        // pre-blur two per-cell color fields. The glyph/shape path below reads
+        // raw quadrant data and is unaffected.
+        // PERF: when active this allocates ~3 Vec<f32> per frame (base, diff, and
+        // each blur_field output). Only runs for AA-eligible charsets (braille by
+        // default). Revisit with reusable scratch buffers if a frame-time profile
+        // shows braille-AA as hot; not worth the restructure unprofiled.
+        use crate::render::antialiasing::{blur_field, charset_aa_eligible};
+        let aa_active = aa_strength != crate::render::antialiasing::AaStrength::Off
+            && charset_aa_eligible(&charset);
+        buffer.aa_strength = if aa_active {
+            aa_strength
+        } else {
+            crate::render::antialiasing::AaStrength::Off
+        };
+        if aa_active {
+            let inv = if max_trail_value > 0.0 {
+                1.0 / max_trail_value
+            } else {
+                0.0
+            };
+            // NOTE: this AA color field samples the raw normalized trail value,
+            // intentionally BEFORE the per-cell trail-delta and edge-glow (gradient
+            // magnitude) brightness boosts applied later in create_cell. So with AA
+            // active AND those FX enabled, the AA-blurred base tone reflects the
+            // un-boosted trail; the glyph and temporal-accent paths still see the
+            // boosts. This is a deliberate, minor tonal divergence, not a bug.
+            // Base color field: mean of top/bottom trail, normalized.
+            let base: Vec<f32> = downsampled
+                .iter()
+                .take(width * height)
+                .map(|d| ((d.top + d.bottom) * 0.5 * inv).clamp(0.0, 1.0))
+                .collect();
+            buffer.aa_brightness = blur_field(&base, width, height, aa_strength);
+            // Temporal accent field: signed diff normalized (0 when no aux).
+            if let Some(aux) = aux_frame {
+                let diff: Vec<f32> = (0..width * height)
+                    .map(|i| {
+                        let cell = &aux.cells[i.min(aux.cells.len().saturating_sub(1))];
+                        cell.signed_diff * inv
+                    })
+                    .collect();
+                buffer.aa_diff_norm = blur_field(&diff, width, height, aa_strength);
+            }
+        }
 
         let species_colors_slice = species_rgb_colors.as_deref();
 
@@ -580,7 +682,7 @@ impl FrameBuffer {
             };
 
             // Per-cell hue shift and brightness boost from aux data
-            let cell_hue_shift = if let Some(aux) = aux_frame {
+            let (cell_hue_shift, cell_signed_diff) = if let Some(aux) = aux_frame {
                 let aux_cell = &aux.cells[idx.min(aux.cells.len().saturating_sub(1))];
 
                 // Delta → brightness boost
@@ -598,7 +700,7 @@ impl FrameBuffer {
                 }
 
                 // Age → hue shift (blended with original hue shift)
-                if trail_age_enabled {
+                let computed_hue_shift = if trail_age_enabled {
                     let age_hue_shift = match trail_age_mode {
                         TrailAgeMode::Bidirectional => {
                             // Center around 0: age=0 → -range/2, age=0.5 → 0, age=1 → +range/2
@@ -619,9 +721,22 @@ impl FrameBuffer {
                     hue_shift + age_hue_shift * trail_age_blend
                 } else {
                     hue_shift
-                }
+                };
+
+                (computed_hue_shift, aux_cell.signed_diff)
             } else {
-                hue_shift
+                (hue_shift, 0.0)
+            };
+
+            let diff_norm = if buffer.aa_strength != crate::render::antialiasing::AaStrength::Off
+                && !buffer.aa_diff_norm.is_empty()
+                && idx < buffer.aa_diff_norm.len()
+            {
+                buffer.aa_diff_norm[idx]
+            } else if max_trail_value > 0.0 {
+                cell_signed_diff / max_trail_value
+            } else {
+                0.0
             };
 
             let cell = buffer.create_cell(
@@ -642,6 +757,12 @@ impl FrameBuffer {
                 intensity_mapping,
                 species_colors_enabled,
                 species_colors_slice,
+                diff_norm,
+                temporal_strength,
+                temporal_mode,
+                palette_cycle,
+                glyph,
+                temporal_accent,
             );
             buffer.set_cell(x, y, cell);
         }
@@ -693,6 +814,12 @@ impl FrameBuffer {
         gradient_strength: f32,
         trail_age_mode: TrailAgeMode,
         trail_age_reverse: bool,
+        temporal_strength: f32,
+        temporal_mode: palette::TemporalMode,
+        palette_cycle: palette::PaletteCycle,
+        glyph: charset::GlyphConfig,
+        temporal_accent: Option<palette::RgbColor>,
+        aa_strength: crate::render::antialiasing::AaStrength,
     ) -> Self {
         // Build sim buffer at sim dimensions
         let sim_buffer = Self::from_downsampled(
@@ -723,6 +850,12 @@ impl FrameBuffer {
             gradient_strength,
             trail_age_mode,
             trail_age_reverse,
+            temporal_strength,
+            temporal_mode,
+            palette_cycle,
+            glyph,
+            temporal_accent,
+            aa_strength,
         );
 
         // Fast path: fullscreen — no blitting needed
@@ -747,6 +880,72 @@ impl FrameBuffer {
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn glyph_override(
+        glyph: charset::GlyphConfig,
+        cs: &Charset,
+        top_adj: f32,
+        bottom_adj: f32,
+        downsampled: &[DownsampleCell],
+        width: usize,
+        x: usize,
+        y: usize,
+        max_trail_value: f32,
+    ) -> Option<char> {
+        use charset::GlyphSelection;
+        let sel = glyph.selection?;
+        let inv = if max_trail_value > 0.0 {
+            1.0 / max_trail_value
+        } else {
+            0.0
+        };
+        let brightness_bucket =
+            || charset::map_brightness((top_adj + bottom_adj) / 2.0, None, cs.clone());
+        match sel {
+            GlyphSelection::Shape => None,
+            GlyphSelection::Brightness => match cs {
+                Charset::Ascii | Charset::Braille | Charset::Sculpted => Some(brightness_bucket()),
+                _ => None,
+            },
+            GlyphSelection::Hybrid => match cs {
+                Charset::Ascii | Charset::CustomAscii(_) => {
+                    let center = (top_adj + bottom_adj) / 2.0;
+                    let mut n = [center; 9];
+                    let height = downsampled.len().checked_div(width).unwrap_or(0);
+                    for (k, (dy, dx)) in [
+                        (-1i32, -1i32),
+                        (-1, 0),
+                        (-1, 1),
+                        (0, -1),
+                        (0, 0),
+                        (0, 1),
+                        (1, -1),
+                        (1, 0),
+                        (1, 1),
+                    ]
+                    .iter()
+                    .enumerate()
+                    {
+                        let nx = x as i32 + dx;
+                        let ny = y as i32 + dy;
+                        if nx >= 0 && nx < width as i32 && ny >= 0 && ny < height as i32 {
+                            let idx = (ny as usize) * width + nx as usize;
+                            if idx < downsampled.len() {
+                                let d = &downsampled[idx];
+                                n[k] = ((d.top + d.bottom) * 0.5 * inv).clamp(0.0, 1.0);
+                            }
+                        }
+                    }
+                    Some(
+                        charset::sobel_edge_glyph(&n, glyph.edge_threshold)
+                            .unwrap_or_else(brightness_bucket),
+                    )
+                }
+                _ => None,
+            },
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn create_cell(
         &mut self,
         x: usize,
@@ -766,6 +965,12 @@ impl FrameBuffer {
         intensity_mapping: Option<&IntensityMapping>,
         species_colors_enabled: bool,
         species_rgb_colors: Option<&[RgbColor]>,
+        diff_norm: f32,
+        temporal_strength: f32,
+        temporal_mode: palette::TemporalMode,
+        palette_cycle: palette::PaletteCycle,
+        glyph: charset::GlyphConfig,
+        temporal_accent: Option<palette::RgbColor>,
     ) -> Cell {
         const THRESHOLD: f32 = 0.01;
         let log_gaps = std::env::var("TSLIME_LOG_GAPS").is_ok();
@@ -831,7 +1036,19 @@ impl FrameBuffer {
                 bg_color_rgb: self.background_color,
             }
         } else {
-            let char = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
+            let char = if let Some(c) = Self::glyph_override(
+                glyph,
+                &charset,
+                top_adj,
+                bottom_adj,
+                downsampled,
+                self.width,
+                x,
+                y,
+                max_trail_value,
+            ) {
+                c
+            } else if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
                 match charset {
                     Charset::HalfBlock => charset::map_vertical_block(top_adj, bottom_adj),
                     Charset::HalfBlockDual => charset::map_vertical_block(top_adj, bottom_adj),
@@ -1163,12 +1380,24 @@ impl FrameBuffer {
                 }
             };
 
-            let brightness = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
+            let cell_avg = if top_adj > THRESHOLD && bottom_adj > THRESHOLD {
                 (top_adj + bottom_adj) / 2.0
             } else if top_adj > bottom_adj {
                 top_adj
             } else {
                 bottom_adj
+            };
+
+            // Color anti-aliasing: when active, color subcell-shape charsets from
+            // the pre-blurred base-brightness field (set in from_downsampled).
+            // The glyph above used raw quadrant data, so shape stays crisp.
+            let aa_idx = y * self.width + x;
+            let brightness = if self.aa_strength != crate::render::antialiasing::AaStrength::Off
+                && aa_idx < self.aa_brightness.len()
+            {
+                self.aa_brightness[aa_idx]
+            } else {
+                cell_avg
             };
 
             self.render_colored_cell(
@@ -1182,6 +1411,11 @@ impl FrameBuffer {
                 intensity_mapping,
                 species_colors_enabled,
                 species_rgb_colors,
+                diff_norm,
+                temporal_strength,
+                temporal_mode,
+                palette_cycle,
+                temporal_accent,
             )
         }
     }
@@ -1199,6 +1433,11 @@ impl FrameBuffer {
         intensity_mapping: Option<&IntensityMapping>,
         species_colors_enabled: bool,
         species_rgb_colors: Option<&[RgbColor]>,
+        diff_norm: f32,
+        temporal_strength: f32,
+        temporal_mode: palette::TemporalMode,
+        palette_cycle: palette::PaletteCycle,
+        temporal_accent: Option<palette::RgbColor>,
     ) -> Cell {
         match color_mode {
             ColorMode::TrueColor => {
@@ -1213,13 +1452,18 @@ impl FrameBuffer {
                         });
                     palette::map_species_brightness_rgb(brightness, base_color, reverse_palette)
                 } else {
-                    palette::map_brightness_rgb(
+                    palette::colorize_subpixel(
                         brightness,
                         palette.clone(),
                         reverse_palette,
                         invert_palette,
                         hue_shift,
                         intensity_mapping,
+                        diff_norm,
+                        temporal_strength,
+                        temporal_mode,
+                        palette_cycle,
+                        temporal_accent,
                     )
                 };
                 Cell {
@@ -1242,12 +1486,13 @@ impl FrameBuffer {
                         });
                     palette::map_species_brightness(brightness, base_color, reverse_palette)
                 } else {
-                    palette::map_brightness(
+                    palette::map_brightness_cycled(
                         brightness,
                         palette.clone(),
                         reverse_palette,
                         invert_palette,
                         intensity_mapping,
+                        palette_cycle,
                     )
                 };
                 Cell {
@@ -1261,7 +1506,6 @@ impl FrameBuffer {
         }
     }
 
-    #[allow(dead_code)]
     fn ansi_color_code(color: u8, is_fg: bool) -> String {
         if is_fg {
             format!("\x1b[38;5;{}m", color)
@@ -1270,7 +1514,6 @@ impl FrameBuffer {
         }
     }
 
-    #[allow(dead_code)]
     fn truecolor_code(r: u8, g: u8, b: u8, is_fg: bool) -> String {
         if is_fg {
             format!("\x1b[38;2;{};{};{}m", r, g, b)
@@ -1413,7 +1656,6 @@ impl FrameBuffer {
                 let idx = y * self.width + x;
                 let cell = &mut self.cells[idx];
 
-                // Check if cell is empty
                 let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
 
                 if is_empty && is_scanline_row {
@@ -1702,7 +1944,6 @@ impl FrameBuffer {
             for x in 1..self.width.saturating_sub(1) {
                 let idx = y * self.width + x;
 
-                // Get current brightness
                 let _current_brightness = if let Some(c) = original_cells[idx].fg_color_rgb {
                     (c.r as f32 + c.g as f32 + c.b as f32) / 3.0
                 } else {
@@ -1838,7 +2079,6 @@ impl FrameBuffer {
                 let idx = y * self.width + x;
                 let cell = &self.cells[idx];
 
-                // Check if cell is empty
                 let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
 
                 let dx = x as f32 - center_x;
@@ -1914,7 +2154,6 @@ impl FrameBuffer {
                 let idx = y * self.width + x;
                 let cell = &self.cells[idx];
 
-                // Check if cell is empty
                 let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
 
                 if is_empty {
@@ -1990,7 +2229,6 @@ impl FrameBuffer {
                 let idx = y * self.width + x;
                 let cell = &self.cells[idx];
 
-                // Check if cell is empty
                 let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
 
                 if is_empty {
@@ -2050,7 +2288,6 @@ impl FrameBuffer {
                 let idx = y * self.width + x;
                 let cell = &self.cells[idx];
 
-                // Check if cell is empty
                 let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
 
                 if is_empty {
@@ -2125,7 +2362,6 @@ impl FrameBuffer {
                     let idx = y * self.width + x;
                     let cell = &self.cells[idx];
 
-                    // Check if cell is empty
                     let is_empty = cell.char == ' ' && cell.fg_color_rgb.is_none();
 
                     if is_empty {
@@ -2179,6 +2415,7 @@ impl FrameBuffer {
         footer_keybinds: &str,
         accent: crate::render::palette::RgbColor,
         text: crate::render::palette::RgbColor,
+        dim: crate::render::palette::RgbColor,
     ) {
         if sim_h < 4 {
             return;
@@ -2249,13 +2486,12 @@ impl FrameBuffer {
             }
         }
 
-        let dim_text = crate::render::palette::RgbColor::new(102, 92, 84);
         write_row(
             &mut self.cells,
             sim_y + sim_h - 1,
             sim_x,
             footer_keybinds,
-            dim_text,
+            dim,
             sim_w,
             bw,
         );
@@ -2321,7 +2557,6 @@ impl FrameBuffer {
 /// Render a single frame to stdout.
 ///
 /// This is a convenience wrapper around creating a `FrameBuffer` and writing it.
-#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 pub fn render_frame(
     downsampled: &[DownsampleCell],
@@ -2372,6 +2607,12 @@ pub fn render_frame(
         0.3,
         TrailAgeMode::Bidirectional,
         false,
+        0.0,
+        palette::TemporalMode::Hue,
+        palette::PaletteCycle::default(),
+        charset::GlyphConfig::default(),
+        None,
+        crate::render::antialiasing::AaStrength::Off,
     );
 
     execute!(std::io::stdout(), &buffer)
@@ -2486,6 +2727,12 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, ' ');
         assert!(cell.fg_color_256.is_none());
@@ -2515,6 +2762,12 @@ mod tests {
             &mut None,
             None,
             false,
+            None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
             None,
         );
         assert_eq!(cell.char, '\u{2588}');
@@ -2546,6 +2799,12 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '\u{2588}');
         assert!(cell.fg_color_256.is_none());
@@ -2576,6 +2835,12 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -2603,6 +2868,12 @@ mod tests {
             &mut None,
             None,
             false,
+            None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
             None,
         );
         assert_eq!(cell.char, '▄');
@@ -2632,6 +2903,12 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '▀');
         assert!(cell.fg_color_256.is_some());
@@ -2659,6 +2936,12 @@ mod tests {
             &mut None,
             None,
             false,
+            None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
             None,
         );
         assert_eq!(cell.char, '▄');
@@ -2688,6 +2971,12 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '\u{2807}');
         assert!(cell.fg_color_256.is_some());
@@ -2715,6 +3004,12 @@ mod tests {
             &mut None,
             None,
             false,
+            None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
             None,
         );
         assert_eq!(cell.char, '\u{2838}');
@@ -2744,6 +3039,12 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
         );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
         assert!(cell.fg_color_256.is_some());
@@ -2771,6 +3072,12 @@ mod tests {
             &mut None,
             None,
             false,
+            None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
             None,
         );
         assert!(cell.char >= '\u{2800}' && cell.char <= '\u{28FF}');
@@ -2800,6 +3107,12 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '^');
         assert!(cell.fg_color_256.is_some());
@@ -2827,6 +3140,12 @@ mod tests {
             &mut None,
             None,
             false,
+            None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
             None,
         );
         assert_eq!(cell.char, 'v');
@@ -2856,6 +3175,12 @@ mod tests {
             None,
             false,
             None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
         );
         assert_eq!(cell.char, '=');
         assert!(cell.fg_color_256.is_some());
@@ -2883,6 +3208,12 @@ mod tests {
             &mut None,
             None,
             false,
+            None,
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
             None,
         );
         assert_eq!(cell.char, '=');
@@ -2980,6 +3311,12 @@ mod tests {
             0.3,
             TrailAgeMode::Bidirectional,
             false,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         assert_eq!(fb.width(), 10);
         assert_eq!(fb.height(), 10);
@@ -3012,6 +3349,12 @@ mod tests {
             0.3,
             TrailAgeMode::Bidirectional,
             false,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         assert_ne!(fb.cells[0].fg_color_rgb, fb_rev.cells[0].fg_color_rgb);
     }
@@ -3140,6 +3483,12 @@ mod tests {
             0.3,
             TrailAgeMode::Bidirectional,
             false,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         assert_eq!(buffer.width(), 10);
         assert_eq!(buffer.height(), 1);
@@ -3201,6 +3550,12 @@ mod tests {
             0.3,
             TrailAgeMode::Bidirectional,
             false,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
+            crate::render::antialiasing::AaStrength::Off,
         );
 
         assert_eq!(buffer.cells[0].char, '▀');
@@ -3276,6 +3631,11 @@ mod tests {
             None,
             true,
             Some(&fb.species_rgb_colors),
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            None,
         );
 
         // Should be reddish (based on first species color)
@@ -3303,6 +3663,11 @@ mod tests {
             None,
             true,
             Some(&fb.species_rgb_colors),
+            0.0,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            None,
         );
 
         // Should be an index close to red (196 or similar)
@@ -3422,6 +3787,12 @@ mod tests {
             0.3,
             TrailAgeMode::Bidirectional,
             false,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
+            crate::render::antialiasing::AaStrength::Off,
         );
         // The buffer should be 10×10
         assert_eq!(buffer.width, 10);
@@ -3439,5 +3810,788 @@ mod tests {
             cell_at_offset.char,
             cell_at_offset.fg_color_rgb
         );
+    }
+
+    /// Regression: from_downsampled_at must thread aa_strength through to the
+    /// inner from_downsampled call.  Before the fix AaStrength::Off was
+    /// hardcoded, so the window-layout path ignored the caller's strength.
+    /// Uses a 3×3 fullscreen layout (sim == term dims, so no blit) with a
+    /// bright center cell surrounded by dim neighbors — the same contrast
+    /// pattern as `color_aa_changes_color_not_glyph_for_braille` so the blur
+    /// has enough contrast to shift the center cell's color.
+    #[test]
+    fn from_downsampled_at_honors_aa_strength() {
+        use crate::render::antialiasing::AaStrength;
+
+        let w = 3usize;
+        let h = 3usize;
+        let dim = 0.3f32;
+        let mut downsampled = vec![
+            DownsampleCell {
+                top: dim,
+                bottom: dim,
+                top_left: dim,
+                top_right: dim,
+                bottom_left: dim,
+                bottom_right: dim,
+            };
+            w * h
+        ];
+        // Center cell (index 4) is full brightness; all neighbors are dim.
+        let c = &mut downsampled[4];
+        c.top = 1.0;
+        c.bottom = 1.0;
+        c.top_left = 1.0;
+        c.top_right = 1.0;
+        c.bottom_left = 1.0;
+        c.bottom_right = 1.0;
+
+        let build_at = |aa: AaStrength| {
+            FrameBuffer::from_downsampled_at(
+                &downsampled,
+                w,
+                h,
+                w, // term_w == sim_w (fast path, no blit)
+                h, // term_h == sim_h
+                0,
+                0,
+                1.0,
+                Palette::Mono,
+                Charset::Braille,
+                false,
+                false,
+                ColorMode::TrueColor,
+                0.0,
+                DitherMode::None,
+                &mut None,
+                None,
+                false,
+                None,
+                None,
+                1.5,
+                None,
+                false,
+                false,
+                60.0,
+                1.0,
+                0.5,
+                false,
+                0.3,
+                TrailAgeMode::Bidirectional,
+                false,
+                0.0,
+                palette::TemporalMode::Hue,
+                palette::PaletteCycle::default(),
+                charset::GlyphConfig::default(),
+                None,
+                aa,
+            )
+        };
+
+        let off_buf = build_at(AaStrength::Off);
+        let strong_buf = build_at(AaStrength::Strong);
+
+        // The center cell (index 4) has raw brightness 1.0 but with Strong AA
+        // its blurred brightness is pulled toward its dim (0.3) neighbors.
+        assert_ne!(
+            off_buf.cells[4].fg_color_rgb, strong_buf.cells[4].fg_color_rgb,
+            "from_downsampled_at: center cell fg must differ between Off and Strong \
+             AA — aa_strength is not being threaded through to from_downsampled"
+        );
+    }
+
+    /// Contract test: colorize_subpixel produces a different color when
+    /// temporal_strength > 0 vs. 0.  This guards the gate that strength=0 is
+    /// byte-identical to the non-temporal path while strength>0 changes color.
+    #[test]
+    fn from_downsampled_applies_temporal_color() {
+        use crate::render::palette::{self, Palette, TemporalMode};
+        let off = palette::colorize_subpixel(
+            0.6,
+            Palette::Organic,
+            false,
+            false,
+            0.0,
+            None,
+            0.5,
+            0.0,
+            TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            None,
+        );
+        let on = palette::colorize_subpixel(
+            0.6,
+            Palette::Organic,
+            false,
+            false,
+            0.0,
+            None,
+            0.5,
+            1.0,
+            TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            None,
+        );
+        assert_ne!(
+            off, on,
+            "temporal_strength=1.0 with diff_norm=0.5 must shift color"
+        );
+    }
+
+    /// End-to-end test: from_downsampled with a non-zero signed_diff in the aux
+    /// frame AND temporal_strength > 0 must produce a different cell color than
+    /// the temporal-off (strength=0.0) render of the same frame.
+    #[test]
+    fn from_downsampled_temporal_strength_changes_cell_color() {
+        use crate::render::downsample::{AuxCell, AuxFrame};
+        use palette::TemporalMode;
+
+        let cells = vec![
+            DownsampleCell {
+                top: 6.0,
+                bottom: 6.0,
+                top_left: 6.0,
+                top_right: 6.0,
+                bottom_left: 6.0,
+                bottom_right: 6.0,
+            };
+            1
+        ];
+        let max_trail = 10.0_f32;
+        // Non-zero signed_diff to drive temporal modulation
+        let aux = AuxFrame {
+            width: 1,
+            height: 1,
+            cells: vec![AuxCell {
+                age: 0.5,
+                delta: 0.0,
+                gradient: 0.0,
+                signed_diff: 5.0, // diff_norm = 5.0 / 10.0 = 0.5
+            }],
+        };
+
+        let mut ed = None;
+        let fb_off = FrameBuffer::from_downsampled(
+            &cells,
+            1,
+            1,
+            max_trail,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut ed,
+            None,
+            false,
+            None,
+            None,
+            1.5,
+            Some(&aux),
+            false,
+            false,
+            60.0,
+            1.0,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0, // temporal OFF
+            TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
+            crate::render::antialiasing::AaStrength::Off,
+        );
+
+        let fb_on = FrameBuffer::from_downsampled(
+            &cells,
+            1,
+            1,
+            max_trail,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut ed,
+            None,
+            false,
+            None,
+            None,
+            1.5,
+            Some(&aux),
+            false,
+            false,
+            60.0,
+            1.0,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
+            1.0, // temporal ON (strength = 1.0)
+            TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
+            crate::render::antialiasing::AaStrength::Off,
+        );
+
+        assert_ne!(
+            fb_off.cells[0].fg_color_rgb, fb_on.cells[0].fg_color_rgb,
+            "temporal_strength=1.0 with signed_diff=5.0/max_trail=10.0 must shift cell color"
+        );
+    }
+
+    #[test]
+    fn from_downsampled_cycle_changes_pixels_vs_identity() {
+        // Same downsampled field, cycles=1 (identity) vs cycles=3 mirror must differ somewhere.
+        use crate::render::palette::{Palette, PaletteCycle, PaletteCycleMode};
+        let w = 8usize;
+        let h = 4usize;
+        let cells: Vec<DownsampleCell> = (0..w * h)
+            .map(|i| {
+                let v = (i as f32 + 1.0) / (w * h) as f32;
+                DownsampleCell {
+                    top: v,
+                    bottom: v,
+                    top_left: v,
+                    top_right: v,
+                    bottom_left: v,
+                    bottom_right: v,
+                }
+            })
+            .collect();
+        let id = PaletteCycle::default();
+        let active = PaletteCycle {
+            cycles: 3,
+            mode: PaletteCycleMode::Mirror,
+        };
+        let mut ed = None;
+        let fb_id = FrameBuffer::from_downsampled(
+            &cells,
+            w,
+            h,
+            1.0,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut ed,
+            None,
+            false,
+            None,
+            None,
+            1.5,
+            None,
+            false,
+            false,
+            15.0,
+            0.5,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0,
+            palette::TemporalMode::Hue,
+            id,
+            charset::GlyphConfig::default(),
+            None,
+            crate::render::antialiasing::AaStrength::Off,
+        );
+        let fb_on = FrameBuffer::from_downsampled(
+            &cells,
+            w,
+            h,
+            1.0,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut ed,
+            None,
+            false,
+            None,
+            None,
+            1.5,
+            None,
+            false,
+            false,
+            15.0,
+            0.5,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0,
+            palette::TemporalMode::Hue,
+            active,
+            charset::GlyphConfig::default(),
+            None,
+            crate::render::antialiasing::AaStrength::Off,
+        );
+        // At least one cell must differ in fg_color_rgb between identity and active cycle
+        let differs = fb_id
+            .cells
+            .iter()
+            .zip(fb_on.cells.iter())
+            .any(|(a, b)| a.fg_color_rgb != b.fg_color_rgb);
+        assert!(
+            differs,
+            "cycles=3 mirror must change rendered colors vs identity"
+        );
+    }
+
+    fn sample_edge_grid() -> (Vec<DownsampleCell>, usize, usize, f32) {
+        let w = 6usize;
+        let h = 4usize;
+        let cells: Vec<DownsampleCell> = (0..w * h)
+            .map(|i| {
+                let x = i % w;
+                let v = if x < 3 { 0.0f32 } else { 1.0f32 };
+                DownsampleCell {
+                    top: v,
+                    bottom: v,
+                    top_left: v,
+                    top_right: v,
+                    bottom_left: v,
+                    bottom_right: v,
+                }
+            })
+            .collect();
+        (cells, w, h, 1.0)
+    }
+
+    #[test]
+    fn glyph_identity_default_matches_native_ascii() {
+        let (cells, w, h, maxv) = sample_edge_grid();
+        let native = FrameBuffer::from_downsampled(
+            &cells,
+            w,
+            h,
+            maxv,
+            Palette::Organic,
+            Charset::Ascii,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut None,
+            None,
+            false,
+            None,
+            None,
+            1.0,
+            None,
+            false,
+            false,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            0.0,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
+            crate::render::antialiasing::AaStrength::Off,
+        );
+        assert!(native.cells.iter().any(|c| c.char != ' '));
+    }
+
+    #[test]
+    fn glyph_hybrid_emits_directional_on_vertical_edge_ascii() {
+        let (cells, w, h, maxv) = sample_edge_grid();
+        let hybrid = charset::GlyphConfig {
+            selection: Some(charset::GlyphSelection::Hybrid),
+            edge_threshold: 0.1,
+        };
+        let fb = FrameBuffer::from_downsampled(
+            &cells,
+            w,
+            h,
+            maxv,
+            Palette::Organic,
+            Charset::Ascii,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut None,
+            None,
+            false,
+            None,
+            None,
+            1.0,
+            None,
+            false,
+            false,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            0.0,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            hybrid,
+            None,
+            crate::render::antialiasing::AaStrength::Off,
+        );
+        assert!(fb
+            .cells
+            .iter()
+            .any(|c| matches!(c.char, '|' | '/' | '-' | '\\')));
+    }
+
+    #[test]
+    fn glyph_brightness_forces_ramp_not_shape_braille() {
+        let (cells, w, h, maxv) = sample_edge_grid();
+        let bri = charset::GlyphConfig {
+            selection: Some(charset::GlyphSelection::Brightness),
+            edge_threshold: 0.15,
+        };
+        let fb = FrameBuffer::from_downsampled(
+            &cells,
+            w,
+            h,
+            maxv,
+            Palette::Organic,
+            Charset::Braille,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut None,
+            None,
+            false,
+            None,
+            None,
+            1.0,
+            None,
+            false,
+            false,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            0.0,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            bri,
+            None,
+            crate::render::antialiasing::AaStrength::Off,
+        );
+        assert!(fb
+            .cells
+            .iter()
+            .filter(|c| c.char != ' ')
+            .all(|c| ('\u{2800}'..='\u{28FF}').contains(&c.char)));
+    }
+
+    #[test]
+    fn glyph_noop_on_tonal_halfblock() {
+        let (cells, w, h, maxv) = sample_edge_grid();
+        let hyb = charset::GlyphConfig {
+            selection: Some(charset::GlyphSelection::Hybrid),
+            edge_threshold: 0.1,
+        };
+        let native = charset::GlyphConfig::default();
+        let mk = |g| {
+            FrameBuffer::from_downsampled(
+                &cells,
+                w,
+                h,
+                maxv,
+                Palette::Organic,
+                Charset::HalfBlock,
+                false,
+                false,
+                ColorMode::TrueColor,
+                0.0,
+                DitherMode::None,
+                &mut None,
+                None,
+                false,
+                None,
+                None,
+                1.0,
+                None,
+                false,
+                false,
+                0.0,
+                0.0,
+                0.0,
+                false,
+                0.0,
+                TrailAgeMode::Bidirectional,
+                false,
+                0.0,
+                palette::TemporalMode::Hue,
+                palette::PaletteCycle::default(),
+                g,
+                None,
+                crate::render::antialiasing::AaStrength::Off,
+            )
+        };
+        let a = mk(hyb);
+        let b = mk(native);
+        let chars_a: Vec<char> = a.cells.iter().map(|c| c.char).collect();
+        let chars_b: Vec<char> = b.cells.iter().map(|c| c.char).collect();
+        assert_eq!(
+            chars_a, chars_b,
+            "glyph-selection must be a no-op on HalfBlock"
+        );
+    }
+
+    #[test]
+    fn color_aa_changes_color_not_glyph_for_braille() {
+        use crate::render::antialiasing::AaStrength;
+        use crate::render::charset::Charset;
+        use crate::render::palette::Palette;
+
+        // 3×3 frame: center cell at full brightness, all others at dim (0.3).
+        // With AA on, the center's blurred brightness is pulled down toward its
+        // neighbors; with AA off it stays at 1.0. The center cell's color must differ.
+        let w = 3usize;
+        let h = 3usize;
+        let dim = 0.3f32;
+        let mut cells = vec![
+            DownsampleCell {
+                top: dim,
+                bottom: dim,
+                top_left: dim,
+                top_right: dim,
+                bottom_left: dim,
+                bottom_right: dim,
+            };
+            w * h
+        ];
+        let c = &mut cells[4]; // center (y=1, x=1)
+        c.top = 1.0;
+        c.bottom = 1.0;
+        c.top_left = 1.0;
+        c.top_right = 1.0;
+        c.bottom_left = 1.0;
+        c.bottom_right = 1.0;
+
+        let build = |aa: AaStrength| {
+            FrameBuffer::from_downsampled(
+                &cells,
+                w,
+                h,
+                1.0,
+                Palette::Mono,
+                Charset::Braille,
+                false,
+                false,
+                ColorMode::TrueColor,
+                0.0,
+                DitherMode::None,
+                &mut None,
+                None,
+                false,
+                None,
+                None,
+                1.5,
+                None,
+                false,
+                false,
+                60.0,
+                1.0,
+                0.5,
+                false,
+                0.3,
+                crate::config_defaults::TrailAgeMode::Bidirectional,
+                false,
+                0.0,
+                palette::TemporalMode::Hue,
+                palette::PaletteCycle::default(),
+                charset::GlyphConfig::default(),
+                None,
+                aa,
+            )
+        };
+
+        let off = build(AaStrength::Off);
+        let strong = build(AaStrength::Strong);
+
+        // The center cell (index 4) has raw brightness 1.0 but with Strong AA its
+        // blurred brightness is pulled toward its dim (0.3) neighbors; the resulting
+        // color must differ from the non-AA render.
+        let off_fg = off.cells[4].fg_color_rgb;
+        let strong_fg = strong.cells[4].fg_color_rgb;
+        assert_ne!(
+            off_fg, strong_fg,
+            "AA must change center cell color when neighbors differ"
+        );
+
+        // The glyph (shape) of every cell is identical regardless of AA.
+        for i in 0..w * h {
+            assert_eq!(
+                off.cells[i].char, strong.cells[i].char,
+                "glyph must not change"
+            );
+        }
+    }
+
+    #[test]
+    fn color_aa_off_is_identical_to_no_aa() {
+        use crate::render::antialiasing::AaStrength;
+        use crate::render::charset::Charset;
+        use crate::render::palette::Palette;
+
+        let w = 2usize;
+        let h = 2usize;
+        let mut cells = vec![DownsampleCell::default(); w * h];
+        cells[0].top = 0.8;
+        cells[0].bottom = 0.4;
+
+        let build = |cs: Charset, aa: AaStrength| {
+            FrameBuffer::from_downsampled(
+                &cells,
+                w,
+                h,
+                1.0,
+                Palette::Organic,
+                cs,
+                false,
+                false,
+                ColorMode::TrueColor,
+                0.0,
+                DitherMode::None,
+                &mut None,
+                None,
+                false,
+                None,
+                None,
+                1.5,
+                None,
+                false,
+                false,
+                60.0,
+                1.0,
+                0.5,
+                false,
+                0.3,
+                crate::config_defaults::TrailAgeMode::Bidirectional,
+                false,
+                0.0,
+                palette::TemporalMode::Hue,
+                palette::PaletteCycle::default(),
+                charset::GlyphConfig::default(),
+                None,
+                aa,
+            )
+        };
+
+        // For AA-ineligible charsets, AaStrength::Strong must produce byte-identical
+        // output to AaStrength::Off because the eligibility gate forces AA off.
+        // HalfBlockDual is AA-ineligible (per charset_aa_eligible).
+        let a = build(Charset::HalfBlockDual, AaStrength::Strong);
+        let b = build(Charset::HalfBlockDual, AaStrength::Off);
+        for i in 0..w * h {
+            assert_eq!(
+                a.cells[i].fg_color_rgb, b.cells[i].fg_color_rgb,
+                "AA-ineligible charset: Strong and Off must produce identical fg_color_rgb"
+            );
+            assert_eq!(
+                a.cells[i].char, b.cells[i].char,
+                "AA-ineligible charset: Strong and Off must produce identical char"
+            );
+        }
+    }
+
+    /// draw_text_overlay_with_panel must not panic when start_x >= buffer width.
+    ///
+    /// Before the fix, `.min(self.width - start_x)` underflowed (usize subtraction
+    /// wraps), yielding a huge panel width and an out-of-bounds index panic.
+    #[test]
+    fn draw_text_overlay_with_panel_start_x_gte_width_no_panic() {
+        let mut buf = FrameBuffer::new(10, 5, crate::cli::ColorMode::TrueColor, None);
+        let lines = ["hello", "world"];
+
+        // start_x exactly equal to width — must return without panic.
+        buf.draw_text_overlay_with_panel(
+            &lines,
+            10, // start_x == width
+            0,
+            231,
+            None,
+            Some(crate::render::palette::RgbColor { r: 0, g: 0, b: 0 }),
+            Some(crate::render::palette::RgbColor { r: 255, g: 0, b: 0 }),
+            1,
+        );
+
+        // start_x beyond width — must also return without panic.
+        buf.draw_text_overlay_with_panel(
+            &lines,
+            999, // start_x >> width
+            0,
+            231,
+            None,
+            Some(crate::render::palette::RgbColor { r: 0, g: 0, b: 0 }),
+            Some(crate::render::palette::RgbColor { r: 255, g: 0, b: 0 }),
+            1,
+        );
+    }
+}
+
+#[cfg(test)]
+mod rich_overlay_tests {
+    use super::*;
+    use crate::render::palette::RgbColor;
+
+    #[test]
+    fn writes_fg_override_as_is() {
+        let mut fb = FrameBuffer::new(2, 1, ColorMode::TrueColor, None);
+        let rich = vec![vec![('A', Some(RgbColor::new(200, 200, 200)), None)]];
+        fb.draw_rich_overlay_solid(&rich, 0, 0, false);
+        assert_eq!(fb.cells[0].fg_color_rgb, Some(RgbColor::new(200, 200, 200)));
+    }
+
+    #[test]
+    fn solid_false_leaves_space_transparent() {
+        // Space char = transparent when not solid; existing char is preserved.
+        let mut fb = FrameBuffer::new(2, 1, ColorMode::TrueColor, None);
+        fb.cells[0].char = 'X';
+        let rich = vec![vec![(' ', Some(RgbColor::new(100, 100, 100)), None)]];
+        fb.draw_rich_overlay_solid(&rich, 0, 0, false);
+        assert_eq!(fb.cells[0].char, 'X');
+    }
+
+    #[test]
+    fn solid_true_writes_space() {
+        // Space char is written when solid, masking the underlying cell.
+        let mut fb = FrameBuffer::new(2, 1, ColorMode::TrueColor, None);
+        fb.cells[0].char = 'X';
+        let rich = vec![vec![(' ', Some(RgbColor::new(100, 100, 100)), None)]];
+        fb.draw_rich_overlay_solid(&rich, 0, 0, true);
+        assert_eq!(fb.cells[0].char, ' ');
     }
 }

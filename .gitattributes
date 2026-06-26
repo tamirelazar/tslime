@@ -1,0 +1,4 @@
+# Golden reference files are compared byte-for-byte against generated output
+# that always uses LF. Force LF on checkout so Windows runners (core.autocrlf=true)
+# don't rewrite them to CRLF and break the snapshot tests.
+tests/golden/** text eol=lf

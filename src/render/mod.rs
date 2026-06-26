@@ -1,7 +1,5 @@
-//! Rendering pipeline for terminal output.
-//!
-//! This module provides the complete rendering pipeline from simulation data to terminal output.
-//! It handles downsampling, color mapping, character selection, dithering, and overlay rendering.
+//! Rendering pipeline from simulation data to terminal output: downsampling,
+//! color mapping, character selection, dithering, and overlays.
 //!
 //! # Pipeline Overview
 //!
@@ -27,10 +25,16 @@
 
 /// Adaptive brightness normalization logic.
 pub mod adaptive_brightness;
+/// Ambient instrument surface and state machine.
+pub mod ambient;
+/// Color anti-aliasing for subcell-shape charsets.
+pub mod antialiasing;
 /// Character set definitions and mapping logic.
 pub mod charset;
 /// Standalone (non-palette) color constants.
 pub mod color_constants;
+/// Two-depth Controls instrument surface.
+pub mod controls;
 /// Dithering algorithms (ordered, error diffusion).
 pub mod dither;
 /// Downsampling from simulation grid to terminal grid.
@@ -41,18 +45,19 @@ pub mod error_diffusion;
 pub mod gradients;
 /// Background grid rendering.
 pub mod grid;
+/// Motion math helpers (lerp, breath).
+pub mod motion;
 /// Color palette definitions and conversions.
 pub mod palette;
 /// Theme/color scheme definitions.
 pub mod theme;
+/// Reusable rendering widgets and layout tokens.
+pub mod widgets;
 /// Window layout geometry computation (aspect-ratio-correct sim rect).
 pub mod window;
 /// Window frame rendering for terminal display.
 pub mod window_frame;
 
-#[cfg(feature = "terminal")]
-/// Controls overlay rendering.
-pub mod options_overlay;
 #[cfg(feature = "terminal")]
 /// General overlay rendering utilities (help, stats, etc.).
 pub mod overlay;
@@ -62,3 +67,11 @@ pub mod palette_editor;
 #[cfg(feature = "terminal")]
 /// Panel styling and theme definitions.
 pub mod panel;
+
+#[cfg(feature = "terminal")]
+/// Config browser and save-dialog overlay builders (hand-rolled; no ratatui dep).
+pub mod ratatui_adapter;
+
+#[cfg(feature = "terminal")]
+/// Preset-switch transition overlays (figlet / typed readout).
+pub mod transition;

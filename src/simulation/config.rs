@@ -4,6 +4,7 @@
 //! including presets, diffusion kernels, initialization modes, and environmental effects.
 
 use image::io::Reader as ImageReader;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::path::Path;
 
@@ -15,7 +16,8 @@ use crate::config_defaults::{
 use crate::render::palette::RgbColor;
 
 /// Algorithm used for pheromone diffusion (spreading).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DiffusionKernel {
     /// Simple 3×3 box blur averaging. Fast with sharp patterns.
     Mean3x3,
@@ -23,10 +25,42 @@ pub enum DiffusionKernel {
     Gaussian,
 }
 
+/// Nonlinear curve applied to per-frame accumulated deposit before folding
+/// into the trail. `Linear` (with scale 1, cap 0) is byte-identical to the
+/// historical per-agent deposit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DepositCurve {
+    /// Identity: `x`. Default; preserves historical behavior.
+    #[default]
+    Linear,
+    /// `sqrt(x)` — compresses density spikes into filaments.
+    Sqrt,
+    /// `ln(1 + x)` — log compression (0 at 0, guards log(0)).
+    Log,
+    /// `x^gamma` — `deposit_gamma` is the exponent (γ<1 compresses, γ>1 expands).
+    Pow,
+}
+
+impl DepositCurve {
+    /// Apply the curve to a (non-negative) accumulated deposit value.
+    /// `gamma` is used only by `Pow`.
+    #[inline]
+    pub fn apply(self, x: f32, gamma: f32) -> f32 {
+        match self {
+            DepositCurve::Linear => x,
+            DepositCurve::Sqrt => x.sqrt(),
+            DepositCurve::Log => (1.0 + x).ln(),
+            DepositCurve::Pow => x.powf(gamma),
+        }
+    }
+}
+
 /// Named parameter presets for different visual styles.
 ///
 /// Each preset combines multiple parameters optimized for a specific aesthetic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Preset {
     /// Dense, interconnected networks with rapid branching.
     Network,
@@ -36,783 +70,389 @@ pub enum Preset {
     Tendrils,
     /// Balanced, natural-looking growth (default).
     Organic,
-    /// Minimal, sparse patterns with fewer agents.
-    Minimal,
-    /// Organic moss-like growth patterns.
-    Moss,
-    /// Space-inspired ethereal patterns.
-    Cosmic,
     /// Aggressive, fast-moving flame-like patterns.
     Fire,
-    /// Calm, meditative slow-moving patterns.
-    Zen,
-    /// Dynamic, turbulent patterns.
-    Storm,
     /// Flowing, water-like patterns.
     River,
-    /// Ethereal, ghost-like patterns.
-    Ethereal,
     /// Petri dish simulation: starts center, slow growth, persistent trails.
+    #[serde(rename = "petridish")]
     PetriDish,
     /// Spinning vortex patterns (rotation_angle > sensor_angle).
     Vortex,
     /// Fast dendritic branching like lightning.
     Lightning,
-    /// Slow, stable geometric crystal growth.
-    Crystal,
     /// Edge-of-chaos sensitive patterns (sensor_angle ≈ rotation_angle).
+    #[serde(rename = "chaosedge")]
     ChaosEdge,
     /// Aggregating blob clusters.
     Blob,
-    /// Long snaking worm-like trails.
-    Worm,
-    /// Rhythmic pulsing waves with trail-based modulation.
-    Pulse,
-    /// Dense coral-like branching structures.
-    Coral,
-    /// Cohesive flocking group movement.
-    Flocking,
-    /// Complex maze-like corridor patterns.
-    Maze,
-    /// Concentric ripple patterns.
-    Ripple,
+    /// Slime-mold surface tension with trail-based flow modulation.
+    Slime,
+    /// Creeping vine tendrils with trail-modulated cohesion.
+    Vines,
+    /// ASCII-rendered cohesive flocking (vines pattern).
+    Vinescii,
+    /// Drifting smoke columns with wrapping boundary.
+    Smoke,
     /// Enhanced vortex with trail modulation.
+    #[serde(rename = "vortex36")]
     Vortex36,
-    /// Dramatic behavior shifts based on trail density.
-    Chameleon,
     /// Dynamic tendrils with trail-based sensor modulation.
+    #[serde(rename = "dynamictendrils")]
     DynamicTendrils,
-    /// Morphing coral with dramatic parameter shifts.
-    MorphingCoral,
-    /// Reactive swarm with trail-dependent behavior.
-    ReactiveSwarm,
-    /// Two-species with opposing modulation patterns.
-    DuelingModulators,
+    /// Bleuje-style front-lit veins: temporal-accent recolor of growing fronts.
+    Mold,
+    /// Directional filament linework via Sobel glyph selection (Braille, TUI-only).
+    Etching,
+    /// Color that shifts with motion direction (temporal Hue mode).
+    Drift,
+    /// Constellation: crisp star-map held via continuous template re-stamp (Points charset).
+    Constellation,
+    /// Posterized color bands (Quantize mapping + Wrap palette cycles).
+    Mosaic,
+    /// Veined stone via heavy Gaussian + Perlin intensity mapping.
+    Marble,
+    /// Maximum color resolution (HalfBlockDual + SquareRoot mapping).
+    Prism,
+    /// Soft parchment density (Shade charset + Log deposit curve).
+    Vellum,
+    /// Grainy molten thermal (Exponential mapping + afterglow).
+    Forge,
+    /// Slow ghosting decay via low decay-gamma + Pow deposit curve.
+    Wane,
+    /// Delicate threads (Braille + brightness glyphs + Power mapping).
+    Gossamer,
+    /// Typographic engraving (custom ASCII + Sigmoid mapping).
+    Codex,
+    /// Living water with animated hue-shift over time.
+    Tide,
+    /// The tslime logo held as a stable figure: constellation re-stamp behavior
+    /// with the embedded logo image as the template (FoodConstellation init).
+    Trademark,
+}
+
+/// Static identity of one preset: the enum variant, its display name, extra
+/// parse aliases, and an optional number-row quick-select key.
+///
+/// [`PRESETS`] is the single source of truth for preset *identity*: CLI parsing,
+/// display names, the live quick-select keys, and the validation test all derive
+/// from it. Per-preset simulation parameters live in [`Preset::apply`]; per-preset
+/// render defaults live in `RenderArtDefaults`. This table deliberately does not
+/// duplicate either payload — only identity.
+pub struct PresetSpec {
+    /// The preset this entry describes.
+    pub preset: Preset,
+    /// Display name; also the canonical case-insensitive CLI parse key.
+    pub name: &'static str,
+    /// Additional case-insensitive names accepted on the CLI (hyphen/underscore
+    /// variants, short forms).
+    pub aliases: &'static [&'static str],
+    /// Number-row key (`1`–`7`) that live-switches to this preset, if any. The
+    /// shifted form selects it for A/B comparison.
+    pub quick_key: Option<char>,
+}
+
+/// Identity table for every preset — the single list to edit when adding or
+/// removing one (alongside the [`Preset`] variant and its [`Preset::apply`] arm).
+pub const PRESETS: &[PresetSpec] = &[
+    PresetSpec {
+        preset: Preset::Network,
+        name: "Network",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Exploratory,
+        name: "Exploratory",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Tendrils,
+        name: "Tendrils",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Organic,
+        name: "Organic",
+        aliases: &[],
+        quick_key: Some('1'),
+    },
+    PresetSpec {
+        preset: Preset::Fire,
+        name: "Fire",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::River,
+        name: "River",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::PetriDish,
+        name: "PetriDish",
+        aliases: &["petri"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Vortex,
+        name: "Vortex",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Lightning,
+        name: "Lightning",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::ChaosEdge,
+        name: "ChaosEdge",
+        aliases: &["chaos-edge", "chaos_edge"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Blob,
+        name: "Blob",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Slime,
+        name: "Slime",
+        aliases: &["pulse"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Vines,
+        name: "Vines",
+        aliases: &["flocking"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Vinescii,
+        name: "Vinescii",
+        aliases: &["vines-ascii"],
+        quick_key: Some('3'),
+    },
+    PresetSpec {
+        preset: Preset::Smoke,
+        name: "Smoke",
+        aliases: &["ripple"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Vortex36,
+        name: "Vortex36",
+        aliases: &["vortex-36", "vortex_36"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::DynamicTendrils,
+        name: "DynamicTendrils",
+        aliases: &["dynamic-tendrils", "dynamic_tendrils"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Mold,
+        name: "Mold",
+        aliases: &["lumen"],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Etching,
+        name: "Etching",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Drift,
+        name: "Drift",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Constellation,
+        name: "constellations",
+        aliases: &["constellation", "atlas"],
+        quick_key: Some('2'),
+    },
+    PresetSpec {
+        preset: Preset::Mosaic,
+        name: "Mosaic",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Marble,
+        name: "Marble",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Prism,
+        name: "Prism",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Vellum,
+        name: "Vellum",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Forge,
+        name: "Forge",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Wane,
+        name: "Wane",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Gossamer,
+        name: "Gossamer",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Codex,
+        name: "Codex",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Tide,
+        name: "Tide",
+        aliases: &[],
+        quick_key: None,
+    },
+    PresetSpec {
+        preset: Preset::Trademark,
+        name: "Trademark",
+        aliases: &["logo", "logo-constellation", "logogram", "tslime"],
+        quick_key: Some('4'),
+    },
+];
+
+/// Looks up a preset by display name or alias (case-insensitive).
+#[must_use]
+pub fn preset_from_name(name: &str) -> Option<Preset> {
+    PRESETS
+        .iter()
+        .find(|spec| {
+            spec.name.eq_ignore_ascii_case(name)
+                || spec.aliases.iter().any(|a| a.eq_ignore_ascii_case(name))
+        })
+        .map(|spec| spec.preset)
+}
+
+/// Comma-separated list of canonical preset names, for CLI error messages.
+#[must_use]
+pub fn preset_name_list() -> String {
+    PRESETS
+        .iter()
+        .map(|spec| spec.name.to_lowercase())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Preset bound to a number-row key (`1`–`7`) for live switching, if any.
+#[must_use]
+pub fn preset_for_set_key(key: char) -> Option<Preset> {
+    PRESETS
+        .iter()
+        .find(|spec| spec.quick_key == Some(key))
+        .map(|spec| spec.preset)
+}
+
+/// Preset bound to a shifted number key (`!@#$%^&`) for A/B comparison, if any.
+#[must_use]
+pub fn preset_for_compare_key(key: char) -> Option<Preset> {
+    shifted_digit(key).and_then(preset_for_set_key)
+}
+
+/// Public mapping from a shifted number key (`!@#$%^&`) to its base digit (`1`-`7`).
+#[must_use]
+pub fn compare_key_digit(key: char) -> Option<char> {
+    shifted_digit(key)
+}
+
+/// Maps a shifted number key to its base digit (`!`→`1` … `&`→`7`).
+fn shifted_digit(key: char) -> Option<char> {
+    match key {
+        '!' => Some('1'),
+        '@' => Some('2'),
+        '#' => Some('3'),
+        '$' => Some('4'),
+        '%' => Some('5'),
+        '^' => Some('6'),
+        '&' => Some('7'),
+        _ => None,
+    }
 }
 
 impl Preset {
-    /// Apply this preset to a SimConfig, modifying only the fields that differ from defaults.
-    pub fn apply(&self, config: &mut SimConfig) {
+    /// Display name of this preset (from [`PRESETS`]).
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        PRESETS
+            .iter()
+            .find(|spec| spec.preset == *self)
+            .map_or("Unknown", |spec| spec.name)
+    }
+
+    /// A short one-line "character" tagline, shown under figlet/type transitions
+    /// when taglines are enabled. Exhaustive so new presets must add one.
+    pub fn tagline(&self) -> &'static str {
+        use Preset::*;
         match self {
-            Preset::Network => {
-                config.sensor_angle = 15.0;
-                config.rotation_angle = 30.0;
-                config.decay_factor = 0.85;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 20.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 50_000,
-                    sensor_angle: 15.0,
-                    rotation_angle: 30.0,
-                    ..Default::default()
-                }];
-            }
-            Preset::Exploratory => {
-                config.sensor_angle = 45.0;
-                config.sensor_distance = 15.0;
-                config.rotation_angle = 60.0;
-                config.decay_factor = 0.96;
-                config.deposit_amount = 3.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 12.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 30_000,
-                    sensor_angle: 45.0,
-                    rotation_angle: 60.0,
-                    deposit_amount: 3.0,
-                    ..Default::default()
-                }];
-            }
-            Preset::Tendrils => {
-                config.sensor_angle = 30.0;
-                config.sensor_distance = 12.0;
-                config.rotation_angle = 45.0;
-                config.step_size = 2.0;
-                config.decay_factor = 0.90;
-                config.deposit_amount = 4.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 16.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 40_000,
-                    sensor_angle: 30.0,
-                    rotation_angle: 45.0,
-                    step_size: 2.0,
-                    deposit_amount: 4.0,
-                    ..Default::default()
-                }];
-            }
-            Preset::Organic => {
-                config.sensor_angle = 22.5;
-                config.sensor_distance = 9.0;
-                config.rotation_angle = 45.0;
-                config.step_size = 1.0;
-                config.decay_factor = 0.85;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 20.0;
-            }
-            Preset::Minimal => {
-                config.sensor_angle = 30.0;
-                config.sensor_distance = 9.0;
-                config.rotation_angle = 30.0;
-                config.step_size = 0.8;
-                config.decay_factor = 0.95;
-                config.deposit_amount = 3.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 15.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 15_000,
-                    sensor_angle: 30.0,
-                    rotation_angle: 30.0,
-                    step_size: 0.8,
-                    deposit_amount: 3.0,
-                    ..Default::default()
-                }];
-            }
-            Preset::Moss => {
-                config.sensor_angle = 22.0;
-                config.sensor_distance = 12.0;
-                config.rotation_angle = 35.0;
-                config.decay_factor = 0.88;
-                config.deposit_amount = 4.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 18.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 35_000,
-                    sensor_angle: 22.0,
-                    rotation_angle: 35.0,
-                    deposit_amount: 4.0,
-                    color: RgbColor::from_hex(0x4a7a4a),
-                    ..Default::default()
-                }];
-            }
-            Preset::Cosmic => {
-                config.sensor_angle = 55.0;
-                config.sensor_distance = 15.0;
-                config.rotation_angle = 45.0;
-                config.step_size = 0.7;
-                config.decay_factor = 0.93;
-                config.deposit_amount = 3.0;
-                config.max_brightness = 14.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 25_000,
-                    sensor_angle: 55.0,
-                    rotation_angle: 45.0,
-                    step_size: 0.7,
-                    deposit_amount: 3.0,
-                    color: RgbColor::from_hex(0x8a2be2),
-                    ..Default::default()
-                }];
-            }
-            Preset::Fire => {
-                config.sensor_angle = 15.0;
-                config.rotation_angle = 30.0;
-                config.step_size = 1.5;
-                config.decay_factor = 0.85;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 20.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 100_000,
-                    sensor_angle: 15.0,
-                    rotation_angle: 30.0,
-                    step_size: 1.5,
-                    color: RgbColor::from_hex(0xff4500),
-                    ..Default::default()
-                }];
-            }
-            Preset::Zen => {
-                config.sensor_distance = 12.0;
-                config.sensor_angle = 25.0;
-                config.rotation_angle = 30.0;
-                config.step_size = 0.5;
-                config.decay_factor = 0.94;
-                config.deposit_amount = 2.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 12.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 10_000,
-                    sensor_angle: 25.0,
-                    rotation_angle: 30.0,
-                    step_size: 0.5,
-                    deposit_amount: 2.0,
-                    color: RgbColor::from_hex(0xffffff),
-                    ..Default::default()
-                }];
-            }
-            Preset::Storm => {
-                config.sensor_angle = 20.0;
-                config.rotation_angle = 60.0;
-                config.step_size = 2.0;
-                config.decay_factor = 0.80;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 18.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 80_000,
-                    sensor_angle: 20.0,
-                    rotation_angle: 60.0,
-                    step_size: 2.0,
-                    color: RgbColor::from_hex(0x4682b4),
-                    ..Default::default()
-                }];
-                config.wind = Some(Wind::new(0.1, 0.05));
-            }
-            Preset::River => {
-                config.sensor_angle = 25.0;
-                config.step_size = 1.2;
-                config.decay_factor = 0.90;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 18.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 45_000,
-                    sensor_angle: 25.0,
-                    step_size: 1.2,
-                    color: RgbColor::from_hex(0x1e90ff),
-                    ..Default::default()
-                }];
-                config.wind = Some(Wind::new(0.3, 0.0));
-            }
-            Preset::Ethereal => {
-                config.sensor_angle = 40.0;
-                config.step_size = 0.7;
-                config.decay_factor = 0.98;
-                config.deposit_amount = 2.0;
-                config.max_brightness = 12.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 25_000,
-                    sensor_angle: 40.0,
-                    step_size: 0.7,
-                    deposit_amount: 2.0,
-                    color: RgbColor::from_hex(0xe6e6fa),
-                    ..Default::default()
-                }];
-            }
-            Preset::PetriDish => {
-                config.sensor_angle = 45.0;
-                config.rotation_angle = 20.0;
-                config.step_size = 0.05;
-                config.decay_factor = 0.999;
-                config.deposit_amount = 0.2;
-                config.max_brightness = 50.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "mold".to_string(),
-                    count: 20_000,
-                    sensor_angle: 45.0,
-                    rotation_angle: 20.0,
-                    step_size: 0.05,
-                    deposit_amount: 0.2,
-                    color: RgbColor::from_hex(0xd4ff00),
-                    ..Default::default()
-                }];
-                config.obstacles = vec![Obstacle::Circle {
-                    x: 200.0,
-                    y: 100.0,
-                    radius: 90.0,
-                }];
-                config.background_color = Some("000000".to_string());
-                config.preferred_init_mode = Some(InitMode::Petri);
-            }
-            Preset::Vortex => {
-                config.sensor_angle = 25.2;
-                config.sensor_distance = 3.9;
-                config.rotation_angle = 46.4;
-                config.step_size = 1.92;
-                config.decay_factor = 0.96;
-                config.deposit_amount = 4.3;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 32_000,
-                    sensor_angle: 25.2,
-                    rotation_angle: 46.4,
-                    step_size: 1.92,
-                    deposit_amount: 4.3,
-                    color: RgbColor::from_hex(0x9370db),
-                    ..Default::default()
-                }];
-            }
-            Preset::Lightning => {
-                config.sensor_angle = 31.9;
-                config.sensor_distance = 23.2;
-                config.rotation_angle = 39.3;
-                config.step_size = 2.48;
-                config.decay_factor = 0.82;
-                config.deposit_amount = 20.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 40.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 7_000,
-                    sensor_angle: 31.9,
-                    rotation_angle: 39.3,
-                    step_size: 2.48,
-                    deposit_amount: 20.0,
-                    color: RgbColor::from_hex(0x00ffff),
-                    ..Default::default()
-                }];
-            }
-            Preset::Crystal => {
-                config.sensor_angle = 38.9;
-                config.sensor_distance = 30.6;
-                config.rotation_angle = 21.5;
-                config.step_size = 1.47;
-                config.decay_factor = 0.50;
-                config.deposit_amount = 2.1;
-                config.diffusion_sigma = 1.2;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 38_000,
-                    sensor_angle: 38.9,
-                    rotation_angle: 21.5,
-                    step_size: 1.47,
-                    deposit_amount: 2.1,
-                    color: RgbColor::from_hex(0xb0e0e6),
-                    ..Default::default()
-                }];
-            }
-            Preset::ChaosEdge => {
-                config.sensor_angle = 5.0;
-                config.sensor_distance = 26.4;
-                config.rotation_angle = 56.2;
-                config.step_size = 0.58;
-                config.decay_factor = 0.99;
-                config.deposit_amount = 15.8;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 25.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 52_000,
-                    sensor_angle: 5.0,
-                    rotation_angle: 56.2,
-                    step_size: 0.58,
-                    deposit_amount: 15.8,
-                    color: RgbColor::from_hex(0xff6347),
-                    ..Default::default()
-                }];
-            }
-            Preset::Blob => {
-                config.sensor_angle = 72.1;
-                config.sensor_distance = 2.1;
-                config.rotation_angle = 90.0;
-                config.step_size = 0.92;
-                config.decay_factor = 0.50;
-                config.deposit_amount = 9.3;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 25.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 21_000,
-                    sensor_angle: 72.1,
-                    rotation_angle: 90.0,
-                    step_size: 0.92,
-                    deposit_amount: 9.3,
-                    color: RgbColor::from_hex(0x32cd32),
-                    ..Default::default()
-                }];
-            }
-            Preset::Worm => {
-                config.sensor_angle = 38.8;
-                config.sensor_distance = 50.0;
-                config.rotation_angle = 13.4;
-                config.step_size = 1.96;
-                config.decay_factor = 0.65;
-                config.deposit_amount = 6.3;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 6_000,
-                    sensor_angle: 38.8,
-                    rotation_angle: 13.4,
-                    step_size: 1.96,
-                    deposit_amount: 6.3,
-                    color: RgbColor::from_hex(0xdaa520),
-                    ..Default::default()
-                }];
-            }
-            Preset::Pulse => {
-                config.sensor_angle = 60.0;
-                config.sensor_distance = 30.0;
-                config.rotation_angle = 15.0;
-                config.step_size = 1.0;
-                config.decay_factor = 0.90;
-                config.deposit_amount = 4.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 18.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 35_000,
-                    sensor_angle: 60.0,
-                    rotation_angle: 15.0,
-                    step_size: 1.0,
-                    deposit_amount: 4.0,
-                    color: RgbColor::from_hex(0x00ced1),
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 30.0,
-                        sensor_distance_multiplier: -20.0,
-                        sensor_distance_exponent: 1.5,
-                        sensor_angle_base: 60.0,
-                        sensor_angle_multiplier: -40.0,
-                        sensor_angle_exponent: 2.0,
-                        rotation_angle_base: 15.0,
-                        rotation_angle_multiplier: 30.0,
-                        rotation_angle_exponent: 1.0,
-                        step_size_base: 1.0,
-                        step_size_multiplier: 2.0,
-                        step_size_exponent: 1.0,
-                        ..Default::default()
-                    }),
-                }];
-            }
-            Preset::Coral => {
-                config.sensor_angle = 30.0;
-                config.sensor_distance = 20.0;
-                config.rotation_angle = 45.0;
-                config.step_size = 0.3;
-                config.decay_factor = 0.92;
-                config.deposit_amount = 3.0;
-                config.diffusion_kernel = DiffusionKernel::Gaussian;
-                config.diffusion_sigma = 1.2;
-                config.max_brightness = 15.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 40_000,
-                    sensor_angle: 30.0,
-                    rotation_angle: 45.0,
-                    step_size: 0.3,
-                    deposit_amount: 3.0,
-                    color: RgbColor::from_hex(0xff7f50),
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 20.0,
-                        sensor_distance_multiplier: 10.0,
-                        sensor_distance_exponent: 0.5,
-                        sensor_angle_base: 30.0,
-                        sensor_angle_multiplier: 40.0,
-                        sensor_angle_exponent: 1.0,
-                        rotation_angle_base: 45.0,
-                        rotation_angle_multiplier: -20.0,
-                        rotation_angle_exponent: 1.0,
-                        step_size_base: 0.3,
-                        step_size_multiplier: 0.0,
-                        step_size_exponent: 1.0,
-                        ..Default::default()
-                    }),
-                }];
-            }
-            Preset::Flocking => {
-                config.sensor_angle = 45.0;
-                config.sensor_distance = 25.0;
-                config.rotation_angle = 60.0;
-                config.step_size = 1.5;
-                config.decay_factor = 0.88;
-                config.deposit_amount = 5.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 20.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 50_000,
-                    sensor_angle: 45.0,
-                    rotation_angle: 60.0,
-                    step_size: 1.5,
-                    deposit_amount: 5.0,
-                    color: RgbColor::from_hex(0x4169e1),
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 25.0,
-                        sensor_distance_multiplier: -20.0,
-                        sensor_distance_exponent: 1.0,
-                        sensor_angle_base: 45.0,
-                        sensor_angle_multiplier: 0.0,
-                        sensor_angle_exponent: 1.0,
-                        rotation_angle_base: 60.0,
-                        rotation_angle_multiplier: -50.0,
-                        rotation_angle_exponent: 1.5,
-                        step_size_base: 1.5,
-                        step_size_multiplier: 1.0,
-                        step_size_exponent: 1.0,
-                        ..Default::default()
-                    }),
-                }];
-            }
-            Preset::Maze => {
-                config.sensor_angle = 85.0;
-                config.sensor_distance = 15.0;
-                config.rotation_angle = 20.0;
-                config.step_size = 0.8;
-                config.decay_factor = 0.85;
-                config.deposit_amount = 6.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 22.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 45_000,
-                    sensor_angle: 85.0,
-                    rotation_angle: 20.0,
-                    step_size: 0.8,
-                    deposit_amount: 6.0,
-                    color: RgbColor::from_hex(0x8b4513),
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 15.0,
-                        sensor_distance_multiplier: 5.0,
-                        sensor_distance_exponent: 1.0,
-                        sensor_angle_base: 85.0,
-                        sensor_angle_multiplier: 0.0,
-                        sensor_angle_exponent: 1.0,
-                        rotation_angle_base: 20.0,
-                        rotation_angle_multiplier: 40.0,
-                        rotation_angle_exponent: 2.0,
-                        step_size_base: 0.8,
-                        step_size_multiplier: 0.4,
-                        step_size_exponent: 1.0,
-                        ..Default::default()
-                    }),
-                }];
-            }
-            Preset::Ripple => {
-                config.sensor_angle = 35.0;
-                config.sensor_distance = 12.0;
-                config.rotation_angle = 30.0;
-                config.step_size = 1.0;
-                config.decay_factor = 0.94;
-                config.deposit_amount = 3.5;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 16.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 30_000,
-                    sensor_angle: 35.0,
-                    rotation_angle: 30.0,
-                    step_size: 1.0,
-                    deposit_amount: 3.5,
-                    color: RgbColor::from_hex(0x20b2aa),
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 12.0,
-                        sensor_distance_multiplier: 8.0,
-                        sensor_distance_exponent: 0.8,
-                        sensor_angle_base: 35.0,
-                        sensor_angle_multiplier: 25.0,
-                        sensor_angle_exponent: 1.2,
-                        rotation_angle_base: 30.0,
-                        rotation_angle_multiplier: -15.0,
-                        rotation_angle_exponent: 1.0,
-                        step_size_base: 1.0,
-                        step_size_multiplier: 1.5,
-                        step_size_exponent: 1.0,
-                        vertical_offset: 5.0,
-                        ..Default::default()
-                    }),
-                }];
-            }
-            Preset::Vortex36 => {
-                config.sensor_angle = 25.2;
-                config.sensor_distance = 7.0;
-                config.rotation_angle = 46.4;
-                config.step_size = 1.92;
-                config.decay_factor = 0.96;
-                config.deposit_amount = 4.3;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 32_000,
-                    sensor_angle: 25.2,
-                    rotation_angle: 46.4,
-                    step_size: 1.92,
-                    deposit_amount: 4.3,
-                    color: RgbColor::from_hex(0x9370db),
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 4.0,
-                        sensor_distance_multiplier: 3.0,
-                        sensor_distance_exponent: 1.0,
-                        sensor_angle_base: 25.0,
-                        sensor_angle_multiplier: 10.0,
-                        sensor_angle_exponent: 1.0,
-                        rotation_angle_base: 46.0,
-                        rotation_angle_multiplier: -20.0,
-                        rotation_angle_exponent: 1.0,
-                        step_size_base: 1.9,
-                        step_size_multiplier: 0.5,
-                        step_size_exponent: 1.0,
-                        heading_offset: 3.0,
-                        ..Default::default()
-                    }),
-                }];
-            }
-            Preset::Chameleon => {
-                config.sensor_angle = 40.0;
-                config.sensor_distance = 25.0;
-                config.rotation_angle = 45.0;
-                config.step_size = 2.5;
-                config.decay_factor = 0.90;
-                config.deposit_amount = 5.0;
-                config.diffusion_kernel = DiffusionKernel::Mean3x3;
-                config.max_brightness = 25.0;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "default".to_string(),
-                    count: 35_000,
-                    sensor_angle: 40.0,
-                    rotation_angle: 45.0,
-                    step_size: 2.5,
-                    deposit_amount: 5.0,
-                    color: RgbColor::from_hex(0x9932cc),
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 5.0,
-                        sensor_distance_multiplier: 40.0,
-                        sensor_distance_exponent: 2.0,
-                        sensor_angle_base: 10.0,
-                        sensor_angle_multiplier: 70.0,
-                        sensor_angle_exponent: 2.0,
-                        rotation_angle_base: 5.0,
-                        rotation_angle_multiplier: 80.0,
-                        rotation_angle_exponent: 2.0,
-                        step_size_base: 0.1,
-                        step_size_multiplier: 5.0,
-                        step_size_exponent: 1.5,
-                        ..Default::default()
-                    }),
-                }];
-            }
-            Preset::DynamicTendrils => {
-                config.decay_factor = 0.92;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "tendril".to_string(),
-                    count: 25_000,
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 5.0,
-                        sensor_distance_multiplier: 45.0,
-                        sensor_distance_exponent: 0.7,
-                        sensor_angle_base: 15.0,
-                        sensor_angle_multiplier: 60.0,
-                        sensor_angle_exponent: 2.0,
-                        rotation_angle_base: 10.0,
-                        rotation_angle_multiplier: 50.0,
-                        rotation_angle_exponent: 1.5,
-                        step_size_base: 0.5,
-                        step_size_multiplier: 3.0,
-                        step_size_exponent: 1.0,
-                        ..Default::default()
-                    }),
-                    color: RgbColor::from_hex(0x00fa9a),
-                    ..Default::default()
-                }];
-            }
-            Preset::MorphingCoral => {
-                config.decay_factor = 0.88;
-                config.diffusion_kernel = DiffusionKernel::Gaussian;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "coral".to_string(),
-                    count: 30_000,
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 40.0,
-                        sensor_distance_multiplier: -35.0,
-                        sensor_distance_exponent: 0.5,
-                        sensor_angle_base: 5.0,
-                        sensor_angle_multiplier: 80.0,
-                        sensor_angle_exponent: 2.5,
-                        rotation_angle_base: 5.0,
-                        rotation_angle_multiplier: 75.0,
-                        rotation_angle_exponent: 2.0,
-                        step_size_base: 0.2,
-                        step_size_multiplier: 2.0,
-                        step_size_exponent: 1.0,
-                        trail_rescale: 2.0,
-                        ..Default::default()
-                    }),
-                    color: RgbColor::from_hex(0xff69b4),
-                    ..Default::default()
-                }];
-            }
-            Preset::ReactiveSwarm => {
-                config.decay_factor = 0.85;
-                config.species_configs = vec![SpeciesConfig {
-                    name: "swarm".to_string(),
-                    count: 60_000,
-                    trail_modulation: Some(PointConfig {
-                        sensor_distance_base: 25.0,
-                        sensor_distance_multiplier: -20.0,
-                        sensor_distance_exponent: 1.0,
-                        sensor_angle_base: 45.0,
-                        sensor_angle_multiplier: -30.0,
-                        sensor_angle_exponent: 1.5,
-                        rotation_angle_base: 45.0,
-                        rotation_angle_multiplier: -40.0,
-                        rotation_angle_exponent: 1.0,
-                        step_size_base: 1.5,
-                        step_size_multiplier: 2.0,
-                        step_size_exponent: 1.0,
-                        heading_offset: 5.0,
-                        ..Default::default()
-                    }),
-                    color: RgbColor::from_hex(0xffd700),
-                    ..Default::default()
-                }];
-                config.respawn_config = RespawnConfig {
-                    interval: 60,
-                    base_probability: 0.02,
-                    trail_dependent: true,
-                    max_probability_multiplier: 5.0,
-                };
-            }
-            Preset::DuelingModulators => {
-                config.decay_factor = 0.90;
-                config.separate_species_trails = true;
-                config.species_configs = vec![
-                    SpeciesConfig {
-                        name: "expander".to_string(),
-                        count: 20_000,
-                        trail_modulation: Some(PointConfig {
-                            sensor_distance_base: 10.0,
-                            sensor_distance_multiplier: 30.0,
-                            sensor_distance_exponent: 1.0,
-                            sensor_angle_base: 20.0,
-                            sensor_angle_multiplier: 40.0,
-                            sensor_angle_exponent: 1.0,
-                            rotation_angle_base: 30.0,
-                            rotation_angle_multiplier: 20.0,
-                            rotation_angle_exponent: 1.0,
-                            step_size_base: 1.0,
-                            step_size_multiplier: 0.5,
-                            step_size_exponent: 1.0,
-                            ..Default::default()
-                        }),
-                        color: RgbColor::from_hex(0x00ced1),
-                        ..Default::default()
-                    },
-                    SpeciesConfig {
-                        name: "contractor".to_string(),
-                        count: 20_000,
-                        trail_modulation: Some(PointConfig {
-                            sensor_distance_base: 40.0,
-                            sensor_distance_multiplier: -30.0,
-                            sensor_distance_exponent: 1.0,
-                            sensor_angle_base: 60.0,
-                            sensor_angle_multiplier: -30.0,
-                            sensor_angle_exponent: 1.0,
-                            rotation_angle_base: 30.0,
-                            rotation_angle_multiplier: -20.0,
-                            rotation_angle_exponent: 1.0,
-                            step_size_base: 1.0,
-                            step_size_multiplier: -0.3,
-                            step_size_exponent: 1.0,
-                            ..Default::default()
-                        }),
-                        color: RgbColor::from_hex(0xff6347),
-                        ..Default::default()
-                    },
-                ];
-            }
+            Network => "dense interconnected mesh",
+            Exploratory => "wide searching tentacles",
+            Tendrils => "long branching arms",
+            Organic => "balanced natural growth",
+            Fire => "aggressive flame-like fronts",
+            River => "flowing water-like channels",
+            PetriDish => "slow center-out growth",
+            Vortex => "spinning vortex currents",
+            Lightning => "fast dendritic forks",
+            ChaosEdge => "edge-of-chaos sensitivity",
+            Blob => "aggregating blob clusters",
+            Slime => "surface-tension flow",
+            Vines => "creeping cohesive tendrils",
+            Vinescii => "ascii cohesive flocking",
+            Smoke => "drifting smoke columns",
+            Vortex36 => "trail-modulated vortex",
+            DynamicTendrils => "trail-sensing tendrils",
+            Mold => "front-lit growing veins",
+            Etching => "directional filament linework",
+            Drift => "color drifts with motion",
+            Constellation => "a crisp star-map",
+            Mosaic => "posterized color bands",
+            Marble => "veined stone",
+            Prism => "maximum color resolution",
+            Vellum => "soft parchment density",
+            Forge => "grainy molten thermal",
+            Wane => "slow ghosting decay",
+            Gossamer => "delicate woven threads",
+            Codex => "typographic engraving",
+            Tide => "living water, shifting hue",
+            Trademark => "the living tslime mark",
         }
     }
 }
 
 /// How agents are initially distributed in the simulation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum InitMode {
     /// Agents randomly distributed across the entire canvas.
     Random,
@@ -832,6 +472,53 @@ pub enum InitMode {
     Food,
     /// Agents distributed in a Gaussian blob at the center (Petri dish style).
     Petri,
+    /// Agents seeded as a real star constellation (stars + asterism edges).
+    Constellation,
+    /// Agents seeded from a food/brightness image (e.g. the embedded tslime
+    /// logo) and the image is held as a re-stamp template, so the picture
+    /// persists like a constellation figure instead of dispersing.
+    FoodConstellation,
+}
+
+impl InitMode {
+    /// Uniformly pick any init mode for non-structural presets. Structural modes
+    /// (`Constellation`, `FoodConstellation`) are excluded so they keep a stable
+    /// layout.
+    ///
+    /// `ALL` is hand-maintained. The `_guard` match below is exhaustive, so a new
+    /// `InitMode` variant breaks compilation there until it is handled — a forced
+    /// reminder to decide whether the variant also belongs in `ALL`.
+    pub fn random(rng: &mut impl rand::Rng) -> Self {
+        use InitMode::*;
+        const ALL: [InitMode; 9] = [
+            Random,
+            CentralBurst,
+            Circle,
+            Gradient,
+            WaveFront,
+            Spiral,
+            RandomClusters,
+            Food,
+            Petri,
+        ];
+        #[allow(dead_code)] // compile-time exhaustiveness guard; never called
+        const fn _guard(m: InitMode) {
+            match m {
+                InitMode::Random
+                | InitMode::CentralBurst
+                | InitMode::Circle
+                | InitMode::Gradient
+                | InitMode::WaveFront
+                | InitMode::Spiral
+                | InitMode::RandomClusters
+                | InitMode::Food
+                | InitMode::Petri
+                | InitMode::Constellation
+                | InitMode::FoodConstellation => {}
+            }
+        }
+        ALL[rng.gen_range(0..ALL.len())]
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1036,7 +723,7 @@ impl ObstacleMask {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// Geometric shape or image obstacle definition.
 pub enum Obstacle {
     /// Circular obstacle.
@@ -1162,7 +849,8 @@ impl Obstacle {
 }
 
 /// Boundary handling mode for agent movement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum BoundaryMode {
     /// Agents bounce/reflect at boundaries (default).
     #[default]
@@ -1172,45 +860,41 @@ pub enum BoundaryMode {
 }
 
 /// Window frame display mode for terminal visualization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum WindowFrame {
     /// No frame - full terminal used for simulation.
     None,
-    /// Leave 1-cell margin empty around edges.
-    Negative,
     /// Solid block border using accent color.
     Accented,
     /// Gradient border fading from accent color inward.
     Glow,
-    /// Border responds to nearby agent activity.
-    Reactive,
-    /// Food border that attracts agents.
-    Food,
-    /// Thin-line frame — new default.
+    /// Thin-line frame (default).
     #[default]
     Frame,
 }
 
 impl WindowFrame {
-    /// Returns true if this mode reduces simulation display area.
+    /// Whether this mode reduces the simulation display area. Always `false`: the
+    /// windowed layout reserves a frame ring uniformly, so no mode specially
+    /// shrinks the area. Retained for API stability.
     pub fn reduces_display_area(&self) -> bool {
-        matches!(self, WindowFrame::Negative)
+        false
     }
 
     /// Returns the window frame thickness in cells.
     pub fn thickness(&self) -> usize {
         match self {
             WindowFrame::None => 0,
-            WindowFrame::Negative | WindowFrame::Frame => 2,
-            WindowFrame::Accented | WindowFrame::Food => 1,
+            WindowFrame::Frame => 2,
+            WindowFrame::Accented => 1,
             WindowFrame::Glow => 3,
-            WindowFrame::Reactive => 2,
         }
     }
 
     /// Returns true if window frame has visual rendering.
     pub fn is_visible(&self) -> bool {
-        !matches!(self, WindowFrame::None | WindowFrame::Negative)
+        !matches!(self, WindowFrame::None)
     }
 }
 
@@ -1220,14 +904,11 @@ impl std::str::FromStr for WindowFrame {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "none" => Ok(WindowFrame::None),
-            "negative" => Ok(WindowFrame::Negative),
             "accented" => Ok(WindowFrame::Accented),
             "glow" => Ok(WindowFrame::Glow),
-            "reactive" => Ok(WindowFrame::Reactive),
-            "food" => Ok(WindowFrame::Food),
             "frame" => Ok(WindowFrame::Frame),
             _ => Err(format!(
-                "Invalid window frame: {}. Must be one of: none, negative, accented, glow, reactive, food, frame",
+                "Invalid window frame: {}. Must be one of: none, accented, glow, frame",
                 s
             )),
         }
@@ -1235,7 +916,8 @@ impl std::str::FromStr for WindowFrame {
 }
 
 /// Chrome display level for window mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ChromeStyle {
     /// Frame only, no title or footer (default).
     #[default]
@@ -1261,8 +943,51 @@ impl std::str::FromStr for ChromeStyle {
     }
 }
 
+/// How a runtime preset switch is announced on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TransitionStyle {
+    /// No on-screen announcement (default) — preset switches silently.
+    #[default]
+    Off,
+    /// Ambient toast notification.
+    Toast,
+    /// Big block-letter preset name, centered, fading up then out.
+    Figlet,
+    /// Typed letter-spaced readout over a dimmed band, with caret + underline.
+    Type,
+}
+
+impl std::str::FromStr for TransitionStyle {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "off" | "none" => Ok(TransitionStyle::Off),
+            "toast" => Ok(TransitionStyle::Toast),
+            "figlet" => Ok(TransitionStyle::Figlet),
+            "type" => Ok(TransitionStyle::Type),
+            _ => Err(format!(
+                "Invalid transition: '{}'. Must be one of: off, toast, figlet, type",
+                s
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for TransitionStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TransitionStyle::Off => "off",
+            TransitionStyle::Toast => "toast",
+            TransitionStyle::Figlet => "figlet",
+            TransitionStyle::Type => "type",
+        })
+    }
+}
+
 /// Visual aspect ratio for the simulation window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct Aspect {
     /// Horizontal units of the aspect ratio.
     pub width: u32,
@@ -1350,7 +1075,8 @@ impl std::str::FromStr for Aspect {
 }
 
 /// Window outer padding — auto (5% of min terminal dimension, ≥ 2) or fixed cells.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub enum WindowPadding {
     /// Automatically compute padding (5% of smallest terminal dimension, minimum 2 cells).
     #[default]
@@ -1373,7 +1099,8 @@ impl std::str::FromStr for WindowPadding {
 }
 
 /// Minimum terminal size threshold for fallback logic (WxH format).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct TerminalSizeThreshold {
     /// Minimum terminal width in columns.
     pub width: usize,
@@ -1445,7 +1172,7 @@ impl std::str::FromStr for BoundaryMode {
 ///
 /// This enables dynamic parameter adjustment based on the trail value at each agent's position,
 /// creating diverse emergent behaviors as described in Sage Jenson's "36 Points" work.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PointConfig {
     /// Sensor distance base value (p1).
     pub sensor_distance_base: f32,
@@ -1599,7 +1326,7 @@ impl PointConfig {
 }
 
 /// Particle respawn configuration.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct RespawnConfig {
     /// Interval in frames between respawn checks (0 = disabled).
     pub interval: u32,
@@ -1607,8 +1334,17 @@ pub struct RespawnConfig {
     pub base_probability: f32,
     /// Whether respawn probability depends on trail value.
     pub trail_dependent: bool,
-    /// Maximum respawn probability multiplier when trail is high.
+    /// Maximum respawn probability multiplier, reached when the normalized trail
+    /// value saturates to 1.0. Effective probability is
+    /// `base_probability * (1 + x * (max_probability_multiplier - 1))`, where
+    /// `x = (trail * trail_rescale).clamp(0, 1)`.
     pub max_probability_multiplier: f32,
+    /// Scales the raw pheromone value into the normalized `[0, 1]` range before
+    /// the multiplier is applied (mirrors `PointConfig::trail_rescale`). Pick it
+    /// so healthy trail densities map well below 1.0 and only an abnormal
+    /// accumulation (the wall-collapse line) saturates — otherwise the
+    /// multiplier cap is meaningless because raw trail values are unbounded.
+    pub trail_rescale: f32,
 }
 
 impl Default for RespawnConfig {
@@ -1618,6 +1354,7 @@ impl Default for RespawnConfig {
             base_probability: 0.01,
             trail_dependent: false,
             max_probability_multiplier: 1.0,
+            trail_rescale: 1.0,
         }
     }
 }
@@ -1658,7 +1395,7 @@ impl Default for SpeciesConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 /// Global simulation configuration.
 pub struct SimConfig {
     /// Sensor angle (degrees).
@@ -1669,7 +1406,7 @@ pub struct SimConfig {
     pub rotation_angle: f32,
     /// Agent speed (pixels/step).
     pub step_size: f32,
-    /// Trail decay factor (0.0-1.0).
+    /// Trail decay factor (0.5-0.9999).
     pub decay_factor: f32,
     /// Amount of trail deposited per step.
     pub deposit_amount: f32,
@@ -1677,7 +1414,20 @@ pub struct SimConfig {
     pub diffusion_kernel: DiffusionKernel,
     /// Sigma for Gaussian diffusion.
     pub diffusion_sigma: f32,
-    /// Max brightness for normalization.
+    /// Diffusion blend weight (Lague): `new = old·(1−w) + blur·w`. 1.0 = full blur (today).
+    pub diffuse_weight: f32,
+    /// Nonlinear decay exponent γ. 1.0 = current multiplicative decay; γ<1 lengthens faint tails.
+    pub decay_gamma: f32,
+    /// Nonlinear deposit curve applied to the per-frame accumulation buffer.
+    /// `Linear` + scale 1 + cap 0 = historical behavior (off path).
+    pub deposit_curve: DepositCurve,
+    /// Multiplier applied to `curve(accum)` before folding into the trail.
+    pub deposit_scale: f32,
+    /// Exponent for `DepositCurve::Pow` (ignored by other curves).
+    pub deposit_gamma: f32,
+    /// Clamp cap for the folded contribution; `0.0` = off.
+    pub deposit_cap: f32,
+    /// White-point divisor for brightness normalization (higher = darker).
     pub max_brightness: f32,
     /// Time scale multiplier (0.1-10.0).
     pub time_scale: f32,
@@ -1719,8 +1469,18 @@ pub struct SimConfig {
     pub boundary_mode: BoundaryMode,
     /// Window frame display mode for terminal visualization.
     pub window_frame: WindowFrame,
+    /// Background matte width in columns between the frame border and the sim
+    /// (left/right). Wider than `frame_matte_rows` to offset terminal cell aspect.
+    pub frame_matte_cols: usize,
+    /// Background matte height in rows between the frame border and the sim
+    /// (top/bottom).
+    pub frame_matte_rows: usize,
     /// Chrome display style (minimal, expanded, fullscreen).
     pub chrome_style: ChromeStyle,
+    /// How a runtime preset switch is announced (toast/figlet/type).
+    pub transition_style: TransitionStyle,
+    /// Whether the figlet/type transition shows the preset tagline (default false).
+    pub transition_tagline: bool,
     /// Visual aspect ratio of the simulation window.
     pub aspect: Aspect,
     /// Outer padding between terminal edge and window frame.
@@ -1735,12 +1495,25 @@ pub struct SimConfig {
     pub respawn_config: RespawnConfig,
     /// Trail sampling method (nearest or bilinear).
     pub sampling_mode: SamplingMode,
+    /// Constellation atlas re-stamp strength, applied each frame after
+    /// diffusion/decay. 0.0 = no re-stamp (drift); > 0.0 = self-healing
+    /// template source (static hold).
+    pub constellation_restamp_floor: f32,
 }
 
 impl SimConfig {
     /// Returns the total population across all species.
     pub fn total_population(&self) -> usize {
         self.species_configs.iter().map(|s| s.count).sum()
+    }
+
+    /// True when the nonlinear-deposit accumulation path is engaged. When
+    /// false, deposits go straight to the trail (byte-identical to history).
+    #[inline]
+    pub fn deposit_active(&self) -> bool {
+        self.deposit_curve != DepositCurve::Linear
+            || self.deposit_scale != 1.0
+            || self.deposit_cap > 0.0
     }
 
     /// Loads mask data for all image-based obstacles.
@@ -1808,6 +1581,12 @@ impl Default for SimConfig {
             deposit_amount: agent_consts::DEFAULT_DEPOSIT_AMOUNT,
             diffusion_kernel: DiffusionKernel::Gaussian,
             diffusion_sigma: trail_consts::DEFAULT_DIFFUSION_SIGMA,
+            diffuse_weight: trail_consts::DEFAULT_DIFFUSE_WEIGHT,
+            decay_gamma: trail_consts::DEFAULT_DECAY_GAMMA,
+            deposit_curve: DepositCurve::default(),
+            deposit_scale: trail_consts::DEFAULT_DEPOSIT_SCALE,
+            deposit_gamma: trail_consts::DEFAULT_DEPOSIT_GAMMA,
+            deposit_cap: trail_consts::DEFAULT_DEPOSIT_CAP,
             max_brightness: trail_consts::DEFAULT_MAX_BRIGHTNESS,
             time_scale: time_consts::DEFAULT_TIME_SCALE,
             attractors: Vec::new(),
@@ -1829,7 +1608,11 @@ impl Default for SimConfig {
             preferred_init_mode: Some(InitMode::Food),
             boundary_mode: BoundaryMode::Bounce,
             window_frame: WindowFrame::Frame,
+            frame_matte_cols: crate::config_defaults::frame_matte::DEFAULT_COLS,
+            frame_matte_rows: crate::config_defaults::frame_matte::DEFAULT_ROWS,
             chrome_style: ChromeStyle::Minimal,
+            transition_style: TransitionStyle::Off,
+            transition_tagline: false,
             aspect: Aspect::default(),
             window_padding: WindowPadding::Auto,
             show_status_bar: false,
@@ -1843,6 +1626,8 @@ impl Default for SimConfig {
             },
             respawn_config: RespawnConfig::default(),
             sampling_mode: SamplingMode::Nearest,
+            constellation_restamp_floor:
+                crate::config_defaults::DEFAULT_CONSTELLATION_RESTAMP_FLOOR,
         }
     }
 }
@@ -1882,6 +1667,11 @@ impl Validatable for SimConfig {
         rules::DECAY_FACTOR.validate_f32(self.decay_factor)?;
         rules::MAX_BRIGHTNESS.validate_f32(self.max_brightness)?;
         rules::DIFFUSION_SIGMA.validate_f32(self.diffusion_sigma)?;
+        rules::DECAY_GAMMA.validate_f32(self.decay_gamma)?;
+        rules::DIFFUSE_WEIGHT.validate_f32(self.diffuse_weight)?;
+        rules::DEPOSIT_SCALE.validate_f32(self.deposit_scale)?;
+        rules::DEPOSIT_GAMMA.validate_f32(self.deposit_gamma)?;
+        rules::DEPOSIT_CAP.validate_f32(self.deposit_cap)?;
 
         // Validate time and environment parameters
         rules::TIME_SCALE.validate_f32(self.time_scale)?;
@@ -1928,9 +1718,9 @@ impl TryFrom<&crate::cli::Args> for SimConfig {
     /// Returns [`ValidationError`] if assembly fails (e.g. invalid terrain string) or any
     /// merged parameter is out of range.
     fn try_from(args: &crate::cli::Args) -> Result<Self, Self::Error> {
-        let config = crate::config_builder::ConfigBuilder::from_args(args).assemble()?;
-        config.validate()?;
-        Ok(config)
+        let profile = crate::profile::Profile::resolve_from_args(args)
+            .map_err(crate::error::ValidationError::custom)?;
+        Ok(profile.sim)
     }
 }
 
@@ -2002,8 +1792,52 @@ impl Validatable for SpeciesConfig {
 impl From<Preset> for SimConfig {
     fn from(preset: Preset) -> Self {
         let mut config = Self::default();
-        preset.apply(&mut config);
+        crate::preset_sim_defaults::PresetSimDefaults::from(preset).apply_to(&mut config);
         config
+    }
+}
+
+// ── serde string conversion impls (used by #[serde(try_from = "String", into = "String")]) ──
+
+impl From<Aspect> for String {
+    fn from(a: Aspect) -> Self {
+        format!("{}:{}", a.width, a.height)
+    }
+}
+
+impl TryFrom<String> for Aspect {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl From<WindowPadding> for String {
+    fn from(p: WindowPadding) -> Self {
+        match p {
+            WindowPadding::Auto => "auto".to_string(),
+            WindowPadding::Fixed(n) => n.to_string(),
+        }
+    }
+}
+
+impl TryFrom<String> for WindowPadding {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl From<TerminalSizeThreshold> for String {
+    fn from(t: TerminalSizeThreshold) -> Self {
+        format!("{}x{}", t.width, t.height)
+    }
+}
+
+impl TryFrom<String> for TerminalSizeThreshold {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
     }
 }
 
@@ -2011,6 +1845,30 @@ impl From<Preset> for SimConfig {
 mod tests {
     use super::*;
     use std::f32::consts::PI;
+
+    #[test]
+    fn init_mode_random_covers_all_over_many_draws() {
+        use rand::SeedableRng;
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(42);
+        const ALL: [InitMode; 9] = [
+            InitMode::Random,
+            InitMode::CentralBurst,
+            InitMode::Circle,
+            InitMode::Gradient,
+            InitMode::WaveFront,
+            InitMode::Spiral,
+            InitMode::RandomClusters,
+            InitMode::Food,
+            InitMode::Petri,
+        ];
+        let mut seen = [false; 9];
+        for _ in 0..1000 {
+            let m = InitMode::random(&mut rng);
+            let i = ALL.iter().position(|x| *x == m).unwrap();
+            seen[i] = true;
+        }
+        assert!(seen.iter().all(|&s| s), "every InitMode should appear");
+    }
 
     #[test]
     fn test_default_config() {
@@ -2442,47 +2300,84 @@ mod tests {
 
     #[test]
     fn test_presets_valid() {
-        let presets = [
-            Preset::Network,
-            Preset::Exploratory,
-            Preset::Tendrils,
-            Preset::Organic,
-            Preset::Minimal,
-            Preset::Moss,
-            Preset::Cosmic,
-            Preset::Fire,
-            Preset::Zen,
-            Preset::Storm,
-            Preset::River,
-            Preset::Ethereal,
-            Preset::PetriDish,
-            Preset::Vortex,
-            Preset::Lightning,
-            Preset::Crystal,
-            Preset::ChaosEdge,
-            Preset::Blob,
-            Preset::Worm,
-            Preset::Pulse,
-            Preset::Coral,
-            Preset::Flocking,
-            Preset::Maze,
-            Preset::Ripple,
-            Preset::Vortex36,
-            Preset::Chameleon,
-            Preset::DynamicTendrils,
-            Preset::MorphingCoral,
-            Preset::ReactiveSwarm,
-            Preset::DuelingModulators,
-        ];
-        for preset in presets {
-            let config: SimConfig = preset.into();
+        for spec in PRESETS {
+            let config: SimConfig = spec.preset.into();
             assert!(
                 config.validate().is_ok(),
                 "Preset {:?} failed validation: {:?}",
-                preset,
+                spec.preset,
                 config.validate()
             );
         }
+    }
+
+    #[test]
+    fn preset_names_and_aliases_round_trip() {
+        for spec in PRESETS {
+            // Display name resolves back to this preset, both via the method and
+            // the parser, case-insensitively.
+            assert_eq!(spec.preset.name(), spec.name);
+            assert_eq!(preset_from_name(spec.name), Some(spec.preset));
+            assert_eq!(
+                preset_from_name(&spec.name.to_lowercase()),
+                Some(spec.preset)
+            );
+            for alias in spec.aliases {
+                assert_eq!(
+                    preset_from_name(alias),
+                    Some(spec.preset),
+                    "alias {alias} did not resolve to {:?}",
+                    spec.preset
+                );
+            }
+        }
+        assert_eq!(preset_from_name("definitely-not-a-preset"), None);
+    }
+
+    #[test]
+    fn preset_quick_keys_are_consistent() {
+        let mut seen = Vec::new();
+        for spec in PRESETS {
+            if let Some(key) = spec.quick_key {
+                assert!(
+                    key.is_ascii_digit() && key != '0',
+                    "quick_key {key} is not 1-9"
+                );
+                assert!(!seen.contains(&key), "duplicate quick_key {key}");
+                seen.push(key);
+                // The set key round-trips, and its shifted form selects the same
+                // preset for comparison.
+                assert_eq!(preset_for_set_key(key), Some(spec.preset));
+                let shifted = match key {
+                    '1' => '!',
+                    '2' => '@',
+                    '3' => '#',
+                    '4' => '$',
+                    '5' => '%',
+                    '6' => '^',
+                    '7' => '&',
+                    _ => continue,
+                };
+                assert_eq!(preset_for_compare_key(shifted), Some(spec.preset));
+            }
+        }
+    }
+
+    #[test]
+    fn launch_quick_keys_map_to_launch_presets() {
+        assert_eq!(preset_for_set_key('1'), Some(Preset::Organic));
+        assert_eq!(preset_for_set_key('2'), Some(Preset::Constellation));
+        assert_eq!(preset_for_set_key('3'), Some(Preset::Vinescii));
+        assert_eq!(preset_for_set_key('4'), Some(Preset::Trademark));
+        for c in ['5', '6', '7'] {
+            assert_eq!(
+                preset_for_set_key(c),
+                None,
+                "key {c} must be unbound at launch"
+            );
+        }
+        assert_eq!(preset_for_compare_key('@'), Some(Preset::Constellation));
+        assert_eq!(preset_for_compare_key('$'), Some(Preset::Trademark));
     }
 
     #[test]
@@ -2508,6 +2403,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "multi-species")]
     fn test_try_from_args_rejects_bad_species_strict() {
         // NEW behavior: species params are now validated post-merge.
         use crate::cli::Args;
@@ -2517,6 +2413,17 @@ mod tests {
         assert!(
             result.is_err(),
             "out-of-range species param must now error (was silently accepted)"
+        );
+    }
+
+    #[test]
+    #[cfg(not(feature = "multi-species"))]
+    fn test_species_flag_rejected_without_feature() {
+        use crate::cli::Args;
+        use clap::Parser;
+        assert!(
+            Args::try_parse_from(["tslime", "--species", "x:1000"]).is_err(),
+            "--species must be unknown without multi-species feature"
         );
     }
 
@@ -2586,6 +2493,93 @@ mod tests {
             ..Default::default()
         };
         assert!(invalid_species.validate().is_err());
+    }
+
+    #[test]
+    fn art_knob_defaults_are_backcompat_neutral() {
+        let c = SimConfig::default();
+        assert_eq!(
+            c.diffuse_weight, 1.0,
+            "diffuse_weight=1 == full blur == today"
+        );
+        assert_eq!(c.decay_gamma, 1.0, "decay_gamma=1 == current decay");
+    }
+
+    #[test]
+    fn validate_decay_gamma_rejects_out_of_range() {
+        let config = SimConfig {
+            decay_gamma: 9999.0,
+            ..SimConfig::default()
+        };
+        assert!(
+            config.validate().is_err(),
+            "decay_gamma=9999.0 must be rejected"
+        );
+    }
+
+    #[test]
+    fn validate_decay_gamma_accepts_valid() {
+        let config = SimConfig {
+            decay_gamma: 1.0,
+            ..SimConfig::default()
+        };
+        assert!(
+            config.validate().is_ok(),
+            "decay_gamma=1.0 must be accepted"
+        );
+    }
+
+    #[test]
+    fn deposit_curve_apply_matches_definitions() {
+        use crate::simulation::config::DepositCurve;
+        // Linear is identity; gamma ignored.
+        assert_eq!(DepositCurve::Linear.apply(3.0, 0.5), 3.0);
+        // Sqrt.
+        assert!((DepositCurve::Sqrt.apply(9.0, 1.0) - 3.0).abs() < 1e-6);
+        assert_eq!(DepositCurve::Sqrt.apply(0.0, 1.0), 0.0);
+        // Log is log1p: 0 at 0, monotonic.
+        assert_eq!(DepositCurve::Log.apply(0.0, 1.0), 0.0);
+        assert!((DepositCurve::Log.apply(std::f32::consts::E - 1.0, 1.0) - 1.0).abs() < 1e-6);
+        // Pow uses gamma as exponent.
+        assert!((DepositCurve::Pow.apply(4.0, 0.5) - 2.0).abs() < 1e-6);
+        assert!((DepositCurve::Pow.apply(2.0, 2.0) - 4.0).abs() < 1e-6);
+        // Default is Linear.
+        assert_eq!(DepositCurve::default(), DepositCurve::Linear);
+    }
+
+    #[test]
+    fn deposit_active_off_at_defaults() {
+        let cfg = SimConfig::default();
+        assert_eq!(cfg.deposit_curve, DepositCurve::Linear);
+        assert_eq!(cfg.deposit_scale, 1.0);
+        assert_eq!(cfg.deposit_gamma, 1.0);
+        assert_eq!(cfg.deposit_cap, 0.0);
+        assert!(!cfg.deposit_active(), "defaults must be the off path");
+
+        let on = SimConfig {
+            deposit_curve: DepositCurve::Sqrt,
+            ..Default::default()
+        };
+        assert!(on.deposit_active());
+        let scaled = SimConfig {
+            deposit_scale: 2.0,
+            ..Default::default()
+        };
+        assert!(scaled.deposit_active());
+        let capped = SimConfig {
+            deposit_cap: 5.0,
+            ..Default::default()
+        };
+        assert!(capped.deposit_active());
+    }
+
+    #[test]
+    fn deposit_validation_rejects_out_of_range() {
+        let cfg = SimConfig {
+            deposit_gamma: 0.0, // below MIN_DEPOSIT_GAMMA
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_err());
     }
 }
 

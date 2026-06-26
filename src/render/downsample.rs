@@ -1,4 +1,3 @@
-#[allow(dead_code)]
 /// A frame of downsampled simulation data, ready for rendering.
 pub struct DownsampledFrame {
     width: usize,
@@ -22,7 +21,7 @@ pub struct Cell {
     pub top: f32,
     /// Bottom half brightness.
     pub bottom: f32,
-    // Quadrant support: when using quadrant charset, these provide 4× vertical resolution
+    // Quadrant support: 2×2 sub-cell brightness for the quadrant charset
     /// Top-left quadrant brightness.
     pub top_left: f32,
     /// Top-right quadrant brightness.
@@ -51,7 +50,6 @@ impl DownsampledFrame {
                 };
                 cell_count
             ],
-            // Pre-allocate scratch buffers for sharpening to avoid per-frame allocations
             scratch_top: vec![0.0; cell_count],
             scratch_bottom: vec![0.0; cell_count],
             scratch_top_left: vec![0.0; cell_count],
@@ -62,13 +60,11 @@ impl DownsampledFrame {
         }
     }
 
-    #[allow(dead_code)]
     /// Returns the width of the frame in cells.
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[allow(dead_code)]
     /// Returns the height of the frame in cells.
     pub fn height(&self) -> usize {
         self.height
@@ -79,7 +75,6 @@ impl DownsampledFrame {
         &self.cells
     }
 
-    #[allow(dead_code)]
     /// Returns the cell at the specified coordinates.
     pub fn get(&self, x: usize, y: usize) -> Cell {
         if x < self.width && y < self.height {
@@ -99,16 +94,9 @@ impl DownsampledFrame {
 
 /// Downsamples a high-resolution trail map to terminal dimensions.
 ///
-/// Aggregates grid cells into terminal character cells, computing average brightness
-/// for sub-regions (top/bottom, quadrants) to support high-res rendering modes.
-///
-/// # Arguments
-/// * `trail_map` - The high-resolution trail map data
-/// * `sim_width` - Width of the simulation grid
-/// * `sim_height` - Height of the simulation grid
-/// * `term_width` - Target terminal width in columns
-/// * `term_height` - Target terminal height in rows
-/// * `frame` - Pre-allocated frame buffer to write into (must match term dimensions)
+/// Averages grid cells into terminal character cells, including top/bottom and
+/// quadrant sub-regions for high-res rendering modes. Writes into the
+/// pre-allocated `frame`, which must match the terminal dimensions.
 pub fn downsample(
     trail_map: &[f32],
     sim_width: usize,
@@ -195,21 +183,10 @@ pub fn downsample(
             };
         }
     }
-
-    // frame is modified in place, no return needed
 }
 
-/// Downsamples multiple trail maps, aggregating brightness across species.
-///
-/// Similar to `downsample`, but sums contributions from multiple species layers.
-///
-/// # Arguments
-/// * `trail_maps` - Slice of (trail_map, species_index) tuples
-/// * `sim_width` - Width of the simulation grid
-/// * `sim_height` - Height of the simulation grid
-/// * `term_width` - Target terminal width in columns
-/// * `term_height` - Target terminal height in rows
-/// * `frame` - Pre-allocated frame buffer to write into (must match term dimensions)
+/// Like `downsample`, but sums brightness contributions across multiple
+/// species trail maps (given as `(trail_map, species_index)` tuples).
 pub fn downsample_multi_species(
     trail_maps: &[(&[f32], usize)],
     sim_width: usize,
@@ -310,7 +287,6 @@ pub fn downsample_multi_species(
             };
         }
     }
-    // frame is modified in place, no return needed
 }
 
 #[inline]
@@ -354,6 +330,8 @@ pub struct AuxCell {
     pub delta: f32,
     /// Normalized gradient magnitude [0, 1] for edge glow.
     pub gradient: f32,
+    /// Signed temporal diff (raw mean, sign preserved; positive = growing, negative = decaying).
+    pub signed_diff: f32,
 }
 
 /// Auxiliary frame holding per-cell age and delta at terminal resolution.
@@ -379,25 +357,19 @@ impl AuxFrame {
     }
 }
 
-/// Downsamples optional age, delta, and gradient buffers from sim resolution to terminal resolution.
+/// Downsamples optional age, delta, gradient, and signed diff buffers from sim resolution to
+/// terminal resolution.
 ///
-/// Uses the same average-pooling grid mapping as `downsample()`.
-/// Age values are divided by `AGE_MAX` and clamped to [0, 1].
-///
-/// # Arguments
-/// * `age_buf` - Optional trail age buffer
-/// * `delta_buf` - Optional trail delta buffer
-/// * `gradient_buf` - Optional gradient magnitude buffer
-/// * `sim_width` - Width of the simulation grid
-/// * `sim_height` - Height of the simulation grid
-/// * `term_width` - Target terminal width in columns
-/// * `term_height` - Target terminal height in rows
-/// * `frame` - Pre-allocated aux frame buffer to write into (must match term dimensions)
+/// Uses the same average-pooling grid mapping as `downsample()`. Age values are
+/// divided by `AGE_MAX_SECONDS` and age/delta/gradient outputs are clamped to [0, 1]; missing
+/// buffers produce zeros. `signed_diff_buf` is averaged with sign preserved (no clamp).
+/// The frame is resized to the terminal dimensions if needed.
 #[allow(clippy::too_many_arguments)]
 pub fn downsample_aux(
     age_buf: Option<&[f32]>,
     delta_buf: Option<&[f32]>,
     gradient_buf: Option<&[f32]>,
+    signed_diff_buf: Option<&[f32]>,
     sim_width: usize,
     sim_height: usize,
     term_width: usize,
@@ -406,7 +378,6 @@ pub fn downsample_aux(
 ) {
     use crate::config_defaults::visual_fx::AGE_MAX_SECONDS;
 
-    // Ensure frame has correct dimensions
     if frame.width != term_width || frame.height != term_height {
         frame.resize(term_width, term_height);
     }
@@ -463,14 +434,27 @@ pub fn downsample_aux(
                 0.0
             };
 
+            let signed_diff = if let Some(buf) = signed_diff_buf {
+                compute_average(
+                    buf,
+                    sim_width,
+                    sim_y_start,
+                    sim_y_end,
+                    sim_x_start,
+                    sim_x_end,
+                )
+            } else {
+                0.0
+            };
+
             frame.cells[cy * term_width + cx] = AuxCell {
                 age,
                 delta,
                 gradient,
+                signed_diff,
             };
         }
     }
-    // frame is modified in place, no return needed
 }
 
 /// Applies Laplacian sharpening to a downsampled frame.
@@ -496,7 +480,6 @@ pub fn apply_laplacian_sharpening(frame: &mut DownsampledFrame, strength: f32) {
         frame.scratch_bottom_right[i] = cell.bottom_right;
     }
 
-    // Use references to scratch buffers for clarity
     let top_orig = &frame.scratch_top[..];
     let bot_orig = &frame.scratch_bottom[..];
     let tl_orig = &frame.scratch_top_left[..];
@@ -512,17 +495,14 @@ pub fn apply_laplacian_sharpening(frame: &mut DownsampledFrame, strength: f32) {
             let lt = y * w + (x - 1);
             let rt = y * w + (x + 1);
 
-            // Sharpen top
             let lap_t =
                 top_orig[idx] - (top_orig[up] + top_orig[dn] + top_orig[lt] + top_orig[rt]) * 0.25;
             frame.cells[idx].top = (top_orig[idx] + strength * lap_t).max(0.0);
 
-            // Sharpen bottom
             let lap_b =
                 bot_orig[idx] - (bot_orig[up] + bot_orig[dn] + bot_orig[lt] + bot_orig[rt]) * 0.25;
             frame.cells[idx].bottom = (bot_orig[idx] + strength * lap_b).max(0.0);
 
-            // Sharpen quadrants
             let lap_tl =
                 tl_orig[idx] - (tl_orig[up] + tl_orig[dn] + tl_orig[lt] + tl_orig[rt]) * 0.25;
             frame.cells[idx].top_left = (tl_orig[idx] + strength * lap_tl).max(0.0);
@@ -774,10 +754,7 @@ mod tests {
                 let mut frame = DownsampledFrame::new(term_w, term_h);
                 downsample(&trail_map, sim_w, sim_h, term_w, term_h, &mut frame);
 
-                // Check each cell's quadrant values are computed (not just zero)
-                // The actual check for zero-width quadrants requires inspecting the internal
-                // downsampling logic. We'll trust that compute_average returns 0.0 for empty regions.
-                // Instead, we'll verify that quadrant values are consistent with top/bottom averages.
+                // With a uniform zero map, every sub-region value must be zero
                 for cy in 0..term_h {
                     for cx in 0..term_w {
                         let cell = frame.get(cx, cy);
@@ -954,5 +931,22 @@ mod tests {
                 low_brightness_cells, term_width, term_height
             );
         }
+    }
+
+    #[test]
+    fn downsample_aux_averages_signed_diff() {
+        // 2x2 sim → 1x1 term cell. signed diff values average (and keep sign).
+        let signed = vec![-1.0_f32, -1.0, 1.0, 1.0]; // mean 0.0
+        let mut frame = AuxFrame {
+            width: 1,
+            height: 1,
+            cells: vec![AuxCell::default()],
+        };
+        downsample_aux(None, None, None, Some(&signed), 2, 2, 1, 1, &mut frame);
+        assert!((frame.cells[0].signed_diff - 0.0).abs() < 1e-6);
+
+        let signed2 = vec![2.0_f32, 2.0, 2.0, 2.0];
+        downsample_aux(None, None, None, Some(&signed2), 2, 2, 1, 1, &mut frame);
+        assert!((frame.cells[0].signed_diff - 2.0).abs() < 1e-6);
     }
 }

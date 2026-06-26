@@ -31,11 +31,7 @@ use std::ops::RangeInclusive;
 /// }
 /// ```
 pub trait Validatable {
-    /// Validates the configuration and returns an error if invalid.
-    ///
-    /// # Returns
-    /// - `Ok(())` if the configuration is valid
-    /// - `Err(ValidationError)` with a descriptive error if invalid
+    /// Validates the configuration, returning a descriptive error if invalid.
     fn validate(&self) -> Result<(), ValidationError>;
 }
 
@@ -77,8 +73,7 @@ impl<T: PartialOrd + std::fmt::Display + Clone> RangeRule<T> {
 }
 
 impl RangeRule<f32> {
-    /// Validates that a value is within the range.
-    /// Specialized implementation for f32 to avoid Clone issues.
+    /// By-value convenience over the generic by-reference [`validate`](Self::validate).
     pub fn validate_f32(&self, value: f32) -> Result<(), ValidationError> {
         if value < self.min || value > self.max {
             Err(ValidationError::out_of_range(
@@ -91,8 +86,7 @@ impl RangeRule<f32> {
 }
 
 impl RangeRule<usize> {
-    /// Validates that a value is within the range.
-    /// Specialized implementation for usize to avoid Clone issues.
+    /// By-value convenience over the generic by-reference [`validate`](Self::validate).
     pub fn validate_usize(&self, value: usize) -> Result<(), ValidationError> {
         if value < self.min || value > self.max {
             Err(ValidationError::out_of_range(
@@ -155,11 +149,57 @@ pub mod rules {
         "max_brightness",
     );
 
-    /// Validation rule for diffusion sigma (0.5 to 2.0).
+    /// Validation rule for diffusion sigma (0.5 to 4.0).
     pub const DIFFUSION_SIGMA: RangeRule<f32> = RangeRule::new(
         trail::MIN_DIFFUSION_SIGMA,
         trail::MAX_DIFFUSION_SIGMA,
         "diffusion_sigma",
+    );
+
+    /// Validation rule for decay gamma (0.25 to 2.0).
+    pub const DECAY_GAMMA: RangeRule<f32> = RangeRule::new(
+        trail::MIN_DECAY_GAMMA,
+        trail::MAX_DECAY_GAMMA,
+        "decay_gamma",
+    );
+
+    /// Validation rule for afterglow strength (0.0 to 1.0).
+    pub const AFTERGLOW: RangeRule<f32> =
+        RangeRule::new(trail::MIN_AFTERGLOW, trail::MAX_AFTERGLOW, "afterglow");
+
+    /// Validation rule for afterglow EMA rate (0.001 to 1.0).
+    pub const AFTERGLOW_RATE: RangeRule<f32> = RangeRule::new(
+        trail::MIN_AFTERGLOW_RATE,
+        trail::MAX_AFTERGLOW_RATE,
+        "afterglow_rate",
+    );
+
+    /// Validation rule for diffuse-weight blend (0.0 to 1.0).
+    pub const DIFFUSE_WEIGHT: RangeRule<f32> = RangeRule::new(
+        trail::MIN_DIFFUSE_WEIGHT,
+        trail::MAX_DIFFUSE_WEIGHT,
+        "diffuse_weight",
+    );
+
+    /// Validation rule for deposit scale.
+    pub const DEPOSIT_SCALE: RangeRule<f32> = RangeRule::new(
+        trail::MIN_DEPOSIT_SCALE,
+        trail::MAX_DEPOSIT_SCALE,
+        "deposit_scale",
+    );
+
+    /// Validation rule for deposit gamma (Pow exponent).
+    pub const DEPOSIT_GAMMA: RangeRule<f32> = RangeRule::new(
+        trail::MIN_DEPOSIT_GAMMA,
+        trail::MAX_DEPOSIT_GAMMA,
+        "deposit_gamma",
+    );
+
+    /// Validation rule for deposit cap (0.0 = off).
+    pub const DEPOSIT_CAP: RangeRule<f32> = RangeRule::new(
+        trail::MIN_DEPOSIT_CAP,
+        trail::MAX_DEPOSIT_CAP,
+        "deposit_cap",
     );
 
     /// Validation rule for time scale (0.1 to 10.0).
@@ -188,20 +228,8 @@ pub mod rules {
     );
 }
 
-/// Validates that a value falls within an inclusive range.
-///
-/// # Type Parameters
-/// * `T` - The type of value to validate (must implement PartialOrd)
-///
-/// # Arguments
-/// * `value` - The value to validate
-/// * `min` - The minimum acceptable value (inclusive)
-/// * `max` - The maximum acceptable value (inclusive)
-/// * `name` - The name of the parameter for error messages
-///
-/// # Returns
-/// - `Ok(())` if the value is within range
-/// - `Err(ValidationError)` with a descriptive error message if out of range
+/// Validates that `value` falls within the inclusive range `min..=max`;
+/// `name` labels the parameter in the error message.
 ///
 /// # Examples
 /// ```
@@ -223,16 +251,8 @@ pub fn validate_range<T: PartialOrd + std::fmt::Display>(
     }
 }
 
-/// Validates that a value is at least a minimum value.
-///
-/// # Arguments
-/// * `value` - The value to validate
-/// * `min` - The minimum acceptable value (inclusive)
-/// * `name` - The name of the parameter for error messages
-///
-/// # Returns
-/// - `Ok(())` if the value meets the minimum
-/// - `Err(ValidationError)` with a descriptive error message if too small
+/// Validates that `value` is at least `min` (inclusive); `name` labels the
+/// parameter in the error message.
 pub fn validate_min<T: PartialOrd + std::fmt::Display>(
     value: T,
     min: T,
@@ -245,16 +265,8 @@ pub fn validate_min<T: PartialOrd + std::fmt::Display>(
     }
 }
 
-/// Validates that a value is at most a maximum value.
-///
-/// # Arguments
-/// * `value` - The value to validate
-/// * `max` - The maximum acceptable value (inclusive)
-/// * `name` - The name of the parameter for error messages
-///
-/// # Returns
-/// - `Ok(())` if the value meets the maximum
-/// - `Err(ValidationError)` with a descriptive error message if too large
+/// Validates that `value` is at most `max` (inclusive); `name` labels the
+/// parameter in the error message.
 pub fn validate_max<T: PartialOrd + std::fmt::Display>(
     value: T,
     max: T,
@@ -267,15 +279,7 @@ pub fn validate_max<T: PartialOrd + std::fmt::Display>(
     }
 }
 
-/// Validates that a string is not empty.
-///
-/// # Arguments
-/// * `value` - The string to validate
-/// * `name` - The name of the parameter for error messages
-///
-/// # Returns
-/// - `Ok(())` if the string is not empty
-/// - `Err(ValidationError)` with a descriptive error message if empty
+/// Validates that a string is non-empty after trimming whitespace.
 pub fn validate_not_empty(value: &str, name: &str) -> Result<(), ValidationError> {
     if value.trim().is_empty() {
         Err(ValidationError::empty(name))
@@ -284,15 +288,7 @@ pub fn validate_not_empty(value: &str, name: &str) -> Result<(), ValidationError
     }
 }
 
-/// Validates that a vector is not empty.
-///
-/// # Arguments
-/// * `value` - The vector to validate
-/// * `name` - The name of the parameter for error messages
-///
-/// # Returns
-/// - `Ok(())` if the vector is not empty
-/// - `Err(ValidationError)` with a descriptive error message if empty
+/// Validates that a slice is not empty.
 pub fn validate_vec_not_empty<T>(value: &[T], name: &str) -> Result<(), ValidationError> {
     if value.is_empty() {
         Err(ValidationError::custom(format!("{} cannot be empty", name)))
@@ -364,5 +360,31 @@ mod tests {
     fn test_validate_vec_not_empty() {
         assert!(validate_vec_not_empty(&[1, 2, 3], "test").is_ok());
         assert!(validate_vec_not_empty(&Vec::<i32>::new(), "test").is_err());
+    }
+
+    #[test]
+    fn diffusion_sigma_accepts_widened_range() {
+        assert!(rules::DIFFUSION_SIGMA.validate(&3.5).is_ok());
+        assert!(rules::DIFFUSION_SIGMA.validate(&4.0).is_ok());
+        assert!(rules::DIFFUSION_SIGMA.validate(&4.5).is_err());
+    }
+
+    #[test]
+    fn decay_gamma_rule_bounds() {
+        assert!(rules::DECAY_GAMMA.validate(&1.0).is_ok());
+        assert!(rules::DECAY_GAMMA.validate(&0.25).is_ok());
+        assert!(rules::DECAY_GAMMA.validate(&0.1).is_err());
+    }
+
+    #[test]
+    fn deposit_rules_accept_defaults_reject_out_of_range() {
+        use super::rules;
+        assert!(rules::DEPOSIT_SCALE.validate_f32(1.0).is_ok());
+        assert!(rules::DEPOSIT_SCALE.validate_f32(-0.1).is_err());
+        assert!(rules::DEPOSIT_SCALE.validate_f32(11.0).is_err());
+        assert!(rules::DEPOSIT_GAMMA.validate_f32(1.0).is_ok());
+        assert!(rules::DEPOSIT_GAMMA.validate_f32(0.05).is_err());
+        assert!(rules::DEPOSIT_CAP.validate_f32(0.0).is_ok());
+        assert!(rules::DEPOSIT_CAP.validate_f32(-1.0).is_err());
     }
 }

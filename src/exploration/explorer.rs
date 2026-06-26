@@ -13,7 +13,7 @@ use crate::simulation::Simulation;
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256PlusPlus;
 
-/// Parameters being explored (expanded set for comprehensive optimization).
+/// Parameter set explored by the optimizer.
 #[derive(Debug, Clone, Copy)]
 pub struct ExplorationParams {
     // Core agent parameters
@@ -50,7 +50,7 @@ pub struct ExplorationParams {
 impl ExplorationParams {
     /// Create random parameters within valid ranges.
     pub fn random(rng: &mut impl Rng) -> Self {
-        // Randomly decide whether to enable wind (30% chance)
+        // 30% chance of wind
         let (wind_dx, wind_dy) = if rng.gen_bool(0.3) {
             (
                 Some(rng.gen_range(-0.5..0.5)),
@@ -267,13 +267,12 @@ impl ExplorationParams {
 
     /// Mutate parameters slightly for local search.
     pub fn mutate(&self, rng: &mut impl Rng, mutation_strength: f32) -> Self {
-        // Helper function to mutate f32 values
         fn mutate_f32(v: f32, min: f32, max: f32, rng: &mut impl Rng, strength: f32) -> f32 {
             let delta = (max - min) * strength * rng.gen_range(-1.0..1.0);
             (v + delta).clamp(min, max)
         }
 
-        // Occasionally flip diffusion kernel (10% chance scaled by mutation strength)
+        // Occasionally flip diffusion kernel (probability scales with mutation strength, capped at 20%)
         let diffusion_kernel = if rng.gen_bool((mutation_strength * 0.5).min(0.2) as f64) {
             match self.diffusion_kernel {
                 DiffusionKernel::Mean3x3 => DiffusionKernel::Gaussian,
@@ -316,7 +315,7 @@ impl ExplorationParams {
             )
         };
 
-        // Occasionally change terrain type (15% chance scaled by mutation strength)
+        // Occasionally change terrain type (probability scales with mutation strength, capped at 15%)
         let terrain = if rng.gen_bool((mutation_strength * 0.5).min(0.15) as f64) {
             match rng.gen_range(0..4) {
                 0 => TerrainType::None,
@@ -328,7 +327,7 @@ impl ExplorationParams {
             self.terrain
         };
 
-        // Occasionally change init mode (10% chance scaled by mutation strength)
+        // Occasionally change init mode (probability scales with mutation strength, capped at 10%)
         let init_mode = if rng.gen_bool((mutation_strength * 0.4).min(0.1) as f64) {
             match rng.gen_range(0..5) {
                 0 => InitMode::Random,
@@ -362,7 +361,7 @@ impl ExplorationParams {
 
     /// Convert to SimConfig for simulation.
     pub fn to_sim_config(&self) -> SimConfig {
-        // Build wind from components if both are present
+        // Wind requires both components present and a non-negligible magnitude
         let wind = match (self.wind_dx, self.wind_dy) {
             (Some(dx), Some(dy)) if dx.abs() > 0.001 || dy.abs() > 0.001 => Some(Wind::new(dx, dy)),
             _ => None,
@@ -424,6 +423,8 @@ impl ExplorationParams {
             InitMode::RandomClusters => "InitMode::RandomClusters",
             InitMode::Food => "InitMode::Food",
             InitMode::Petri => "InitMode::Petri",
+            InitMode::Constellation => "InitMode::Constellation",
+            InitMode::FoodConstellation => "InitMode::FoodConstellation",
         };
 
         format!(
@@ -475,7 +476,7 @@ pub enum PresetBehavior {
 }
 
 impl PresetBehavior {
-    /// Get score function for this behavior.
+    /// Score the given metrics for this behavior.
     pub fn score(&self, metrics: &PatternMetrics) -> f32 {
         match self {
             PresetBehavior::Vortex => metrics.vortex_score(),
@@ -559,8 +560,8 @@ impl Explorer {
             self.config.height,
             sim_config,
             self.config.seed,
-            params.init_mode, // Use init mode from params
-            0,                // No trail history needed for metrics
+            params.init_mode,
+            0, // No trail history needed for metrics
         );
 
         // Warmup

@@ -2565,7 +2565,7 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 - [bitflags 1.3.2](https://github.com/bitflags/bitflags)
-- [bitflags 2.10.0](https://github.com/bitflags/bitflags)
+- [bitflags 2.13.0](https://github.com/bitflags/bitflags)
 - [glob 0.3.3](https://github.com/rust-lang/glob)
 - [log 0.4.29](https://github.com/rust-lang/log)
 - [num-derive 0.4.2](https://github.com/rust-num/num-derive)
@@ -2776,6 +2776,7 @@ Used by:
 - [coreaudio-sys 0.2.17](https://github.com/RustAudio/coreaudio-sys.git)
 - [either 1.15.0](https://github.com/rayon-rs/either)
 - [itertools 0.10.5](https://github.com/rust-itertools/itertools)
+- [itertools 0.13.0](https://github.com/rust-itertools/itertools)
 
 ```
 Copyright (c) 2015
@@ -2917,7 +2918,8 @@ Used by:
 - [heck 0.4.1](https://github.com/withoutboats/heck)
 - [heck 0.5.0](https://github.com/withoutboats/heck)
 - [unicode-bidi 0.3.18](https://github.com/servo/unicode-bidi)
-- [unicode-segmentation 1.12.0](https://github.com/unicode-rs/unicode-segmentation)
+- [unicode-segmentation 1.13.3](https://github.com/unicode-rs/unicode-segmentation)
+- [unicode-width 0.1.14](https://github.com/unicode-rs/unicode-width)
 - [unicode-width 0.2.2](https://github.com/unicode-rs/unicode-width)
 
 ```
@@ -5770,6 +5772,36 @@ Used by:
 MIT License
 
 Copyright (c) 2021 1Password
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
+- [tui-input 0.15.3](https://github.com/sayanarijit/tui-input)
+
+```
+MIT License
+
+Copyright (c) 2021 Arijit Basu
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

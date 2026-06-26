@@ -427,84 +427,6 @@ fn test_visual_regression_tendrils_preset() {
 }
 
 #[test]
-fn test_visual_regression_minimal_preset() {
-    let output = capture_print_output(&["-s", "42", "--preset", "minimal"], 80, 24);
-    let normalized = normalize_output(&output);
-
-    if should_update_golden() {
-        update_golden("minimal_preset", &normalized).unwrap();
-        return;
-    }
-
-    match load_golden("minimal_preset") {
-        Ok(golden) => {
-            assert_eq!(
-                normalized, golden,
-                "Visual regression: minimal preset output differs from golden file"
-            );
-        }
-        Err(_) => {
-            eprintln!(
-                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
-            );
-            update_golden("minimal_preset", &normalized).unwrap();
-        }
-    }
-}
-
-#[test]
-fn test_visual_regression_moss_preset() {
-    let output = capture_print_output(&["-s", "42", "--preset", "moss"], 80, 24);
-    let normalized = normalize_output(&output);
-
-    if should_update_golden() {
-        update_golden("moss_preset", &normalized).unwrap();
-        return;
-    }
-
-    match load_golden("moss_preset") {
-        Ok(golden) => {
-            assert_eq!(
-                normalized, golden,
-                "Visual regression: moss preset output differs from golden file"
-            );
-        }
-        Err(_) => {
-            eprintln!(
-                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
-            );
-            update_golden("moss_preset", &normalized).unwrap();
-        }
-    }
-}
-
-#[test]
-fn test_visual_regression_cosmic_preset() {
-    let output = capture_print_output(&["-s", "42", "--preset", "cosmic"], 80, 24);
-    let normalized = normalize_output(&output);
-
-    if should_update_golden() {
-        update_golden("cosmic_preset", &normalized).unwrap();
-        return;
-    }
-
-    match load_golden("cosmic_preset") {
-        Ok(golden) => {
-            assert_eq!(
-                normalized, golden,
-                "Visual regression: cosmic preset output differs from golden file"
-            );
-        }
-        Err(_) => {
-            eprintln!(
-                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
-            );
-            update_golden("cosmic_preset", &normalized).unwrap();
-        }
-    }
-}
-
-#[test]
 fn test_visual_regression_fire_preset() {
     let output = capture_print_output(&["-s", "42", "--preset", "fire"], 80, 24);
     let normalized = normalize_output(&output);
@@ -526,58 +448,6 @@ fn test_visual_regression_fire_preset() {
                 "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
             );
             update_golden("fire_preset", &normalized).unwrap();
-        }
-    }
-}
-
-#[test]
-fn test_visual_regression_zen_preset() {
-    let output = capture_print_output(&["-s", "42", "--preset", "zen"], 80, 24);
-    let normalized = normalize_output(&output);
-
-    if should_update_golden() {
-        update_golden("zen_preset", &normalized).unwrap();
-        return;
-    }
-
-    match load_golden("zen_preset") {
-        Ok(golden) => {
-            assert_eq!(
-                normalized, golden,
-                "Visual regression: zen preset output differs from golden file"
-            );
-        }
-        Err(_) => {
-            eprintln!(
-                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
-            );
-            update_golden("zen_preset", &normalized).unwrap();
-        }
-    }
-}
-
-#[test]
-fn test_visual_regression_storm_preset() {
-    let output = capture_print_output(&["-s", "42", "--preset", "storm"], 80, 24);
-    let normalized = normalize_output(&output);
-
-    if should_update_golden() {
-        update_golden("storm_preset", &normalized).unwrap();
-        return;
-    }
-
-    match load_golden("storm_preset") {
-        Ok(golden) => {
-            assert_eq!(
-                normalized, golden,
-                "Visual regression: storm preset output differs from golden file"
-            );
-        }
-        Err(_) => {
-            eprintln!(
-                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
-            );
-            update_golden("storm_preset", &normalized).unwrap();
         }
     }
 }
@@ -609,27 +479,53 @@ fn test_visual_regression_river_preset() {
 }
 
 #[test]
-fn test_visual_regression_ethereal_preset() {
-    let output = capture_print_output(&["-s", "42", "--preset", "ethereal"], 80, 24);
+fn test_visual_regression_smoke_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "smoke"], 80, 24);
     let normalized = normalize_output(&output);
 
     if should_update_golden() {
-        update_golden("ethereal_preset", &normalized).unwrap();
+        update_golden("smoke_preset", &normalized).unwrap();
         return;
     }
 
-    match load_golden("ethereal_preset") {
+    match load_golden("smoke_preset") {
         Ok(golden) => {
             assert_eq!(
                 normalized, golden,
-                "Visual regression: ethereal preset output differs from golden file"
+                "Visual regression: smoke preset output differs from golden file"
             );
         }
         Err(_) => {
             eprintln!(
                 "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
             );
-            update_golden("ethereal_preset", &normalized).unwrap();
+            update_golden("smoke_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_petridish_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "petridish"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("petridish_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("petridish_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: petridish preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("petridish_preset", &normalized).unwrap();
         }
     }
 }
@@ -1004,7 +900,7 @@ fn test_visual_regression_truecolor_mode() {
 
 #[test]
 fn test_visual_regression_dither_mode() {
-    let output = capture_print_output(&["-s", "42", "--dither"], 80, 24);
+    let output = capture_print_output(&["-s", "42", "--dither-mode", "ordered"], 80, 24);
     let normalized = normalize_output(&output);
 
     if should_update_golden() {
@@ -1244,6 +1140,414 @@ fn test_visual_regression_window_frame_glow() {
                 "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
             );
             update_golden("window_frame_glow", &normalized).unwrap();
+        }
+    }
+}
+
+// ============== GLYPH SELECTION TESTS ==============
+
+#[test]
+fn test_visual_regression_ascii_hybrid() {
+    let output = capture_print_output(
+        &[
+            "-s",
+            "1",
+            "--ascii",
+            "--glyph-selection",
+            "hybrid",
+            "--glyph-edge-threshold",
+            "0.08",
+        ],
+        80,
+        24,
+    );
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("ascii_hybrid", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("ascii_hybrid") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: ascii_hybrid differs"
+            );
+        }
+        Err(_) => {
+            eprintln!("Warning: golden missing; run UPDATE_GOLDEN=1");
+            update_golden("ascii_hybrid", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_ascii_brightness() {
+    let output = capture_print_output(
+        &["-s", "1", "--ascii", "--glyph-selection", "brightness"],
+        80,
+        24,
+    );
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("ascii_brightness", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("ascii_brightness") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: ascii_brightness differs"
+            );
+        }
+        Err(_) => {
+            eprintln!("Warning: golden missing; run UPDATE_GOLDEN=1");
+            update_golden("ascii_brightness", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_braille_brightness() {
+    let output = capture_print_output(
+        &["-s", "1", "--braille", "--glyph-selection", "brightness"],
+        80,
+        24,
+    );
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("braille_brightness", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("braille_brightness") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: braille_brightness differs"
+            );
+        }
+        Err(_) => {
+            eprintln!("Warning: golden missing; run UPDATE_GOLDEN=1");
+            update_golden("braille_brightness", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_sculpted_brightness() {
+    let output = capture_print_output(
+        &["-s", "1", "--sculpted", "--glyph-selection", "brightness"],
+        80,
+        24,
+    );
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("sculpted_brightness", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("sculpted_brightness") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: sculpted_brightness differs"
+            );
+        }
+        Err(_) => {
+            eprintln!("Warning: golden missing; run UPDATE_GOLDEN=1");
+            update_golden("sculpted_brightness", &normalized).unwrap();
+        }
+    }
+}
+
+// ============== SHOWCASE PRESET TESTS ==============
+
+#[test]
+fn test_visual_regression_mold_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "mold"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("mold_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("mold_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: mold preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("mold_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_etching_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "etching", "--braille"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("etching_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("etching_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: etching preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("etching_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_drift_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "drift"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("drift_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("drift_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: drift preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("drift_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_forge_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "forge"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("forge_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("forge_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: forge preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("forge_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_gossamer_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "gossamer"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("gossamer_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("gossamer_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: gossamer preset output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("gossamer_preset", &normalized).unwrap();
+        }
+    }
+}
+
+// ============== PER-PRESET VISUAL MOD TESTS ==============
+
+#[test]
+fn test_visual_regression_organic_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "organic"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("organic_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("organic_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("organic_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_slime_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "slime"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("slime_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("slime_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("slime_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_vines_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "vines"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("vines_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("vines_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("vines_preset", &normalized).unwrap();
+        }
+    }
+}
+
+#[test]
+fn test_visual_regression_vinescii_preset() {
+    let output = capture_print_output(&["-s", "42", "--preset", "vinescii"], 80, 24);
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("vinescii_preset", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("vinescii_preset") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("vinescii_preset", &normalized).unwrap();
+        }
+    }
+}
+
+// ============== TEMPORAL COLOR TESTS ==============
+
+#[test]
+fn test_visual_regression_temporal_color_accent() {
+    // Temporal color in Accent mode at strength 0.8: active pixels are shifted to
+    // the palette accent hue while decaying pixels shift to a complementary hue.
+    // Uses seed 42 + network preset (produces dense, rapidly-changing trails that
+    // maximise temporal delta signal) and the Organic palette (real chroma, so
+    // hue modulation is visible in ANSI output).
+    let output = capture_print_output(
+        &[
+            "-s",
+            "42",
+            "--preset",
+            "network",
+            "--palette",
+            "organic",
+            "--temporal-color",
+            "0.8",
+            "--temporal-mode",
+            "accent",
+        ],
+        80,
+        24,
+    );
+    let normalized = normalize_output(&output);
+
+    if should_update_golden() {
+        update_golden("temporal_color_accent", &normalized).unwrap();
+        return;
+    }
+
+    match load_golden("temporal_color_accent") {
+        Ok(golden) => {
+            assert_eq!(
+                normalized, golden,
+                "Visual regression: temporal color accent output differs from golden file"
+            );
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Golden file not found, creating it. Run with UPDATE_GOLDEN=1 to accept."
+            );
+            update_golden("temporal_color_accent", &normalized).unwrap();
         }
     }
 }
