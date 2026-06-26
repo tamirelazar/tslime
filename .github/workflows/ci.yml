@@ -2,8 +2,11 @@ name: CI
 
 on:
   workflow_dispatch:
+  # Push CI runs only on master (post-merge verification). Work on dev and
+  # feature branches is covered by its pull request, so pushing to dev while a
+  # PR is open no longer double-triggers the suite.
   push:
-    branches: [master, dev]
+    branches: [master]
     paths-ignore:
       - '**.md'
       - 'LICENSE'
