@@ -116,14 +116,14 @@ the lay of the codebase, or pick up one of the open
 
 [MIT](LICENSE).
 
-## References
+## Citations
 
 1. Jones, J. (2010). "Characteristics of Pattern Formation and Evolution in Approximations of Physarum Transport Networks." *Artificial Life*, 16(2), 127-153. doi:10.1162/artl.2010.16.2.16202
 2. Miranda, E. R., Adamatzky, A., & Jones, J. (2011). "Sounds Synthesis with Slime Mould of Physarum Polycephalum." *Journal of Bionic Engineering*, 8(2), 107-113. doi:10.1016/S1672-6529(11)60016-4
-3. Floyd, R. W., & Steinberg, L. (1976). "An Adaptive Algorithm for Spatial Grayscale." *Proceedings of the Society for Information Display*, 17(2), 75-77.
-4. Bayer, B. E. (1973). "An optimum method for two-level rendition of continuous-tone pictures." *IEEE International Conference on Communications*, Vol. 1, 11-15.
-5. Ottosson, B. (2020). "A perceptual color space for image processing." https://bottosson.github.io/posts/oklab/
+3. Ottosson, B. (2020). "A perceptual color space for image processing." https://bottosson.github.io/posts/oklab/
 
-Thanks to [cbonsai](https://gitlab.com/jallbrit/cbonsai) for the terminal-art
-inspiration and [crossterm](https://github.com/crossterm-rs/crossterm) for
-terminal handling.
+## Software Inspirations
+- [cbonsai](https://gitlab.com/jallbrit/cbonsai)
+- [asciiquarium](https://github.com/cmatsuoka/asciiquarium)
+- [astroterm](https://github.com/da-luce/astroterm)
+- [crossterm](https://github.com/crossterm-rs/crossterm)
