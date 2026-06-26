@@ -189,31 +189,6 @@ lumen are still accepted as CLI aliases. Palettes and character sets are indepen
 the preset and can be cycled at runtime. Preset parameters are defined in
 `src/simulation/config.rs` and `src/preset_sim_defaults.rs`.
 
-Showcase presets highlight specific visual levers:
-
-- **slime** — Pulsing network with strong deposits and the slime palette; auto-normalizes brightness.
-- **vines** — Flocking-pattern filaments rendered without a window frame.
-- **vinescii** — The vines pattern rendered in pure ASCII.
-- **smoke** — Diffuse drift with the slate palette; auto-normalizes brightness.
-- **mold** — Bleuje-style front-lit veins with the mold palette; auto-normalizes brightness.
-- **etching** — Directional filament linework via Sobel glyph selection (Braille, TUI-only).
-- **drift** — Color that shifts with motion direction (temporal Hue mode).
-- **constellation** — Sparse star-map scatter via the Points charset; re-rolls layout on reset.
-- **trademark** (alias `logo`) — The tslime logo held as a stable figure: constellation re-stamp behavior with the embedded logo image as the template (Ethereal palette, HalfBlock, auto-normalized brightness). Bound to key `4` by default.
-- **mosaic** — Posterized color bands: Quantize mapping + wrapped palette cycles.
-- **marble** — Veined stone via heavy Gaussian diffusion + Perlin intensity mapping.
-- **prism** — Maximum color resolution: HalfBlockDual charset + strong color anti-aliasing.
-- **vellum** — Soft parchment density: Shade charset + logarithmic deposit curve.
-- **forge** — Grainy molten thermal: exponential intensity mapping + afterglow.
-- **wane** — Slow ghosting decay via low decay-gamma + power deposit curve.
-- **gossamer** — Delicate Braille threads with brightness glyphs + power mapping.
-- **codex** — Typographic engraving: custom ASCII charset + sigmoid contrast.
-- **tide** — Living water with animated hue-shift over time.
-
-Six new palettes accompany them: **jade** (mid-saturation green), **amber** (warm
-earth), **slate** (cool stone grey), **pastel** (high-key airy), **ink** (duotone
-ink-on-paper), and **copper** (oxidized rust-to-verdigris).
-
 ## How it works
 
 The simulation implements the agent-based model from Jones (2010) [1]. Each agent
@@ -235,10 +210,9 @@ Colors come from palettes defined as gradients in the OKLch color space [5], whi
 keeps perceived brightness uniform across the gradient — intensity in the
 simulation reads as intensity on screen, regardless of hue.
 
-## Experimental — help wanted
+## Experimental Features 
 
-Features that exist but aren't ready for the default experience. Each has a
-tracking issue describing current state and what's needed — contributions welcome.
+Most features aren't ready for the default experience. Each has a tracking issue describing current state (I hope) - which, in some cases, explains what's needed to make it work. 
 
 | Feature | Try it | Issue |
 |---|---|---|
@@ -253,11 +227,11 @@ tracking issue describing current state and what's needed — contributions welc
 Bug reports, terminal compatibility notes, and work on the experimental features
 are all welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing, and
 the lay of the codebase, or pick up one of the open
-[issues](https://github.com/tamirelazar/tslime/issues).
+[issues](https://github.com/tamirelazar/tslime/issues). We're clanker-friendly, up to a point - I probably won't read long slop PRs, and bad/weird code will be rejected (I HOPE).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE).
 
 ## References
 
