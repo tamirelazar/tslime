@@ -26,6 +26,8 @@ Distribution and release-pipeline fixes.
 - One-paste install blocks for Linux and Windows in the README: they fetch the
   latest release binary, install it to a user directory, put it on `PATH`, and
   (on Windows) clear the Mark-of-the-Web so SmartScreen stays quiet.
+- Nix flake: `nix run github:tamirelazar/tslime` runs tslime ephemerally without
+  installing; `nix build` and `nix profile install` are also supported.
 
 ## [0.1.0] - 2026-06-26
 

@@ -19,6 +19,14 @@ cargo install tslime
 Builds from source (requires Rust 1.70 or later). This is the universal path
 and sidesteps macOS Gatekeeper entirely.
 
+### Try it without installing — Nix
+
+If you have Nix with flakes, run tslime ephemerally — nothing is installed:
+
+```bash
+nix run github:tamirelazar/tslime
+```
+
 ### macOS — Homebrew
 
 ```bash
