@@ -12,6 +12,9 @@ license = "MIT"
 keywords = ["terminal", "screensaver", "slime-mold", "generative-art", "physarum"]
 categories = ["command-line-utilities", "visualization", "simulation"]
 rust-version = "1.70"
+# Only the explicitly declared [[example]] targets are built; this stops cargo
+# from auto-discovering stray local files under examples/ (e.g. dev prototypes).
+autoexamples = false
 exclude = [
     ".github/",
     "assets/demos/*.gif",
