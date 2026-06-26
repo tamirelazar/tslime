@@ -3882,6 +3882,14 @@ fn switch_preset(
         // reset it to the default (toast).
         transition_style: Some(rs.transition_style),
         transition_tagline: Some(rs.transition_tagline),
+        // Likewise carry the active chrome (fullscreen/expanded/minimal). It's a
+        // global display mode chosen at launch or via F10/F11, not a per-preset
+        // lever; without this a bare preset resolve resets chrome to the preset
+        // default, silently dropping the user out of fullscreen. Most presets fill
+        // the frame regardless via the edge-hug fallback, but presets with a small
+        // `min_sim_size` (Constellation, Trademark) fall back to the centered 3:2
+        // layout and visibly letterbox on switch.
+        chrome_style: Some(rs.chrome_style),
         ..Default::default()
     };
     crate::app::apply_overrides(
