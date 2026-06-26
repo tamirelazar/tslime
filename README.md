@@ -27,6 +27,14 @@ If you have Nix with flakes, run tslime ephemerally — nothing is installed:
 nix run github:tamirelazar/tslime
 ```
 
+### Try it without installing — Docker
+
+No Nix? Run the published container instead — nothing is installed on the host:
+
+```bash
+docker run --rm -it ghcr.io/tamirelazar/tslime
+```
+
 ### macOS — Homebrew
 
 ```bash

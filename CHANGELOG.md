@@ -28,6 +28,8 @@ Distribution and release-pipeline fixes.
   (on Windows) clear the Mark-of-the-Web so SmartScreen stays quiet.
 - Nix flake: `nix run github:tamirelazar/tslime` runs tslime ephemerally without
   installing; `nix build` and `nix profile install` are also supported.
+- Docker image on GHCR: `docker run --rm -it ghcr.io/tamirelazar/tslime` runs
+  tslime ephemerally without installing (published on release; linux/amd64).
 
 ## [0.1.0] - 2026-06-26
 

@@ -215,3 +215,39 @@ jobs:
           --notes-file RELEASE_NOTES.md \
           dist/tslime-linux-x86_64 \
           dist/tslime-windows-x86_64.exe
+
+  # Publish a container image to GHCR so users can `docker run --rm -it
+  # ghcr.io/<owner>/tslime` without installing anything. Self-contained build
+  # (the Dockerfile compiles the static musl binary onto a scratch image). Tag
+  # pushes only. linux/amd64; arm64 is a follow-up.
+  docker:
+    name: Publish Docker image
+    needs: hygiene
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        platforms: linux/amd64
+        push: true
+        tags: |
+          ghcr.io/${{ github.repository }}:latest
+          ghcr.io/${{ github.repository }}:${{ github.ref_name }}
