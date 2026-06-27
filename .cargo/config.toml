@@ -1,0 +1,8 @@
+# Statically link the MSVC C runtime on Windows so the shipped binary has no
+# external DLL dependency (vcruntime140.dll / api-ms-win-crt-*). Without this,
+# tslime.exe fails to launch on a clean Windows lacking the VC++ redistributable
+# with STATUS_DLL_NOT_FOUND (0xc0000135) — silently, with no PowerShell error.
+# Keeps the "zero runtime dependencies, single static binary" promise on Windows
+# (the Linux build is already static via the musl target).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
