@@ -65,7 +65,11 @@ New-Item -ItemType Directory -Force -Path $dir | Out-Null
 Invoke-WebRequest "https://github.com/tamirelazar/tslime/releases/latest/download/tslime-windows-x86_64.exe" -OutFile "$dir\tslime.exe"
 Unblock-File "$dir\tslime.exe"
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($userPath -notlike "*$dir*") { [Environment]::SetEnvironmentVariable("Path", "$userPath;$dir", "User") }
+if (-not $userPath) { $userPath = "" }
+if ($userPath -notlike "*$dir*") {
+    $newPath = if ($userPath) { "$userPath;$dir" } else { $dir }
+    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+}
 ```
 
 Open a new terminal so the `PATH` change takes effect, then run `tslime`.

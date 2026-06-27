@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-06-27
+
+Windows distribution fix.
+
+### Fixed
+- Windows release binary is now statically linked against the MSVC C runtime
+  (`+crt-static`). The previous build dynamically linked `vcruntime140.dll`, so
+  `tslime.exe` failed to launch on a clean Windows without the VC++ 2015–2022
+  redistributable — silently, with no error, making `tslime` appear to do
+  nothing. This restores the single-static-binary guarantee on Windows.
+- README Windows install snippet now handles an unset user `PATH` (avoids
+  writing a leading `;`).
+
 ## [0.1.1] - 2026-06-26
 
 Distribution and release-pipeline fixes.
