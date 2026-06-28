@@ -2667,10 +2667,7 @@ pub fn run_simulation(
                                 // Apply palette changes after each adjustment
                                 renderer.set_palette(state.to_palette());
 
-                                if matches!(state.mode, EditorMode::SaveDialog) {
-                                    // No-op: save completion is detected via the
-                                    // is_modified transition below.
-                                }
+
                             }
 
                             // Track if palette was saved
