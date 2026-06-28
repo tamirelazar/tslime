@@ -52,8 +52,8 @@ pub struct ProfileOverrides {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attractors: Vec<AttractorArg>,
     pub attractor_strength: Option<f32>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub obstacles: Vec<ObstacleArg>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub obstacles: Option<Vec<ObstacleArg>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub species: Vec<SpeciesArg>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -305,7 +305,13 @@ impl ProfileOverrides {
             food_image_scale: Some(args.food_scale),
             attractors: args.attract.clone(),
             attractor_strength: Some(args.attractor_strength),
-            obstacles: args.obstacle.clone(),
+            obstacles: if args.no_obstacles {
+                Some(Vec::new())
+            } else if args.obstacle.is_empty() {
+                None
+            } else {
+                Some(args.obstacle.clone())
+            },
             species: args.species_list().to_vec(),
             separate_species_trails: args.separate_species_trails_enabled(),
             species_colors: args.species_colors_enabled(),
@@ -586,8 +592,8 @@ impl ProfileOverrides {
             config.attractor_strength = strength;
         }
 
-        if !self.obstacles.is_empty() {
-            config.obstacles = self.obstacles.iter().map(|o| o.obstacle.clone()).collect();
+        if let Some(obs) = &self.obstacles {
+            config.obstacles = obs.iter().map(|o| o.obstacle.clone()).collect();
         }
         let _ = config.load_obstacle_masks();
 
@@ -1460,6 +1466,42 @@ mod tests {
     fn empty_cli_obstacles_do_not_clear_preset_obstacles() {
         let c = resolve(&["--preset", "petridish"]).sim;
         assert!(!c.obstacles.is_empty());
+    }
+
+    #[test]
+    fn no_obstacles_flag_clears_preset_obstacles() {
+        let c = resolve(&["--preset", "petridish", "--no-obstacles"]).sim;
+        assert!(c.obstacles.is_empty());
+    }
+
+    #[test]
+    fn no_obstacles_sets_some_empty_override() {
+        let o = ProfileOverrides::from_args(&args(&["--no-obstacles"])).unwrap();
+        assert_eq!(o.obstacles, Some(Vec::new()));
+    }
+
+    #[test]
+    fn no_cli_obstacles_leaves_override_none() {
+        let o = ProfileOverrides::from_args(&args(&[])).unwrap();
+        assert_eq!(o.obstacles, None);
+    }
+
+    #[test]
+    fn obstacles_toml_array_deserializes_to_some() {
+        // Back-compat: old configs wrote `obstacles = [...]` arrays.
+        let toml = r#"
+            obstacles = [{ obstacle = { Circle = { x = 200.0, y = 300.0, radius = 50.0 } } }]
+        "#;
+        let o: ProfileOverrides = toml::from_str(toml).unwrap();
+        assert_eq!(o.obstacles.as_ref().map(|v| v.len()), Some(1));
+    }
+
+    #[test]
+    fn omitted_obstacles_toml_deserializes_to_none() {
+        // Back-compat: old configs omitted the key when empty -> inherit.
+        let toml = "decay_factor = 0.9\n";
+        let o: ProfileOverrides = toml::from_str(toml).unwrap();
+        assert_eq!(o.obstacles, None);
     }
 
     /// Validation parity: invalid sensor_angle must be rejected.

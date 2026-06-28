@@ -117,13 +117,15 @@ pub fn capture_overrides(
             })
             .collect(),
         attractor_strength: Some(sim_config.attractor_strength),
-        obstacles: sim_config
-            .obstacles
-            .iter()
-            .map(|o| ObstacleArg {
-                obstacle: o.clone(),
-            })
-            .collect(),
+        obstacles: Some(
+            sim_config
+                .obstacles
+                .iter()
+                .map(|o| ObstacleArg {
+                    obstacle: o.clone(),
+                })
+                .collect(),
+        ),
         species: sim_config
             .species_configs
             .iter()
@@ -1203,12 +1205,16 @@ charset = "halfblock"
         let overrides = capture_overrides(&sim, Palette::Organic, Charset::HalfBlock, &rs);
 
         // obstacles must be captured, not empty.
+        let captured_obstacles = overrides
+            .obstacles
+            .as_ref()
+            .expect("obstacles must be captured as Some");
         assert_eq!(
-            overrides.obstacles.len(),
+            captured_obstacles.len(),
             1,
             "obstacles must be captured from sim_config"
         );
-        assert_eq!(overrides.obstacles[0].obstacle, obstacle);
+        assert_eq!(captured_obstacles[0].obstacle, obstacle);
 
         // attractors must be captured.
         assert_eq!(

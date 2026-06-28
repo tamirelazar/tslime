@@ -1382,6 +1382,13 @@ pub struct Args {
     pub obstacle: Vec<ObstacleArg>,
 
     #[arg(
+        long = "no-obstacles",
+        help = "Clear the preset's obstacles (mutually exclusive with --obstacle)"
+    )]
+    /// Clear preset obstacles instead of inheriting them.
+    pub no_obstacles: bool,
+
+    #[arg(
         long = "attractor-strength",
         value_name = "FLOAT",
         default_value_t = environment::DEFAULT_ATTRACTOR_STRENGTH,
@@ -2185,6 +2192,11 @@ impl Args {
                 "Cannot specify both --mouse-attract and --mouse-repel. Choose one mode.",
             ));
         }
+        if self.no_obstacles && !self.obstacle.is_empty() {
+            return Err(ValidationError::custom(
+                "Cannot specify both --no-obstacles and --obstacle. Choose one.",
+            ));
+        }
         if self.grid && self.grid_size == 0 {
             return Err(ValidationError::custom("grid_size must be greater than 0"));
         }
@@ -2296,6 +2308,7 @@ impl Default for Args {
             export_frames: 50,
             export_fps: 30,
             obstacle: Vec::new(),
+            no_obstacles: false,
             mouse_attract: false,
             mouse_repel: false,
             mouse_timeout: env_consts::DEFAULT_MOUSE_TIMEOUT,
