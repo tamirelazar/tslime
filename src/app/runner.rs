@@ -2664,13 +2664,10 @@ pub fn run_simulation(
                                     renderer.set_palette(original);
                                 }
                             } else if handled {
-                                // Apply palette changes after each adjustment
+                                // Apply palette changes after each adjustment.
+                                // Save completion is detected via the is_modified
+                                // transition below.
                                 renderer.set_palette(state.to_palette());
-
-                                if matches!(state.mode, EditorMode::SaveDialog) {
-                                    // No-op: save completion is detected via the
-                                    // is_modified transition below.
-                                }
                             }
 
                             // Track if palette was saved
