@@ -52,8 +52,8 @@ pub struct ProfileOverrides {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attractors: Vec<AttractorArg>,
     pub attractor_strength: Option<f32>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub obstacles: Vec<ObstacleArg>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub obstacles: Option<Vec<ObstacleArg>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub species: Vec<SpeciesArg>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -297,22 +297,28 @@ impl ProfileOverrides {
             brightness: args.brightness,
             diffusion_kernel: args.diffusion_kernel,
             diffusion_sigma: args.diffusion_sigma,
-            time_scale: Some(args.time_scale),
+            time_scale: args.time_scale,
             population: args.population,
             fps: Some(args.fps),
             food_image_path: Some(args.food.clone()),
             food_image_invert: Some(args.food_invert),
             food_image_scale: Some(args.food_scale),
             attractors: args.attract.clone(),
-            attractor_strength: Some(args.attractor_strength),
-            obstacles: args.obstacle.clone(),
+            attractor_strength: args.attractor_strength,
+            obstacles: if args.no_obstacles {
+                Some(Vec::new())
+            } else if args.obstacle.is_empty() {
+                None
+            } else {
+                Some(args.obstacle.clone())
+            },
             species: args.species_list().to_vec(),
             separate_species_trails: args.separate_species_trails_enabled(),
             species_colors: args.species_colors_enabled(),
             use_simd: Some(!args.simd_off),
             wind: args.wind.clone(),
-            terrain: Some(args.terrain.clone()),
-            terrain_strength: Some(args.terrain_strength),
+            terrain: args.terrain.clone(),
+            terrain_strength: args.terrain_strength,
             background_color: args.bg_color.clone(),
             boundary_mode: args.boundary_mode,
             window_frame: args.window_frame,
@@ -586,8 +592,8 @@ impl ProfileOverrides {
             config.attractor_strength = strength;
         }
 
-        if !self.obstacles.is_empty() {
-            config.obstacles = self.obstacles.iter().map(|o| o.obstacle.clone()).collect();
+        if let Some(obs) = &self.obstacles {
+            config.obstacles = obs.iter().map(|o| o.obstacle.clone()).collect();
         }
         let _ = config.load_obstacle_masks();
 
@@ -1460,6 +1466,100 @@ mod tests {
     fn empty_cli_obstacles_do_not_clear_preset_obstacles() {
         let c = resolve(&["--preset", "petridish"]).sim;
         assert!(!c.obstacles.is_empty());
+    }
+
+    #[test]
+    fn no_obstacles_flag_clears_preset_obstacles() {
+        let c = resolve(&["--preset", "petridish", "--no-obstacles"]).sim;
+        assert!(c.obstacles.is_empty());
+    }
+
+    #[test]
+    fn no_obstacles_sets_some_empty_override() {
+        let o = ProfileOverrides::from_args(&args(&["--no-obstacles"])).unwrap();
+        assert_eq!(o.obstacles, Some(Vec::new()));
+    }
+
+    #[test]
+    fn no_cli_obstacles_leaves_override_none() {
+        let o = ProfileOverrides::from_args(&args(&[])).unwrap();
+        assert_eq!(o.obstacles, None);
+    }
+
+    /// #51: with no CLI flag, the four Tier-C levers must be `None` so they no
+    /// longer clobber a preset/default value. (Before the fix, from_args emitted
+    /// `Some(clap_default)`, overwriting whatever a preset declared.)
+    #[test]
+    fn no_cli_tier_c_levers_leave_override_none() {
+        let o = ProfileOverrides::from_args(&args(&[])).unwrap();
+        assert_eq!(
+            o.time_scale, None,
+            "time_scale must be unset without a flag"
+        );
+        assert_eq!(
+            o.attractor_strength, None,
+            "attractor_strength must be unset without a flag"
+        );
+        assert_eq!(o.terrain, None, "terrain must be unset without a flag");
+        assert_eq!(
+            o.terrain_strength, None,
+            "terrain_strength must be unset without a flag"
+        );
+    }
+
+    /// #51: when the flag IS present, from_args must carry the value through so
+    /// explicit CLI input still wins.
+    #[test]
+    fn cli_tier_c_levers_pass_through() {
+        let o = ProfileOverrides::from_args(&args(&[
+            "--time-scale",
+            "2.0",
+            "--attractor-strength",
+            "3.0",
+            "--terrain",
+            "turbulent",
+            "--terrain-strength",
+            "1.5",
+        ]))
+        .unwrap();
+        assert_eq!(o.time_scale, Some(2.0));
+        assert_eq!(o.attractor_strength, Some(3.0));
+        assert_eq!(o.terrain.as_deref(), Some("turbulent"));
+        assert_eq!(o.terrain_strength, Some(1.5));
+    }
+
+    /// #51: an unflagged (`None`) Tier-C override must NOT overwrite a value the
+    /// resolved SimConfig already carries — proven via a preset-declared default.
+    #[test]
+    fn none_tier_c_override_does_not_clobber_resolved_value() {
+        // Resolve a preset with no CLI tier-C flags; the resolved values must
+        // equal the preset's PresetSimDefaults values (here: the global defaults),
+        // never a CLI default injected by from_args.
+        use crate::preset_sim_defaults::PresetSimDefaults;
+        let spec = PresetSimDefaults::from(crate::simulation::config::Preset::Organic);
+        let sim = resolve(&["--preset", "organic"]).sim;
+        assert_eq!(sim.time_scale, spec.time_scale);
+        assert_eq!(sim.attractor_strength, spec.attractor_strength);
+        assert_eq!(sim.terrain, spec.terrain);
+        assert_eq!(sim.terrain_strength, spec.terrain_strength);
+    }
+
+    #[test]
+    fn obstacles_toml_array_deserializes_to_some() {
+        // Back-compat: old configs wrote `obstacles = [...]` arrays.
+        let toml = r#"
+            obstacles = [{ obstacle = { Circle = { x = 200.0, y = 300.0, radius = 50.0 } } }]
+        "#;
+        let o: ProfileOverrides = toml::from_str(toml).unwrap();
+        assert_eq!(o.obstacles.as_ref().map(|v| v.len()), Some(1));
+    }
+
+    #[test]
+    fn omitted_obstacles_toml_deserializes_to_none() {
+        // Back-compat: old configs omitted the key when empty -> inherit.
+        let toml = "decay_factor = 0.9\n";
+        let o: ProfileOverrides = toml::from_str(toml).unwrap();
+        assert_eq!(o.obstacles, None);
     }
 
     /// Validation parity: invalid sensor_angle must be rejected.

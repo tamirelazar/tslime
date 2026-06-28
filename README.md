@@ -99,10 +99,12 @@ tslime -S
 
 Some of the presets I use come pre-loaded and are bound to the `1`-`4` keys. You can bind any preset or saved-config to the number keys via a config file.
 
-In general, mature (= fun to play with) features will have runtime controls, while experimental features will be reachable through cli flags. I try to keep the really nascent stuff behind a compilation flag as well, but be aware that if something is not in the control console (reachable by pressing `h`) - it is not guaranteed to work.
-
 `tslime --help` lists every flag. `tslime --explain` walks through what each
 simulation parameter does and how the parameters interact.
+
+### Saved Configs
+
+When you reach a configuration you like, press `Ctrl+S` to save it. You can load your configs with `Ctrl+L` or bind them to the numkeys as described in the next section.
 
 ### Custom Keybinds
 
@@ -123,10 +125,9 @@ config = "my-night-config"
 - **Comparison**: Press `Shift+1` through `Shift+7` to compare the bound preset or config against the current settings (A/B mode).
 - **Live bindings**: The `?` overlay shows current key bindings and their targets.
 
-## Gallery
+In general, mature (= fun to play with) features will have runtime controls, while experimental features will be reachable through cli flags. I try to keep the really nascent stuff behind a compilation flag as well, but be aware that if something is not in the control console (reachable by pressing `h`) - it is not guaranteed to work.
 
-tslime is a live instrument, not a static screensaver — every visual is reshaped
-from the keyboard while it runs. A few of the controls:
+## Gallery
 
 <table>
 <tr>
@@ -142,7 +143,7 @@ from the keyboard while it runs. A few of the controls:
 </tr>
 </table>
 
-There are 31 named presets: network, exploratory, tendrils, organic, fire, river,
+There are ~31 named presets: network, exploratory, tendrils, organic, fire, river,
 petri, vortex, lightning, chaosedge, blob, slime, vines, vinescii, smoke, vortex36,
 dynamictendrils, mold, etching, drift, constellation, mosaic, marble, prism, vellum,
 forge, wane, gossamer, codex, tide, and trademark. Palettes and character sets are independent of

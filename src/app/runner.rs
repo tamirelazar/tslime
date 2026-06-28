@@ -942,7 +942,12 @@ pub fn run_simulation(
     let dither_unlocked = !matches!(dither_mode, DitherMode::None);
     renderer.set_ascii_contrast(args.ascii_contrast);
     renderer.set_window_frame(config.window_frame);
-    let mut timer = FrameTimer::with_time_scale(args.fps, args.frame_delay, args.time_scale);
+    let mut timer = FrameTimer::with_time_scale(
+        args.fps,
+        args.frame_delay,
+        args.time_scale
+            .unwrap_or(crate::config_defaults::time::DEFAULT_TIME_SCALE),
+    );
     timer.set_adaptive_fps(args.auto_fps);
     let input_poller = InputPoller::new();
 
@@ -2664,13 +2669,10 @@ pub fn run_simulation(
                                     renderer.set_palette(original);
                                 }
                             } else if handled {
-                                // Apply palette changes after each adjustment
+                                // Apply palette changes after each adjustment.
+                                // Save completion is detected via the is_modified
+                                // transition below.
                                 renderer.set_palette(state.to_palette());
-
-                                if matches!(state.mode, EditorMode::SaveDialog) {
-                                    // No-op: save completion is detected via the
-                                    // is_modified transition below.
-                                }
                             }
 
                             // Track if palette was saved

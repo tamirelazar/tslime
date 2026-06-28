@@ -10,7 +10,13 @@ use crate::render::downsample::Cell;
 use crate::render::palette;
 use crate::render::palette::IntensityMapping;
 use image::{Rgb, RgbImage};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Process-local monotonic counter that guarantees unique PNG filenames within a
+/// run, independent of clock resolution (rapid same-millisecond exports collide
+/// otherwise).
+static FRAME_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Colors one normalized brightness value via `colorize_subpixel`, so PNG export
 /// shares the live TUI's intensity mapping and temporal-color modulation.
@@ -159,10 +165,9 @@ fn generate_timestamp() -> String {
         .expect("System time is before 1970 - this should never happen on modern systems")
         .as_millis();
 
-    // Meant to disambiguate same-millisecond frames, but elapsed() on a fresh
-    // Instant is near-zero, so this adds little real uniqueness
-    let nanos = std::time::Instant::now().elapsed().subsec_nanos();
-    format!("tslime_frame_{:013}_{:09}.png", millis, nanos)
+    // Sequence counter disambiguates same-millisecond frames (see FRAME_SEQ).
+    let seq = FRAME_SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("tslime_frame_{:013}_{:09}.png", millis, seq)
 }
 
 #[cfg(test)]
@@ -333,11 +338,20 @@ mod tests {
         assert_eq!(parts[0], "tslime");
         assert_eq!(parts[1], "frame");
 
-        // Verify both timestamp parts are numeric
+        // Verify the millis and sequence parts are both numeric
         assert!(parts[2].chars().all(|c| c.is_ascii_digit()));
-        let nanos_with_ext = &parts[3];
-        let nanos = nanos_with_ext.trim_end_matches(".png");
-        assert!(nanos.chars().all(|c| c.is_ascii_digit()));
+        let seq_with_ext = &parts[3];
+        let seq = seq_with_ext.trim_end_matches(".png");
+        assert!(seq.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    #[test]
+    fn test_generate_timestamp_unique() {
+        // The atomic sequence counter must disambiguate back-to-back calls even
+        // when they land in the same millisecond.
+        let a = generate_timestamp();
+        let b = generate_timestamp();
+        assert_ne!(a, b);
     }
 
     /// Guards the colorize-last invariant: the PNG helper must agree with
