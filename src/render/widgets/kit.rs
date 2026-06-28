@@ -31,6 +31,62 @@ pub fn gauge(
     cells
 }
 
+/// Threshold bands for a banded gauge. `good`/`warn` are raw value boundaries;
+/// `higher_is_better` flips the comparison direction.
+///
+/// Higher-is-better (e.g. FPS, entropy): value >= good => healthy,
+/// value >= warn => warning, else critical.
+/// Lower-is-better (e.g. CPU, memory, trail %): value < good => healthy,
+/// value < warn => warning, else critical.
+pub struct GaugeBands {
+    /// Boundary between the healthy and warning bands (raw value).
+    pub good: f32,
+    /// Boundary between the warning and critical bands (raw value).
+    pub warn: f32,
+    /// When true, larger values are healthier (comparisons use `>=`); when
+    /// false, smaller values are healthier (comparisons use `<`).
+    pub higher_is_better: bool,
+}
+
+impl GaugeBands {
+    /// Resolve the band fill color for `value` from the panel's success/warning/error tokens.
+    pub fn fill_color(&self, value: f32, st: &PanelStyle) -> RgbColor {
+        let (healthy, warning) = if self.higher_is_better {
+            (value >= self.good, value >= self.warn)
+        } else {
+            (value < self.good, value < self.warn)
+        };
+        if healthy {
+            st.accent_success
+        } else if warning {
+            st.accent_warning
+        } else {
+            st.accent_error
+        }
+    }
+}
+
+/// Like [`gauge`], but the bar fill (`█`) and value tick (`│`) are colored by
+/// `bands` (healthy/warning/critical) instead of `st.accent_active`. The default
+/// marker (`▲`) keeps `st.state_default` and the empty cells (`░`) keep `st.muted`.
+pub fn gauge_banded(
+    value: f32,
+    range: (f32, f32),
+    default: f32,
+    width: usize,
+    st: &PanelStyle,
+    bands: &GaugeBands,
+) -> Vec<(char, RgbColor)> {
+    let fill = bands.fill_color(value, st);
+    let mut cells = gauge(value, range, default, width, st);
+    for (c, col) in cells.iter_mut() {
+        if *c == '█' || *c == '│' {
+            *col = fill;
+        }
+    }
+    cells
+}
+
 /// Renders values as an eight-level sparkline normalized across finite samples.
 ///
 /// An empty slice returns an empty string. Constant and all-invalid non-empty
@@ -150,6 +206,89 @@ mod kit_tests {
     #[test]
     fn zero_width_gauge_is_empty() {
         assert!(gauge(5.0, (0.0, 10.0), 0.0, 0, &GRUVBOX_DARK).is_empty());
+    }
+
+    #[test]
+    fn gauge_banded_matches_gauge_chars() {
+        let bands = GaugeBands {
+            good: 7.0,
+            warn: 4.0,
+            higher_is_better: true,
+        };
+        let plain = gauge(5.0, (0.0, 10.0), 0.0, 12, &GRUVBOX_DARK);
+        let banded = gauge_banded(5.0, (0.0, 10.0), 0.0, 12, &GRUVBOX_DARK, &bands);
+        let plain_chars: Vec<char> = plain.iter().map(|(c, _)| *c).collect();
+        let banded_chars: Vec<char> = banded.iter().map(|(c, _)| *c).collect();
+        assert_eq!(plain_chars, banded_chars);
+    }
+
+    #[test]
+    fn gauge_banded_recolors_fill_and_value_tick_only() {
+        let bands = GaugeBands {
+            good: 0.0,
+            warn: 0.0,
+            higher_is_better: true,
+        };
+        // good = 0.0, higher_is_better => any value >= 0.0 is healthy => accent_success.
+        let banded = gauge_banded(5.0, (0.0, 10.0), 0.0, 12, &GRUVBOX_DARK, &bands);
+        for (c, col) in &banded {
+            match c {
+                '█' | '│' => assert_eq!(*col, GRUVBOX_DARK.accent_success),
+                '▲' => assert_eq!(*col, GRUVBOX_DARK.state_default),
+                '░' => assert_eq!(*col, GRUVBOX_DARK.muted),
+                other => panic!("unexpected gauge char {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn fill_color_higher_is_better_resolves_bands() {
+        let bands = GaugeBands {
+            good: 55.0,
+            warn: 45.0,
+            higher_is_better: true,
+        };
+        assert_eq!(
+            bands.fill_color(55.0, &GRUVBOX_DARK),
+            GRUVBOX_DARK.accent_success
+        );
+        assert_eq!(
+            bands.fill_color(50.0, &GRUVBOX_DARK),
+            GRUVBOX_DARK.accent_warning
+        );
+        assert_eq!(
+            bands.fill_color(45.0, &GRUVBOX_DARK),
+            GRUVBOX_DARK.accent_warning
+        );
+        assert_eq!(
+            bands.fill_color(44.0, &GRUVBOX_DARK),
+            GRUVBOX_DARK.accent_error
+        );
+    }
+
+    #[test]
+    fn fill_color_lower_is_better_resolves_bands() {
+        let bands = GaugeBands {
+            good: 50.0,
+            warn: 80.0,
+            higher_is_better: false,
+        };
+        assert_eq!(
+            bands.fill_color(49.0, &GRUVBOX_DARK),
+            GRUVBOX_DARK.accent_success
+        );
+        assert_eq!(
+            bands.fill_color(50.0, &GRUVBOX_DARK),
+            GRUVBOX_DARK.accent_warning
+        );
+        assert_eq!(
+            bands.fill_color(79.0, &GRUVBOX_DARK),
+            GRUVBOX_DARK.accent_warning
+        );
+        assert_eq!(
+            bands.fill_color(80.0, &GRUVBOX_DARK),
+            GRUVBOX_DARK.accent_error
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@ use crate::cli::Palette;
 use crate::render::dither::DitherMode;
 use crate::render::palette::RgbColor;
 use crate::render::theme::PanelStyle;
-use crate::render::widgets::{gauge, legend, spacing, truncate_ellipsis};
+use crate::render::widgets::{gauge_banded, legend, spacing, truncate_ellipsis, GaugeBands};
 use crate::simulation::config::Preset;
 use crate::terminal::control::{palette_name, preset_name};
 
@@ -1049,6 +1049,11 @@ impl DashboardOverlay {
 
     // ── Threshold bands for gauge recoloring ─────────────────────────────────
     //
+    // Band coloring is driven by `gauge_banded` / `GaugeBands` (token-driven, in
+    // `render::widgets::kit`). Each metric below maps to a `GaugeBands { good,
+    // warn, higher_is_better }`; the widget paints the bar fill (█) and value
+    // tick (│) with accent_success / accent_warning / accent_error accordingly.
+    //
     // FPS (range 0..60, target ≈ 60):
     //   healthy  ≥ 55  (target-5)  → accent_success
     //   warn     ≥ 45  (target-15) → accent_warning
@@ -1196,56 +1201,71 @@ impl DashboardOverlay {
         };
         let elapsed_str = format_elapsed_time(elapsed_seconds);
 
-        // ── Threshold-aware fill color selection ──────────────────────────────
-        // Returns the fill color for a gauge based on the metric's threshold bands.
-        // See BODY_ROWS comment block above for full band definitions.
-        let fps_fill_color = if fps >= 55.0 {
-            st.accent_success
-        } else if fps >= 45.0 {
-            st.accent_warning
-        } else {
-            st.accent_error
-        };
-        let trail_fill_color = if trail_percent < 80.0 {
-            st.accent_success
-        } else if trail_percent < 95.0 {
-            st.accent_warning
-        } else {
-            st.accent_error
-        };
-        let entropy_fill_color = if entropy >= 3.0 {
-            st.accent_success
-        } else if entropy >= 1.5 {
-            st.accent_warning
-        } else {
-            st.accent_error
-        };
-        let cpu_fill_color = if cpu_percent < 50.0 {
-            st.accent_success
-        } else if cpu_percent < 80.0 {
-            st.accent_warning
-        } else {
-            st.accent_error
-        };
-        let mem_fill_color = if memory_mb < 50.0 {
-            st.accent_success
-        } else if memory_mb < 80.0 {
-            st.accent_warning
-        } else {
-            st.accent_error
-        };
-
-        // ── Build gauges (FPS is width 32, the rest width 15) ─────────────────
-        // Each gauge returns Vec<(char, RgbColor)>; we extract chars for the
-        // string lines and store cells for rich_lines coloring.
-        //
-        // gauge() uses accent_active for fill + value tick; the `recolor` closure
-        // below repaints the fill cells ('█' + '│') with the threshold color.
-        let fps_gauge_cells = gauge(fps, (0.0, 60.0), 60.0, 32, st);
-        let trail_gauge_cells = gauge(trail_percent, (0.0, 100.0), 100.0, 15, st);
-        let entropy_gauge_cells = gauge(entropy, (0.0, 8.0), 8.0, 15, st);
-        let cpu_gauge_cells = gauge(cpu_percent, (0.0, 100.0), 100.0, 15, st);
-        let mem_gauge_cells = gauge(memory_mb, (0.0, 100.0), 100.0, 15, st);
+        // ── Build banded gauges (FPS is width 32, the rest width 15) ──────────
+        // `gauge_banded` paints the bar fill (█) and value tick (│) with the
+        // metric's threshold-band color (accent_success / accent_warning /
+        // accent_error); the ▲ default tick keeps st.state_default and ░ keeps
+        // st.muted. Band values are documented in the comment block above.
+        let fps_gauge_cells = gauge_banded(
+            fps,
+            (0.0, 60.0),
+            60.0,
+            32,
+            st,
+            &GaugeBands {
+                good: 55.0,
+                warn: 45.0,
+                higher_is_better: true,
+            },
+        );
+        let trail_gauge_cells = gauge_banded(
+            trail_percent,
+            (0.0, 100.0),
+            100.0,
+            15,
+            st,
+            &GaugeBands {
+                good: 80.0,
+                warn: 95.0,
+                higher_is_better: false,
+            },
+        );
+        let entropy_gauge_cells = gauge_banded(
+            entropy,
+            (0.0, 8.0),
+            8.0,
+            15,
+            st,
+            &GaugeBands {
+                good: 3.0,
+                warn: 1.5,
+                higher_is_better: true,
+            },
+        );
+        let cpu_gauge_cells = gauge_banded(
+            cpu_percent,
+            (0.0, 100.0),
+            100.0,
+            15,
+            st,
+            &GaugeBands {
+                good: 50.0,
+                warn: 80.0,
+                higher_is_better: false,
+            },
+        );
+        let mem_gauge_cells = gauge_banded(
+            memory_mb,
+            (0.0, 100.0),
+            100.0,
+            15,
+            st,
+            &GaugeBands {
+                good: 50.0,
+                warn: 80.0,
+                higher_is_better: false,
+            },
+        );
 
         // Extract plain chars from gauge cells for string rendering
         let fps_bar: String = fps_gauge_cells.iter().map(|(c, _)| c).collect();
@@ -1254,26 +1274,13 @@ impl DashboardOverlay {
         let cpu_bar: String = cpu_gauge_cells.iter().map(|(c, _)| c).collect();
         let mem_bar: String = mem_gauge_cells.iter().map(|(c, _)| c).collect();
 
-        // Recolor fill cells (█ and │) with threshold-band color.
-        // The ▲ default tick keeps st.state_default, ░ keeps st.muted.
-        let recolor =
-            |cells: Vec<(char, RgbColor)>, fill_color: RgbColor| -> Vec<(char, RgbColor)> {
-                cells
-                    .into_iter()
-                    .map(|(c, col)| {
-                        if c == '█' || c == '│' {
-                            (c, fill_color)
-                        } else {
-                            (c, col)
-                        }
-                    })
-                    .collect()
-            };
-        let fps_gauge_rich = recolor(fps_gauge_cells, fps_fill_color);
-        let trail_gauge_rich = recolor(trail_gauge_cells, trail_fill_color);
-        let entropy_gauge_rich = recolor(entropy_gauge_cells, entropy_fill_color);
-        let cpu_gauge_rich = recolor(cpu_gauge_cells, cpu_fill_color);
-        let mem_gauge_rich = recolor(mem_gauge_cells, mem_fill_color);
+        // The cells are already band-colored; they flow straight into the
+        // gauge overrides below.
+        let fps_gauge_rich = fps_gauge_cells;
+        let trail_gauge_rich = trail_gauge_cells;
+        let entropy_gauge_rich = entropy_gauge_cells;
+        let cpu_gauge_rich = cpu_gauge_cells;
+        let mem_gauge_rich = mem_gauge_cells;
 
         // ── Legend row cells ──────────────────────────────────────────────────
         let legend_cells = legend(&[
