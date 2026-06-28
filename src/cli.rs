@@ -8,7 +8,7 @@ use crate::config_defaults::{
     agent as agent_consts, ascii, auto_reset, dither as dither_consts, dithering, environment,
     environment as env_consts, export, food, food as food_img_consts, food_persist, grid,
     intensity, intensity_mapping, palette, population, simulation, terminal, time,
-    time as time_consts, trail as trail_consts, warmup,
+    trail as trail_consts, warmup,
 };
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
@@ -980,11 +980,10 @@ pub struct Args {
     #[arg(
         long = "time-scale",
         value_name = "FLOAT",
-        default_value_t = time::DEFAULT_TIME_SCALE,
         help = "Time scaling factor [range: 0.1-10]"
     )]
-    /// Simulation time scale.
-    pub time_scale: f32,
+    /// Simulation time scale. `None` = unset (preset/default decides).
+    pub time_scale: Option<f32>,
 
     #[arg(
         long = "resolution",
@@ -1391,11 +1390,10 @@ pub struct Args {
     #[arg(
         long = "attractor-strength",
         value_name = "FLOAT",
-        default_value_t = environment::DEFAULT_ATTRACTOR_STRENGTH,
         help = "Global multiplier for attractor/repeller strength [range: 0.1-10]"
     )]
-    /// Global strength multiplier for attractors.
-    pub attractor_strength: f32,
+    /// Global strength multiplier for attractors. `None` = unset.
+    pub attractor_strength: Option<f32>,
 
     #[arg(
         long = "dither-mode",
@@ -1486,20 +1484,18 @@ pub struct Args {
     #[arg(
         long = "terrain",
         value_name = "TYPE",
-        default_value = "none",
         help = "Terrain type for organic movement patterns: none, smooth, turbulent, mixed"
     )]
-    /// Terrain type for organic movement.
-    pub terrain: String,
+    /// Terrain type for organic movement. `None` = unset.
+    pub terrain: Option<String>,
 
     #[arg(
         long = "terrain-strength",
         value_name = "FLOAT",
-        default_value_t = environment::DEFAULT_TERRAIN_STRENGTH,
         help = "Strength of terrain influence [range: 0.1-5]"
     )]
-    /// Strength of terrain effect.
-    pub terrain_strength: f32,
+    /// Strength of terrain effect. `None` = unset.
+    pub terrain_strength: Option<f32>,
 
     #[arg(
         long = "export-gif",
@@ -2147,11 +2143,12 @@ impl Args {
         }
 
         // Validate terrain type
-        if self.terrain.parse::<TerrainType>().is_err() {
-            return Err(ValidationError::custom(format!(
-                "Invalid terrain type: {}. Must be one of: none, smooth, turbulent, mixed",
-                self.terrain
-            )));
+        if let Some(ref terrain) = self.terrain {
+            if terrain.parse::<TerrainType>().is_err() {
+                return Err(ValidationError::custom(format!(
+                    "Invalid terrain type: {terrain}. Must be one of: none, smooth, turbulent, mixed"
+                )));
+            }
         }
 
         // CLI-specific validations
@@ -2248,7 +2245,7 @@ impl Default for Args {
             food_scale: food::DEFAULT_FOOD_SCALE,
             frame_delay: time::DEFAULT_FRAME_DELAY,
             fps: time::DEFAULT_FPS as usize,
-            time_scale: time_consts::DEFAULT_TIME_SCALE,
+            time_scale: None,
             resolution: Resolution {
                 width: terminal::DEFAULT_RESOLUTION_WIDTH,
                 height: terminal::DEFAULT_RESOLUTION_HEIGHT,
@@ -2283,7 +2280,7 @@ impl Default for Args {
             auto_normalize: false,
             normalize_window: 30,
             attract: Vec::new(),
-            attractor_strength: env_consts::DEFAULT_ATTRACTOR_STRENGTH,
+            attractor_strength: None,
             capture_frames: false,
             frame_count: 50,
             frame_skip: 50,
@@ -2301,8 +2298,8 @@ impl Default for Args {
             species_colors: false,
             simd_off: false,
             wind: None,
-            terrain: "none".to_string(),
-            terrain_strength: env_consts::DEFAULT_TERRAIN_STRENGTH,
+            terrain: None,
+            terrain_strength: None,
             export_gif: None,
             export_webm: None,
             export_frames: 50,
@@ -2565,7 +2562,7 @@ mod tests {
     fn test_validate_attractor_strength_too_low() {
         // attractor_strength is validated post-merge via to_sim_config, not args.validate().
         let args = Args {
-            attractor_strength: 0.05,
+            attractor_strength: Some(0.05),
             ..Default::default()
         };
         assert!(
@@ -2577,7 +2574,7 @@ mod tests {
     #[test]
     fn test_validate_attractor_strength_valid() {
         let args = Args {
-            attractor_strength: 5.0,
+            attractor_strength: Some(5.0),
             ..Default::default()
         };
         assert!(args.to_sim_config().is_ok());
@@ -2770,28 +2767,28 @@ mod tests {
     #[test]
     fn test_terrain_type_in_args() {
         let args = Args {
-            terrain: "smooth".to_string(),
+            terrain: Some("smooth".to_string()),
             ..Default::default()
         };
         let config = args.to_sim_config().unwrap();
         assert_eq!(config.terrain, TerrainType::Smooth);
 
         let args = Args {
-            terrain: "turbulent".to_string(),
+            terrain: Some("turbulent".to_string()),
             ..Default::default()
         };
         let config = args.to_sim_config().unwrap();
         assert_eq!(config.terrain, TerrainType::Turbulent);
 
         let args = Args {
-            terrain: "mixed".to_string(),
+            terrain: Some("mixed".to_string()),
             ..Default::default()
         };
         let config = args.to_sim_config().unwrap();
         assert_eq!(config.terrain, TerrainType::Mixed);
 
         let args = Args {
-            terrain: "none".to_string(),
+            terrain: Some("none".to_string()),
             ..Default::default()
         };
         let config = args.to_sim_config().unwrap();
@@ -2801,7 +2798,7 @@ mod tests {
     #[test]
     fn test_terrain_strength_in_args() {
         let args = Args {
-            terrain_strength: 2.0,
+            terrain_strength: Some(2.0),
             ..Default::default()
         };
         let config = args.to_sim_config().unwrap();
@@ -2839,7 +2836,7 @@ mod tests {
     #[test]
     fn test_validate_terrain_type() {
         let args = Args {
-            terrain: "invalid".to_string(),
+            terrain: Some("invalid".to_string()),
             ..Default::default()
         };
         assert!(args.validate().is_err());

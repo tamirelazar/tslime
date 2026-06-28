@@ -9,10 +9,10 @@
 //! and lives in `RenderArtDefaults` (the render layer). `decay_gamma`,
 //! `deposit_curve`, `deposit_scale`, `deposit_gamma` ARE sim levers and are kept.
 
-use crate::config_defaults::{agent, trail};
+use crate::config_defaults::{agent, environment as env_consts, time as time_consts, trail};
 use crate::simulation::config::{
     Attractor, BoundaryMode, DepositCurve, DiffusionKernel, InitMode, Obstacle, Preset,
-    RespawnConfig, SamplingMode, SimConfig, SpeciesConfig, Wind, WindowFrame,
+    RespawnConfig, SamplingMode, SimConfig, SpeciesConfig, TerrainType, Wind, WindowFrame,
 };
 
 /// Declarative per-preset sim-layer spec (see module docs).
@@ -47,6 +47,14 @@ pub(crate) struct PresetSimDefaults {
     /// Constellation atlas re-stamp floor. 0.0 = drift (no re-stamp);
     /// > 0.0 = continuous self-healing template re-stamp (static hold).
     pub constellation_restamp_floor: f32,
+    /// Simulation time scale (Tier-C lever; preset-declarable).
+    pub time_scale: f32,
+    /// Global attractor/repeller strength multiplier (Tier-C lever).
+    pub attractor_strength: f32,
+    /// Terrain type for organic movement (Tier-C lever).
+    pub terrain: TerrainType,
+    /// Strength of terrain influence (Tier-C lever).
+    pub terrain_strength: f32,
 }
 
 impl Default for PresetSimDefaults {
@@ -82,6 +90,10 @@ impl Default for PresetSimDefaults {
             respawn_config: RespawnConfig::default(),
             constellation_restamp_floor:
                 crate::config_defaults::DEFAULT_CONSTELLATION_RESTAMP_FLOOR,
+            time_scale: time_consts::DEFAULT_TIME_SCALE,
+            attractor_strength: env_consts::DEFAULT_ATTRACTOR_STRENGTH,
+            terrain: TerrainType::None,
+            terrain_strength: env_consts::DEFAULT_TERRAIN_STRENGTH,
         }
     }
 }
@@ -117,6 +129,10 @@ impl PresetSimDefaults {
         config.sampling_mode = self.sampling_mode;
         config.respawn_config = self.respawn_config;
         config.constellation_restamp_floor = self.constellation_restamp_floor;
+        config.time_scale = self.time_scale;
+        config.attractor_strength = self.attractor_strength;
+        config.terrain = self.terrain;
+        config.terrain_strength = self.terrain_strength;
     }
 }
 
@@ -1007,6 +1023,39 @@ mod tests {
         assert_eq!(d.separate_species_trails, plain.separate_species_trails);
         assert_eq!(d.sampling_mode, plain.sampling_mode);
         assert_eq!(d.respawn_config, plain.respawn_config);
+    }
+
+    /// Tier-C levers (#51) are now preset-declarable: a `PresetSimDefaults` with
+    /// non-default tier-C values must land them in the resolved `SimConfig`.
+    #[test]
+    fn apply_to_lands_the_tier_c_levers() {
+        use crate::simulation::config::SimConfig;
+        let spec = PresetSimDefaults {
+            time_scale: 2.5,
+            attractor_strength: 3.0,
+            terrain: TerrainType::Turbulent,
+            terrain_strength: 1.75,
+            ..PresetSimDefaults::default()
+        };
+        let mut cfg = SimConfig::default();
+        spec.apply_to(&mut cfg);
+        assert_eq!(cfg.time_scale, 2.5);
+        assert_eq!(cfg.attractor_strength, 3.0);
+        assert_eq!(cfg.terrain, TerrainType::Turbulent);
+        assert_eq!(cfg.terrain_strength, 1.75);
+    }
+
+    /// Tier-C defaults must mirror `SimConfig::default()` so a preset that leaves
+    /// them unset resolves byte-identically (golden-stability guarantee for #51).
+    #[test]
+    fn default_tier_c_levers_match_simconfig_default() {
+        use crate::simulation::config::SimConfig;
+        let plain = SimConfig::default();
+        let d = PresetSimDefaults::default();
+        assert_eq!(d.time_scale, plain.time_scale);
+        assert_eq!(d.attractor_strength, plain.attractor_strength);
+        assert_eq!(d.terrain, plain.terrain);
+        assert_eq!(d.terrain_strength, plain.terrain_strength);
     }
 
     #[test]
