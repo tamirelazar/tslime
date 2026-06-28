@@ -1544,7 +1544,110 @@ impl DashboardOverlay {
             &gauge_overrides,
             &legend_overrides,
         ));
+        // Graceful truncation: keep the panel within the terminal's right edge.
+        // No-op (byte-identical) when `term_width >= WIDTH`.
+        Self::clamp_to_terminal(rendered, term_width)
+    }
+
+    /// Minimum terminal width below which the dashboard collapses to a compact
+    /// notice rather than a truncated (and unreadable) panel.
+    const MIN_USEFUL_WIDTH: usize = 40;
+
+    /// Post-processes a fully-rendered dashboard so it never draws past the
+    /// terminal's right edge.
+    ///
+    /// * `term_width >= WIDTH`: strict no-op — the result is byte-identical to the
+    ///   untruncated panel.
+    /// * `MIN_USEFUL_WIDTH <= term_width < WIDTH`: every row (main lines and the
+    ///   parallel rich cells) is truncated to `term_width` cells and the last kept
+    ///   cell is overwritten with the panel's right-border glyph (copied from the
+    ///   row's original final cell) so the panel still reads as closed. The floating
+    ///   title box is shifted left so it stays within bounds.
+    /// * `term_width < MIN_USEFUL_WIDTH`: the body is replaced by a single centred
+    ///   notice inside a minimal bordered box of width `term_width`.
+    fn clamp_to_terminal(mut rendered: RenderedOverlay, term_width: usize) -> RenderedOverlay {
+        if term_width >= Self::WIDTH {
+            return rendered;
+        }
+        if term_width < Self::MIN_USEFUL_WIDTH {
+            return Self::collapsed_notice(term_width);
+        }
+
+        // Truncate each main line to `term_width` chars, restoring the right-border
+        // glyph (the row's original last char) at the cut.
+        for line in rendered.lines.iter_mut() {
+            let chars: Vec<char> = line.chars().collect();
+            if chars.len() <= term_width {
+                continue;
+            }
+            let border = *chars.last().expect("row width > term_width >= 1");
+            let mut truncated: Vec<char> = chars.into_iter().take(term_width).collect();
+            if let Some(last) = truncated.last_mut() {
+                *last = border;
+            }
+            *line = truncated.into_iter().collect();
+        }
+
+        // Truncate the rich cells in lockstep, restoring the right-border cell.
+        if let Some(rich) = rendered.rich_lines.as_mut() {
+            for row in rich.iter_mut() {
+                if row.len() <= term_width {
+                    continue;
+                }
+                let border = *row.last().expect("row width > term_width >= 1");
+                row.truncate(term_width);
+                if let Some(last) = row.last_mut() {
+                    *last = border;
+                }
+            }
+        }
+
+        // Keep the floating title box within bounds. The renderer draws it at
+        // `panel_x + 1 + col_offset`; with the panel clamped to `panel_x == 0` it
+        // must satisfy `1 + col_offset + box_w <= term_width`.
+        if let Some(tb) = rendered.title_box.as_mut() {
+            let box_w = tb.lines.first().map_or(0, |l| l.chars().count());
+            let max_offset = term_width.saturating_sub(box_w + 1);
+            tb.col_offset = tb.col_offset.min(max_offset);
+        }
+
         rendered
+    }
+
+    /// Builds a minimal bordered box of width `term_width` carrying a centred
+    /// "too narrow" notice, used when the terminal is below `MIN_USEFUL_WIDTH`.
+    fn collapsed_notice(term_width: usize) -> RenderedOverlay {
+        let w = term_width.max(1);
+        let border: String = "█".repeat(w);
+
+        let content = if w < 3 {
+            // Too narrow for side borders + content — just a solid stub.
+            border.clone()
+        } else {
+            let inner = w - 2;
+            let full = format!("Dashboard needs \u{2265} {} cols", Self::WIDTH);
+            let msg: String = if full.chars().count() > inner {
+                full.chars().take(inner).collect()
+            } else {
+                full
+            };
+            let pad = inner - msg.chars().count();
+            let left = pad / 2;
+            let right = pad - left;
+            let mut s = String::with_capacity(w);
+            s.push('█');
+            s.push_str(&" ".repeat(left));
+            s.push_str(&msg);
+            s.push_str(&" ".repeat(right));
+            s.push('█');
+            s
+        };
+
+        RenderedOverlay {
+            lines: vec![border.clone(), content, border],
+            title_box: None,
+            rich_lines: None,
+        }
     }
 
     fn format_count(n: usize) -> String {
@@ -1558,8 +1661,16 @@ impl DashboardOverlay {
     }
 
     /// Calculates centered position for the dashboard overlay.
+    ///
+    /// On terminals wider than the panel the panel is centered as before. On
+    /// narrower terminals the panel is truncated to `term_width` (see
+    /// [`clamp_to_terminal`](Self::clamp_to_terminal)), so `x` is clamped to keep
+    /// the (possibly-truncated) panel from starting past the right edge — which
+    /// resolves to `x == 0` when `term_width < WIDTH`.
     pub fn calculate_position(term_width: usize, term_height: usize) -> (usize, usize) {
+        let visible_width = Self::WIDTH.min(term_width);
         let x = (term_width.saturating_sub(Self::WIDTH)) / 2;
+        let x = x.min(term_width.saturating_sub(visible_width));
         let y = (term_height.saturating_sub(27)) / 2;
         (x, y)
     }
@@ -2217,6 +2328,154 @@ mod dashboard_tests {
             Some(GRUVBOX_DARK.accent_error),
             "fps=30 is in crit band; fill should be accent_error"
         );
+    }
+
+    /// Helper: builds the dashboard at an arbitrary terminal width.
+    fn build_overlay_at_width(term_width: usize) -> super::RenderedOverlay {
+        let palette_colors = make_palette_colors();
+        let accent = RgbColor {
+            r: 57,
+            g: 211,
+            b: 83,
+        };
+        DashboardOverlay::build_overlay(
+            50000,     // agent_count
+            1234567.0, // trail_sum
+            8000000.0, // trail_capacity
+            8.5,       // trail_max
+            5.5,       // entropy
+            50.0,      // fps
+            48.0,      // avg_fps
+            1234,      // frame_count
+            125.5,     // elapsed_seconds
+            400,       // grid_width
+            400,       // grid_height
+            0,         // attractor_count
+            0,         // obstacle_count
+            1,         // species_count
+            12.5,      // memory_mb
+            45.0,      // cpu_percent
+            false,     // is_paused
+            "Organic",
+            "Heat",
+            &palette_colors,
+            term_width,
+            40,          // term_height
+            "Random",    // init_mode
+            "TrueColor", // color_mode
+            "HalfBlock", // charset
+            true,        // simd_enabled
+            0.90,        // _decay_factor
+            22.5,        // _sensor_angle
+            42,          // seed
+            &None,       // food_source
+            0,           // _warmup_frames
+            false,       // auto_reset
+            accent,
+            &GRUVBOX_DARK,
+        )
+    }
+
+    /// Truncation: on a 60-col terminal no rendered row (main or rich) may exceed
+    /// 60 cells, and the right border glyph must be restored at the cut.
+    #[test]
+    fn dashboard_truncates_to_term_width_60() {
+        let term_width = 60;
+        let rendered = build_overlay_at_width(term_width);
+        for (i, line) in rendered.lines.iter().enumerate() {
+            assert!(
+                line.chars().count() <= term_width,
+                "line {} exceeds term_width {}: {} chars",
+                i,
+                term_width,
+                line.chars().count()
+            );
+            // Panel reads as closed: last visible char is the solid border glyph.
+            assert_eq!(
+                line.chars().last(),
+                Some('█'),
+                "line {} should end with the right border glyph",
+                i
+            );
+        }
+        let rich = rendered
+            .rich_lines
+            .as_ref()
+            .expect("rich_lines must be Some");
+        for (i, row) in rich.iter().enumerate() {
+            assert!(
+                row.len() <= term_width,
+                "rich row {} exceeds term_width {}: {} cells",
+                i,
+                term_width,
+                row.len()
+            );
+            assert_eq!(row.last().map(|c| c.0), Some('█'), "rich row {} closed", i);
+        }
+        // Title box stays within bounds (drawn at panel_x(0) + 1 + col_offset).
+        if let Some(tb) = rendered.title_box.as_ref() {
+            let box_w = tb.lines.first().map_or(0, |l| l.chars().count());
+            assert!(
+                1 + tb.col_offset + box_w <= term_width,
+                "title box overflows: 1 + {} + {} > {}",
+                tb.col_offset,
+                box_w,
+                term_width
+            );
+        }
+    }
+
+    /// Floor: below MIN_USEFUL_WIDTH the panel collapses to a compact notice that
+    /// never exceeds term_width and never panics.
+    #[test]
+    fn dashboard_collapses_below_floor() {
+        let term_width = 30; // < MIN_USEFUL_WIDTH (40)
+        let rendered = build_overlay_at_width(term_width);
+        assert!(
+            !rendered.lines.is_empty(),
+            "collapsed notice must have rows"
+        );
+        for (i, line) in rendered.lines.iter().enumerate() {
+            assert!(
+                line.chars().count() <= term_width,
+                "collapsed line {} exceeds term_width {}: {} chars",
+                i,
+                term_width,
+                line.chars().count()
+            );
+        }
+        // No floating title box in the collapsed form.
+        assert!(rendered.title_box.is_none());
+    }
+
+    /// No-op: at a wide terminal the truncation/clamp must not alter the panel —
+    /// all main rows stay WIDTH wide and the row count stays BODY_ROWS + borders.
+    #[test]
+    fn dashboard_wide_terminal_is_unchanged() {
+        let rendered = build_overlay_at_width(120);
+        for (i, line) in rendered.lines.iter().enumerate() {
+            assert_eq!(
+                line.chars().count(),
+                DashboardOverlay::WIDTH,
+                "line {} should be exactly WIDTH at a wide terminal",
+                i
+            );
+        }
+        // PanelBuilder wraps BODY_ROWS body rows with top/bottom borders (1 each)
+        // and the configured padding (top 2, bottom 0): row count == BODY_ROWS + 4.
+        assert_eq!(
+            rendered.lines.len(),
+            DashboardOverlay::BODY_ROWS + 4,
+            "wide-terminal row count must match the untruncated layout"
+        );
+        let rich = rendered
+            .rich_lines
+            .as_ref()
+            .expect("rich_lines must be Some");
+        assert_eq!(rich.len(), rendered.lines.len());
+        for row in rich {
+            assert_eq!(row.len(), DashboardOverlay::WIDTH);
+        }
     }
 }
 
