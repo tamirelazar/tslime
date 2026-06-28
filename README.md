@@ -104,6 +104,10 @@ In general, mature (= fun to play with) features will have runtime controls, whi
 `tslime --help` lists every flag. `tslime --explain` walks through what each
 simulation parameter does and how the parameters interact.
 
+### Saved Configs
+
+When you reach a configuration you like, press `Ctrl+S` to save it. You can load your configs with `Ctrl+L` or bind them to the numkeys as described in the next section.
+
 ### Custom Keybinds
 
 Customize quick-keys `1`–`7` by creating a `~/.config/tslime/keybinds.toml` file with the following format:
@@ -125,9 +129,6 @@ config = "my-night-config"
 
 ## Gallery
 
-tslime is a live instrument, not a static screensaver — every visual is reshaped
-from the keyboard while it runs. A few of the controls:
-
 <table>
 <tr>
 <td width="50%"><img src="assets/demos/palette-cycle.gif" width="100%"><br><b>Palette cycling</b> — press <code>c</code> to sweep through palettes; the whole field recolors instantly.</td>
@@ -142,7 +143,7 @@ from the keyboard while it runs. A few of the controls:
 </tr>
 </table>
 
-There are 31 named presets: network, exploratory, tendrils, organic, fire, river,
+There are ~31 named presets: network, exploratory, tendrils, organic, fire, river,
 petri, vortex, lightning, chaosedge, blob, slime, vines, vinescii, smoke, vortex36,
 dynamictendrils, mold, etching, drift, constellation, mosaic, marble, prism, vellum,
 forge, wane, gossamer, codex, tide, and trademark. Palettes and character sets are independent of
