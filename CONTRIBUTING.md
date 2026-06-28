@@ -82,5 +82,5 @@ cargo test
 ```
 
 Work on a feature branch (`feat/...`, `fix/...`, `chore/...`) and open a PR
-against `master`. Commit messages use the form `type: description`, where type
+against `dev`. Commit messages use the form `type: description`, where type
 is one of `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, or `chore`.
