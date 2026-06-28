@@ -338,11 +338,11 @@ mod tests {
         assert_eq!(parts[0], "tslime");
         assert_eq!(parts[1], "frame");
 
-        // Verify both timestamp parts are numeric
+        // Verify the millis and sequence parts are both numeric
         assert!(parts[2].chars().all(|c| c.is_ascii_digit()));
-        let nanos_with_ext = &parts[3];
-        let nanos = nanos_with_ext.trim_end_matches(".png");
-        assert!(nanos.chars().all(|c| c.is_ascii_digit()));
+        let seq_with_ext = &parts[3];
+        let seq = seq_with_ext.trim_end_matches(".png");
+        assert!(seq.chars().all(|c| c.is_ascii_digit()));
     }
 
     #[test]
