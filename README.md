@@ -99,8 +99,6 @@ tslime -S
 
 Some of the presets I use come pre-loaded and are bound to the `1`-`4` keys. You can bind any preset or saved-config to the number keys via a config file.
 
-In general, mature (= fun to play with) features will have runtime controls, while experimental features will be reachable through cli flags. I try to keep the really nascent stuff behind a compilation flag as well, but be aware that if something is not in the control console (reachable by pressing `h`) - it is not guaranteed to work.
-
 `tslime --help` lists every flag. `tslime --explain` walks through what each
 simulation parameter does and how the parameters interact.
 
@@ -126,6 +124,8 @@ config = "my-night-config"
 - **Targets**: Bind to either a `preset` (any of ~31 named presets) or a `config` (any saved configuration from `Ctrl+S`).
 - **Comparison**: Press `Shift+1` through `Shift+7` to compare the bound preset or config against the current settings (A/B mode).
 - **Live bindings**: The `?` overlay shows current key bindings and their targets.
+
+In general, mature (= fun to play with) features will have runtime controls, while experimental features will be reachable through cli flags. I try to keep the really nascent stuff behind a compilation flag as well, but be aware that if something is not in the control console (reachable by pressing `h`) - it is not guaranteed to work.
 
 ## Gallery
 
