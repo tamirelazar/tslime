@@ -165,9 +165,7 @@ fn generate_timestamp() -> String {
         .expect("System time is before 1970 - this should never happen on modern systems")
         .as_millis();
 
-    // Atomic sequence counter disambiguates same-millisecond frames: each call
-    // gets a distinct value, so rapid exports never collide regardless of clock
-    // resolution.
+    // Sequence counter disambiguates same-millisecond frames (see FRAME_SEQ).
     let seq = FRAME_SEQ.fetch_add(1, Ordering::Relaxed);
     format!("tslime_frame_{:013}_{:09}.png", millis, seq)
 }

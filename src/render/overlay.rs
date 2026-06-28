@@ -1047,7 +1047,7 @@ impl DashboardOverlay {
     ///   Total                                     = 24
     const BODY_ROWS: usize = 24;
 
-    // ── Threshold bands for gauge recoloring ─────────────────────────────────
+    // ── Threshold bands for gauge coloring ───────────────────────────────────
     //
     // Band coloring is driven by `gauge_banded` / `GaugeBands` (token-driven, in
     // `render::widgets::kit`). Each metric below maps to a `GaugeBands { good,
