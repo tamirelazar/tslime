@@ -68,14 +68,8 @@ impl ExplorationParams {
             _ => TerrainType::Mixed,
         };
 
-        // Randomly select init mode (60% Random, 40% others)
-        let init_mode = match rng.gen_range(0..10) {
-            0..=5 => InitMode::Random,
-            6 => InitMode::CentralBurst,
-            7 => InitMode::Circle,
-            8 => InitMode::Gradient,
-            _ => InitMode::WaveFront,
-        };
+        // Uniformly select any non-structural init mode (shared with the simulation).
+        let init_mode = InitMode::random(rng);
 
         Self {
             sensor_angle: rng.gen_range(5.0..90.0),
@@ -329,13 +323,7 @@ impl ExplorationParams {
 
         // Occasionally change init mode (probability scales with mutation strength, capped at 10%)
         let init_mode = if rng.gen_bool((mutation_strength * 0.4).min(0.1) as f64) {
-            match rng.gen_range(0..5) {
-                0 => InitMode::Random,
-                1 => InitMode::CentralBurst,
-                2 => InitMode::Circle,
-                3 => InitMode::Gradient,
-                _ => InitMode::WaveFront,
-            }
+            InitMode::random(rng)
         } else {
             self.init_mode
         };
@@ -914,6 +902,26 @@ mod tests {
         // Should be different but still valid
         assert!(mutated.sensor_angle >= 5.0 && mutated.sensor_angle <= 90.0);
         assert!(mutated.decay_factor >= 0.5 && mutated.decay_factor <= 0.99);
+    }
+
+    #[test]
+    fn test_random_reaches_all_init_modes() {
+        // Previously the hand-rolled match only produced 5 of the 9 non-structural
+        // init modes. Sampling many times should now surface the formerly
+        // unreachable variants: Spiral, RandomClusters, Food, and Petri.
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(7);
+        let mut seen: Vec<InitMode> = Vec::new();
+        for _ in 0..2000 {
+            let mode = ExplorationParams::random(&mut rng).init_mode;
+            if !seen.contains(&mode) {
+                seen.push(mode);
+            }
+        }
+
+        assert!(seen.contains(&InitMode::Spiral));
+        assert!(seen.contains(&InitMode::RandomClusters));
+        assert!(seen.contains(&InitMode::Food));
+        assert!(seen.contains(&InitMode::Petri));
     }
 
     #[test]
