@@ -5,7 +5,7 @@ use tslime::render::adaptive_brightness::AdaptiveBrightness;
 use tslime::render::ansi::render_ansi_cells;
 use tslime::render::charset::Charset;
 use tslime::render::downsample::{downsample, DownsampledFrame};
-use tslime::render::palette::Palette;
+use tslime::render::palette::{Palette, ALL_PALETTES};
 use tslime::simulation::{
     config::{InitMode, SimConfig},
     Simulation,
@@ -30,6 +30,7 @@ pub struct TslimeWasm {
     // adaptive white-point tracker (matches the TUI's auto-normalize).
     frame: Option<DownsampledFrame>,
     adaptive: AdaptiveBrightness,
+    palette: Palette,
 }
 
 #[wasm_bindgen]
@@ -71,6 +72,7 @@ impl TslimeWasm {
             frame: None,
             // window=100, enabled=true — the TUI's default auto-normalize.
             adaptive: AdaptiveBrightness::new(100, true),
+            palette: Palette::Warm,
         })
     }
 
@@ -122,7 +124,7 @@ impl TslimeWasm {
             frame.cells(),
             cols,
             rows,
-            Palette::Warm,
+            self.palette,
             Charset::Ascii,
             gain,
         )
@@ -199,6 +201,25 @@ impl TslimeWasm {
 
     pub fn get_trail_len(&self) -> usize {
         self.trail_buffer.len()
+    }
+
+    /// Set the active render palette by `ALL_PALETTES` index. Render-only —
+    /// does NOT recreate the simulation. Out-of-range ids are ignored.
+    pub fn set_palette(&mut self, id: u32) {
+        if let Some(&p) = ALL_PALETTES.get(id as usize) {
+            self.palette = p;
+        }
+    }
+
+    pub fn palette_count(&self) -> u32 {
+        ALL_PALETTES.len() as u32
+    }
+
+    pub fn palette_name(&self, id: u32) -> String {
+        ALL_PALETTES
+            .get(id as usize)
+            .map(|p| p.name().to_string())
+            .unwrap_or_default()
     }
 }
 
