@@ -21,6 +21,9 @@ exclude = [
     "tests/golden/",
 ]
 
+[workspace]
+members = ["tslime-wasm"]
+
 [features]
 default = ["terminal"]
 # gui is opt-in: cargo build --features gui
