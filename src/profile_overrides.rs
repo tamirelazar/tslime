@@ -860,6 +860,7 @@ impl ProfileOverrides {
 /// apply-only flags back, reproduces `apply_color_aa_all` semantics as a resolved
 /// array, and replaces raw `hue_shift` with its observable bucket — so both sides
 /// compare on exactly the levers a session can change and save.
+#[cfg(feature = "terminal")]
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Canonical {
     sim: SimConfig,
@@ -879,6 +880,7 @@ pub(crate) struct Canonical {
 ///
 /// Returns `Err` when the overrides fail to resolve — callers treat a resolve
 /// error as "prompt" rather than silently discarding live edits.
+#[cfg(feature = "terminal")]
 pub(crate) fn project(ov: &ProfileOverrides) -> Result<Canonical, String> {
     use crate::render::charset::ALL_CHARSETS;
     use crate::terminal::state::palette_shift_speed_of;

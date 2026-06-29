@@ -26,6 +26,7 @@
 /// Adaptive brightness normalization logic.
 pub mod adaptive_brightness;
 /// Ambient instrument surface and state machine.
+#[cfg(feature = "terminal")]
 pub mod ambient;
 /// Color anti-aliasing for subcell-shape charsets.
 pub mod antialiasing;
@@ -34,6 +35,7 @@ pub mod charset;
 /// Standalone (non-palette) color constants.
 pub mod color_constants;
 /// Two-depth Controls instrument surface.
+#[cfg(feature = "terminal")]
 pub mod controls;
 /// Dithering algorithms (ordered, error diffusion).
 pub mod dither;
@@ -46,16 +48,19 @@ pub mod gradients;
 /// Background grid rendering.
 pub mod grid;
 /// Motion math helpers (lerp, breath).
+#[cfg(feature = "terminal")]
 pub mod motion;
 /// Color palette definitions and conversions.
 pub mod palette;
 /// Theme/color scheme definitions.
 pub mod theme;
 /// Reusable rendering widgets and layout tokens.
+#[cfg(feature = "terminal")]
 pub mod widgets;
 /// Window layout geometry computation (aspect-ratio-correct sim rect).
 pub mod window;
 /// Window frame rendering for terminal display.
+#[cfg(feature = "terminal")]
 pub mod window_frame;
 
 #[cfg(feature = "terminal")]

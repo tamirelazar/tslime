@@ -1,0 +1,86 @@
+name: Pages
+
+# Builds the in-browser demo (web/) and publishes it to GitHub Pages. The demo
+# is a Vite + Svelte app that loads the tslime-wasm package — the same core sim
+# as the TUI, compiled to WebAssembly and drawn with WebGL2.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'web/**'
+      - 'tslime-wasm/**'
+      - 'src/**'
+      - 'Cargo.toml'
+      - '.github/workflows/pages.yml'
+
+# Allow the workflow to publish to the github-pages environment.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One concurrent deploy; let an in-flight run finish rather than cancelling it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build demo
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain (wasm target)
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+
+    - name: Install wasm-pack
+      uses: jetli/wasm-pack-action@v0.4.0
+      with:
+        version: latest
+
+    - name: Install pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 10
+
+    - name: Install Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: pnpm
+        cache-dependency-path: web/pnpm-lock.yaml
+
+    - name: Install web dependencies
+      working-directory: web
+      run: pnpm install --frozen-lockfile
+
+    - name: Build WASM package
+      working-directory: web
+      run: pnpm run wasm
+
+    - name: Build site
+      working-directory: web
+      run: pnpm run build
+
+    - name: Upload Pages artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: web/dist
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - name: Deploy
+      id: deployment
+      uses: actions/deploy-pages@v4

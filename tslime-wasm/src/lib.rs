@@ -23,7 +23,7 @@ pub struct TslimeWasm {
 #[wasm_bindgen]
 impl TslimeWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(width: u32, height: u32, canvas_id: &str, seed: u64) -> Result<TslimeWasm, JsValue> {
+    pub fn new(width: u32, height: u32, canvas_id: &str, seed: u32) -> Result<TslimeWasm, JsValue> {
         console_error_panic_hook::set_once();
 
         let mut config = SimConfig::default();
@@ -36,7 +36,7 @@ impl TslimeWasm {
             width as usize,
             height as usize,
             config,
-            seed,
+            seed as u64,
             InitMode::Random,
             0,
         );
