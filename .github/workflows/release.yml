@@ -165,12 +165,50 @@ jobs:
         name: ${{ matrix.asset_name }}
         path: target/release/${{ matrix.artifact_name }}
 
+  # Build the WebAssembly package (tslime-wasm) and pack it as a release asset.
+  # Downstream sites (e.g. the personal site) fetch `tslime-wasm.tar.gz` from the
+  # latest release and extract the wasm-pack `pkg/` to embed the in-browser sim.
+  wasm-build:
+    name: WASM Build
+    needs: hygiene
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain (wasm target)
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+
+    - name: Install wasm-pack
+      uses: jetli/wasm-pack-action@v0.4.0
+      with:
+        version: latest
+
+    - name: Build WASM package
+      working-directory: tslime-wasm
+      run: wasm-pack build --target web --out-dir pkg
+
+    - name: Pack pkg as tarball
+      run: |
+        mkdir -p dist
+        # Files sit at the tarball root so consumers extract straight into their
+        # lib dir: `tar -xzf tslime-wasm.tar.gz -C <dest>/`.
+        tar -czf dist/tslime-wasm.tar.gz -C tslime-wasm/pkg .
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: tslime-wasm.tar.gz
+        path: dist/tslime-wasm.tar.gz
+
   # Publish a GitHub Release with the CLI binaries attached and notes pulled
   # from the matching CHANGELOG section. Tag pushes only (skipped for manual
   # workflow_dispatch runs, which have no tag to release).
   release:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, wasm-build]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -189,6 +227,12 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: tslime-windows-x86_64.exe
+        path: dist
+
+    - name: Download WASM tarball
+      uses: actions/download-artifact@v4
+      with:
+        name: tslime-wasm.tar.gz
         path: dist
 
     - name: Extract release notes from CHANGELOG
@@ -214,7 +258,8 @@ jobs:
           --title "tslime $GITHUB_REF_NAME" \
           --notes-file RELEASE_NOTES.md \
           dist/tslime-linux-x86_64 \
-          dist/tslime-windows-x86_64.exe
+          dist/tslime-windows-x86_64.exe \
+          dist/tslime-wasm.tar.gz
 
   # Publish the crate to crates.io so `cargo install tslime` and the Homebrew
   # source build stay in lockstep with the tagged release. Tag pushes only.
