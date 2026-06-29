@@ -111,3 +111,27 @@ pub fn render_ansi_cells(
     out.push_str("\x1b[0m");
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render::charset::Charset;
+    use crate::render::palette::Palette;
+
+    #[test]
+    fn render_ansi_is_deterministic_and_nonempty() {
+        // A small fixed trail: 4x2 sim downsampled to a 2x1 grid.
+        let trail = vec![0.0, 0.1, 0.5, 0.9, 0.2, 0.3, 0.8, 1.0];
+        let a = render_ansi(&trail, 4, 2, 2, 1, Palette::Warm, Charset::Ascii, 1.0);
+        let b = render_ansi(&trail, 4, 2, 2, 1, Palette::Warm, Charset::Ascii, 1.0);
+        assert_eq!(a, b, "same inputs must produce identical output");
+        assert!(
+            !a.is_empty(),
+            "output must contain escape sequences + glyphs"
+        );
+        assert!(
+            a.contains('\x1b'),
+            "truecolor ANSI must include ESC sequences"
+        );
+    }
+}
