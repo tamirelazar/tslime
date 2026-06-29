@@ -23,7 +23,14 @@ const CSS = `
   #app .pill{all:unset;cursor:pointer;font-size:.82rem;padding:.32rem .8rem;border-radius:999px;
     border:1px solid var(--line);color:var(--dim)}
   #app .pill:hover{color:var(--ink);border-color:var(--warm)}
-  #app .pill[data-active]{background:var(--warm);color:#1c1916;border-color:var(--warm)}`;
+  #app .pill[data-active]{background:var(--warm);color:#1c1916;border-color:var(--warm)}
+  #app .frame[data-error]::after{content:"Couldn't start the simulation. Here's a still.";
+    position:absolute;inset:0;display:grid;place-items:end center;padding:1rem;
+    color:var(--dim);font:.85rem "FiraCodeNFMono",monospace;background:
+    center/cover no-repeat url('/tslime/poster.png')}
+  #app .toggle{all:unset;cursor:pointer;font:.78rem "FiraCodeNFMono",monospace;
+    color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:.28rem .8rem}
+  #app .toggle:hover{color:var(--warm);border-color:var(--warm)}`;
 
 export function buildChrome(app: HTMLElement) {
   const style = document.createElement('style');
