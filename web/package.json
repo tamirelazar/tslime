@@ -1,0 +1,24 @@
+{
+  "name": "tslime-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "GitHub Pages demo for tslime — the slime-mold sim running in-browser via WebAssembly + WebGL2.",
+  "scripts": {
+    "wasm": "wasm-pack build ../tslime-wasm --target web --out-dir ../web/src/lib/tslime",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "svelte": "^5.28.2",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.5.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}
