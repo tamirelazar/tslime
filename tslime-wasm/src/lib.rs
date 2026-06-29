@@ -25,6 +25,7 @@ pub struct TslimeWasm {
     running: bool,
     width: u32,
     height: u32,
+    seed: u64,
     // ANSI-mode rendering scratch: a reusable downsample target plus the
     // adaptive white-point tracker (matches the TUI's auto-normalize).
     frame: Option<DownsampledFrame>,
@@ -66,6 +67,7 @@ impl TslimeWasm {
             running: false,
             width,
             height,
+            seed: seed as u64,
             frame: None,
             // window=100, enabled=true — the TUI's default auto-normalize.
             adaptive: AdaptiveBrightness::new(100, true),
@@ -152,7 +154,7 @@ impl TslimeWasm {
             self.width as usize,
             self.height as usize,
             config,
-            42,
+            self.seed,
             InitMode::Random,
             0,
         );
@@ -177,7 +179,7 @@ impl TslimeWasm {
             self.width as usize,
             self.height as usize,
             config,
-            42,
+            self.seed,
             InitMode::Random,
             0,
         );
