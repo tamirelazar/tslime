@@ -7,7 +7,7 @@ use tslime::render::charset::Charset;
 use tslime::render::downsample::{downsample, DownsampledFrame};
 use tslime::render::palette::{Palette, ALL_PALETTES};
 use tslime::simulation::{
-    config::{InitMode, SimConfig},
+    config::{InitMode, SimConfig, PRESETS},
     Simulation,
 };
 use wasm_bindgen::prelude::*;
@@ -219,6 +219,35 @@ impl TslimeWasm {
         ALL_PALETTES
             .get(id as usize)
             .map(|p| p.name().to_string())
+            .unwrap_or_default()
+    }
+
+    /// Apply a preset's *simulation* config by `PRESETS` index, reusing the
+    /// original seed. NOTE: render look (palette/charset/effects) is NOT applied
+    /// here — palette is the separate `set_palette` control. Out-of-range: no-op.
+    pub fn set_preset(&mut self, id: u32) {
+        let Some(spec) = PRESETS.get(id as usize) else {
+            return;
+        };
+        let config: SimConfig = spec.preset.into();
+        self.simulation = Simulation::new(
+            self.width as usize,
+            self.height as usize,
+            config,
+            self.seed,
+            InitMode::Random,
+            0,
+        );
+    }
+
+    pub fn preset_count(&self) -> u32 {
+        PRESETS.len() as u32
+    }
+
+    pub fn preset_name(&self, id: u32) -> String {
+        PRESETS
+            .get(id as usize)
+            .map(|spec| spec.preset.name().to_string())
             .unwrap_or_default()
     }
 }
