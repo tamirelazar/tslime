@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>tslime — a terminal that grows</title>
+    <meta name="description" content="A lightweight terminal screensaver simulating Physarum slime-mold growth. Watch it run live in your browser." />
+    <link rel="canonical" href="https://tamirelazar.github.io/tslime/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="tslime — a terminal that grows" />
+    <meta property="og:description" content="A lightweight terminal screensaver simulating Physarum slime-mold growth." />
+    <meta property="og:image" content="https://tamirelazar.github.io/tslime/poster.png" />
+    <meta property="og:url" content="https://tamirelazar.github.io/tslime/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <style>
+      @font-face {
+        font-family: 'FiraCodeNFMono';
+        src: url('/tslime/fonts/FiraCodeNFMono-Regular.ttf') format('truetype');
+        font-weight: 400; font-style: normal; font-display: swap;
+      }
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: #0b0d0e; color: #c8c0b0;
+        font-family: ui-sans-serif, system-ui, sans-serif; }
+    </style>
+  </head>
+  <body>
+    <!-- Static first paint: meaningful to crawlers + JS-off visitors. chrome.ts
+         enhances this; it does not supply the first paint. -->
+    <main id="app">
+      <h1>A terminal that grows.</h1>
+      <p>A lightweight terminal screensaver that simulates the growth patterns of
+        Physarum polycephalum — slime mold. Organic, algorithmic, alive.</p>
+      <noscript><img src="/tslime/poster.png" alt="tslime slime-mold simulation still" width="900" /></noscript>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

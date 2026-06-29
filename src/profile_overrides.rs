@@ -2037,6 +2037,7 @@ mod tests {
     /// `render.auto_normalize` field — capture reproduces it so a clean auto-normalized
     /// session is not falsely dirty, and toggling it flips the projection.
     #[test]
+    #[cfg(feature = "terminal")]
     fn auto_normalize_capture_round_trips_for_dirty_parity() {
         let on = ProfileOverrides {
             auto_normalize: Some(true),

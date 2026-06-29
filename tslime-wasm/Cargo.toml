@@ -34,6 +34,3 @@ path = ".."
 default-features = false
 features = []
 
-[profile.release]
-opt-level = "s"
-lto = true
