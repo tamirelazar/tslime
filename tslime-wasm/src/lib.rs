@@ -124,7 +124,7 @@ impl TslimeWasm {
             frame.cells(),
             cols,
             rows,
-            self.palette,
+            self.palette.clone(),
             Charset::Ascii,
             gain,
         )
@@ -206,8 +206,8 @@ impl TslimeWasm {
     /// Set the active render palette by `ALL_PALETTES` index. Render-only —
     /// does NOT recreate the simulation. Out-of-range ids are ignored.
     pub fn set_palette(&mut self, id: u32) {
-        if let Some(&p) = ALL_PALETTES.get(id as usize) {
-            self.palette = p;
+        if let Some(p) = ALL_PALETTES.get(id as usize) {
+            self.palette = p.clone();
         }
     }
 
