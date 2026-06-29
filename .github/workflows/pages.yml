@@ -2,7 +2,7 @@ name: Pages
 on:
   push:
     branches: [master]
-    paths: ['web/**', 'tslime-wasm/**', 'src/render/ansi.rs', '.github/workflows/pages.yml']
+    paths: ['web/**', 'tslime-wasm/**', 'src/render/ansi.rs', 'src/render/**', 'src/simulation/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read

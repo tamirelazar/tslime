@@ -130,6 +130,8 @@ impl TslimeWasm {
         )
     }
 
+    /// Steps + renders to the WebGL canvas. In headless/ANSI mode this produces
+    /// no output (no renderer) — use `render_ansi_frame` instead.
     pub fn tick(&mut self) {
         self.step();
         self.render();

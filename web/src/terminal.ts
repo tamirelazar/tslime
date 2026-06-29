@@ -35,8 +35,9 @@ export async function mountTerminal(
     try { term.loadAddon(new WebglAddon()); } catch { /* DOM fallback */ }
   }
 
+  const agentCount = opts.agents;
   const sim = new TslimeWasm(SIM_W, SIM_H, '', SEED);
-  if (opts.agents) sim.set_agent_count(opts.agents);
+  if (agentCount) sim.set_agent_count(agentCount);
 
   // Build name -> id maps from the wasm registries (avoids index drift).
   const presetId = new Map<string, number>();
@@ -73,10 +74,11 @@ export async function mountTerminal(
     }
     requestAnimationFrame(frame);
   };
+  if (cols > 0 && rows > 0) term.write(sim.render_ansi_frame(cols, rows));
   requestAnimationFrame(frame);
 
   return {
-    setPresetByName(name) { const id = presetId.get(name); if (id !== undefined) sim.set_preset(id); },
+    setPresetByName(name) { const id = presetId.get(name); if (id !== undefined) { sim.set_preset(id); if (agentCount) sim.set_agent_count(agentCount); } },
     setPaletteByName(name) { const id = paletteId.get(name); if (id !== undefined) sim.set_palette(id); },
     pause() { paused = true; },
     resume() { paused = false; },
