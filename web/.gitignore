@@ -1,4 +1,0 @@
-node_modules/
-dist/
-# Built by `pnpm run wasm` (wasm-pack output) — never committed.
-src/lib/tslime/
