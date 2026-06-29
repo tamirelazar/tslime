@@ -20,8 +20,9 @@ use crate::render::palette::{map_brightness_rgb, truecolor_ansi, IntensityMappin
 /// * `trail` — row-major simulation trail map (`sim_width * sim_height`).
 /// * `cols` / `rows` — target terminal grid. In half-block mode each row holds
 ///   two vertical subpixels (effective vertical resolution `rows * 2`).
-/// * `gain` — white-point divisor; raw trail values are divided by this before
-///   the palette/charset lookup (higher = darker).
+/// * `max_brightness` — white-point divisor; raw trail values are divided by
+///   this before the palette/charset lookup (mirrors `SimConfig::max_brightness`;
+///   higher = darker).
 #[allow(clippy::too_many_arguments)]
 pub fn render_ansi(
     trail: &[f32],
@@ -31,11 +32,11 @@ pub fn render_ansi(
     rows: usize,
     palette: Palette,
     charset: Charset,
-    gain: f32,
+    max_brightness: f32,
 ) -> String {
     let mut frame = DownsampledFrame::new(cols, rows);
     downsample(trail, sim_width, sim_height, cols, rows, &mut frame);
-    render_ansi_cells(frame.cells(), cols, rows, palette, charset, gain)
+    render_ansi_cells(frame.cells(), cols, rows, palette, charset, max_brightness)
 }
 
 /// Render pre-downsampled cells to a truecolor ANSI frame. Split out from
@@ -47,12 +48,16 @@ pub fn render_ansi_cells(
     rows: usize,
     palette: Palette,
     charset: Charset,
-    gain: f32,
+    max_brightness: f32,
 ) -> String {
-    let inv_gain = if gain > 0.0 { 1.0 / gain } else { 1.0 };
+    let inv_gain = if max_brightness > 0.0 {
+        1.0 / max_brightness
+    } else {
+        1.0
+    };
     let ascii = matches!(charset, Charset::Ascii);
-    // Default render tone curve (matches RenderArtDefaults): a log curve that
-    // lifts dim trail values so the network reads at low brightness.
+    // Default tone curve (matches RenderArtDefaults): logarithmic base 10,
+    // lifting dim trail values so the slime network remains visible at low intensity.
     let mapping = IntensityMapping::logarithmic(10.0);
     let mut out = String::with_capacity(cols * rows * 20 + rows * 8);
     out.push_str("\x1b[H");

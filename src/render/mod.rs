@@ -28,7 +28,7 @@ pub mod adaptive_brightness;
 /// Ambient instrument surface and state machine.
 #[cfg(feature = "terminal")]
 pub mod ambient;
-/// Crossterm-free half-block ANSI frame rendering (for wasm / xterm.js).
+/// Crossterm-free ANSI frame rendering (wasm / xterm.js).
 pub mod ansi;
 /// Color anti-aliasing for subcell-shape charsets.
 pub mod antialiasing;
