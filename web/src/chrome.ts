@@ -45,8 +45,7 @@ const CSS = `
   #app .tag{position:absolute;font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;
     background:#241c14;border:1px solid rgba(150,140,120,.35);padding:.18rem .6rem;color:var(--ink);
     box-shadow:inset 0 1px 0 rgba(255,244,228,.08),0 3px 11px rgba(0,0,0,.75)}
-  #app .slabel{top:1.5rem;left:1.5rem}
-  #app .status{top:1.5rem;right:1.5rem;color:var(--acc);cursor:pointer}
+  #app .status{top:1.5rem;left:1.5rem;color:var(--acc);cursor:pointer}
   #app .status[data-paused]{color:var(--dim)}
   #app .readout{bottom:1.5rem;right:1.5rem;text-transform:none;letter-spacing:.04em}
   #app .readout .leg{color:var(--dim);opacity:.7}
@@ -102,7 +101,6 @@ export function buildChrome(app: HTMLElement): ChromeHandles {
     <div class="screen" data-loading>
       <span class="tick tl"></span><span class="tick tr"></span>
       <span class="tick bl"></span><span class="tick br"></span>
-      <span class="tag slabel">live</span>
       <span class="tag status" id="status">● running</span>
       <div class="viewport"><div class="host" id="host"></div></div>
       <span class="tag readout" id="readout">—</span>
