@@ -25,6 +25,8 @@ const CSS = `
     letter-spacing:-.01em;line-height:1.05;color:var(--ink)}
   #app h1 i{color:var(--acc);font-style:normal;margin-right:.4rem}
   #app .blurb{margin:0;max-width:58ch;color:var(--dim);font-size:.9rem;line-height:1.6}
+  #app .blurb .cta{color:var(--acc);border-bottom:1px solid transparent}
+  #app .blurb .cta:hover{color:#a8e29c;border-bottom-color:currentColor}
 
   /* Recessed screen: square, inner shadow well, bordered bezel tags. */
   #app .screen{position:relative;width:100%;aspect-ratio:16/9;background:var(--screen);
@@ -43,8 +45,7 @@ const CSS = `
   #app .tag{position:absolute;font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;
     background:#241c14;border:1px solid rgba(150,140,120,.35);padding:.18rem .6rem;color:var(--ink);
     box-shadow:inset 0 1px 0 rgba(255,244,228,.08),0 3px 11px rgba(0,0,0,.75)}
-  #app .slabel{top:1.5rem;left:1.5rem}
-  #app .status{top:1.5rem;right:1.5rem;color:var(--acc);cursor:pointer}
+  #app .status{top:1.5rem;left:1.5rem;color:var(--acc);cursor:pointer}
   #app .status[data-paused]{color:var(--dim)}
   #app .readout{bottom:1.5rem;right:1.5rem;text-transform:none;letter-spacing:.04em}
   #app .readout .leg{color:var(--dim);opacity:.7}
@@ -67,7 +68,10 @@ const CSS = `
   @keyframes blink{50%{opacity:0}}
   #app .hint{font-size:.74rem;color:var(--dim);opacity:.7;line-height:1.5;min-height:1.1em;
     transition:opacity 1.1s ease}
-  #app .hint[data-faded]{opacity:0}`;
+  #app .hint[data-faded]{opacity:0}
+
+  /* Phones: the 16/9 screen is too short — give the sim a taller viewport. */
+  @media (max-width:640px){#app .screen{aspect-ratio:4/5}}`;
 
 export interface ChromeHandles {
   host: HTMLElement;
@@ -92,12 +96,11 @@ export function buildChrome(app: HTMLElement): ChromeHandles {
     </div>
     <div class="lede">
       <h1><i id="chev">❯</i>${COPY.tagline.replace(/\.$/, '')}</h1>
-      <p class="blurb">${COPY.blurb}</p>
+      <p class="blurb">${COPY.blurb} <a class="cta" href="${COPY.releases}">${COPY.cta} ↗</a></p>
     </div>
     <div class="screen" data-loading>
       <span class="tick tl"></span><span class="tick tr"></span>
       <span class="tick bl"></span><span class="tick br"></span>
-      <span class="tag slabel">live</span>
       <span class="tag status" id="status">● running</span>
       <div class="viewport"><div class="host" id="host"></div></div>
       <span class="tag readout" id="readout">—</span>
