@@ -3,11 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>tslime — a terminal that grows</title>
+    <meta name="theme-color" content="#13100d" />
+    <link rel="icon" type="image/svg+xml" href="/tslime/favicon.svg" />
+    <title>tslime: a terminal that grows</title>
     <meta name="description" content="A lightweight terminal screensaver simulating Physarum slime-mold growth. Watch it run live in your browser." />
     <link rel="canonical" href="https://tamirelazar.github.io/tslime/" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="tslime — a terminal that grows" />
+    <meta property="og:title" content="tslime: a terminal that grows" />
     <meta property="og:description" content="A lightweight terminal screensaver simulating Physarum slime-mold growth." />
     <meta property="og:image" content="https://tamirelazar.github.io/tslime/poster.png" />
     <meta property="og:url" content="https://tamirelazar.github.io/tslime/" />
@@ -20,8 +22,11 @@
       }
       :root { color-scheme: dark; }
       * { box-sizing: border-box; }
-      html, body { margin: 0; background: #0b0d0e; color: #c8c0b0;
+      html, body { margin: 0; background: #13100d; color: #c8c0b0;
         font-family: ui-sans-serif, system-ui, sans-serif; }
+      /* Hero matches the wordmark's terminal mono on first paint (pre-chrome.ts). */
+      #app > h1 { font-family: 'FiraCodeNFMono', monospace; font-weight: 600;
+        text-align: center; }
     </style>
   </head>
   <body>
@@ -30,7 +35,7 @@
     <main id="app">
       <h1>A terminal that grows.</h1>
       <p>A lightweight terminal screensaver that simulates the growth patterns of
-        Physarum polycephalum — slime mold. Organic, algorithmic, alive.</p>
+        Physarum polycephalum (slime mold). Organic, algorithmic, alive.</p>
       <noscript><img src="/tslime/poster.png" alt="tslime slime-mold simulation still" width="900" /></noscript>
     </main>
     <script type="module" src="/src/main.ts"></script>

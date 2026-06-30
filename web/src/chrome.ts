@@ -1,7 +1,7 @@
 import { COPY } from './data';
 
 const CSS = `
-  #app{--bg:#0b0d0e;--ink:#c8c0b0;--dim:#8b9398;--warm:#bfa46a;--line:rgba(143,143,85,.30);
+  #app{--bg:#13100d;--ink:#c8c0b0;--dim:#8f8678;--warm:#bfa46a;--line:rgba(191,164,106,.24);
     min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:1.4rem;
     padding:0 1rem 4rem}
   #app header{display:flex;justify-content:space-between;align-items:center;width:100%;
@@ -9,11 +9,12 @@ const CSS = `
   #app .wm{font:600 1.1rem "FiraCodeNFMono",monospace;letter-spacing:.02em}
   #app nav a{color:var(--dim);text-decoration:none;margin-left:1.3rem;font-size:.9rem}
   #app nav a:hover{color:var(--warm)}
-  #app h1{margin:1.4rem 0 0;font-size:2.1rem;letter-spacing:-.02em;text-align:center}
+  #app h1{margin:1.4rem 0 0;font:600 2.1rem "FiraCodeNFMono",monospace;
+    letter-spacing:-.01em;text-align:center}
   #app p{margin:0;max-width:38rem;text-align:center;color:var(--dim);line-height:1.55}
   #app .frame{position:relative;width:min(900px,96vw);aspect-ratio:16/10;background:#1c1916;
     border:1px solid var(--line);border-radius:10px;padding:20px;overflow:hidden;
-    box-shadow:0 0 0 1px rgba(143,143,85,.10),0 0 28px rgba(143,143,85,.16),0 18px 50px rgba(0,0,0,.55)}
+    box-shadow:0 0 0 1px rgba(191,164,106,.10),0 0 28px rgba(191,164,106,.16),0 18px 50px rgba(10,7,4,.55)}
   #app .frame[data-loading]::after{content:"warming…";position:absolute;inset:0;display:grid;
     place-items:center;color:var(--dim);font:.9rem "FiraCodeNFMono",monospace}
   #app .host{width:100%;height:100%}

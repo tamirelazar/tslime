@@ -9,7 +9,7 @@ export const COPY = {
   tagline: 'A terminal that grows.',
   blurb:
     'A lightweight terminal screensaver that simulates the growth patterns of ' +
-    'Physarum polycephalum — slime mold. Organic, algorithmic, alive.',
+    'Physarum polycephalum (slime mold). Organic, algorithmic, alive.',
   github: 'https://github.com/tamirelazar/tslime',
   releases: 'https://github.com/tamirelazar/tslime/releases',
 };
