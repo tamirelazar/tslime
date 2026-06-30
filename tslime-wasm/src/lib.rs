@@ -31,9 +31,10 @@ pub struct TslimeWasm {
     frame: Option<DownsampledFrame>,
     adaptive: AdaptiveBrightness,
     palette: Palette,
-    // Brightness multiplier applied to the adaptive white point (>1 lifts the
-    // midtones so the sparse network reads on a dark page). Tunable from JS.
+    // Render look knobs (tuned from JS without recreating the sim). `brightness`
+    // scales the adaptive white point down: >1 = brighter veins + more lit cells.
     brightness: f32,
+    charset: Charset,
 }
 
 #[wasm_bindgen]
@@ -75,10 +76,12 @@ impl TslimeWasm {
             frame: None,
             // window=100, enabled=true — the TUI's default auto-normalize.
             adaptive: AdaptiveBrightness::new(100, true),
-            palette: Palette::Warm,
-            // Lift midtones: the auto-normalized network is faint on the page's
-            // dark frame at 1.0; 1.6 reads "calm, alive" without blowing out.
-            brightness: 1.6,
+            palette: Palette::Slime,
+            // Slime (green) palette + ASCII density glyphs. Green reads with far
+            // more contrast on the dark field than warm brown, so a modest
+            // brightness lift keeps the airy ASCII texture while staying legible.
+            brightness: 2.2,
+            charset: Charset::Ascii,
         })
     }
 
@@ -121,18 +124,18 @@ impl TslimeWasm {
         );
 
         // Update the adaptive white point from this frame, then use it as the
-        // brightness divisor — identical recipe to the TUI print path, scaled
-        // down by `brightness` so the web render lifts off the dark page.
+        // brightness divisor — identical recipe to the TUI print path.
         self.adaptive.update(frame.cells());
-        let gain = self.adaptive.get_max_brightness() / self.brightness;
+        // Scale the white point down by `brightness` (>1 brightens the veins and
+        // lifts more cells over the visibility threshold).
+        let gain = self.adaptive.get_max_brightness() / self.brightness.max(0.05);
 
-        // Warm palette, ASCII charset — the typed-terminal texture.
         render_ansi_cells(
             frame.cells(),
             cols,
             rows,
             self.palette.clone(),
-            Charset::Ascii,
+            self.charset.clone(),
             gain,
         )
     }
@@ -220,12 +223,6 @@ impl TslimeWasm {
         }
     }
 
-    /// Scale the adaptive white point. Values >1 brighten (lift midtones),
-    /// <1 darken. Clamped to a sane range; render-only, no sim reset.
-    pub fn set_brightness(&mut self, mult: f32) {
-        self.brightness = mult.clamp(0.5, 4.0);
-    }
-
     pub fn palette_count(&self) -> u32 {
         ALL_PALETTES.len() as u32
     }
@@ -253,6 +250,22 @@ impl TslimeWasm {
             InitMode::Random,
             0,
         );
+    }
+
+    /// Brightness multiplier for the ANSI render: 1.0 = TUI auto-normalize,
+    /// >1 brightens (lower white-point divisor). Render-only; no sim restart.
+    pub fn set_brightness(&mut self, brightness: f32) {
+        self.brightness = brightness.max(0.05);
+    }
+
+    /// Toggle the render charset: half-block (filled cells, denser) vs ASCII
+    /// density glyphs (airy). Render-only; no sim restart.
+    pub fn set_charset_halfblock(&mut self, halfblock: bool) {
+        self.charset = if halfblock {
+            Charset::HalfBlock
+        } else {
+            Charset::Ascii
+        };
     }
 
     pub fn preset_count(&self) -> u32 {

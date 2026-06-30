@@ -78,16 +78,7 @@ export async function mountTerminal(
   requestAnimationFrame(frame);
 
   return {
-    setPresetByName(name) {
-      const id = presetId.get(name);
-      if (id === undefined) return;
-      sim.set_preset(id);
-      if (agentCount) sim.set_agent_count(agentCount);
-      // set_preset rebuilds the sim from scratch; warm it so the switch lands on
-      // a formed network instead of flashing empty before it regrows.
-      for (let i = 0; i < 200; i++) sim.step();
-      if (cols > 0 && rows > 0) term.write(sim.render_ansi_frame(cols, rows));
-    },
+    setPresetByName(name) { const id = presetId.get(name); if (id !== undefined) { sim.set_preset(id); if (agentCount) sim.set_agent_count(agentCount); } },
     setPaletteByName(name) { const id = paletteId.get(name); if (id !== undefined) sim.set_palette(id); },
     pause() { paused = true; },
     resume() { paused = false; },
