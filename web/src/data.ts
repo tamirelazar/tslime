@@ -10,7 +10,7 @@ declare const __APP_VERSION__: string;
 export const COPY = {
   name: 'tslime',
   version: __APP_VERSION__,
-  tagline: 'A terminal screensaver that grows on you.',
+  tagline: 'A terminal screensaver that will grow on you.',
   blurb: 'A limited WASM demo.',
   cta: 'install the real thing',
   github: 'https://github.com/tamirelazar/tslime',
