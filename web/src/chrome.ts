@@ -39,13 +39,14 @@ const CSS = `
   #app .tick.tr{top:6px;right:6px;border-left:0;border-bottom:0}
   #app .tick.bl{bottom:6px;left:6px;border-right:0;border-top:0}
   #app .tick.br{bottom:6px;right:6px;border-left:0;border-top:0}
-  /* bordered tags cut into the bezel border */
+  /* bordered HUD tags floating just inside the screen, over the sim */
   #app .tag{position:absolute;font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;
-    background:var(--bg);border:1px solid var(--line);padding:.12rem .5rem;color:var(--dim)}
-  #app .slabel{top:-.78rem;left:1.2rem}
-  #app .status{top:-.78rem;right:1.2rem;color:var(--acc);cursor:pointer}
+    background:#241c14;border:1px solid rgba(150,140,120,.35);padding:.18rem .6rem;color:var(--ink);
+    box-shadow:inset 0 1px 0 rgba(255,244,228,.08),0 3px 11px rgba(0,0,0,.75)}
+  #app .slabel{top:1.5rem;left:1.5rem}
+  #app .status{top:1.5rem;right:1.5rem;color:var(--acc);cursor:pointer}
   #app .status[data-paused]{color:var(--dim)}
-  #app .readout{bottom:-.78rem;right:1.2rem;text-transform:none;letter-spacing:.04em}
+  #app .readout{bottom:1.5rem;right:1.5rem;text-transform:none;letter-spacing:.04em}
   #app .readout .leg{color:var(--dim);opacity:.7}
   #app .screen[data-loading] .viewport::after{content:"warming…";position:absolute;
     inset:0;display:grid;place-items:center;color:var(--dim);font-size:.85rem}
@@ -64,8 +65,9 @@ const CSS = `
   #app .cmd .tok:hover{color:#a8e29c;border-bottom-style:solid}
   #app .cmd .cur{color:var(--acc);animation:blink 1.1s steps(1) infinite;margin-left:.2ch}
   @keyframes blink{50%{opacity:0}}
-  #app .hint{font-size:.74rem;color:var(--dim);opacity:.7;transition:opacity .4s}
-  #app .hint[data-done]{opacity:0}`;
+  #app .hint{font-size:.74rem;color:var(--dim);opacity:.7;line-height:1.5;min-height:1.1em;
+    transition:opacity 1.1s ease}
+  #app .hint[data-faded]{opacity:0}`;
 
 export interface ChromeHandles {
   host: HTMLElement;
@@ -76,6 +78,7 @@ export interface ChromeHandles {
   readout: HTMLElement;
   hint: HTMLElement;
   cursor: HTMLElement;
+  chevron: HTMLElement;
 }
 
 export function buildChrome(app: HTMLElement): ChromeHandles {
@@ -88,7 +91,7 @@ export function buildChrome(app: HTMLElement): ChromeHandles {
       <div class="meta">v${COPY.version}<a href="${COPY.github}">github</a><a href="${COPY.releases}">releases</a></div>
     </div>
     <div class="lede">
-      <h1><i>❯</i>${COPY.tagline.replace(/\.$/, '')}</h1>
+      <h1><i id="chev">❯</i>${COPY.tagline.replace(/\.$/, '')}</h1>
       <p class="blurb">${COPY.blurb}</p>
     </div>
     <div class="screen" data-loading>
@@ -116,5 +119,6 @@ export function buildChrome(app: HTMLElement): ChromeHandles {
     readout: q('#readout'),
     hint: q('#hint'),
     cursor: q('#cursor'),
+    chevron: q('#chev'),
   };
 }
