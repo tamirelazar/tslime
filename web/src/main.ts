@@ -4,36 +4,27 @@ import { wireControls } from './controls';
 
 async function main() {
   const app = document.getElementById('app')!;
-  const { host, presetBar, paletteBar } = buildChrome(app);
-  const frame = host.parentElement!;
+  const h = buildChrome(app);
 
   // Mobile / small viewport: lighter agent population.
-  const agents = window.matchMedia('(max-width: 640px)').matches ? 12000 : undefined;
+  const mobile = window.matchMedia('(max-width: 640px)').matches;
+  const agents = mobile ? 12000 : 50000;
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   let controller;
   try {
-    controller = await mountTerminal(host, { agents });
+    controller = await mountTerminal(h.host, { agents: mobile ? agents : undefined });
   } catch (err) {
     console.error('tslime wasm failed to start', err);
-    frame.removeAttribute('data-loading');
-    frame.setAttribute('data-error', '');
-    return; // poster fallback shown via CSS; pills omitted
+    h.screen.removeAttribute('data-loading');
+    h.screen.setAttribute('data-error', '');
+    return; // poster fallback shown via CSS
   }
-  frame.removeAttribute('data-loading');
-  wireControls(presetBar, paletteBar, controller);
+  h.screen.removeAttribute('data-loading');
 
-  // Pause/Play control; honor reduced-motion by starting paused.
-  const toggle = document.createElement('button');
-  toggle.className = 'toggle';
-  let playing = !reduce;
-  if (reduce) controller.pause();
-  toggle.textContent = playing ? 'Pause' : 'Play';
-  toggle.addEventListener('click', () => {
-    playing = !playing;
-    playing ? controller!.resume() : controller!.pause();
-    toggle.textContent = playing ? 'Pause' : 'Play';
-  });
-  paletteBar.after(toggle);
+  const ctl = wireControls(h, controller, agents);
+
+  // Honor reduced-motion by starting paused.
+  if (reduce) ctl.setPlaying(false);
 }
 main();

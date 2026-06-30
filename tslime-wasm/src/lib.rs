@@ -31,6 +31,10 @@ pub struct TslimeWasm {
     frame: Option<DownsampledFrame>,
     adaptive: AdaptiveBrightness,
     palette: Palette,
+    // Render look knobs (tuned from JS without recreating the sim). `brightness`
+    // scales the adaptive white point down: >1 = brighter veins + more lit cells.
+    brightness: f32,
+    charset: Charset,
 }
 
 #[wasm_bindgen]
@@ -72,7 +76,12 @@ impl TslimeWasm {
             frame: None,
             // window=100, enabled=true — the TUI's default auto-normalize.
             adaptive: AdaptiveBrightness::new(100, true),
-            palette: Palette::Warm,
+            palette: Palette::Slime,
+            // Slime (green) palette + ASCII density glyphs. Green reads with far
+            // more contrast on the dark field than warm brown, so a modest
+            // brightness lift keeps the airy ASCII texture while staying legible.
+            brightness: 2.2,
+            charset: Charset::Ascii,
         })
     }
 
@@ -117,15 +126,16 @@ impl TslimeWasm {
         // Update the adaptive white point from this frame, then use it as the
         // brightness divisor — identical recipe to the TUI print path.
         self.adaptive.update(frame.cells());
-        let gain = self.adaptive.get_max_brightness();
+        // Scale the white point down by `brightness` (>1 brightens the veins and
+        // lifts more cells over the visibility threshold).
+        let gain = self.adaptive.get_max_brightness() / self.brightness.max(0.05);
 
-        // Bolt info-route launch look: warm palette, ASCII charset.
         render_ansi_cells(
             frame.cells(),
             cols,
             rows,
             self.palette.clone(),
-            Charset::Ascii,
+            self.charset.clone(),
             gain,
         )
     }
@@ -240,6 +250,22 @@ impl TslimeWasm {
             InitMode::Random,
             0,
         );
+    }
+
+    /// Brightness multiplier for the ANSI render: 1.0 = TUI auto-normalize,
+    /// >1 brightens (lower white-point divisor). Render-only; no sim restart.
+    pub fn set_brightness(&mut self, brightness: f32) {
+        self.brightness = brightness.max(0.05);
+    }
+
+    /// Toggle the render charset: half-block (filled cells, denser) vs ASCII
+    /// density glyphs (airy). Render-only; no sim restart.
+    pub fn set_charset_halfblock(&mut self, halfblock: bool) {
+        self.charset = if halfblock {
+            Charset::HalfBlock
+        } else {
+            Charset::Ascii
+        };
     }
 
     pub fn preset_count(&self) -> u32 {
