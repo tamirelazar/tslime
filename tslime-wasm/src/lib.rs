@@ -31,6 +31,9 @@ pub struct TslimeWasm {
     frame: Option<DownsampledFrame>,
     adaptive: AdaptiveBrightness,
     palette: Palette,
+    // Brightness multiplier applied to the adaptive white point (>1 lifts the
+    // midtones so the sparse network reads on a dark page). Tunable from JS.
+    brightness: f32,
 }
 
 #[wasm_bindgen]
@@ -73,6 +76,9 @@ impl TslimeWasm {
             // window=100, enabled=true — the TUI's default auto-normalize.
             adaptive: AdaptiveBrightness::new(100, true),
             palette: Palette::Warm,
+            // Lift midtones: the auto-normalized network is faint on the page's
+            // dark frame at 1.0; 1.6 reads "calm, alive" without blowing out.
+            brightness: 1.6,
         })
     }
 
@@ -115,11 +121,12 @@ impl TslimeWasm {
         );
 
         // Update the adaptive white point from this frame, then use it as the
-        // brightness divisor — identical recipe to the TUI print path.
+        // brightness divisor — identical recipe to the TUI print path, scaled
+        // down by `brightness` so the web render lifts off the dark page.
         self.adaptive.update(frame.cells());
-        let gain = self.adaptive.get_max_brightness();
+        let gain = self.adaptive.get_max_brightness() / self.brightness;
 
-        // Bolt info-route launch look: warm palette, ASCII charset.
+        // Warm palette, ASCII charset — the typed-terminal texture.
         render_ansi_cells(
             frame.cells(),
             cols,
@@ -211,6 +218,12 @@ impl TslimeWasm {
         if let Some(p) = ALL_PALETTES.get(id as usize) {
             self.palette = p.clone();
         }
+    }
+
+    /// Scale the adaptive white point. Values >1 brighten (lift midtones),
+    /// <1 darken. Clamped to a sane range; render-only, no sim reset.
+    pub fn set_brightness(&mut self, mult: f32) {
+        self.brightness = mult.clamp(0.5, 4.0);
     }
 
     pub fn palette_count(&self) -> u32 {
