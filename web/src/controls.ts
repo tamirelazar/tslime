@@ -9,7 +9,7 @@ const PALETTE_ACCENT: Record<string, string> = {
   Warm: '#d2ab5f',
   Ocean: '#79aff7',
   Mono: '#b0adaa',
-  Heat: '#f18c64',
+  Cosmic: '#be95ec',
 };
 
 // One-line character note per preset, shown after the first preset cycle.

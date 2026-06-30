@@ -25,6 +25,8 @@ const CSS = `
     letter-spacing:-.01em;line-height:1.05;color:var(--ink)}
   #app h1 i{color:var(--acc);font-style:normal;margin-right:.4rem}
   #app .blurb{margin:0;max-width:58ch;color:var(--dim);font-size:.9rem;line-height:1.6}
+  #app .blurb .cta{color:var(--acc);border-bottom:1px solid transparent}
+  #app .blurb .cta:hover{color:#a8e29c;border-bottom-color:currentColor}
 
   /* Recessed screen: square, inner shadow well, bordered bezel tags. */
   #app .screen{position:relative;width:100%;aspect-ratio:16/9;background:var(--screen);
@@ -67,7 +69,10 @@ const CSS = `
   @keyframes blink{50%{opacity:0}}
   #app .hint{font-size:.74rem;color:var(--dim);opacity:.7;line-height:1.5;min-height:1.1em;
     transition:opacity 1.1s ease}
-  #app .hint[data-faded]{opacity:0}`;
+  #app .hint[data-faded]{opacity:0}
+
+  /* Phones: the 16/9 screen is too short — give the sim a taller viewport. */
+  @media (max-width:640px){#app .screen{aspect-ratio:4/5}}`;
 
 export interface ChromeHandles {
   host: HTMLElement;
@@ -92,7 +97,7 @@ export function buildChrome(app: HTMLElement): ChromeHandles {
     </div>
     <div class="lede">
       <h1><i id="chev">❯</i>${COPY.tagline.replace(/\.$/, '')}</h1>
-      <p class="blurb">${COPY.blurb}</p>
+      <p class="blurb">${COPY.blurb} <a class="cta" href="${COPY.releases}">${COPY.cta} ↗</a></p>
     </div>
     <div class="screen" data-loading>
       <span class="tick tl"></span><span class="tick tr"></span>
