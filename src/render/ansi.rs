@@ -172,6 +172,7 @@ pub fn render_ansi_framed(
     grid: Option<&GridRenderer>,
     grid_color: RgbColor,
     grid_opacity: f32,
+    glow_accent: Option<RgbColor>,
 ) -> String {
     debug_assert!(matches!(charset, Charset::Ascii), "info path is ASCII-only");
     let inv_gain = if max_brightness > 0.0 {
@@ -190,13 +191,32 @@ pub fn render_ansi_framed(
         let mut last_fg: Option<RgbColor> = None;
         for x in 0..geom.cols {
             let in_ring = x < geom.ring_cols
-                || x >= geom.cols - geom.ring_cols
+                || x >= geom.cols.saturating_sub(geom.ring_cols)
                 || y < geom.ring_rows
-                || y >= geom.rows - geom.ring_rows;
+                || y >= geom.rows.saturating_sub(geom.ring_rows);
             if in_ring {
-                // Task 2 fills the ring; for now a plain space (reset fg).
-                out.push(' ');
-                last_fg = None;
+                if let Some(accent) = glow_accent {
+                    let dc = x.min(geom.cols - 1 - x) as f32 / geom.ring_cols.max(1) as f32;
+                    let dr = y.min(geom.rows - 1 - y) as f32 / geom.ring_rows.max(1) as f32;
+                    let depth = dc.min(dr).clamp(0.0, 1.0);
+                    let alpha = 1.0 - depth * 0.7;
+                    let ch = if depth < 0.34 {
+                        '\u{2588}'
+                    } else if depth < 0.67 {
+                        '\u{2593}'
+                    } else {
+                        '\u{2592}'
+                    };
+                    let fg = accent.with_alpha(alpha);
+                    if last_fg != Some(fg) {
+                        out.push_str(&truecolor_ansi(fg.r, fg.g, fg.b, true));
+                        last_fg = Some(fg);
+                    }
+                    out.push(ch);
+                } else {
+                    out.push(' ');
+                    last_fg = None;
+                }
                 continue;
             }
             let ix = x - geom.ring_cols;
@@ -269,6 +289,7 @@ mod tests {
                 b: 0x55,
             },
             0.35,
+            None,
         );
         let plain = render_ansi_framed(
             &interior,
@@ -279,6 +300,7 @@ mod tests {
             None,
             RgbColor { r: 0, g: 0, b: 0 },
             0.0,
+            None,
         );
         // grid at cols {2,4} for size 3 over width 6 → framed differs from plain, and
         // both are deterministic + nonempty.
@@ -299,9 +321,56 @@ mod tests {
                     b: 0x55,
                 },
                 0.35,
+                None,
             ),
             "deterministic"
         );
+    }
+
+    #[test]
+    fn framed_glow_fills_ring_with_block_glyphs() {
+        // 4x4 full frame, ring 1x1 → 2x2 interior. Corners are the outer (bright) band.
+        let interior = vec![Cell::default(); 2 * 2];
+        let geom = FrameGeometry {
+            cols: 4,
+            rows: 4,
+            ring_cols: 1,
+            ring_rows: 1,
+        };
+        let accent = RgbColor {
+            r: 0xff,
+            g: 0xcc,
+            b: 0x66,
+        };
+        let framed = render_ansi_framed(
+            &interior,
+            &geom,
+            Palette::Warm,
+            Charset::Ascii,
+            1.0,
+            None,
+            RgbColor { r: 0, g: 0, b: 0 },
+            0.0,
+            Some(accent),
+        );
+        // Outer ring cells use the full block; the frame must contain █.
+        assert!(
+            framed.contains('\u{2588}'),
+            "glow ring must draw █ at the outer band"
+        );
+        // Deterministic.
+        let again = render_ansi_framed(
+            &interior,
+            &geom,
+            Palette::Warm,
+            Charset::Ascii,
+            1.0,
+            None,
+            RgbColor { r: 0, g: 0, b: 0 },
+            0.0,
+            Some(accent),
+        );
+        assert_eq!(framed, again);
     }
 
     #[test]
