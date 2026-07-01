@@ -42,12 +42,12 @@ const CSS = `
   #app .tick.bl{bottom:6px;left:6px;border-right:0;border-top:0}
   #app .tick.br{bottom:6px;right:6px;border-left:0;border-top:0}
   /* bordered HUD tags floating just inside the screen, over the sim */
-  #app .tag{position:absolute;font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;
+  #app .tag{position:absolute;z-index:2;font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;
     background:#241c14;border:1px solid rgba(150,140,120,.35);padding:.18rem .6rem;color:var(--ink);
     box-shadow:inset 0 1px 0 rgba(255,244,228,.08),0 3px 11px rgba(0,0,0,.75)}
-  #app .status{top:1.5rem;left:1.5rem;color:var(--acc);cursor:pointer}
+  #app .status{top:3.2rem;left:3.3rem;color:var(--acc);cursor:pointer}
   #app .status[data-paused]{color:var(--dim)}
-  #app .readout{bottom:1.5rem;right:1.5rem;text-transform:none;letter-spacing:.04em}
+  #app .readout{bottom:3.2rem;right:3.3rem;text-transform:none;letter-spacing:.04em}
   #app .readout .leg{color:var(--dim);opacity:.7}
   #app .screen[data-loading] .viewport::after{content:"warming…";position:absolute;
     inset:0;display:grid;place-items:center;color:var(--dim);font-size:.85rem}
