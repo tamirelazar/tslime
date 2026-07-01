@@ -13,7 +13,10 @@
 
 use crate::render::charset::{map_brightness, Charset};
 use crate::render::downsample::{downsample, Cell, DownsampledFrame};
-use crate::render::palette::{map_brightness_rgb, truecolor_ansi, IntensityMapping, Palette};
+use crate::render::grid::GridRenderer;
+use crate::render::palette::{
+    map_brightness_rgb, truecolor_ansi, IntensityMapping, Palette, RgbColor,
+};
 
 /// Render a trail map to a truecolor ANSI frame.
 ///
@@ -77,24 +80,12 @@ pub fn render_ansi_cells(
 
             if ascii {
                 // One density glyph per cell, foreground-only on the emulator bg.
-                let brightness = (top + bottom) * 0.5;
-                let fg = map_brightness_rgb(
-                    brightness,
-                    palette.clone(),
-                    false,
-                    false,
-                    0.0,
-                    Some(&mapping),
-                );
+                let (fg, glyph) = ascii_cell_fg_glyph(cell, inv_gain, &palette, &mapping);
                 if last_fg != Some(fg) {
                     out.push_str(&truecolor_ansi(fg.r, fg.g, fg.b, true));
                     last_fg = Some(fg);
                 }
-                out.push(map_brightness(
-                    mapping.apply(brightness),
-                    None,
-                    Charset::Ascii,
-                ));
+                out.push(glyph);
             } else {
                 let fg =
                     map_brightness_rgb(top, palette.clone(), false, false, 0.0, Some(&mapping));
@@ -117,11 +108,201 @@ pub fn render_ansi_cells(
     out
 }
 
+/// Map one interior field cell (ASCII charset) to `(fg, glyph)`, pre-grid.
+///
+/// Extracted from [`render_ansi_cells`]'s ASCII branch so both it and
+/// [`render_ansi_framed`] share a single definition of the per-cell mapping.
+fn ascii_cell_fg_glyph(
+    cell: &Cell,
+    inv_gain: f32,
+    palette: &Palette,
+    mapping: &IntensityMapping,
+) -> (RgbColor, char) {
+    let top = (cell.top * inv_gain).clamp(0.0, 1.0);
+    let bottom = (cell.bottom * inv_gain).clamp(0.0, 1.0);
+    let brightness = (top + bottom) * 0.5;
+    let fg = map_brightness_rgb(
+        brightness,
+        palette.clone(),
+        false,
+        false,
+        0.0,
+        Some(mapping),
+    );
+    let glyph = map_brightness(mapping.apply(brightness), None, Charset::Ascii);
+    (fg, glyph)
+}
+
+/// Full-terminal frame geometry: an outer ring (glow, added in Task 2) around
+/// an interior field of cells.
+pub struct FrameGeometry {
+    /// Full terminal columns.
+    pub cols: usize,
+    /// Full terminal rows.
+    pub rows: usize,
+    /// Glow ring thickness per side, in columns (0 = no ring).
+    pub ring_cols: usize,
+    /// Glow ring thickness per side, in rows (0 = no ring).
+    pub ring_rows: usize,
+}
+
+impl FrameGeometry {
+    /// Interior dimensions after subtracting the ring from both sides.
+    pub fn interior(&self) -> (usize, usize) {
+        (
+            self.cols.saturating_sub(2 * self.ring_cols),
+            self.rows.saturating_sub(2 * self.ring_rows),
+        )
+    }
+}
+
+/// Render a full terminal frame from interior-sized field cells, with an
+/// optional grid overlay on the interior. The outer ring (glow, added in
+/// Task 2) is emitted as blank space for now.
+///
+/// * `field_cells` — the FIELD downsampled to interior dims (`geom.interior()`).
+/// * `grid` — pre-initialized to interior dims, or `None` for no grid.
+#[allow(clippy::too_many_arguments)]
+pub fn render_ansi_framed(
+    field_cells: &[Cell],
+    geom: &FrameGeometry,
+    palette: Palette,
+    charset: Charset,
+    max_brightness: f32,
+    grid: Option<&GridRenderer>,
+    grid_color: RgbColor,
+    grid_opacity: f32,
+) -> String {
+    debug_assert!(matches!(charset, Charset::Ascii), "info path is ASCII-only");
+    let inv_gain = if max_brightness > 0.0 {
+        1.0 / max_brightness
+    } else {
+        1.0
+    };
+    let mapping = IntensityMapping::logarithmic(10.0);
+    let (iw, ih) = geom.interior();
+    let mut out = String::with_capacity(geom.cols * geom.rows * 20 + geom.rows * 8);
+    out.push_str("\x1b[H");
+    for y in 0..geom.rows {
+        out.push_str("\x1b[");
+        out.push_str(&(y + 1).to_string());
+        out.push_str(";1H");
+        let mut last_fg: Option<RgbColor> = None;
+        for x in 0..geom.cols {
+            let in_ring = x < geom.ring_cols
+                || x >= geom.cols - geom.ring_cols
+                || y < geom.ring_rows
+                || y >= geom.rows - geom.ring_rows;
+            if in_ring {
+                // Task 2 fills the ring; for now a plain space (reset fg).
+                out.push(' ');
+                last_fg = None;
+                continue;
+            }
+            let ix = x - geom.ring_cols;
+            let iy = y - geom.ring_rows;
+            let (mut fg, glyph) =
+                ascii_cell_fg_glyph(&field_cells[iy * iw + ix], inv_gain, &palette, &mapping);
+            if let Some(g) = grid {
+                if g.is_grid_position(ix, iy, iw, ih) {
+                    fg = g.blend_color(grid_color, fg, grid_opacity);
+                }
+            }
+            if last_fg != Some(fg) {
+                out.push_str(&truecolor_ansi(fg.r, fg.g, fg.b, true));
+                last_fg = Some(fg);
+            }
+            out.push(glyph);
+        }
+    }
+    out.push_str("\x1b[0m");
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::render::charset::Charset;
-    use crate::render::palette::Palette;
+    use crate::render::grid::{GridRenderer, GridStyle};
+    use crate::render::palette::{Palette, RgbColor};
+
+    #[test]
+    fn framed_grid_recolors_only_grid_columns() {
+        // 6x1 interior, no ring. Uniform mid brightness so every field cell maps to
+        // the same fg; a grid line must therefore be the ONLY color break in the row.
+        let interior = vec![
+            Cell {
+                top: 0.5,
+                bottom: 0.5,
+                ..Default::default()
+            };
+            6
+        ];
+        let geom = FrameGeometry {
+            cols: 6,
+            rows: 1,
+            ring_cols: 0,
+            ring_rows: 0,
+        };
+        let mut grid = GridRenderer::new(
+            GridStyle::Cross,
+            3,
+            RgbColor {
+                r: 0x8f,
+                g: 0x8f,
+                b: 0x55,
+            },
+            0.35,
+            false,
+        );
+        grid.initialize(6, 1); // interior dims
+        let framed = render_ansi_framed(
+            &interior,
+            &geom,
+            Palette::Warm,
+            Charset::Ascii,
+            1.0,
+            Some(&grid),
+            RgbColor {
+                r: 0x8f,
+                g: 0x8f,
+                b: 0x55,
+            },
+            0.35,
+        );
+        let plain = render_ansi_framed(
+            &interior,
+            &geom,
+            Palette::Warm,
+            Charset::Ascii,
+            1.0,
+            None,
+            RgbColor { r: 0, g: 0, b: 0 },
+            0.0,
+        );
+        // grid at cols {2,4} for size 3 over width 6 → framed differs from plain, and
+        // both are deterministic + nonempty.
+        assert_ne!(framed, plain, "grid must recolor at least one cell");
+        assert!(framed.contains('\x1b'));
+        assert_eq!(
+            framed,
+            render_ansi_framed(
+                &interior,
+                &geom,
+                Palette::Warm,
+                Charset::Ascii,
+                1.0,
+                Some(&grid),
+                RgbColor {
+                    r: 0x8f,
+                    g: 0x8f,
+                    b: 0x55,
+                },
+                0.35,
+            ),
+            "deterministic"
+        );
+    }
 
     #[test]
     fn render_ansi_is_deterministic_and_nonempty() {
