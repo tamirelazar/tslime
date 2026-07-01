@@ -4,6 +4,7 @@
 //! the simulation window inside the terminal, given an aspect ratio, padding
 //! settings, and fallback thresholds. No I/O is performed here.
 
+use crate::render::palette::RgbColor;
 use crate::simulation::config::{Aspect, TerminalSizeThreshold, WindowPadding};
 
 /// Default frame ring thickness in **columns** on each of the left/right sides.
@@ -19,6 +20,17 @@ pub const FRAME_RING_COLS: usize = crate::config_defaults::frame_matte::DEFAULT_
 /// Default frame ring thickness in **rows** on each of the top/bottom sides.
 /// See [`FRAME_RING_COLS`].
 pub const FRAME_RING_ROWS: usize = crate::config_defaults::frame_matte::DEFAULT_ROWS + 1;
+
+/// Shared grid overlay color for the framed ANSI/WebGL background, used by both
+/// the native headless renderer and the wasm renderer so they stay in sync.
+pub const GRID_COLOR: RgbColor = RgbColor {
+    r: 0x8f,
+    g: 0x8f,
+    b: 0x55,
+};
+
+/// Shared grid overlay opacity. See [`GRID_COLOR`].
+pub const GRID_OPACITY: f32 = 0.35;
 
 /// How the window layout was resolved when terminal space was limited.
 pub enum FallbackMode {

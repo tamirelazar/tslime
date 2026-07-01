@@ -36,6 +36,9 @@ pub enum Mode {
     GifExport,
     /// Export animation to WebM.
     WebmExport,
+    /// Deterministic headless ANSI golden-frame mode (mirrors the wasm
+    /// `render_ansi_frame`, byte-for-byte, from fresh isolated state).
+    HeadlessAnsi,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -670,6 +673,40 @@ pub struct Args {
     )]
     /// Directory to save captured frames.
     pub frame_dir: String,
+
+    #[arg(
+        long = "headless-ansi",
+        help = "Print the exact ANSI frame the wasm's render_ansi_frame produces and exit (deterministic golden mode)"
+    )]
+    /// Deterministic headless ANSI golden-frame mode (mirrors the wasm `render_ansi_frame`).
+    pub headless_ansi: bool,
+
+    #[arg(
+        long = "cols",
+        value_name = "INT",
+        default_value_t = 80,
+        help = "Terminal columns for --headless-ansi"
+    )]
+    /// Terminal column count used by `--headless-ansi`.
+    pub headless_cols: usize,
+
+    #[arg(
+        long = "rows",
+        value_name = "INT",
+        default_value_t = 24,
+        help = "Terminal rows for --headless-ansi"
+    )]
+    /// Terminal row count used by `--headless-ansi`.
+    pub headless_rows: usize,
+
+    #[arg(
+        long = "steps",
+        value_name = "INT",
+        default_value_t = 300,
+        help = "Simulation steps to run for --headless-ansi"
+    )]
+    /// Simulation step count used by `--headless-ansi`.
+    pub headless_steps: usize,
 
     #[arg(
         short = 's',
@@ -1813,7 +1850,9 @@ pub struct Args {
 impl Args {
     /// Determines the operational mode based on flags.
     pub fn mode(&self) -> Mode {
-        if self.screensaver {
+        if self.headless_ansi {
+            Mode::HeadlessAnsi
+        } else if self.screensaver {
             Mode::Screensaver
         } else if self.live {
             Mode::Live
@@ -2227,6 +2266,10 @@ impl Default for Args {
             explore: false,
             explore_behavior: None,
             explore_iterations: 100,
+            headless_ansi: false,
+            headless_cols: 80,
+            headless_rows: 24,
+            headless_steps: 300,
             seed: None,
             population: Some(population::DEFAULT_POPULATION),
             sensor_angle: Some(agent_consts::DEFAULT_SENSOR_ANGLE),

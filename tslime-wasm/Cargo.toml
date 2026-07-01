@@ -34,3 +34,11 @@ path = ".."
 default-features = false
 features = []
 
+# Test-only: unifies with the [dependencies.tslime] entry above to enable the
+# `terminal` feature (and thus `tslime::app::headless_ansi_frame`) for
+# `cargo test -p tslime-wasm`, without pulling it into the wasm/cdylib build
+# (dev-dependency features only apply to test/bench/example builds).
+[dev-dependencies.tslime]
+path = ".."
+features = ["terminal"]
+
