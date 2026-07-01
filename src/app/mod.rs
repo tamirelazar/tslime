@@ -700,11 +700,12 @@ pub fn run() -> io::Result<()> {
 /// Renders the exact ANSI frame the vendored wasm's `render_ansi_frame`
 /// produces for a `cols`×`rows` terminal, from fresh isolated state.
 ///
-/// Mirrors the wasm recipe byte-for-byte: a 400×200 `Simulation` seeded with
-/// `InitMode::Random`, `Palette::Slime`, `AdaptiveBrightness::new(100, true)`
-/// with the wasm's `brightness = 2.2` divisor baked into the gain, and the
+/// Mirrors the `/info` route identity byte-for-byte: a 400×200 `Simulation`
+/// seeded with `InitMode::Random`, `Palette::Warm`, bare
+/// `AdaptiveBrightness::new(100, true)` gain (no brightness divisor), and the
 /// same grid/accent parameters — so `--headless-ansi` output is a golden
-/// frame the wasm reproduces byte-identically.
+/// frame the wasm reproduces byte-identically when configured to the same
+/// identity (Warm palette, brightness 1.0).
 pub fn headless_ansi_frame(
     cols: usize,
     rows: usize,
@@ -728,8 +729,6 @@ pub fn headless_ansi_frame(
     let (iw, ih) = geom.interior();
 
     let mut adaptive = AdaptiveBrightness::new(100, true);
-    // Matches the wasm's default render brightness (`TslimeWasm::new`).
-    let brightness: f32 = 2.2;
 
     let mut grid = GridRenderer::new(GridStyle::Cross, 5, GRID_COLOR, GRID_OPACITY, false);
     grid.initialize(iw, ih);
@@ -738,7 +737,7 @@ pub fn headless_ansi_frame(
     let mut trail: Vec<f32> = Vec::new();
 
     let mapping = IntensityMapping::logarithmic(10.0);
-    let accent = palette_accent_color(&Palette::Slime, false, false, 0.0, Some(&mapping));
+    let accent = palette_accent_color(&Palette::Warm, false, false, 0.0, Some(&mapping));
 
     let mut out = String::new();
     for _ in 1..=steps {
@@ -747,12 +746,12 @@ pub fn headless_ansi_frame(
         downsample(&trail, sim_w, sim_h, iw, ih, &mut frame);
 
         adaptive.update(frame.cells());
-        let gain = adaptive.get_max_brightness() / brightness.max(0.05);
+        let gain = adaptive.get_max_brightness();
 
         out = render_ansi_framed(
             frame.cells(),
             &geom,
-            Palette::Slime,
+            Palette::Warm,
             Charset::Ascii,
             gain,
             Some(&grid),

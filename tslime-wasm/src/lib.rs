@@ -384,4 +384,33 @@ mod tests {
         assert_eq!(fa, fb, "same fresh state + cadence => identical frame");
         assert!(fa.contains('\u{2588}'), "glow ring present");
     }
+
+    #[test]
+    fn headless_matches_wasm_over_info_identity() {
+        // wasm configured to the /info identity: Warm palette + brightness 1.0 (no web-demo lift).
+        let mut w = TslimeWasm::new(400, 200, "", 1).unwrap();
+        let warm_id = ALL_PALETTES
+            .iter()
+            .position(|p| matches!(p, Palette::Warm))
+            .unwrap() as u32;
+        w.set_palette(warm_id);
+        w.set_brightness(1.0);
+        let cols = 80;
+        let rows = 24;
+        let n = 40;
+        let mut wasm_frame = String::new();
+        for _ in 0..n {
+            w.step();
+            wasm_frame = w.render_ansi_frame(cols, rows);
+        }
+
+        // native golden generator (now Warm + bare gain), same (cols,rows,steps,seed,agents).
+        let headless = tslime::app::headless_ansi_frame(cols, rows, n, 1, 50_000);
+
+        assert_eq!(
+            headless, wasm_frame,
+            "native --headless-ansi must byte-match the wasm render_ansi_frame over the /info identity (Warm, brightness 1.0)"
+        );
+        assert!(headless.contains('\u{2588}'), "glow ring present");
+    }
 }
