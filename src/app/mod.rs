@@ -12,6 +12,7 @@ use crate::exploration::{Explorer, ExplorerConfig, PresetBehavior};
 use crate::export::GifExporter;
 use crate::export::WebmExporter;
 use crate::render::adaptive_brightness::AdaptiveBrightness;
+use crate::render::ansi::{render_ansi_framed, FrameGeometry};
 use crate::render::charset::Charset;
 use crate::render::dither::DitherMode;
 use crate::render::downsample::{downsample, DownsampledFrame};
@@ -20,10 +21,13 @@ use crate::render::overlay::{
     ConfigBrowserOverlay, ConfigSaveOverlay, DashboardOverlay, KeyboardHintsOverlay, PauseOverlay,
     PresetComparisonOverlay, RenderedOverlay,
 };
-use crate::render::palette::{hex_to_rgb, palette_accent_color, RgbColor};
+use crate::render::palette::{
+    hex_to_rgb, palette_accent_color, IntensityMapping, Palette, RgbColor,
+};
 use crate::render::palette_editor::{
     EditorComponent, EditorMode, PaletteEditorOverlay, PaletteEditorState,
 };
+use crate::render::window::{FRAME_RING_COLS, FRAME_RING_ROWS};
 use crate::simulation;
 use crate::simulation::config::{
     Attractor, DiffusionKernel, InitMode, Preset, SimConfig, TerrainType,
@@ -624,6 +628,22 @@ pub fn run() -> io::Result<()> {
         return Ok(());
     }
 
+    if args.mode() == Mode::HeadlessAnsi {
+        let seed = args.seed.unwrap_or(1);
+        let agents = args.population.unwrap_or(50_000);
+        print!(
+            "{}",
+            headless_ansi_frame(
+                args.headless_cols,
+                args.headless_rows,
+                args.headless_steps,
+                seed,
+                agents,
+            )
+        );
+        return Ok(());
+    }
+
     args.validate()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
@@ -675,6 +695,88 @@ pub fn run() -> io::Result<()> {
     }
 
     Ok(())
+}
+
+/// Grid overlay color for the framed ANSI background — matches the wasm's
+/// `render_ansi_frame` look (`tslime-wasm/src/lib.rs`).
+const HEADLESS_GRID_COLOR: RgbColor = RgbColor {
+    r: 0x8f,
+    g: 0x8f,
+    b: 0x55,
+};
+const HEADLESS_GRID_OPACITY: f32 = 0.35;
+
+/// Renders the exact ANSI frame the vendored wasm's `render_ansi_frame`
+/// produces for a `cols`×`rows` terminal, from fresh isolated state.
+///
+/// Mirrors the wasm recipe byte-for-byte: a 400×200 `Simulation` seeded with
+/// `InitMode::Random`, `Palette::Slime`, `AdaptiveBrightness::new(100, true)`
+/// with the wasm's `brightness = 2.2` divisor baked into the gain, and the
+/// same grid/accent parameters — so `--headless-ansi` output is a golden
+/// frame the wasm reproduces byte-identically.
+pub fn headless_ansi_frame(
+    cols: usize,
+    rows: usize,
+    steps: usize,
+    seed: u64,
+    agents: usize,
+) -> String {
+    let (sim_w, sim_h) = (400usize, 200usize);
+    let mut config = SimConfig::default();
+    if let Some(species) = config.species_configs.first_mut() {
+        species.count = agents;
+    }
+    let mut sim = Simulation::new(sim_w, sim_h, config, seed, InitMode::Random, 0);
+
+    let geom = FrameGeometry {
+        cols,
+        rows,
+        ring_cols: FRAME_RING_COLS,
+        ring_rows: FRAME_RING_ROWS,
+    };
+    let (iw, ih) = geom.interior();
+
+    let mut adaptive = AdaptiveBrightness::new(100, true);
+    // Matches the wasm's default render brightness (`TslimeWasm::new`).
+    let brightness: f32 = 2.2;
+
+    let mut grid = GridRenderer::new(
+        GridStyle::Cross,
+        5,
+        HEADLESS_GRID_COLOR,
+        HEADLESS_GRID_OPACITY,
+        false,
+    );
+    grid.initialize(iw, ih);
+
+    let mut frame = DownsampledFrame::new(iw, ih);
+    let mut trail: Vec<f32> = Vec::new();
+
+    let mapping = IntensityMapping::logarithmic(10.0);
+    let accent = palette_accent_color(&Palette::Slime, false, false, 0.0, Some(&mapping));
+
+    let mut out = String::new();
+    for _ in 1..=steps {
+        sim.update(1.0);
+        sim.trail_map_blended(&mut trail);
+        downsample(&trail, sim_w, sim_h, iw, ih, &mut frame);
+
+        adaptive.update(frame.cells());
+        let gain = adaptive.get_max_brightness() / brightness.max(0.05);
+
+        out = render_ansi_framed(
+            frame.cells(),
+            &geom,
+            Palette::Slime,
+            Charset::Ascii,
+            gain,
+            Some(&grid),
+            HEADLESS_GRID_COLOR,
+            HEADLESS_GRID_OPACITY,
+            Some(accent),
+        );
+    }
+    out
 }
 
 /// Executes the "Print" mode.
@@ -1483,6 +1585,16 @@ mod tests {
     use crate::render::palette::{IntensityMapping, Palette, PaletteCycle, PaletteCycleMode};
     use crate::simulation::config::WindowFrame;
     use crate::terminal::control::MouseInteractionMode;
+
+    #[test]
+    fn headless_ansi_is_deterministic_and_framed() {
+        let a = crate::app::headless_ansi_frame(80, 24, 50, 1, 50_000);
+        let b = crate::app::headless_ansi_frame(80, 24, 50, 1, 50_000);
+        assert_eq!(a, b, "fresh state + fixed steps ⇒ identical");
+        assert!(a.contains('\u{2588}'), "glow ring present");
+        let c = crate::app::headless_ansi_frame(80, 24, 51, 1, 50_000);
+        assert_ne!(a, c, "different step count ⇒ different frame");
+    }
 
     #[test]
     fn sync_renderer_caches_pushes_charset_and_window_frame() {
