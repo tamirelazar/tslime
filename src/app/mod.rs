@@ -27,7 +27,7 @@ use crate::render::palette::{
 use crate::render::palette_editor::{
     EditorComponent, EditorMode, PaletteEditorOverlay, PaletteEditorState,
 };
-use crate::render::window::{FRAME_RING_COLS, FRAME_RING_ROWS};
+use crate::render::window::{FRAME_RING_COLS, FRAME_RING_ROWS, GRID_COLOR, GRID_OPACITY};
 use crate::simulation;
 use crate::simulation::config::{
     Attractor, DiffusionKernel, InitMode, Preset, SimConfig, TerrainType,
@@ -697,15 +697,6 @@ pub fn run() -> io::Result<()> {
     Ok(())
 }
 
-/// Grid overlay color for the framed ANSI background — matches the wasm's
-/// `render_ansi_frame` look (`tslime-wasm/src/lib.rs`).
-const HEADLESS_GRID_COLOR: RgbColor = RgbColor {
-    r: 0x8f,
-    g: 0x8f,
-    b: 0x55,
-};
-const HEADLESS_GRID_OPACITY: f32 = 0.35;
-
 /// Renders the exact ANSI frame the vendored wasm's `render_ansi_frame`
 /// produces for a `cols`×`rows` terminal, from fresh isolated state.
 ///
@@ -740,13 +731,7 @@ pub fn headless_ansi_frame(
     // Matches the wasm's default render brightness (`TslimeWasm::new`).
     let brightness: f32 = 2.2;
 
-    let mut grid = GridRenderer::new(
-        GridStyle::Cross,
-        5,
-        HEADLESS_GRID_COLOR,
-        HEADLESS_GRID_OPACITY,
-        false,
-    );
+    let mut grid = GridRenderer::new(GridStyle::Cross, 5, GRID_COLOR, GRID_OPACITY, false);
     grid.initialize(iw, ih);
 
     let mut frame = DownsampledFrame::new(iw, ih);
@@ -771,8 +756,8 @@ pub fn headless_ansi_frame(
             Charset::Ascii,
             gain,
             Some(&grid),
-            HEADLESS_GRID_COLOR,
-            HEADLESS_GRID_OPACITY,
+            GRID_COLOR,
+            GRID_OPACITY,
             Some(accent),
         );
     }

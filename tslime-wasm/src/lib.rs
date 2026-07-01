@@ -6,10 +6,8 @@ use tslime::render::ansi::{render_ansi_cells, render_ansi_framed, FrameGeometry}
 use tslime::render::charset::Charset;
 use tslime::render::downsample::{downsample, DownsampledFrame};
 use tslime::render::grid::{GridRenderer, GridStyle};
-use tslime::render::palette::{
-    palette_accent_color, IntensityMapping, Palette, RgbColor, ALL_PALETTES,
-};
-use tslime::render::window::{FRAME_RING_COLS, FRAME_RING_ROWS};
+use tslime::render::palette::{palette_accent_color, IntensityMapping, Palette, ALL_PALETTES};
+use tslime::render::window::{FRAME_RING_COLS, FRAME_RING_ROWS, GRID_COLOR, GRID_OPACITY};
 use tslime::simulation::{
     config::{InitMode, SimConfig, PRESETS},
     Simulation,
@@ -17,14 +15,6 @@ use tslime::simulation::{
 use wasm_bindgen::prelude::*;
 
 mod renderer;
-
-/// Grid overlay color for the framed ANSI background — matches the info look.
-const GRID_COLOR: RgbColor = RgbColor {
-    r: 0x8f,
-    g: 0x8f,
-    b: 0x55,
-};
-const GRID_OPACITY: f32 = 0.35;
 
 #[wasm_bindgen]
 pub struct TslimeWasm {
@@ -121,8 +111,9 @@ impl TslimeWasm {
     /// (downsampled to the interior, i.e. `cols`×`rows` minus the frame ring)
     /// plus a grid overlay and a glow ring — matching the info look. The white
     /// point is tracked adaptively across frames (matching the TUI's
-    /// auto-normalize), so no manual gain is needed. Independent of WebGL —
-    /// works in headless mode.
+    /// auto-normalize); the resulting gain divides that adaptive white point
+    /// by the `brightness` knob (`gain = get_max_brightness() /
+    /// brightness.max(0.05)`). Independent of WebGL — works in headless mode.
     ///
     /// `render_ansi_framed` only supports the ASCII charset (it asserts this);
     /// in half-block mode this falls back to the original unframed render.

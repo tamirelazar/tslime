@@ -133,8 +133,9 @@ fn ascii_cell_fg_glyph(
     (fg, glyph)
 }
 
-/// Full-terminal frame geometry: an outer ring (glow, added in Task 2) around
-/// an interior field of cells.
+/// Full-terminal frame geometry: an outer ring around an interior field of
+/// cells. The ring is drawn as a glow when a glow accent is supplied to
+/// [`render_ansi_framed`], or left blank otherwise.
 pub struct FrameGeometry {
     /// Full terminal columns.
     pub cols: usize,
@@ -157,8 +158,8 @@ impl FrameGeometry {
 }
 
 /// Render a full terminal frame from interior-sized field cells, with an
-/// optional grid overlay on the interior. The outer ring (glow, added in
-/// Task 2) is emitted as blank space for now.
+/// optional grid overlay on the interior. The outer ring is drawn as a glow
+/// when `glow_accent` is `Some(_)`, or emitted as blank space when `None`.
 ///
 /// * `field_cells` — the FIELD downsampled to interior dims (`geom.interior()`).
 /// * `grid` — pre-initialized to interior dims, or `None` for no grid.
