@@ -133,36 +133,64 @@ fn ascii_cell_fg_glyph(
     (fg, glyph)
 }
 
-/// Full-terminal frame geometry: an outer ring around an interior field of
-/// cells. The ring is drawn as a glow when a glow accent is supplied to
-/// [`render_ansi_framed`], or left blank otherwise.
+/// Full-terminal frame geometry. Three concentric zones per side, from the
+/// terminal edge inward: an **outer padding** band (`pad_*`, dark/blank — the
+/// grid shows through it), a **glow border** band (`ring_*`, drawn as a glow
+/// when a glow accent is supplied to [`render_ansi_framed`]), and the interior
+/// field. `pad_*` defaults to 0, collapsing this to the legacy ring+interior
+/// layout.
 pub struct FrameGeometry {
     /// Full terminal columns.
     pub cols: usize,
     /// Full terminal rows.
     pub rows: usize,
-    /// Glow ring thickness per side, in columns (0 = no ring).
+    /// Glow border thickness per side, in columns (0 = no border).
     pub ring_cols: usize,
-    /// Glow ring thickness per side, in rows (0 = no ring).
+    /// Glow border thickness per side, in rows (0 = no border).
     pub ring_rows: usize,
+    /// Outer dark-padding thickness per side, in columns (0 = none). Lies
+    /// *outside* the glow border; the full-terminal grid shows through it.
+    pub pad_cols: usize,
+    /// Outer dark-padding thickness per side, in rows. See [`Self::pad_cols`].
+    pub pad_rows: usize,
 }
 
 impl FrameGeometry {
-    /// Interior dimensions after subtracting the ring from both sides.
-    pub fn interior(&self) -> (usize, usize) {
+    /// Total inset per side (outer padding + glow border), in (cols, rows).
+    fn inset(&self) -> (usize, usize) {
         (
-            self.cols.saturating_sub(2 * self.ring_cols),
-            self.rows.saturating_sub(2 * self.ring_rows),
+            self.pad_cols + self.ring_cols,
+            self.pad_rows + self.ring_rows,
+        )
+    }
+
+    /// Interior dimensions after subtracting padding + border from both sides.
+    pub fn interior(&self) -> (usize, usize) {
+        let (ic, ir) = self.inset();
+        (
+            self.cols.saturating_sub(2 * ic),
+            self.rows.saturating_sub(2 * ir),
         )
     }
 }
 
 /// Render a full terminal frame from interior-sized field cells, with an
-/// optional grid overlay on the interior. The outer ring is drawn as a glow
-/// when `glow_accent` is `Some(_)`, or emitted as blank space when `None`.
+/// optional grid overlay. The glow border is drawn when `glow_accent` is
+/// `Some(_)`, or emitted as blank space when `None`; any outer padding
+/// ([`FrameGeometry::pad_cols`]/`pad_rows`) is blank.
 ///
 /// * `field_cells` — the FIELD downsampled to interior dims (`geom.interior()`).
-/// * `grid` — pre-initialized to interior dims, or `None` for no grid.
+/// * `grid` — pre-initialized to interior dims (legacy path) or to the FULL
+///   terminal dims (`geom.cols`×`geom.rows`) when `grid_on_empty` is set, so the
+///   grid spans the outer padding as well. `None` for no grid.
+/// * `grid_on_empty` — **opt-in**; when `true`, grid lines are drawn on *empty*
+///   (or near-black) cells across the WHOLE terminal — including the outer
+///   padding, giving a constant grid band around the frame — by substituting a
+///   box-drawing glyph (`┼`/`│`/`─`) in a dimmed grid color, like the native
+///   live TUI (`FrameBuffer::render_grid_background`). Lit / glow-border cells
+///   are left untouched so content takes precedence. When `false` (default) the
+///   grid is a foreground-only recolor of every *interior* grid cell — the
+///   legacy behavior, kept byte-identical for existing callers.
 #[allow(clippy::too_many_arguments)]
 pub fn render_ansi_framed(
     field_cells: &[Cell],
@@ -174,6 +202,7 @@ pub fn render_ansi_framed(
     grid_color: RgbColor,
     grid_opacity: f32,
     glow_accent: Option<RgbColor>,
+    grid_on_empty: bool,
 ) -> String {
     debug_assert!(matches!(charset, Charset::Ascii), "info path is ASCII-only");
     let inv_gain = if max_brightness > 0.0 {
@@ -183,6 +212,14 @@ pub fn render_ansi_framed(
     };
     let mapping = IntensityMapping::logarithmic(10.0);
     let (iw, ih) = geom.interior();
+    let (inset_c, inset_r) = geom.inset();
+    // Dimmed grid color (grid_color scaled by opacity), matching the native
+    // `render_grid_background` blend against a dark background.
+    let grid_dim = RgbColor {
+        r: (grid_color.r as f32 * grid_opacity) as u8,
+        g: (grid_color.g as f32 * grid_opacity) as u8,
+        b: (grid_color.b as f32 * grid_opacity) as u8,
+    };
     let mut out = String::with_capacity(geom.cols * geom.rows * 20 + geom.rows * 8);
     out.push_str("\x1b[H");
     for y in 0..geom.rows {
@@ -191,14 +228,38 @@ pub fn render_ansi_framed(
         out.push_str(";1H");
         let mut last_fg: Option<RgbColor> = None;
         for x in 0..geom.cols {
-            let in_ring = x < geom.ring_cols
-                || x >= geom.cols.saturating_sub(geom.ring_cols)
-                || y < geom.ring_rows
-                || y >= geom.rows.saturating_sub(geom.ring_rows);
-            if in_ring {
+            // Zone classification. Padding is the band outside the glow border;
+            // the glow border is the band between padding and interior.
+            let in_pad = x < geom.pad_cols
+                || x >= geom.cols.saturating_sub(geom.pad_cols)
+                || y < geom.pad_rows
+                || y >= geom.rows.saturating_sub(geom.pad_rows);
+            let in_inset = x < inset_c
+                || x >= geom.cols.saturating_sub(inset_c)
+                || y < inset_r
+                || y >= geom.rows.saturating_sub(inset_r);
+            let in_glow = in_inset && !in_pad;
+
+            // Resolve the base cell (before the grid overlay): a glyph plus an
+            // optional foreground. `None` fg = a blank/dark cell (no SGR).
+            let (mut fg, mut glyph): (Option<RgbColor>, char) = if in_pad {
+                (None, ' ')
+            } else if in_glow {
                 if let Some(accent) = glow_accent {
-                    let dc = x.min(geom.cols - 1 - x) as f32 / geom.ring_cols.max(1) as f32;
-                    let dr = y.min(geom.rows - 1 - y) as f32 / geom.ring_rows.max(1) as f32;
+                    // Depth into the glow band from its outer edge (the padding
+                    // boundary). Reduces to the legacy formula when pad == 0.
+                    let dc = (x - geom.pad_cols).min(
+                        (geom.cols - 1)
+                            .saturating_sub(geom.pad_cols)
+                            .saturating_sub(x),
+                    ) as f32
+                        / geom.ring_cols.max(1) as f32;
+                    let dr = (y - geom.pad_rows).min(
+                        (geom.rows - 1)
+                            .saturating_sub(geom.pad_rows)
+                            .saturating_sub(y),
+                    ) as f32
+                        / geom.ring_rows.max(1) as f32;
                     let depth = dc.min(dr).clamp(0.0, 1.0);
                     let alpha = 1.0 - depth * 0.7;
                     let ch = if depth < 0.34 {
@@ -208,30 +269,54 @@ pub fn render_ansi_framed(
                     } else {
                         '\u{2592}'
                     };
-                    let fg = accent.with_alpha(alpha);
-                    if last_fg != Some(fg) {
-                        out.push_str(&truecolor_ansi(fg.r, fg.g, fg.b, true));
-                        last_fg = Some(fg);
-                    }
-                    out.push(ch);
+                    (Some(accent.with_alpha(alpha)), ch)
                 } else {
-                    out.push(' ');
-                    last_fg = None;
+                    (None, ' ')
                 }
-                continue;
-            }
-            let ix = x - geom.ring_cols;
-            let iy = y - geom.ring_rows;
-            let (mut fg, glyph) =
-                ascii_cell_fg_glyph(&field_cells[iy * iw + ix], inv_gain, &palette, &mapping);
+            } else {
+                let ix = x - inset_c;
+                let iy = y - inset_r;
+                let (cfg, cglyph) =
+                    ascii_cell_fg_glyph(&field_cells[iy * iw + ix], inv_gain, &palette, &mapping);
+                (Some(cfg), cglyph)
+            };
+
             if let Some(g) = grid {
-                if g.is_grid_position(ix, iy, iw, ih) {
-                    fg = g.blend_color(grid_color, fg, grid_opacity);
+                if grid_on_empty {
+                    // Full-terminal grid on empty / near-black cells (padding +
+                    // sparse field); glow-border cells are opaque and skipped.
+                    let is_empty = glyph == ' '
+                        || fg.map_or(true, |c| (c.r as u32 + c.g as u32 + c.b as u32) < 30);
+                    if is_empty && g.is_grid_position(x, y, geom.cols, geom.rows) {
+                        let (on_v, on_h) = g.get_grid_lines(x, y);
+                        glyph = match (on_v, on_h) {
+                            (true, true) => '\u{253c}',  // ┼
+                            (true, false) => '\u{2502}', // │
+                            (false, true) => '\u{2500}', // ─
+                            (false, false) => glyph,
+                        };
+                        if glyph != ' ' {
+                            fg = Some(grid_dim);
+                        }
+                    }
+                } else if !in_inset {
+                    // Legacy: foreground-only recolor of every interior grid cell.
+                    if g.is_grid_position(x - inset_c, y - inset_r, iw, ih) {
+                        if let Some(cell_fg) = fg {
+                            fg = Some(g.blend_color(grid_color, cell_fg, grid_opacity));
+                        }
+                    }
                 }
             }
-            if last_fg != Some(fg) {
-                out.push_str(&truecolor_ansi(fg.r, fg.g, fg.b, true));
-                last_fg = Some(fg);
+
+            match fg {
+                Some(c) => {
+                    if last_fg != Some(c) {
+                        out.push_str(&truecolor_ansi(c.r, c.g, c.b, true));
+                        last_fg = Some(c);
+                    }
+                }
+                None => last_fg = None,
             }
             out.push(glyph);
         }
@@ -264,6 +349,8 @@ mod tests {
             rows: 1,
             ring_cols: 0,
             ring_rows: 0,
+            pad_cols: 0,
+            pad_rows: 0,
         };
         let mut grid = GridRenderer::new(
             GridStyle::Cross,
@@ -291,6 +378,7 @@ mod tests {
             },
             0.35,
             None,
+            false,
         );
         let plain = render_ansi_framed(
             &interior,
@@ -302,6 +390,7 @@ mod tests {
             RgbColor { r: 0, g: 0, b: 0 },
             0.0,
             None,
+            false,
         );
         // grid at cols {2,4} for size 3 over width 6 → framed differs from plain, and
         // both are deterministic + nonempty.
@@ -323,8 +412,108 @@ mod tests {
                 },
                 0.35,
                 None,
+                false,
             ),
             "deterministic"
+        );
+    }
+
+    #[test]
+    fn grid_on_empty_draws_box_glyphs_on_empty_cells() {
+        // 6x1 interior, no ring, all-EMPTY cells (brightness 0 → space glyph).
+        // Cross grid size 3 → vertical lines at interior cols {2,4}.
+        let interior = vec![Cell::default(); 6];
+        let geom = FrameGeometry {
+            cols: 6,
+            rows: 1,
+            ring_cols: 0,
+            ring_rows: 0,
+            pad_cols: 0,
+            pad_rows: 0,
+        };
+        let color = RgbColor {
+            r: 0x8f,
+            g: 0x8f,
+            b: 0x55,
+        };
+        let mut grid = GridRenderer::new(GridStyle::Cross, 3, color, 0.35, false);
+        grid.initialize(6, 1);
+
+        // Legacy (fg-only) grid over an all-empty field: every glyph is a space,
+        // so no visible line — no box-drawing glyph is emitted.
+        let legacy = render_ansi_framed(
+            &interior,
+            &geom,
+            Palette::Warm,
+            Charset::Ascii,
+            1.0,
+            Some(&grid),
+            color,
+            0.35,
+            None,
+            false,
+        );
+        assert!(
+            !legacy.contains('\u{2502}'),
+            "legacy path must not draw box-drawing grid glyphs"
+        );
+
+        // Opt-in: empty grid columns become a vertical box-drawing glyph.
+        let on_empty = render_ansi_framed(
+            &interior,
+            &geom,
+            Palette::Warm,
+            Charset::Ascii,
+            1.0,
+            Some(&grid),
+            color,
+            0.35,
+            None,
+            true,
+        );
+        assert!(
+            on_empty.contains('\u{2502}'),
+            "grid-on-empty must draw │ on empty grid columns"
+        );
+        assert_ne!(legacy, on_empty, "opt-in must change the frame");
+    }
+
+    #[test]
+    fn grid_on_empty_spans_outer_padding() {
+        // 12x1, no glow ring, 3-col outer padding → 6-col interior. Grid size 6
+        // over the full terminal → vertical lines at cols {2,10}, both inside the
+        // outer padding band → a box glyph must be drawn OUTSIDE the field.
+        let interior = vec![Cell::default(); 6];
+        let geom = FrameGeometry {
+            cols: 12,
+            rows: 1,
+            ring_cols: 0,
+            ring_rows: 0,
+            pad_cols: 3,
+            pad_rows: 0,
+        };
+        let color = RgbColor {
+            r: 0x8f,
+            g: 0x8f,
+            b: 0x55,
+        };
+        let mut grid = GridRenderer::new(GridStyle::Cross, 6, color, 0.35, false);
+        grid.initialize(12, 1); // FULL terminal dims for the grid_on_empty path
+        let out = render_ansi_framed(
+            &interior,
+            &geom,
+            Palette::Warm,
+            Charset::Ascii,
+            1.0,
+            Some(&grid),
+            color,
+            0.35,
+            None,
+            true,
+        );
+        assert!(
+            out.contains('\u{2502}'),
+            "grid must draw │ across the outer padding band"
         );
     }
 
@@ -337,6 +526,8 @@ mod tests {
             rows: 4,
             ring_cols: 1,
             ring_rows: 1,
+            pad_cols: 0,
+            pad_rows: 0,
         };
         let accent = RgbColor {
             r: 0xff,
@@ -353,6 +544,7 @@ mod tests {
             RgbColor { r: 0, g: 0, b: 0 },
             0.0,
             Some(accent),
+            false,
         );
         // Outer ring cells use the full block; the frame must contain █.
         assert!(
@@ -370,6 +562,7 @@ mod tests {
             RgbColor { r: 0, g: 0, b: 0 },
             0.0,
             Some(accent),
+            false,
         );
         assert_eq!(framed, again);
     }

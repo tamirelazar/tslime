@@ -709,6 +709,37 @@ pub struct Args {
     pub headless_steps: usize,
 
     #[arg(
+        long = "frame-padding-x",
+        value_name = "FRAC",
+        default_value_t = 0.0,
+        help = "Outer dark-padding as a fraction of terminal WIDTH for --headless-ansi (grid shows through it); mirrors the wasm set_frame_padding opt-in"
+    )]
+    /// Outer dark-padding as a fraction of terminal width for `--headless-ansi`,
+    /// outside the glow border. Mirrors the wasm `set_frame_padding` opt-in;
+    /// default 0 keeps the legacy layout byte-identical.
+    pub headless_frame_padding_x: f32,
+
+    #[arg(
+        long = "frame-padding-y",
+        value_name = "FRAC",
+        default_value_t = 0.0,
+        help = "Outer dark-padding as a fraction of terminal HEIGHT for --headless-ansi (grid shows through it); mirrors the wasm set_frame_padding opt-in"
+    )]
+    /// Outer dark-padding as a fraction of terminal height for `--headless-ansi`,
+    /// outside the glow border. Mirrors the wasm `set_frame_padding` opt-in;
+    /// default 0 keeps the legacy layout byte-identical.
+    pub headless_frame_padding_y: f32,
+
+    #[arg(
+        long = "grid-on-empty",
+        help = "Draw grid lines on empty cells (box-drawing glyphs) for --headless-ansi; mirrors the wasm set_grid_on_empty opt-in"
+    )]
+    /// When set, `--headless-ansi` draws the grid on empty/near-black cells as
+    /// dimmed box-drawing glyphs (matching the native live TUI), mirroring the
+    /// wasm `set_grid_on_empty` opt-in. Off = legacy foreground-only grid.
+    pub headless_grid_on_empty: bool,
+
+    #[arg(
         short = 's',
         long = "seed",
         value_name = "INT",
@@ -2270,6 +2301,9 @@ impl Default for Args {
             headless_cols: 80,
             headless_rows: 24,
             headless_steps: 300,
+            headless_frame_padding_x: 0.0,
+            headless_frame_padding_y: 0.0,
+            headless_grid_on_empty: false,
             seed: None,
             population: Some(population::DEFAULT_POPULATION),
             sensor_angle: Some(agent_consts::DEFAULT_SENSOR_ANGLE),
