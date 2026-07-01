@@ -2,10 +2,12 @@ use crate::renderer::WebGlRenderer;
 use std::cell::RefCell;
 use std::rc::Rc;
 use tslime::render::adaptive_brightness::AdaptiveBrightness;
-use tslime::render::ansi::render_ansi_cells;
+use tslime::render::ansi::{render_ansi_cells, render_ansi_framed, FrameGeometry};
 use tslime::render::charset::Charset;
 use tslime::render::downsample::{downsample, DownsampledFrame};
-use tslime::render::palette::{Palette, ALL_PALETTES};
+use tslime::render::grid::{GridRenderer, GridStyle};
+use tslime::render::palette::{palette_accent_color, IntensityMapping, Palette, ALL_PALETTES};
+use tslime::render::window::{FRAME_RING_COLS, FRAME_RING_ROWS, GRID_COLOR, GRID_OPACITY};
 use tslime::simulation::{
     config::{InitMode, SimConfig, PRESETS},
     Simulation,
@@ -35,6 +37,10 @@ pub struct TslimeWasm {
     // scales the adaptive white point down: >1 = brighter veins + more lit cells.
     brightness: f32,
     charset: Charset,
+    // Grid overlay for the framed ANSI background, lazily (re)built when the
+    // interior dims (terminal size minus the frame ring) change.
+    grid: Option<GridRenderer>,
+    grid_dims: (usize, usize),
 }
 
 #[wasm_bindgen]
@@ -82,6 +88,8 @@ impl TslimeWasm {
             // brightness lift keeps the airy ASCII texture while staying legible.
             brightness: 2.2,
             charset: Charset::Ascii,
+            grid: None,
+            grid_dims: (0, 0),
         })
     }
 
@@ -99,12 +107,85 @@ impl TslimeWasm {
         renderer.render(2.0, (0.2, 0.8, 1.0));
     }
 
-    /// Render one ANSI frame for a `cols`×`rows` terminal. The white point is
-    /// tracked adaptively across frames (matching the TUI's auto-normalize), so
-    /// no manual gain is needed. Independent of WebGL — works in headless mode.
+    /// Render one ANSI frame for a `cols`×`rows` terminal: an inset field
+    /// (downsampled to the interior, i.e. `cols`×`rows` minus the frame ring)
+    /// plus a grid overlay and a glow ring — matching the info look. The white
+    /// point is tracked adaptively across frames (matching the TUI's
+    /// auto-normalize); the resulting gain divides that adaptive white point
+    /// by the `brightness` knob (`gain = get_max_brightness() /
+    /// brightness.max(0.05)`). Independent of WebGL — works in headless mode.
+    ///
+    /// `render_ansi_framed` only supports the ASCII charset (it asserts this);
+    /// in half-block mode this falls back to the original unframed render.
     pub fn render_ansi_frame(&mut self, cols: usize, rows: usize) -> String {
         self.simulation.trail_map_blended(&mut self.trail_buffer);
 
+        if !matches!(self.charset, Charset::Ascii) {
+            return self.render_ansi_frame_flat(cols, rows);
+        }
+
+        let geom = FrameGeometry {
+            cols,
+            rows,
+            ring_cols: FRAME_RING_COLS,
+            ring_rows: FRAME_RING_ROWS,
+        };
+        let (iw, ih) = geom.interior();
+
+        // (Re)allocate the downsample target if the interior grid changed.
+        let need_new = match self.frame.as_ref() {
+            Some(f) => f.width() != iw || f.height() != ih,
+            None => true,
+        };
+        if need_new {
+            self.frame = Some(DownsampledFrame::new(iw, ih));
+        }
+        let frame = self.frame.as_mut().unwrap();
+        downsample(
+            &self.trail_buffer,
+            self.width as usize,
+            self.height as usize,
+            iw,
+            ih,
+            frame,
+        );
+
+        // Update the adaptive white point from this frame, then use it as the
+        // brightness divisor — identical recipe to the TUI print path.
+        self.adaptive.update(frame.cells());
+        // Scale the white point down by `brightness` (>1 brightens the veins and
+        // lifts more cells over the visibility threshold).
+        let gain = self.adaptive.get_max_brightness() / self.brightness.max(0.05);
+
+        // Lazily (re)build the grid overlay when the interior dims change.
+        if self.grid_dims != (iw, ih) {
+            let mut grid = GridRenderer::new(GridStyle::Cross, 5, GRID_COLOR, GRID_OPACITY, false);
+            grid.initialize(iw, ih);
+            self.grid = Some(grid);
+            self.grid_dims = (iw, ih);
+        }
+
+        // Glow ring accent, sampled from the palette the same way the TUI's
+        // key-binding/badge accents are (logarithmic intensity mapping).
+        let mapping = IntensityMapping::logarithmic(10.0);
+        let accent = palette_accent_color(&self.palette, false, false, 0.0, Some(&mapping));
+
+        render_ansi_framed(
+            frame.cells(),
+            &geom,
+            self.palette.clone(),
+            self.charset.clone(),
+            gain,
+            self.grid.as_ref(),
+            GRID_COLOR,
+            GRID_OPACITY,
+            Some(accent),
+        )
+    }
+
+    /// Original unframed ANSI render (no inset/grid/glow) — used when the
+    /// charset is half-block, which `render_ansi_framed` doesn't support.
+    fn render_ansi_frame_flat(&mut self, cols: usize, rows: usize) -> String {
         // (Re)allocate the downsample target if the terminal grid changed.
         let need_new = match self.frame.as_ref() {
             Some(f) => f.width() != cols || f.height() != rows,
@@ -123,11 +204,7 @@ impl TslimeWasm {
             frame,
         );
 
-        // Update the adaptive white point from this frame, then use it as the
-        // brightness divisor — identical recipe to the TUI print path.
         self.adaptive.update(frame.cells());
-        // Scale the white point down by `brightness` (>1 brightens the veins and
-        // lifts more cells over the visibility threshold).
         let gain = self.adaptive.get_max_brightness() / self.brightness.max(0.05);
 
         render_ansi_cells(
@@ -283,4 +360,57 @@ impl TslimeWasm {
 #[wasm_bindgen]
 pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ansi_frame_is_framed_and_deterministic() {
+        // headless (empty canvas id) sim; two runs from identical fresh state match.
+        let mut a = TslimeWasm::new(400, 200, "", 1).unwrap();
+        let mut b = TslimeWasm::new(400, 200, "", 1).unwrap();
+        for _ in 0..10 {
+            a.step();
+            let _ = a.render_ansi_frame(80, 24);
+        }
+        for _ in 0..10 {
+            b.step();
+            let _ = b.render_ansi_frame(80, 24);
+        }
+        let fa = a.render_ansi_frame(80, 24);
+        let fb = b.render_ansi_frame(80, 24);
+        assert_eq!(fa, fb, "same fresh state + cadence => identical frame");
+        assert!(fa.contains('\u{2588}'), "glow ring present");
+    }
+
+    #[test]
+    fn headless_matches_wasm_over_info_identity() {
+        // wasm configured to the /info identity: Warm palette + brightness 1.0 (no web-demo lift).
+        let mut w = TslimeWasm::new(400, 200, "", 1).unwrap();
+        let warm_id = ALL_PALETTES
+            .iter()
+            .position(|p| matches!(p, Palette::Warm))
+            .unwrap() as u32;
+        w.set_palette(warm_id);
+        w.set_brightness(1.0);
+        let cols = 80;
+        let rows = 24;
+        let n = 40;
+        let mut wasm_frame = String::new();
+        for _ in 0..n {
+            w.step();
+            wasm_frame = w.render_ansi_frame(cols, rows);
+        }
+
+        // native golden generator (now Warm + bare gain), same (cols,rows,steps,seed,agents).
+        let headless = tslime::app::headless_ansi_frame(cols, rows, n, 1, 50_000);
+
+        assert_eq!(
+            headless, wasm_frame,
+            "native --headless-ansi must byte-match the wasm render_ansi_frame over the /info identity (Warm, brightness 1.0)"
+        );
+        assert!(headless.contains('\u{2588}'), "glow ring present");
+    }
 }
