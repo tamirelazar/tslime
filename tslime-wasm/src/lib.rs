@@ -41,6 +41,22 @@ pub struct TslimeWasm {
     // interior dims (terminal size minus the frame ring) change.
     grid: Option<GridRenderer>,
     grid_dims: (usize, usize),
+    // Glow-border thickness per side, fixed at the crate defaults
+    // `FRAME_RING_COLS`/`FRAME_RING_ROWS`.
+    ring_cols: usize,
+    ring_rows: usize,
+    // Opt-in OUTER dark padding as a FRACTION of each terminal dimension
+    // (outside the glow border), set via `set_frame_padding`. Default 0 keeps
+    // `render_ansi_frame` byte-identical; using a fraction gives the same
+    // proportional inset at any terminal size. The full-terminal grid shows
+    // through this band when grid_on_empty is set.
+    pad_frac_x: f32,
+    pad_frac_y: f32,
+    // Opt-in grid-on-empty: when true, grid lines are drawn on empty/near-black
+    // cells across the WHOLE terminal (incl. the padding band) as dimmed
+    // box-drawing glyphs (native look). Default false keeps the legacy
+    // foreground-only interior grid so existing callers are unaffected.
+    grid_on_empty: bool,
 }
 
 #[wasm_bindgen]
@@ -90,6 +106,11 @@ impl TslimeWasm {
             charset: Charset::Ascii,
             grid: None,
             grid_dims: (0, 0),
+            ring_cols: FRAME_RING_COLS,
+            ring_rows: FRAME_RING_ROWS,
+            pad_frac_x: 0.0,
+            pad_frac_y: 0.0,
+            grid_on_empty: false,
         })
     }
 
@@ -127,8 +148,11 @@ impl TslimeWasm {
         let geom = FrameGeometry {
             cols,
             rows,
-            ring_cols: FRAME_RING_COLS,
-            ring_rows: FRAME_RING_ROWS,
+            ring_cols: self.ring_cols,
+            ring_rows: self.ring_rows,
+            // Fractional padding → cells, matching the native golden's rounding.
+            pad_cols: (self.pad_frac_x * cols as f32) as usize,
+            pad_rows: (self.pad_frac_y * rows as f32) as usize,
         };
         let (iw, ih) = geom.interior();
 
@@ -157,12 +181,19 @@ impl TslimeWasm {
         // lifts more cells over the visibility threshold).
         let gain = self.adaptive.get_max_brightness() / self.brightness.max(0.05);
 
-        // Lazily (re)build the grid overlay when the interior dims change.
-        if self.grid_dims != (iw, ih) {
+        // Lazily (re)build the grid overlay when its target dims change. The
+        // grid spans the FULL terminal when painting on empty cells (so it shows
+        // in the outer padding); otherwise it is confined to the interior field.
+        let grid_target = if self.grid_on_empty {
+            (cols, rows)
+        } else {
+            (iw, ih)
+        };
+        if self.grid_dims != grid_target {
             let mut grid = GridRenderer::new(GridStyle::Cross, 5, GRID_COLOR, GRID_OPACITY, false);
-            grid.initialize(iw, ih);
+            grid.initialize(grid_target.0, grid_target.1);
             self.grid = Some(grid);
-            self.grid_dims = (iw, ih);
+            self.grid_dims = grid_target;
         }
 
         // Glow ring accent, sampled from the palette the same way the TUI's
@@ -180,6 +211,7 @@ impl TslimeWasm {
             GRID_COLOR,
             GRID_OPACITY,
             Some(accent),
+            self.grid_on_empty,
         )
     }
 
@@ -335,6 +367,29 @@ impl TslimeWasm {
         self.brightness = brightness.max(0.05);
     }
 
+    /// **Opt-in.** Set the OUTER dark-padding as a FRACTION of each terminal
+    /// dimension (`frac_x` of width, `frac_y` of height), drawn *outside* the
+    /// glow border. Default 0 → unchanged framed render. A fraction gives the
+    /// same proportional inset at any terminal size (e.g. 0.25 ≈ the native
+    /// `/info` inset). The full-terminal grid shows through this band when
+    /// `set_grid_on_empty` is enabled. Render-only; no sim restart. Invalidates
+    /// the cached grid on the next frame.
+    pub fn set_frame_padding(&mut self, frac_x: f32, frac_y: f32) {
+        self.pad_frac_x = frac_x.max(0.0);
+        self.pad_frac_y = frac_y.max(0.0);
+        // Force the grid overlay to rebuild against the new interior dims.
+        self.grid_dims = (usize::MAX, usize::MAX);
+    }
+
+    /// **Opt-in.** When enabled, grid lines are drawn on *empty* / near-black
+    /// cells as dimmed box-drawing glyphs (`┼`/`│`/`─`), matching the native
+    /// live TUI's grid look; lit cells are left untouched. Disabled (default)
+    /// keeps the legacy foreground-only grid, which is invisible on empty space
+    /// — so existing callers see byte-identical output. Render-only; no restart.
+    pub fn set_grid_on_empty(&mut self, enabled: bool) {
+        self.grid_on_empty = enabled;
+    }
+
     /// Toggle the render charset: half-block (filled cells, denser) vs ASCII
     /// density glyphs (airy). Render-only; no sim restart.
     pub fn set_charset_halfblock(&mut self, halfblock: bool) {
@@ -405,7 +460,8 @@ mod tests {
         }
 
         // native golden generator (now Warm + bare gain), same (cols,rows,steps,seed,agents).
-        let headless = tslime::app::headless_ansi_frame(cols, rows, n, 1, 50_000);
+        // No outer padding + no grid-on-empty → matches the wasm's untouched defaults.
+        let headless = tslime::app::headless_ansi_frame(cols, rows, n, 1, 50_000, 0.0, 0.0, false);
 
         assert_eq!(
             headless, wasm_frame,

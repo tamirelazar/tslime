@@ -639,6 +639,9 @@ pub fn run() -> io::Result<()> {
                 args.headless_steps,
                 seed,
                 agents,
+                args.headless_frame_padding_x,
+                args.headless_frame_padding_y,
+                args.headless_grid_on_empty,
             )
         );
         return Ok(());
@@ -706,12 +709,16 @@ pub fn run() -> io::Result<()> {
 /// same grid/accent parameters — so `--headless-ansi` output is a golden
 /// frame the wasm reproduces byte-identically when configured to the same
 /// identity (Warm palette, brightness 1.0).
+#[allow(clippy::too_many_arguments)]
 pub fn headless_ansi_frame(
     cols: usize,
     rows: usize,
     steps: usize,
     seed: u64,
     agents: usize,
+    pad_frac_x: f32,
+    pad_frac_y: f32,
+    grid_on_empty: bool,
 ) -> String {
     let (sim_w, sim_h) = (400usize, 200usize);
     let mut config = SimConfig::default();
@@ -720,18 +727,29 @@ pub fn headless_ansi_frame(
     }
     let mut sim = Simulation::new(sim_w, sim_h, config, seed, InitMode::Random, 0);
 
+    // Outer padding as a fraction of each terminal dimension, so a single value
+    // gives the same proportional inset at any terminal size (identical rounding
+    // to the wasm `render_ansi_frame`).
     let geom = FrameGeometry {
         cols,
         rows,
         ring_cols: FRAME_RING_COLS,
         ring_rows: FRAME_RING_ROWS,
+        pad_cols: (pad_frac_x * cols as f32) as usize,
+        pad_rows: (pad_frac_y * rows as f32) as usize,
     };
     let (iw, ih) = geom.interior();
 
     let mut adaptive = AdaptiveBrightness::new(100, true);
 
     let mut grid = GridRenderer::new(GridStyle::Cross, 5, GRID_COLOR, GRID_OPACITY, false);
-    grid.initialize(iw, ih);
+    // Grid spans the full terminal when painting on empty cells (so it shows in
+    // the outer padding); otherwise it is confined to the interior field.
+    if grid_on_empty {
+        grid.initialize(cols, rows);
+    } else {
+        grid.initialize(iw, ih);
+    }
 
     let mut frame = DownsampledFrame::new(iw, ih);
     let mut trail: Vec<f32> = Vec::new();
@@ -758,6 +776,7 @@ pub fn headless_ansi_frame(
             GRID_COLOR,
             GRID_OPACITY,
             Some(accent),
+            grid_on_empty,
         );
     }
     out
@@ -1572,11 +1591,12 @@ mod tests {
 
     #[test]
     fn headless_ansi_is_deterministic_and_framed() {
-        let a = crate::app::headless_ansi_frame(80, 24, 50, 1, 50_000);
-        let b = crate::app::headless_ansi_frame(80, 24, 50, 1, 50_000);
+        // Default identity: no outer padding, grid off.
+        let a = crate::app::headless_ansi_frame(80, 24, 50, 1, 50_000, 0.0, 0.0, false);
+        let b = crate::app::headless_ansi_frame(80, 24, 50, 1, 50_000, 0.0, 0.0, false);
         assert_eq!(a, b, "fresh state + fixed steps ⇒ identical");
         assert!(a.contains('\u{2588}'), "glow ring present");
-        let c = crate::app::headless_ansi_frame(80, 24, 51, 1, 50_000);
+        let c = crate::app::headless_ansi_frame(80, 24, 51, 1, 50_000, 0.0, 0.0, false);
         assert_ne!(a, c, "different step count ⇒ different frame");
     }
 
