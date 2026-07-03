@@ -207,7 +207,16 @@ impl TslimeWasm {
             self.palette.clone(),
             self.charset.clone(),
             gain,
-            self.grid.as_ref(),
+            // Only overlay a grid when the opt-in box-glyph mode is on. With it
+            // off (the web-demo default) passing `None` avoids the legacy
+            // foreground-only recolor, which tints lit cells on grid lines — an
+            // artifact invisible on the default green palette but a visible
+            // colored stripe on contrasting palettes.
+            if self.grid_on_empty {
+                self.grid.as_ref()
+            } else {
+                None
+            },
             GRID_COLOR,
             GRID_OPACITY,
             Some(accent),
