@@ -772,7 +772,11 @@ pub fn headless_ansi_frame(
             Palette::Warm,
             Charset::Ascii,
             gain,
-            Some(&grid),
+            // Grid overlay only for the opt-in box-glyph mode. Off (default),
+            // pass `None` so the legacy foreground-only recolor never tints lit
+            // cells on grid lines — an artifact invisible on the default palette
+            // but a visible colored stripe on contrasting ones. Keeps wasm parity.
+            if grid_on_empty { Some(&grid) } else { None },
             GRID_COLOR,
             GRID_OPACITY,
             Some(accent),
