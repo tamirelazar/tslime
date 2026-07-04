@@ -57,6 +57,10 @@ pub struct TslimeWasm {
     // box-drawing glyphs (native look). Default false keeps the legacy
     // foreground-only interior grid so existing callers are unaffected.
     grid_on_empty: bool,
+    // Opt-in field dissolve: scales the DISPLAYED field intensity and the glow
+    // ring alpha. 1.0 = full framed sim (byte-identical default); 0.0 empties
+    // the field so `grid_on_empty` is all that renders (bare grid, no ring).
+    field_alpha: f32,
 }
 
 #[wasm_bindgen]
@@ -111,6 +115,7 @@ impl TslimeWasm {
             pad_frac_x: 0.0,
             pad_frac_y: 0.0,
             grid_on_empty: false,
+            field_alpha: 1.0,
         })
     }
 
@@ -221,6 +226,7 @@ impl TslimeWasm {
             GRID_OPACITY,
             Some(accent),
             self.grid_on_empty,
+            self.field_alpha,
         )
     }
 
@@ -376,6 +382,14 @@ impl TslimeWasm {
         self.brightness = brightness.max(0.05);
     }
 
+    /// **Opt-in.** Scale the displayed field intensity AND the glow-ring alpha
+    /// by `a` (clamped `[0, 1]`). 1.0 (default) is byte-identical; 0.0 empties
+    /// the field so only the `grid_on_empty` grid remains. Render-only; no sim
+    /// restart. The frozen frame dissolves smoothly to a bare grid as `a → 0`.
+    pub fn set_field_alpha(&mut self, a: f32) {
+        self.field_alpha = a.clamp(0.0, 1.0);
+    }
+
     /// **Opt-in.** Set the OUTER dark-padding as a FRACTION of each terminal
     /// dimension (`frac_x` of width, `frac_y` of height), drawn *outside* the
     /// glow border. Default 0 → unchanged framed render. A fraction gives the
@@ -429,6 +443,72 @@ pub fn init_panic_hook() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Strips ANSI escape sequences (`\x1b[` … terminator), leaving only the
+    /// printed glyphs/whitespace — used to assert on visible frame content.
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\x1b' && chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                for esc in chars.by_ref() {
+                    if esc.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+                continue;
+            }
+            out.push(c);
+        }
+        out
+    }
+
+    #[test]
+    fn field_alpha_zero_leaves_only_grid_glyphs() {
+        let mut w = TslimeWasm::new(400, 200, "", 1).unwrap();
+        // /info identity setup (see `headless_matches_wasm_over_info_identity`
+        // below): Warm palette + brightness 1.0.
+        let warm_id = ALL_PALETTES
+            .iter()
+            .position(|p| matches!(p, Palette::Warm))
+            .unwrap() as u32;
+        w.set_palette(warm_id);
+        w.set_brightness(1.0);
+        w.set_grid_on_empty(true);
+        w.set_frame_padding(0.0, 0.0);
+        for _ in 0..30 {
+            w.step();
+        }
+        w.set_field_alpha(0.0);
+        let frame = w.render_ansi_frame(70, 40);
+
+        // Strip ANSI escape sequences, keep only the printed glyphs.
+        let visible: String = strip_ansi(&frame);
+        // Only spaces, newlines, and grid box-glyphs may remain — no ASCII
+        // density glyphs and no glow-ring block glyphs.
+        let allowed = [
+            ' ', '\n', '\r', '┼', '│', '─', '├', '┤', '┬', '┴', '┌', '┐', '└', '┘',
+        ];
+        assert!(
+            visible.chars().all(|c| allowed.contains(&c)),
+            "field_alpha=0 frame contains an unexpected glyph: {:?}",
+            visible.chars().find(|c| !allowed.contains(c))
+        );
+        let disallowed_block = ['█', '▓', '▒', '░'];
+        assert!(
+            !visible.chars().any(|c| disallowed_block.contains(&c)),
+            "field_alpha=0 frame still contains ring block glyphs"
+        );
+        assert!(
+            !visible.chars().any(|c| "@%#*+=-:.$&8WMB".contains(c)),
+            "field_alpha=0 frame still contains ASCII density glyphs"
+        );
+        assert!(
+            visible.chars().any(|c| "┼│─".contains(c)),
+            "field_alpha=0 frame drew no grid glyphs at all"
+        );
+    }
 
     #[test]
     fn ansi_frame_is_framed_and_deterministic() {

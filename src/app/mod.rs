@@ -781,6 +781,9 @@ pub fn headless_ansi_frame(
             GRID_OPACITY,
             Some(accent),
             grid_on_empty,
+            // `headless_ansi_frame` is the byte-parity golden generator for the
+            // `/info` identity (Warm, brightness 1.0) — always full field alpha.
+            1.0,
         );
     }
     out

@@ -203,13 +203,15 @@ pub fn render_ansi_framed(
     grid_opacity: f32,
     glow_accent: Option<RgbColor>,
     grid_on_empty: bool,
+    field_alpha: f32,
 ) -> String {
     debug_assert!(matches!(charset, Charset::Ascii), "info path is ASCII-only");
-    let inv_gain = if max_brightness > 0.0 {
-        1.0 / max_brightness
-    } else {
-        1.0
-    };
+    let inv_gain = field_alpha
+        * if max_brightness > 0.0 {
+            1.0 / max_brightness
+        } else {
+            1.0
+        };
     let mapping = IntensityMapping::logarithmic(10.0);
     let (iw, ih) = geom.interior();
     let (inset_c, inset_r) = geom.inset();
@@ -261,15 +263,24 @@ pub fn render_ansi_framed(
                     ) as f32
                         / geom.ring_rows.max(1) as f32;
                     let depth = dc.min(dr).clamp(0.0, 1.0);
-                    let alpha = 1.0 - depth * 0.7;
-                    let ch = if depth < 0.34 {
-                        '\u{2588}'
-                    } else if depth < 0.67 {
-                        '\u{2593}'
+                    let alpha = (1.0 - depth * 0.7) * field_alpha;
+                    if alpha <= 0.0 {
+                        // Fully dissolved: emit a blank cell rather than a
+                        // zero-alpha (but still-present) block glyph, so a
+                        // `grid_on_empty` overlay can paint through it. Only
+                        // reachable when `field_alpha == 0.0` — at the default
+                        // 1.0, `alpha` is always > 0 here (depth is <= 1.0).
+                        (None, ' ')
                     } else {
-                        '\u{2592}'
-                    };
-                    (Some(accent.with_alpha(alpha)), ch)
+                        let ch = if depth < 0.34 {
+                            '\u{2588}'
+                        } else if depth < 0.67 {
+                            '\u{2593}'
+                        } else {
+                            '\u{2592}'
+                        };
+                        (Some(accent.with_alpha(alpha)), ch)
+                    }
                 } else {
                     (None, ' ')
                 }
@@ -379,6 +390,7 @@ mod tests {
             0.35,
             None,
             false,
+            1.0,
         );
         let plain = render_ansi_framed(
             &interior,
@@ -391,6 +403,7 @@ mod tests {
             0.0,
             None,
             false,
+            1.0,
         );
         // grid at cols {2,4} for size 3 over width 6 → framed differs from plain, and
         // both are deterministic + nonempty.
@@ -413,6 +426,7 @@ mod tests {
                 0.35,
                 None,
                 false,
+                1.0,
             ),
             "deterministic"
         );
@@ -452,6 +466,7 @@ mod tests {
             0.35,
             None,
             false,
+            1.0,
         );
         assert!(
             !legacy.contains('\u{2502}'),
@@ -470,6 +485,7 @@ mod tests {
             0.35,
             None,
             true,
+            1.0,
         );
         assert!(
             on_empty.contains('\u{2502}'),
@@ -510,6 +526,7 @@ mod tests {
             0.35,
             None,
             true,
+            1.0,
         );
         assert!(
             out.contains('\u{2502}'),
@@ -545,6 +562,7 @@ mod tests {
             0.0,
             Some(accent),
             false,
+            1.0,
         );
         // Outer ring cells use the full block; the frame must contain █.
         assert!(
@@ -563,6 +581,7 @@ mod tests {
             0.0,
             Some(accent),
             false,
+            1.0,
         );
         assert_eq!(framed, again);
     }
