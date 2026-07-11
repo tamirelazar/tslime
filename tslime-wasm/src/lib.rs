@@ -6,7 +6,9 @@ use tslime::render::ansi::{render_ansi_cells, render_ansi_framed, FrameGeometry}
 use tslime::render::charset::Charset;
 use tslime::render::downsample::{downsample, DownsampledFrame};
 use tslime::render::grid::{GridRenderer, GridStyle};
-use tslime::render::palette::{palette_accent_color, IntensityMapping, Palette, ALL_PALETTES};
+use tslime::render::palette::{
+    palette_accent_color, IntensityMapping, Palette, RgbColor, ALL_PALETTES,
+};
 use tslime::render::window::{FRAME_RING_COLS, FRAME_RING_ROWS, GRID_COLOR, GRID_OPACITY};
 use tslime::simulation::{
     config::{InitMode, SimConfig, PRESETS},
@@ -61,6 +63,11 @@ pub struct TslimeWasm {
     // ring alpha. 1.0 = full framed sim (byte-identical default); 0.0 empties
     // the field so `grid_on_empty` is all that renders (bare grid, no ring).
     field_alpha: f32,
+    // Dissolve target for `field_alpha < 1`: the field/glow crossfade toward
+    // THIS color as alpha drops, so the frame fades to the host terminal's
+    // background rather than to black. Defaults to black (legacy fade); the
+    // host sets it to its actual terminal background via `set_background`.
+    background: RgbColor,
 }
 
 #[wasm_bindgen]
@@ -116,6 +123,9 @@ impl TslimeWasm {
             pad_frac_y: 0.0,
             grid_on_empty: false,
             field_alpha: 1.0,
+            // Black by default → legacy fade-toward-black until the host sets
+            // its terminal background via `set_background`.
+            background: RgbColor { r: 0, g: 0, b: 0 },
         })
     }
 
@@ -227,6 +237,7 @@ impl TslimeWasm {
             Some(accent),
             self.grid_on_empty,
             self.field_alpha,
+            Some(self.background),
         )
     }
 
@@ -390,6 +401,15 @@ impl TslimeWasm {
         self.field_alpha = a.clamp(0.0, 1.0);
     }
 
+    /// Set the dissolve target for `set_field_alpha` — the host terminal's
+    /// background color as `[0, 255]` RGB. While `field_alpha < 1` the field and
+    /// glow ring crossfade toward THIS color instead of black, so the frame
+    /// fades to the background rather than punching a cold-black hole through it.
+    /// Defaults to black (legacy). Full alpha (1.0) is unaffected.
+    pub fn set_background(&mut self, r: u8, g: u8, b: u8) {
+        self.background = RgbColor { r, g, b };
+    }
+
     /// **Opt-in.** Set the OUTER dark-padding as a FRACTION of each terminal
     /// dimension (`frac_x` of width, `frac_y` of height), drawn *outside* the
     /// glow border. Default 0 → unchanged framed render. A fraction gives the
@@ -507,6 +527,96 @@ mod tests {
         assert!(
             visible.chars().any(|c| "┼│─".contains(c)),
             "field_alpha=0 frame drew no grid glyphs at all"
+        );
+    }
+
+    /// Collect the foreground RGB of every emitted FIELD/GLOW glyph (block +
+    /// ASCII-density), skipping spaces and grid box-glyphs (whose color is
+    /// intentionally dim). Walks the ANSI stream tracking the current `38;2`
+    /// truecolor foreground.
+    fn content_glyph_fgs(frame: &str) -> Vec<(u32, u32, u32)> {
+        let grid_glyphs = "┼│─├┤┬┴┌┐└┘";
+        let mut out = Vec::new();
+        let mut cur: Option<(u32, u32, u32)> = None;
+        let mut chars = frame.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\x1b' && chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                let mut seq = String::new();
+                for esc in chars.by_ref() {
+                    if esc.is_ascii_alphabetic() {
+                        break;
+                    }
+                    seq.push(esc);
+                }
+                // Foreground truecolor: "38;2;r;g;b". A bare "0" reset clears fg.
+                let parts: Vec<&str> = seq.split(';').collect();
+                if parts.len() == 5 && parts[0] == "38" && parts[1] == "2" {
+                    if let (Ok(r), Ok(g), Ok(b)) = (
+                        parts[2].parse::<u32>(),
+                        parts[3].parse::<u32>(),
+                        parts[4].parse::<u32>(),
+                    ) {
+                        cur = Some((r, g, b));
+                    }
+                } else if parts == ["0"] {
+                    cur = None;
+                }
+                continue;
+            }
+            if c == ' ' || c == '\n' || c == '\r' || grid_glyphs.contains(c) {
+                continue;
+            }
+            if let Some(fg) = cur {
+                out.push(fg);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn field_alpha_dissolves_toward_background_not_black() {
+        // Regression: on a morph return the frozen frame dissolves via
+        // `set_field_alpha`. Without a dissolve target it faded the field/ring
+        // toward BLACK (color * alpha), punching a cold hole through the host's
+        // warm terminal background. With `set_background` it must crossfade
+        // toward that background instead.
+        let mut w = TslimeWasm::new(400, 200, "", 1).unwrap();
+        let warm_id = ALL_PALETTES
+            .iter()
+            .position(|p| matches!(p, Palette::Warm))
+            .unwrap() as u32;
+        w.set_palette(warm_id);
+        w.set_brightness(1.0);
+        w.set_grid_on_empty(true);
+        w.set_frame_padding(0.0, 0.0);
+        for _ in 0..30 {
+            w.step();
+        }
+
+        // The host terminal background (`--info-ink-warm`, a warm near-black).
+        let (bg_r, bg_g, bg_b) = (28u32, 25, 22);
+        w.set_background(bg_r as u8, bg_g as u8, bg_b as u8);
+        // Deep into the dissolve — where fade-to-black is most visible.
+        w.set_field_alpha(0.05);
+        let frame = w.render_ansi_frame(70, 40);
+
+        let fgs = content_glyph_fgs(&frame);
+        assert!(
+            !fgs.is_empty(),
+            "expected field/glow glyphs mid-dissolve to assert on"
+        );
+        // Every drawn field/glow cell must sit AT the background, not below it:
+        // a fade toward `bg` keeps each channel-sum near `bg`'s, whereas the old
+        // fade-toward-black collapses it toward 0. Half the bg sum cleanly
+        // separates the two (bg sum = 75; toward-black lands well under 40).
+        let bg_sum = bg_r + bg_g + bg_b;
+        let floor = bg_sum / 2;
+        let worst = fgs.iter().map(|(r, g, b)| r + g + b).min().unwrap();
+        assert!(
+            worst >= floor,
+            "a field/glow cell faded toward black (fg sum {worst} < {floor}); \
+             expected a crossfade toward the background (sum ~{bg_sum})"
         );
     }
 

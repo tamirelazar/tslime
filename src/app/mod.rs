@@ -784,6 +784,8 @@ pub fn headless_ansi_frame(
             // `headless_ansi_frame` is the byte-parity golden generator for the
             // `/info` identity (Warm, brightness 1.0) — always full field alpha.
             1.0,
+            // Full alpha → dissolve target unused; keep legacy (toward-black).
+            None,
         );
     }
     out

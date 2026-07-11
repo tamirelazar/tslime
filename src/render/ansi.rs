@@ -204,6 +204,12 @@ pub fn render_ansi_framed(
     glow_accent: Option<RgbColor>,
     grid_on_empty: bool,
     field_alpha: f32,
+    // Dissolve target for the field/glow while `field_alpha < 1`. `Some(bg)`
+    // crossfades the drawn cells toward this color (the terminal background) as
+    // alpha drops, so the frame fades to the background instead of to black.
+    // `None` keeps the legacy fade-toward-black (multiply by alpha); at
+    // `field_alpha == 1.0` both branches are byte-identical to the old output.
+    background: Option<RgbColor>,
 ) -> String {
     debug_assert!(matches!(charset, Charset::Ascii), "info path is ASCII-only");
     let inv_gain = field_alpha
@@ -279,7 +285,15 @@ pub fn render_ansi_framed(
                         } else {
                             '\u{2592}'
                         };
-                        (Some(accent.with_alpha(alpha)), ch)
+                        // `alpha` folds the depth falloff and the field_alpha
+                        // dissolve. Fade toward the background when supplied
+                        // (`blend(bg, 1-alpha)`), else toward black
+                        // (`with_alpha` == `blend(black, 1-alpha)`).
+                        let ring = match background {
+                            Some(bg) => accent.blend(&bg, 1.0 - alpha),
+                            None => accent.with_alpha(alpha),
+                        };
+                        (Some(ring), ch)
                     }
                 } else {
                     (None, ' ')
@@ -287,9 +301,26 @@ pub fn render_ansi_framed(
             } else {
                 let ix = x - inset_c;
                 let iy = y - inset_r;
-                let (cfg, cglyph) =
-                    ascii_cell_fg_glyph(&field_cells[iy * iw + ix], inv_gain, &palette, &mapping);
-                (Some(cfg), cglyph)
+                let cell = &field_cells[iy * iw + ix];
+                match background {
+                    // Dissolve toward the background: the glyph still THINS via
+                    // the field_alpha-scaled gain (coverage), but its color
+                    // crossfades toward `bg` rather than darkening toward black.
+                    Some(bg) if field_alpha < 1.0 => {
+                        let (_, glyph) = ascii_cell_fg_glyph(cell, inv_gain, &palette, &mapping);
+                        let full_gain = if max_brightness > 0.0 {
+                            1.0 / max_brightness
+                        } else {
+                            1.0
+                        };
+                        let (full_fg, _) = ascii_cell_fg_glyph(cell, full_gain, &palette, &mapping);
+                        (Some(full_fg.blend(&bg, 1.0 - field_alpha)), glyph)
+                    }
+                    _ => {
+                        let (cfg, cglyph) = ascii_cell_fg_glyph(cell, inv_gain, &palette, &mapping);
+                        (Some(cfg), cglyph)
+                    }
+                }
             };
 
             if let Some(g) = grid {
@@ -391,6 +422,7 @@ mod tests {
             None,
             false,
             1.0,
+            None,
         );
         let plain = render_ansi_framed(
             &interior,
@@ -404,6 +436,7 @@ mod tests {
             None,
             false,
             1.0,
+            None,
         );
         // grid at cols {2,4} for size 3 over width 6 → framed differs from plain, and
         // both are deterministic + nonempty.
@@ -427,6 +460,7 @@ mod tests {
                 None,
                 false,
                 1.0,
+                None,
             ),
             "deterministic"
         );
@@ -467,6 +501,7 @@ mod tests {
             None,
             false,
             1.0,
+            None,
         );
         assert!(
             !legacy.contains('\u{2502}'),
@@ -486,6 +521,7 @@ mod tests {
             None,
             true,
             1.0,
+            None,
         );
         assert!(
             on_empty.contains('\u{2502}'),
@@ -527,6 +563,7 @@ mod tests {
             None,
             true,
             1.0,
+            None,
         );
         assert!(
             out.contains('\u{2502}'),
@@ -563,6 +600,7 @@ mod tests {
             Some(accent),
             false,
             1.0,
+            None,
         );
         // Outer ring cells use the full block; the frame must contain █.
         assert!(
@@ -582,6 +620,7 @@ mod tests {
             Some(accent),
             false,
             1.0,
+            None,
         );
         assert_eq!(framed, again);
     }
