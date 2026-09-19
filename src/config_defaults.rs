@@ -262,8 +262,11 @@ pub mod time {
     pub const DEFAULT_TIME_SCALE: f32 = 1.0;
     /// Default FPS target.
     pub const DEFAULT_FPS: u32 = 30;
-    /// Default frame delay in seconds (33.3ms for 30 FPS).
-    pub const DEFAULT_FRAME_DELAY: f32 = 1.0 / 30.0;
+    /// Default frame delay in seconds: no floor, so `--fps` alone sets the pace.
+    ///
+    /// `--time` floors the frame period, so any non-zero default would cap
+    /// every `--fps` above `1 / DEFAULT_FRAME_DELAY`.
+    pub const DEFAULT_FRAME_DELAY: f32 = 0.0;
     /// Reference time step for FPS calculations (30 FPS).
     pub const DEFAULT_REFERENCE_TIME_STEP: f32 = 1.0 / 30.0;
 

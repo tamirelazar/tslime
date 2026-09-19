@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `--fps N` now emits N frames per second. Each frame's sleep was computed from
+  the instant the loop woke up, so `thread::sleep` overshoot was never paid
+  back and stretched the frame period — `--fps 30` emitted ~27. The frame
+  deadline now accumulates, and a frame that overruns its budget starts the
+  next one immediately. (#112)
+
+### Changed
+- `--time` is now a floor on the frame period rather than a cap on the
+  inter-frame sleep, and defaults to `0`. As a cap it silently discarded any
+  `--fps` below `1 / --time`, so `--fps 10` emitted ~22.
+
 ## [0.1.2] - 2026-06-27
 
 Windows distribution fix.

@@ -163,9 +163,7 @@ impl FrameBuffer {
             fg_color_rgb: None,
             bg_color_rgb,
         };
-        for cell in &mut self.cells {
-            *cell = blank;
-        }
+        self.cells.fill(blank);
     }
 
     #[cfg(test)]
