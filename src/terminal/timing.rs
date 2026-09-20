@@ -511,9 +511,37 @@ mod tests {
         frames as f64 / t0.elapsed().as_secs_f64()
     }
 
+    /// `tick` must actually sleep the frame budget. Asserted as a lower bound
+    /// on elapsed time, which no amount of CI contention can violate — a loaded
+    /// box can only make the loop slower. Guards the direction the old
+    /// `frame_delay` clamp broke, where the loop free-ran at 252 fps against a
+    /// target of 60. The opposite direction (running slow, the #112 symptom) is
+    /// covered by `test_frame_deadline_absorbs_sleep_overshoot`.
+    #[test]
+    fn test_tick_never_outruns_the_target_rate() {
+        let target_fps = 60;
+        let frames = 20;
+        let mut timer = FrameTimer::new(target_fps, 0.0);
+
+        let t0 = Instant::now();
+        for _ in 0..frames {
+            timer.tick();
+        }
+        let elapsed = t0.elapsed().as_secs_f64();
+
+        // The first tick schedules from `now`, so `frames` sleeps are owed.
+        let floor = frames as f64 / target_fps as f64 * 0.95;
+        assert!(
+            elapsed >= floor,
+            "{frames} frames at {target_fps} fps took {elapsed:.3}s, under the \
+             {floor:.3}s floor — tick is not sleeping the frame budget"
+        );
+    }
+
     /// Regression for the reported symptom (#112): at the old default frame
     /// delay, `--fps 30` paced ~27.
     #[test]
+    #[ignore = "wall-clock rate; contends with the parallel suite. Run with --ignored --test-threads=1"]
     fn test_tick_honours_fps_at_default_frame_delay() {
         let target_fps = 30;
         let measured = paced_rate(target_fps, 1.0 / 30.0, 30);
@@ -526,6 +554,7 @@ mod tests {
 
     /// End-to-end pacing against the wall clock.
     #[test]
+    #[ignore = "wall-clock rate; contends with the parallel suite. Run with --ignored --test-threads=1"]
     fn test_tick_achieves_target_rate() {
         let target_fps = 60;
         let frames = 30;
