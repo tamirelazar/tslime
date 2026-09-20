@@ -52,6 +52,8 @@ pub struct FrameTimer {
     target_fps: usize,
     frame_delay: Duration,
     last_frame_time: Instant,
+    /// When the next frame is due; `None` until the first [`tick`](Self::tick).
+    frame_deadline: Option<Instant>,
     frame_count: u64,
     time_scale: f32,
     fps_samples: [f32; FPS_SAMPLE_COUNT],
@@ -83,6 +85,7 @@ impl FrameTimer {
             target_fps: fps,
             frame_delay,
             last_frame_time: Instant::now(),
+            frame_deadline: None,
             frame_count: 0,
             time_scale,
             fps_samples: [0.0; FPS_SAMPLE_COUNT],
@@ -281,14 +284,40 @@ impl FrameTimer {
         self.time_scale = time_scale;
     }
 
-    /// Sleep to maintain the target frame rate.
-    pub fn tick(&mut self) {
-        let elapsed = self.last_frame_time.elapsed();
-        let target_frame_time = Duration::from_secs_f64(1.0 / self.target_fps as f64);
+    /// How long one frame should take: whichever of `--fps` and the `--time`
+    /// floor (`frame_delay`) asks for the slower loop.
+    fn frame_period(&self) -> Duration {
+        let from_fps = Duration::from_secs_f64(1.0 / self.target_fps.max(1) as f64);
+        from_fps.max(self.frame_delay)
+    }
 
-        if elapsed < target_frame_time {
-            let sleep_time = target_frame_time - elapsed;
-            std::thread::sleep(sleep_time.min(self.frame_delay));
+    /// Advance the frame deadline and return when the next frame is due.
+    /// Takes `now` so the pacing arithmetic is testable without sleeping.
+    ///
+    /// The deadline accumulates instead of being recomputed as `now + period`:
+    /// `thread::sleep` overshoots its request by a millisecond or more, and a
+    /// from-now deadline folds every overshoot into the frame period, leaving
+    /// the loop permanently slow (`--fps 30` emitted ~27). An overrunning frame
+    /// clamps to `now`, paying only the overrun — banking the debt would repay
+    /// it as a burst of zero-sleep frames, and charging a further full period
+    /// would halve the rate after one slow frame.
+    fn schedule_next_frame(&mut self, now: Instant) -> Instant {
+        let period = self.frame_period();
+        let deadline = match self.frame_deadline {
+            Some(previous) => (previous + period).max(now),
+            None => now + period,
+        };
+        self.frame_deadline = Some(deadline);
+        deadline
+    }
+
+    /// Sleep until the next frame is due, maintaining the target frame rate.
+    pub fn tick(&mut self) {
+        let now = Instant::now();
+        let deadline = self.schedule_next_frame(now);
+
+        if let Some(remaining) = deadline.checked_duration_since(now) {
+            std::thread::sleep(remaining);
         }
 
         self.frame_count += 1;
@@ -299,8 +328,10 @@ impl Default for FrameTimer {
     fn default() -> Self {
         Self {
             target_fps: 30,
-            frame_delay: Duration::from_secs_f32(0.033),
+            // No `--time` floor: `target_fps` alone sets the pace.
+            frame_delay: Duration::ZERO,
             last_frame_time: Instant::now(),
+            frame_deadline: None,
             frame_count: 0,
             time_scale: 1.0,
             fps_samples: [0.0; FPS_SAMPLE_COUNT],
@@ -378,6 +409,165 @@ mod tests {
         std::thread::sleep(Duration::from_millis(20));
         let b = timer.fixed_delta();
         assert_eq!(a, b);
+    }
+
+    /// The deadline must accumulate, so `thread::sleep` overshoot is paid back
+    /// out of the next frame rather than added to the frame period.
+    #[test]
+    fn test_frame_deadline_absorbs_sleep_overshoot() {
+        let mut timer = FrameTimer::new(30, 0.0);
+        let period = timer.frame_period();
+        let t0 = Instant::now();
+
+        // Frame 1 is due one period after we start pacing.
+        let first = timer.schedule_next_frame(t0);
+        assert_eq!(first, t0 + period);
+
+        // Wake 3ms late, burn 4ms of work: the next deadline still lands one
+        // period after the last, not one period after the wake-up.
+        let woke_late = first + Duration::from_millis(3) + Duration::from_millis(4);
+        let second = timer.schedule_next_frame(woke_late);
+        assert_eq!(second, first + period);
+
+        let third = timer.schedule_next_frame(second + Duration::from_millis(3));
+        assert_eq!(third, second + period);
+    }
+
+    /// A multi-period stall (resize, resume from suspend) must re-base rather
+    /// than bank debt the loop would repay as a burst of zero-sleep frames.
+    #[test]
+    fn test_frame_deadline_rebases_after_long_stall() {
+        let mut timer = FrameTimer::new(30, 0.0);
+        let period = timer.frame_period();
+        let t0 = Instant::now();
+
+        let first = timer.schedule_next_frame(t0);
+        let stalled = first + period * 5;
+
+        // Already four periods late: the next frame starts immediately.
+        let next = timer.schedule_next_frame(stalled);
+        assert_eq!(next, stalled);
+
+        // Pacing then resumes one period at a time from where we actually are.
+        let after = timer.schedule_next_frame(stalled);
+        assert_eq!(after, stalled + period);
+    }
+
+    /// A late frame costs only its overrun; re-basing to `now + period` would
+    /// halve the frame rate on every brief work spike.
+    #[test]
+    fn test_late_frame_does_not_cost_an_extra_period() {
+        let mut timer = FrameTimer::new(60, 0.0);
+        let period = timer.frame_period();
+        let t0 = Instant::now();
+
+        let first = timer.schedule_next_frame(t0);
+        let overran = first + period + Duration::from_millis(2);
+        let next = timer.schedule_next_frame(overran);
+
+        assert_eq!(
+            next, overran,
+            "a late frame must start the next one at once"
+        );
+        assert!(
+            next - first < period * 2,
+            "one slow frame must not cost two periods"
+        );
+    }
+
+    /// `--time` floors the frame period; it never caps the sleep, which used to
+    /// ignore any `--fps` below `1 / frame_delay` (`--fps 10` emitted ~22).
+    #[test]
+    fn test_frame_period_takes_the_slower_of_fps_and_frame_delay() {
+        assert_eq!(
+            FrameTimer::new(30, 0.0).frame_period(),
+            Duration::from_secs_f64(1.0 / 30.0)
+        );
+        assert_eq!(
+            FrameTimer::new(10, 0.0).frame_period(),
+            Duration::from_secs_f64(1.0 / 10.0)
+        );
+        // An explicit --time slower than --fps wins.
+        assert_eq!(
+            FrameTimer::new(60, 0.1).frame_period(),
+            Duration::from_secs_f32(0.1)
+        );
+        // ...and never speeds the loop up beyond --fps.
+        assert_eq!(
+            FrameTimer::new(60, 0.001).frame_period(),
+            Duration::from_secs_f64(1.0 / 60.0)
+        );
+    }
+
+    /// Drive the real loop shape — work, then tick — and return the paced rate.
+    fn paced_rate(target_fps: usize, frame_delay: f32, frames: usize) -> f64 {
+        let mut timer = FrameTimer::new(target_fps, frame_delay);
+        let t0 = Instant::now();
+        for _ in 0..frames {
+            timer.delta_time();
+            std::thread::sleep(Duration::from_millis(3)); // stand-in for sim + render
+            timer.tick();
+        }
+        frames as f64 / t0.elapsed().as_secs_f64()
+    }
+
+    /// `tick` must actually sleep the frame budget. Asserted as a lower bound
+    /// on elapsed time, which no amount of CI contention can violate — a loaded
+    /// box can only make the loop slower. Guards the direction the old
+    /// `frame_delay` clamp broke, where the loop free-ran at 252 fps against a
+    /// target of 60. The opposite direction (running slow, the #112 symptom) is
+    /// covered by `test_frame_deadline_absorbs_sleep_overshoot`.
+    #[test]
+    fn test_tick_never_outruns_the_target_rate() {
+        let target_fps = 60;
+        let frames = 20;
+        let mut timer = FrameTimer::new(target_fps, 0.0);
+
+        let t0 = Instant::now();
+        for _ in 0..frames {
+            timer.tick();
+        }
+        let elapsed = t0.elapsed().as_secs_f64();
+
+        // The first tick schedules from `now`, so `frames` sleeps are owed.
+        let floor = frames as f64 / target_fps as f64 * 0.95;
+        assert!(
+            elapsed >= floor,
+            "{frames} frames at {target_fps} fps took {elapsed:.3}s, under the \
+             {floor:.3}s floor — tick is not sleeping the frame budget"
+        );
+    }
+
+    /// Regression for the reported symptom (#112): at the old default frame
+    /// delay, `--fps 30` paced ~27.
+    #[test]
+    #[ignore = "wall-clock rate; contends with the parallel suite. Run with --ignored --test-threads=1"]
+    fn test_tick_honours_fps_at_default_frame_delay() {
+        let target_fps = 30;
+        let measured = paced_rate(target_fps, 1.0 / 30.0, 30);
+        assert!(
+            (target_fps as f64 * 0.93..=target_fps as f64 * 1.05).contains(&measured),
+            "paced {measured:.2} fps against a target of {target_fps} — \
+             sleep overshoot is stretching the frame period"
+        );
+    }
+
+    /// End-to-end pacing against the wall clock.
+    #[test]
+    #[ignore = "wall-clock rate; contends with the parallel suite. Run with --ignored --test-threads=1"]
+    fn test_tick_achieves_target_rate() {
+        let target_fps = 60;
+        let frames = 30;
+        let measured = paced_rate(target_fps, 0.0, frames);
+
+        // Two-sided: sleeping from-now runs slow, clamping the sleep to
+        // `frame_delay` runs fast. The band is loose enough for a loaded CI
+        // box and far tighter than the ~9% deficit this regression is about.
+        assert!(
+            (target_fps as f64 * 0.93..=target_fps as f64 * 1.05).contains(&measured),
+            "paced {measured:.2} fps against a target of {target_fps} — \
+             the loop is not honouring --fps"
+        );
     }
 
     #[test]

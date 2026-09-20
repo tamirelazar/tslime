@@ -1031,9 +1031,12 @@ pub struct Args {
         long = "time",
         value_name = "FLOAT",
         default_value_t = time::DEFAULT_FRAME_DELAY,
-        help = "Frame delay in seconds"
+        help = "Minimum frame period in seconds; a floor on --fps (0 = --fps alone)"
     )]
-    /// Frame delay in seconds.
+    /// Minimum frame period in seconds.
+    ///
+    /// A floor: it can only slow the loop below `--fps`, never speed it past.
+    /// Zero (the default) leaves `--fps` in sole control.
     pub frame_delay: f32,
 
     #[arg(
