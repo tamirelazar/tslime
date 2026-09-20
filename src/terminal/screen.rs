@@ -59,7 +59,16 @@ impl TerminalScreen {
         }
 
         execute!(self.stdout, EnterAlternateScreen, cursor::Hide)?;
-        terminal::enable_raw_mode()?;
+        // Raw mode is best-effort: when tslime is spawned by a sandboxed host
+        // (e.g. a sandboxed macOS screensaver appex), the termios ioctl on the
+        // pty slave is denied with EPERM. The host pre-configures the pty from
+        // the master side in that setup, so the failure is survivable — but
+        // keep surfacing genuine errors from real terminals.
+        if let Err(e) = terminal::enable_raw_mode() {
+            if e.kind() != io::ErrorKind::PermissionDenied {
+                return Err(e);
+            }
+        }
         self.is_active = true;
 
         #[cfg(unix)]
