@@ -70,9 +70,10 @@ if ($userPath -notlike "*$dir*") {
     $newPath = if ($userPath) { "$userPath;$dir" } else { $dir }
     [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
 }
+# Open a new terminal so the PATH change takes effect, then run: tslime
 ```
 
-Open a new terminal so the `PATH` change takes effect, then run `tslime`.
+Then open a new terminal so the `PATH` change takes effect, and run `tslime`.
 
 ### From source
 
