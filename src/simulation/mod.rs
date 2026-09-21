@@ -17,12 +17,14 @@ pub mod agent;
 pub mod config;
 pub mod constellations;
 pub mod food;
+pub mod obstacle_index;
 pub mod trail_map;
 
 use crate::simulation::agent::Agent;
 use crate::simulation::agent::NoiseWrapper;
 use crate::simulation::config::{InitMode, SimConfig};
 use crate::simulation::food::{get_brightness_at, load_default_food_image, load_image_grayscale};
+use crate::simulation::obstacle_index::ObstacleIndex;
 use crate::simulation::trail_map::TrailMap;
 use rand::Rng as RandRng;
 use rand::SeedableRng;
@@ -150,6 +152,8 @@ impl TrailHistory {
 /// ```
 pub struct Simulation {
     config: SimConfig,
+    /// Cell → obstacle-id index, rebuilt whenever `config.obstacles` is replaced.
+    obstacle_index: ObstacleIndex,
     agents: Vec<Agent>,
     trail_maps: Vec<TrailMap>,
     rng: Rng,
@@ -185,6 +189,7 @@ impl Simulation {
     ) -> Self {
         let mut config = config;
         config.expand_border_ring(width, height);
+        let obstacle_index = ObstacleIndex::build(&config.obstacles, width, height);
         let mut rng = Rng::seed_from_u64(seed);
         let total_population = config.total_population();
         let mut agents = Vec::with_capacity(total_population);
@@ -283,6 +288,7 @@ impl Simulation {
 
         Self {
             config,
+            obstacle_index,
             agents,
             trail_maps,
             rng,
@@ -806,6 +812,7 @@ impl Simulation {
 
         let obstacles = &self.config.obstacles;
         let obstacle_masks = &self.config.obstacle_masks;
+        let obstacle_index = &self.obstacle_index;
 
         let wind = self.config.wind;
         let terrain = self.config.terrain;
@@ -905,6 +912,7 @@ impl Simulation {
                         height,
                         obstacles,
                         obstacle_masks,
+                        obstacle_index,
                         boundary_mode,
                     );
                 }
@@ -996,6 +1004,7 @@ impl Simulation {
                     height,
                     obstacles,
                     obstacle_masks,
+                    obstacle_index,
                     boundary_mode,
                 );
             }
@@ -1246,6 +1255,7 @@ impl Simulation {
         let old_separate_trails = self.config.separate_species_trails;
         let mut config = config;
         config.expand_border_ring(self.width(), self.height());
+        self.obstacle_index = ObstacleIndex::build(&config.obstacles, self.width(), self.height());
         self.config = config;
         // Existing trail maps cache a precomputed Gaussian kernel; regenerate it so a
         // changed diffusion_sigma actually takes effect (new maps below already bake it in).

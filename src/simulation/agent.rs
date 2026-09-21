@@ -398,6 +398,7 @@ impl Agent {
 
     /// Move agent forward and handle collisions with boundaries and obstacles.
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn move_forward(
         &mut self,
         step_size: f32,
@@ -405,12 +406,17 @@ impl Agent {
         height: usize,
         obstacles: &[Obstacle],
         obstacle_masks: &[Option<super::config::ObstacleMask>],
+        obstacle_index: &super::obstacle_index::ObstacleIndex,
         boundary_mode: super::config::BoundaryMode,
     ) {
         self.x += self.heading.cos() * step_size;
         self.y += self.heading.sin() * step_size;
 
-        for (i, obstacle) in obstacles.iter().enumerate() {
+        // Only the obstacles registered for this position's index cell can
+        // contain it; interior agents get an empty slice and test nothing.
+        for &i in obstacle_index.candidates(self.x, self.y) {
+            let i = i as usize;
+            let obstacle = &obstacles[i];
             // Borrow the mask: cloning here would allocate in a hot path
             let mask_ref = obstacle_masks.get(i).and_then(|m| m.as_ref());
             if obstacle.contains(self.x, self.y, mask_ref) {
@@ -549,6 +555,7 @@ mod tests {
             400,
             &[],
             &[],
+            &super::super::obstacle_index::ObstacleIndex::default(),
             crate::simulation::config::BoundaryMode::Bounce,
         );
         assert!((agent.x - 101.0).abs() < 0.001);
@@ -564,6 +571,7 @@ mod tests {
             400,
             &[],
             &[],
+            &super::super::obstacle_index::ObstacleIndex::default(),
             crate::simulation::config::BoundaryMode::Bounce,
         );
         assert!((agent.x - 100.0).abs() < 0.001);
@@ -579,6 +587,7 @@ mod tests {
             400,
             &[],
             &[],
+            &super::super::obstacle_index::ObstacleIndex::default(),
             crate::simulation::config::BoundaryMode::Bounce,
         );
         assert!(agent.x >= 0.0);
@@ -751,6 +760,7 @@ mod tests {
             radius: 10.0,
         }];
         let obstacle_masks = vec![None];
+        let index = super::super::obstacle_index::ObstacleIndex::build(&obstacles, 400, 400);
         // Move into circle
         agent.move_forward(
             10.0,
@@ -758,6 +768,7 @@ mod tests {
             400,
             &obstacles,
             &obstacle_masks,
+            &index,
             crate::simulation::config::BoundaryMode::Bounce,
         );
         assert!(agent.heading != 0.0);
@@ -884,7 +895,7 @@ mod prop_tests {
             step_size in 0.0..10.0f32,
         ) {
             let mut agent = Agent::new(x, y, heading, 0);
-            agent.move_forward(step_size, 1000, 1000, &[], &[], crate::simulation::config::BoundaryMode::Bounce);
+            agent.move_forward(step_size, 1000, 1000, &[], &[], &super::super::obstacle_index::ObstacleIndex::default(), crate::simulation::config::BoundaryMode::Bounce);
             prop_assert!(agent.x.is_finite());
             prop_assert!(agent.y.is_finite());
             prop_assert!(agent.heading.is_finite());
