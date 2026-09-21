@@ -17,8 +17,8 @@ use crate::render::grid::GridStyle;
 use crate::render::palette::{IntensityMapping, Palette, PaletteCycle, RgbColor, TemporalMode};
 use crate::render_art_defaults::ResolvedRenderConfig;
 use crate::simulation::config::{
-    Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode, Preset, SimConfig,
-    TerminalSizeThreshold, TransitionStyle, WindowFrame, WindowPadding,
+    Aspect, BorderRing, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode, Preset,
+    SimConfig, TerminalSizeThreshold, TransitionStyle, WindowFrame, WindowPadding,
 };
 use serde::{Deserialize, Serialize};
 
@@ -54,6 +54,9 @@ pub struct ProfileOverrides {
     pub attractor_strength: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub obstacles: Option<Vec<ObstacleArg>>,
+    /// Ring of repelling obstacles along the border (`--border-ring`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border_ring: Option<BorderRing>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub species: Vec<SpeciesArg>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -343,6 +346,15 @@ impl ProfileOverrides {
             } else {
                 Some(args.obstacle.clone())
             },
+            border_ring: args.border_ring.map(|mode| {
+                let d = BorderRing::default();
+                BorderRing {
+                    mode,
+                    radius: args.border_ring_radius.unwrap_or(d.radius),
+                    gap: args.border_ring_gap.unwrap_or(d.gap),
+                    strength: args.border_ring_strength.unwrap_or(d.strength),
+                }
+            }),
             species: args.species_list().to_vec(),
             separate_species_trails: args.separate_species_trails_enabled(),
             species_colors: args.species_colors_enabled(),
@@ -629,6 +641,12 @@ impl ProfileOverrides {
             config.obstacles = obs.iter().map(|o| o.obstacle.clone()).collect();
         }
         let _ = config.load_obstacle_masks();
+
+        // Border ring: stored as a spec; the Simulation expands it once it knows
+        // the grid size.
+        if let Some(ring) = self.border_ring {
+            config.border_ring = Some(ring);
+        }
 
         // Separate trails: CLI/species-colors force-on; absent both, preset survives.
         if self.separate_species_trails || self.species_colors {

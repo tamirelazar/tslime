@@ -28,6 +28,10 @@ use rand::Rng as RandRng;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus as Rng;
 
+/// Steering weight per unit of border-ring `strength` at the wall (Repel mode).
+/// Strength 1.0 turns an agent ~20% of the way inward per step at the wall.
+const CUSHION_STEER_PER_UNIT: f32 = 0.2;
+
 /// Circular buffer for storing trail map history, used for motion blur effects.
 ///
 /// Maintains a fixed-size buffer of recent trail maps that can be blended
@@ -179,6 +183,8 @@ impl Simulation {
         init_mode: InitMode,
         trail_history_capacity: usize,
     ) -> Self {
+        let mut config = config;
+        config.expand_border_ring(width, height);
         let mut rng = Rng::seed_from_u64(seed);
         let total_population = config.total_population();
         let mut agents = Vec::with_capacity(total_population);
@@ -804,6 +810,13 @@ impl Simulation {
         let wind = self.config.wind;
         let terrain = self.config.terrain;
         let terrain_strength = self.config.terrain_strength * dt;
+        // Soft border cushion (Repel ring); (0, 0) disables it.
+        let (cushion_radius, cushion_strength) = match self.config.border_ring {
+            Some(ring) if ring.mode == super::simulation::config::BorderRingMode::Repel => {
+                (ring.radius, ring.strength * CUSHION_STEER_PER_UNIT * dt)
+            }
+            _ => (0.0, 0.0),
+        };
 
         let separate_trails = self.config.separate_species_trails;
         let boundary_mode = self.config.boundary_mode;
@@ -875,6 +888,8 @@ impl Simulation {
                     agent.rotate(left, center, right, rotation_angle, &mut self.rng);
 
                     agent.apply_attractor_forces(&attractors, attractor_strength);
+
+                    agent.apply_border_cushion(width, height, cushion_radius, cushion_strength);
 
                     agent.apply_wind_force(wind, dt);
 
@@ -964,6 +979,8 @@ impl Simulation {
                 agent.rotate(left, center, right, rotation_angle, &mut self.rng);
 
                 agent.apply_attractor_forces(&attractors, attractor_strength);
+
+                agent.apply_border_cushion(width, height, cushion_radius, cushion_strength);
 
                 agent.apply_wind_force(wind, dt);
 
@@ -1227,6 +1244,8 @@ impl Simulation {
     /// Also manages the combined trail buffer for separate species with history.
     pub fn update_config(&mut self, config: SimConfig) {
         let old_separate_trails = self.config.separate_species_trails;
+        let mut config = config;
+        config.expand_border_ring(self.width(), self.height());
         self.config = config;
         // Existing trail maps cache a precomputed Gaussian kernel; regenerate it so a
         // changed diffusion_sigma actually takes effect (new maps below already bake it in).

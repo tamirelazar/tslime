@@ -765,6 +765,103 @@ pub enum Obstacle {
     },
 }
 
+/// How a [`BorderRing`] pushes agents away from the border.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BorderRingMode {
+    /// A ring of hard circular obstacles agents bounce off (scalloped wall).
+    #[default]
+    Bounce,
+    /// A soft cushion that steers agents inward within `radius` of the wall.
+    Repel,
+}
+
+impl std::str::FromStr for BorderRingMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "bounce" | "circles" | "hard" => Ok(BorderRingMode::Bounce),
+            "repel" | "soft" => Ok(BorderRingMode::Repel),
+            other => Err(format!(
+                "Border ring mode must be 'bounce' or 'repel', got: {}",
+                other
+            )),
+        }
+    }
+}
+
+/// A ring of repelling obstacles laid along the simulation border.
+///
+/// Stored as a spec (not concrete obstacles) because the ring depends on the
+/// grid size, which is only known once the [`super::Simulation`] is built.
+/// [`SimConfig::expand_border_ring`] materializes it.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BorderRing {
+    /// Hard obstacles or soft repellers.
+    pub mode: BorderRingMode,
+    /// Radius of each ring element in sim pixels [range: 1-100].
+    pub radius: f32,
+    /// Extra spacing between neighbouring elements in sim pixels
+    /// (0 = touching, negative = overlapping, which closes the cusps).
+    pub gap: f32,
+    /// Cushion steer strength (used by `Repel` mode only) [range: 0.1-10].
+    pub strength: f32,
+}
+
+impl Default for BorderRing {
+    fn default() -> Self {
+        Self {
+            mode: BorderRingMode::Bounce,
+            radius: environment::DEFAULT_BORDER_RING_RADIUS,
+            gap: environment::DEFAULT_BORDER_RING_GAP,
+            strength: environment::DEFAULT_BORDER_RING_STRENGTH,
+        }
+    }
+}
+
+impl BorderRing {
+    /// Element centers along the rectangle inset by `radius` from every edge of
+    /// a `width`×`height` grid, so each circle is tangent to the border.
+    ///
+    /// Corners are always occupied; each side is then subdivided evenly so
+    /// neighbours sit at least `2·radius + gap` apart (never closer).
+    pub fn centers(&self, width: usize, height: usize) -> Vec<(f32, f32)> {
+        let r = self.radius.max(1.0);
+        let inset = r;
+        let w = width as f32;
+        let h = height as f32;
+        let x0 = inset;
+        let x1 = (w - inset).max(inset);
+        let y0 = inset;
+        let y1 = (h - inset).max(inset);
+        let pitch = (2.0 * r + self.gap).max(1.0);
+
+        let mut centers = Vec::new();
+        let side = |len: f32| -> usize { ((len / pitch).floor() as usize).max(1) };
+        let nx = side(x1 - x0);
+        let ny = side(y1 - y0);
+
+        // Top and bottom edges (including corners).
+        for i in 0..=nx {
+            let x = x0 + (x1 - x0) * i as f32 / nx as f32;
+            centers.push((x, y0));
+            if y1 > y0 {
+                centers.push((x, y1));
+            }
+        }
+        // Left and right edges, skipping the corners already placed.
+        for j in 1..ny {
+            let y = y0 + (y1 - y0) * j as f32 / ny as f32;
+            centers.push((x0, y));
+            if x1 > x0 {
+                centers.push((x1, y));
+            }
+        }
+        centers
+    }
+}
+
 impl Obstacle {
     /// Checks if a point is contained within the obstacle.
     pub fn contains(&self, px: f32, py: f32, mask: Option<&ObstacleMask>) -> bool {
@@ -1455,6 +1552,11 @@ pub struct SimConfig {
     pub obstacles: Vec<Obstacle>,
     /// Loaded masks for image obstacles.
     pub obstacle_masks: Vec<Option<ObstacleMask>>,
+    /// Optional ring of repelling obstacles along the border (see `--border-ring`).
+    pub border_ring: Option<BorderRing>,
+    /// True once `border_ring` has been materialized into `obstacles`/`attractors`,
+    /// so re-pushing a cloned config never doubles the ring.
+    pub border_ring_applied: bool,
     /// Global wind force.
     pub wind: Option<Wind>,
     /// Active terrain effect.
@@ -1525,6 +1627,37 @@ impl SimConfig {
         self.deposit_curve != DepositCurve::Linear
             || self.deposit_scale != 1.0
             || self.deposit_cap > 0.0
+    }
+
+    /// Materializes a Bounce `border_ring` into concrete circle obstacles for a
+    /// `width`×`height` grid. Idempotent: a second call is a no-op. Repel rings
+    /// need no expansion; the cushion force reads the spec directly.
+    pub fn expand_border_ring(&mut self, width: usize, height: usize) {
+        let Some(ring) = self.border_ring else {
+            return;
+        };
+        if self.border_ring_applied {
+            return;
+        }
+        // Keep masks in lockstep with obstacles even if a caller skipped loading.
+        self.obstacle_masks.resize(self.obstacles.len(), None);
+        for (x, y) in ring.centers(width, height) {
+            match ring.mode {
+                BorderRingMode::Bounce => {
+                    self.obstacles.push(Obstacle::Circle {
+                        x,
+                        y,
+                        radius: ring.radius,
+                    });
+                    self.obstacle_masks.push(None);
+                }
+                // Repel mode is a live cushion force (see `Agent::apply_border_cushion`),
+                // not a set of point repellers: on a wide grid the 1/dist law from the
+                // far edges cancels the near edge, so agents hug the short sides.
+                BorderRingMode::Repel => {}
+            }
+        }
+        self.border_ring_applied = true;
     }
 
     /// Loads mask data for all image-based obstacles.
@@ -1612,6 +1745,8 @@ impl Default for SimConfig {
             food_image_scale: food_img_consts::DEFAULT_FOOD_SCALE,
             obstacles: Vec::new(),
             obstacle_masks: Vec::new(),
+            border_ring: None,
+            border_ring_applied: false,
             wind: None,
             terrain: TerrainType::None,
             terrain_strength: env_consts::DEFAULT_TERRAIN_STRENGTH,
@@ -1655,6 +1790,36 @@ impl Validatable for SimConfig {
             return Err(ValidationError::custom(
                 "at least one species must be configured",
             ));
+        }
+
+        if let Some(ring) = &self.border_ring {
+            if !(environment::MIN_BORDER_RING_RADIUS..=environment::MAX_BORDER_RING_RADIUS)
+                .contains(&ring.radius)
+            {
+                return Err(ValidationError::custom(format!(
+                    "border ring radius must be in [{}, {}], got {}",
+                    environment::MIN_BORDER_RING_RADIUS,
+                    environment::MAX_BORDER_RING_RADIUS,
+                    ring.radius
+                )));
+            }
+            if ring.gap <= -2.0 * ring.radius {
+                return Err(ValidationError::custom(format!(
+                    "border ring gap must be > -2·radius ({}), got {}",
+                    -2.0 * ring.radius,
+                    ring.gap
+                )));
+            }
+            if !(environment::MIN_ATTRACTOR_STRENGTH..=environment::MAX_ATTRACTOR_STRENGTH)
+                .contains(&ring.strength)
+            {
+                return Err(ValidationError::custom(format!(
+                    "border ring strength must be in [{}, {}], got {}",
+                    environment::MIN_ATTRACTOR_STRENGTH,
+                    environment::MAX_ATTRACTOR_STRENGTH,
+                    ring.strength
+                )));
+            }
         }
 
         // Validate total population
@@ -2703,5 +2868,89 @@ mod window_type_tests {
         assert_eq!(t.height, 10);
         assert!("bad".parse::<TerminalSizeThreshold>().is_err());
         assert!("0x10".parse::<TerminalSizeThreshold>().is_err());
+    }
+
+    #[test]
+    fn border_ring_centers_touch_every_edge_once() {
+        let ring = BorderRing {
+            mode: BorderRingMode::Bounce,
+            radius: 10.0,
+            gap: 0.0,
+            strength: 1.0,
+        };
+        let c = ring.centers(400, 200);
+        // Corners present exactly once each.
+        for corner in [(10.0, 10.0), (390.0, 10.0), (10.0, 190.0), (390.0, 190.0)] {
+            assert_eq!(c.iter().filter(|&&p| p == corner).count(), 1, "{corner:?}");
+        }
+        // Every center is tangent to some border (inset by radius).
+        assert!(c
+            .iter()
+            .all(|&(x, y)| x == 10.0 || x == 390.0 || y == 10.0 || y == 190.0));
+        // Neighbours along the top edge are at least 2r apart.
+        let mut top: Vec<f32> = c.iter().filter(|p| p.1 == 10.0).map(|p| p.0).collect();
+        top.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert!(top.windows(2).all(|w| w[1] - w[0] >= 20.0 - 1e-3));
+    }
+
+    #[test]
+    fn border_ring_negative_gap_packs_tighter() {
+        let touching = BorderRing {
+            mode: BorderRingMode::Bounce,
+            radius: 10.0,
+            gap: 0.0,
+            strength: 1.0,
+        };
+        let overlapping = BorderRing {
+            gap: -8.0,
+            ..touching
+        };
+        assert!(overlapping.centers(400, 200).len() > touching.centers(400, 200).len());
+    }
+
+    #[test]
+    fn expand_border_ring_is_idempotent_and_bounce_only() {
+        let mut cfg = SimConfig {
+            border_ring: Some(BorderRing::default()),
+            ..SimConfig::default()
+        };
+        cfg.expand_border_ring(400, 200);
+        let n = cfg.obstacles.len();
+        assert!(n > 0);
+        assert_eq!(cfg.obstacle_masks.len(), n);
+        cfg.expand_border_ring(400, 200);
+        assert_eq!(cfg.obstacles.len(), n, "second expand must be a no-op");
+
+        let mut soft = SimConfig {
+            border_ring: Some(BorderRing {
+                mode: BorderRingMode::Repel,
+                ..BorderRing::default()
+            }),
+            ..SimConfig::default()
+        };
+        soft.expand_border_ring(400, 200);
+        assert!(soft.obstacles.is_empty());
+        assert!(soft.attractors.is_empty());
+    }
+
+    #[test]
+    fn border_ring_validation_bounds() {
+        let bad = SimConfig {
+            border_ring: Some(BorderRing {
+                radius: 0.5,
+                ..BorderRing::default()
+            }),
+            ..SimConfig::default()
+        };
+        assert!(Validatable::validate(&bad).is_err());
+        let bad_gap = SimConfig {
+            border_ring: Some(BorderRing {
+                radius: 8.0,
+                gap: -16.0,
+                ..BorderRing::default()
+            }),
+            ..SimConfig::default()
+        };
+        assert!(Validatable::validate(&bad_gap).is_err());
     }
 }

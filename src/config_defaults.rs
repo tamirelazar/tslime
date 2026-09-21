@@ -233,6 +233,16 @@ pub mod environment {
     pub const DEFAULT_ATTRACTOR_STRENGTH: f32 = 1.0;
     /// Default terrain strength.
     pub const DEFAULT_TERRAIN_STRENGTH: f32 = 1.0;
+    /// Default border-ring element radius in sim pixels.
+    pub const DEFAULT_BORDER_RING_RADIUS: f32 = 8.0;
+    /// Default border-ring spacing between elements (0 = touching).
+    pub const DEFAULT_BORDER_RING_GAP: f32 = 0.0;
+    /// Default border-ring repeller strength (Repel mode).
+    pub const DEFAULT_BORDER_RING_STRENGTH: f32 = 1.0;
+    /// Minimum border-ring radius.
+    pub const MIN_BORDER_RING_RADIUS: f32 = 1.0;
+    /// Maximum border-ring radius.
+    pub const MAX_BORDER_RING_RADIUS: f32 = 100.0;
 
     /// Minimum attractor strength.
     pub const MIN_ATTRACTOR_STRENGTH: f32 = 0.1;
