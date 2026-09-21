@@ -132,6 +132,14 @@ pub fn print_parameter_explanations() {
     println!("    • rect:x,y,width,height - Rectangular obstacle");
     println!("    • image:path,x,y,w,h,invert,threshold - Image-based obstacle");
 
+    println!("\n  --border-ring <MODE>");
+    println!("    Ring of repelling obstacles along the border, keeping growth off the edges.");
+    println!("    • bounce: circular obstacles tangent to the wall; agents ricochet off them");
+    println!("    • repel: soft cushion steering agents inward within one radius of a wall");
+    println!("    --border-ring-radius sets element size in sim pixels (default 8).");
+    println!("    --border-ring-gap spaces bounce circles; negative overlaps them (closes cusps).");
+    println!("    --border-ring-strength scales the repel cushion (default 1).");
+
     println!("\n  --terrain <TYPE> (default: none)");
     println!("    Organic terrain effects on agent movement.");
     println!("    • none: No terrain effects");

@@ -7,6 +7,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `--border-ring bounce|repel` lines the simulation border with repelling
+  obstacles so the growth keeps a margin from the edges. `bounce` tiles the
+  border with circular obstacles agents ricochet off (`--border-ring-radius`,
+  `--border-ring-gap`; a negative gap overlaps the circles and closes the
+  cusps between them); `repel` is a soft cushion that steers agents inward
+  within one radius of a wall (`--border-ring-strength`).
 - `--bg-color-inner` and `--bg-color-outer` (aliases `--bg-inner`,
   `--bg-outer`) set the background of the two zones the window frame divides
   the terminal into: inner is everything inside the frame rect (the simulation
@@ -17,6 +23,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the outer color is unused. (#126)
 
 ### Changed
+- Obstacle collision is now looked up through a spatial index instead of
+  testing every obstacle for every agent. Presets with one to three obstacles
+  are unaffected; a border ring of 70 circles is back within the frame budget
+  (8 ms → 4 ms per step in release, 84 ms → 21 ms in debug).
 - The frame matte is off by default, so the simulation now runs to the frame
   border instead of sitting inside a 4-column / 1-row background gap.
   `--window-frame glow` is the exception and keeps the old matte — it grades its
