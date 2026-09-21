@@ -1477,10 +1477,14 @@ pub struct SimConfig {
     /// Window frame display mode for terminal visualization.
     pub window_frame: WindowFrame,
     /// Background matte width in columns between the frame border and the sim
-    /// (left/right). Wider than `frame_matte_rows` to offset terminal cell aspect.
+    /// (left/right). 0 (the default) lets the sim run to the border, except under
+    /// `WindowFrame::Glow`, which needs depth to grade its shading across (see
+    /// `render::window::ring_for_frame`). When set, keep it wider than
+    /// `frame_matte_rows` to offset terminal cell aspect.
     pub frame_matte_cols: usize,
     /// Background matte height in rows between the frame border and the sim
-    /// (top/bottom).
+    /// (top/bottom). 0 (the default) lets the sim run to the border, except under
+    /// `WindowFrame::Glow`.
     pub frame_matte_rows: usize,
     /// Chrome display style (minimal, expanded, fullscreen).
     pub chrome_style: ChromeStyle,

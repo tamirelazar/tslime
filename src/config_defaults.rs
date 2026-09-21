@@ -626,12 +626,26 @@ pub mod auto_reset {
 }
 
 /// Window-frame background matte defaults (gap between border and simulation).
+///
+/// Off by default: the simulation runs to the frame border, so the field reads
+/// as the full window rather than a picture hung inside a mount. Opt back in
+/// with `--frame-matte-cols` / `--frame-matte-rows`; keep columns wider than
+/// rows to offset the ~1:2 terminal cell aspect so the gap reads as even.
+///
+/// The `glow` frame mode is the exception — it shades a gradient across the
+/// ring's depth, so it keeps the matte (see `GLOW_COLS`/`GLOW_ROWS`).
 pub mod frame_matte {
-    /// Default matte width in columns (left/right). Wider than rows to offset
-    /// the ~1:2 terminal cell aspect so the gap reads as visually even.
-    pub const DEFAULT_COLS: usize = 4;
-    /// Default matte height in rows (top/bottom).
-    pub const DEFAULT_ROWS: usize = 1;
+    /// Default matte width in columns (left/right); 0 = no matte.
+    pub const DEFAULT_COLS: usize = 0;
+    /// Default matte height in rows (top/bottom); 0 = no matte.
+    pub const DEFAULT_ROWS: usize = 0;
+    /// Matte width in columns for the `glow` frame mode, whose shading grades
+    /// from the border inward: with no matte there is nothing to grade across,
+    /// so glow keeps this gap. Wider than `GLOW_ROWS` to offset the ~1:2
+    /// terminal cell aspect so the band reads as visually even.
+    pub const GLOW_COLS: usize = 4;
+    /// Matte height in rows for the `glow` frame mode. See `GLOW_COLS`.
+    pub const GLOW_ROWS: usize = 1;
 }
 
 /// Export defaults.

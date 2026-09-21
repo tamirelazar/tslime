@@ -932,12 +932,16 @@ impl TerminalRenderer {
                     );
                 }
             } else {
+                // No layout (fullscreen fallback): the ring overpaints the field's
+                // outer cells, so let the mode pick its own thickness.
+                let (ring_cols, ring_rows) =
+                    crate::render::window::ring_for_frame(self.window_frame, 0, 0);
                 buffer.render_window_frame(
                     self.window_frame,
                     accent,
                     self.background_color_inner,
-                    crate::render::window::FRAME_RING_COLS,
-                    crate::render::window::FRAME_RING_ROWS,
+                    ring_cols,
+                    ring_rows,
                 );
             }
         }
@@ -1027,11 +1031,13 @@ impl TerminalRenderer {
                             (l.sim_x, l.sim_x + l.sim_w)
                         }
                         Some(_) => (0, self.width),
-                        None => (
-                            crate::render::window::FRAME_RING_COLS,
-                            self.width
-                                .saturating_sub(crate::render::window::FRAME_RING_COLS),
-                        ),
+                        None => {
+                            // No layout: the frame is drawn at the terminal edge with
+                            // the mode's own ring (glow keeps a matte).
+                            let (ring_cols, _) =
+                                crate::render::window::ring_for_frame(self.window_frame, 0, 0);
+                            (ring_cols, self.width.saturating_sub(ring_cols))
+                        }
                     }
                 } else {
                     (0, self.width)
@@ -1434,12 +1440,16 @@ impl TerminalRenderer {
                     );
                 }
             } else {
+                // No layout (fullscreen fallback): the ring overpaints the field's
+                // outer cells, so let the mode pick its own thickness.
+                let (ring_cols, ring_rows) =
+                    crate::render::window::ring_for_frame(self.window_frame, 0, 0);
                 buffer.render_window_frame(
                     self.window_frame,
                     accent,
                     self.background_color_inner,
-                    crate::render::window::FRAME_RING_COLS,
-                    crate::render::window::FRAME_RING_ROWS,
+                    ring_cols,
+                    ring_rows,
                 );
             }
         }

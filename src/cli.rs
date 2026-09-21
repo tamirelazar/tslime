@@ -963,7 +963,7 @@ pub struct Args {
     #[arg(
         long = "frame-matte-cols",
         value_name = "COLS",
-        help = "Background gap (columns) between the frame border and the simulation (left/right)"
+        help = "Background gap (columns) between the frame border and the simulation (left/right, default: 0 = off, 4 under --window-frame glow)"
     )]
     /// Frame background matte width in columns (left/right).
     pub frame_matte_cols: Option<usize>,
@@ -971,7 +971,7 @@ pub struct Args {
     #[arg(
         long = "frame-matte-rows",
         value_name = "ROWS",
-        help = "Background gap (rows) between the frame border and the simulation (top/bottom)"
+        help = "Background gap (rows) between the frame border and the simulation (top/bottom, default: 0 = off, 1 under --window-frame glow)"
     )]
     /// Frame background matte height in rows (top/bottom).
     pub frame_matte_rows: Option<usize>,

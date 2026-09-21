@@ -5,21 +5,54 @@
 //! settings, and fallback thresholds. No I/O is performed here.
 
 use crate::render::palette::RgbColor;
-use crate::simulation::config::{Aspect, TerminalSizeThreshold, WindowPadding};
+use crate::simulation::config::{Aspect, TerminalSizeThreshold, WindowFrame, WindowPadding};
 
 /// Default frame ring thickness in **columns** on each of the left/right sides.
 ///
 /// The ring = the border (1 cell at the outer edge) plus a background **matte**
-/// between the border and the simulation. This is the default; the matte is
-/// configurable via `SimConfig::frame_matte_cols` (ring = matte + 1 border cell).
-/// Horizontal is wider than [`FRAME_RING_ROWS`] to offset the ~1:2 terminal cell
-/// aspect so the matte reads as visually even. Used by `Window::default` and the
-/// no-layout (fullscreen) render path.
+/// between the border and the simulation, i.e. `frame_matte_cols + 1`. The matte
+/// is off by default, so the ring is just the border; widen it via
+/// `SimConfig::frame_matte_cols`. Used by `Window::default` and the no-layout
+/// (fullscreen) render path.
 pub const FRAME_RING_COLS: usize = crate::config_defaults::frame_matte::DEFAULT_COLS + 1;
 
 /// Default frame ring thickness in **rows** on each of the top/bottom sides.
 /// See [`FRAME_RING_COLS`].
 pub const FRAME_RING_ROWS: usize = crate::config_defaults::frame_matte::DEFAULT_ROWS + 1;
+
+/// Frame ring thickness in **columns** for the `glow` frame mode, which shades a
+/// gradient from the border inward and so needs depth to grade across. See
+/// [`ring_for_frame`] and `config_defaults::frame_matte::GLOW_COLS`.
+pub const GLOW_RING_COLS: usize = crate::config_defaults::frame_matte::GLOW_COLS + 1;
+
+/// Frame ring thickness in **rows** for the `glow` frame mode.
+/// See [`GLOW_RING_COLS`].
+pub const GLOW_RING_ROWS: usize = crate::config_defaults::frame_matte::GLOW_ROWS + 1;
+
+/// The frame ring (border cell plus background matte, per side) for `mode`.
+///
+/// Every mode but `Glow` draws only the border, so a zero matte lets the
+/// simulation run right up to it. `Glow` grades its shading across the ring's
+/// depth, and a border-only ring leaves nothing to grade — so a zero matte falls
+/// back to [`GLOW_RING_COLS`]/[`GLOW_RING_ROWS`]. A matte set explicitly to a
+/// non-zero value is honoured in every mode.
+pub fn ring_for_frame(mode: WindowFrame, matte_cols: usize, matte_rows: usize) -> (usize, usize) {
+    match mode {
+        WindowFrame::Glow => (
+            if matte_cols == 0 {
+                GLOW_RING_COLS
+            } else {
+                matte_cols + 1
+            },
+            if matte_rows == 0 {
+                GLOW_RING_ROWS
+            } else {
+                matte_rows + 1
+            },
+        ),
+        _ => (matte_cols + 1, matte_rows + 1),
+    }
+}
 
 /// Shared grid overlay color for the framed ANSI/WebGL background, used by both
 /// the native headless renderer and the wasm renderer so they stay in sync.
@@ -119,10 +152,10 @@ impl Window {
             WindowPadding::Fixed(n) => n,
         };
 
-        // Available space after padding; reserve the frame ring per side (outer
-        // accent edge + inner background separator). Horizontal is thicker than
-        // vertical (see FRAME_RING_COLS/ROWS) for visual balance. The simulation
-        // is inset by the ring so it never renders under the border.
+        // Available space after padding; reserve the frame ring per side (the
+        // border, plus the background matte when one is configured — see
+        // FRAME_RING_COLS/ROWS). The simulation is inset by the ring so it never
+        // renders under the border.
         let avail_w = term_w.saturating_sub(pad * 2);
         let avail_h = term_h.saturating_sub(pad * 2);
         let inner_w = avail_w.saturating_sub(self.ring_cols * 2);
@@ -242,7 +275,7 @@ mod tests {
     fn test_sim_inside_frame() {
         let w = default_window();
         let layout = w.compute_rects(120, 60);
-        // Aspect-aware ring: FRAME_RING_COLS left/right, FRAME_RING_ROWS top/bottom.
+        // Ring: FRAME_RING_COLS left/right, FRAME_RING_ROWS top/bottom.
         assert_eq!(layout.sim_x, layout.frame_x + FRAME_RING_COLS);
         assert_eq!(layout.sim_y, layout.frame_y + FRAME_RING_ROWS);
         assert_eq!(layout.sim_w, layout.frame_w - FRAME_RING_COLS * 2);
@@ -274,6 +307,28 @@ mod tests {
         assert!(matches!(layout.fallback, FallbackMode::EdgeHug));
         assert_eq!(layout.pad, 0);
         assert_eq!(layout.frame_x, 0);
+    }
+
+    #[test]
+    fn test_ring_is_border_only_without_a_matte() {
+        // Default matte is off, so every mode but glow hugs the border.
+        for mode in [WindowFrame::None, WindowFrame::Accented, WindowFrame::Frame] {
+            assert_eq!(ring_for_frame(mode, 0, 0), (1, 1), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn test_glow_keeps_its_matte_without_one_configured() {
+        assert_eq!(
+            ring_for_frame(WindowFrame::Glow, 0, 0),
+            (GLOW_RING_COLS, GLOW_RING_ROWS)
+        );
+    }
+
+    #[test]
+    fn test_configured_matte_wins_in_every_mode() {
+        assert_eq!(ring_for_frame(WindowFrame::Frame, 3, 2), (4, 3));
+        assert_eq!(ring_for_frame(WindowFrame::Glow, 3, 2), (4, 3));
     }
 
     #[test]

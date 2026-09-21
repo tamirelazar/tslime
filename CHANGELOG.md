@@ -17,6 +17,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the outer color is unused. (#126)
 
 ### Changed
+- The frame matte is off by default, so the simulation now runs to the frame
+  border instead of sitting inside a 4-column / 1-row background gap.
+  `--window-frame glow` is the exception and keeps the old matte — it grades its
+  shading from the border inward, and a border-only ring leaves nothing to grade
+  — so cycling in or out of glow at runtime reflows the field. Setting
+  `--frame-matte-cols` / `--frame-matte-rows` to a non-zero value overrides the
+  gap in every mode, glow included.
 - **Breaking:** a malformed `--bg-color` value is now a command-line error.
   Every background call site was `.and_then(hex_to_rgb)`, so `--bg-color zzz`
   silently meant "no background" and was indistinguishable from omitting the

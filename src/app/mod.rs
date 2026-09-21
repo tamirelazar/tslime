@@ -27,7 +27,7 @@ use crate::render::palette::{
 use crate::render::palette_editor::{
     EditorComponent, EditorMode, PaletteEditorOverlay, PaletteEditorState,
 };
-use crate::render::window::{FRAME_RING_COLS, FRAME_RING_ROWS, GRID_COLOR, GRID_OPACITY};
+use crate::render::window::{GLOW_RING_COLS, GLOW_RING_ROWS, GRID_COLOR, GRID_OPACITY};
 use crate::simulation;
 use crate::simulation::config::{
     Attractor, DiffusionKernel, InitMode, Preset, SimConfig, TerrainType,
@@ -746,8 +746,8 @@ pub fn headless_ansi_frame(
     let geom = FrameGeometry {
         cols,
         rows,
-        ring_cols: FRAME_RING_COLS,
-        ring_rows: FRAME_RING_ROWS,
+        ring_cols: GLOW_RING_COLS,
+        ring_rows: GLOW_RING_ROWS,
         pad_cols: (pad_frac_x * cols as f32) as usize,
         pad_rows: (pad_frac_y * rows as f32) as usize,
     };

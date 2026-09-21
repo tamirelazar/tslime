@@ -106,7 +106,7 @@ simulation parameter does and how the parameters interact.
 ### Background
 
 The window frame splits the terminal into two zones, and each takes its own
-color: **inner** is everything inside the frame — the simulation and the matte
+color: **inner** is everything inside the frame — the simulation and any matte
 around it — and **outer** is the padding outside it.
 
 ```bash

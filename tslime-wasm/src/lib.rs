@@ -7,7 +7,7 @@ use tslime::render::charset::Charset;
 use tslime::render::downsample::{downsample, DownsampledFrame};
 use tslime::render::grid::{GridRenderer, GridStyle};
 use tslime::render::palette::{palette_accent_color, IntensityMapping, Palette, ALL_PALETTES};
-use tslime::render::window::{FRAME_RING_COLS, FRAME_RING_ROWS, GRID_COLOR, GRID_OPACITY};
+use tslime::render::window::{GLOW_RING_COLS, GLOW_RING_ROWS, GRID_COLOR, GRID_OPACITY};
 use tslime::simulation::{
     config::{InitMode, SimConfig, PRESETS},
     Simulation,
@@ -41,8 +41,8 @@ pub struct TslimeWasm {
     // interior dims (terminal size minus the frame ring) change.
     grid: Option<GridRenderer>,
     grid_dims: (usize, usize),
-    // Glow-border thickness per side, fixed at the crate defaults
-    // `FRAME_RING_COLS`/`FRAME_RING_ROWS`.
+    // Glow-border thickness per side, fixed at the crate's glow-ring defaults
+    // `GLOW_RING_COLS`/`GLOW_RING_ROWS`.
     ring_cols: usize,
     ring_rows: usize,
     // Opt-in OUTER dark padding as a FRACTION of each terminal dimension
@@ -106,8 +106,8 @@ impl TslimeWasm {
             charset: Charset::Ascii,
             grid: None,
             grid_dims: (0, 0),
-            ring_cols: FRAME_RING_COLS,
-            ring_rows: FRAME_RING_ROWS,
+            ring_cols: GLOW_RING_COLS,
+            ring_rows: GLOW_RING_ROWS,
             pad_frac_x: 0.0,
             pad_frac_y: 0.0,
             grid_on_empty: false,

@@ -187,7 +187,7 @@ pub fn print_parameter_explanations() {
     println!("    optional leading '#'. The terminal is split into two zones by");
     println!("    the window frame's rectangle:");
     println!("    • inner: everything inside the frame — the simulation area and");
-    println!("             the matte between it and the border");
+    println!("             any matte between it and the border");
     println!("    • outer: everything outside the frame — the surrounding padding");
     println!("    --bg-color sets both; --bg-color-inner / --bg-color-outer");
     println!("    (aliases --bg-inner / --bg-outer) set one zone and win over it.");

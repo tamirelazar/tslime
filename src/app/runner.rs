@@ -963,12 +963,18 @@ pub fn run_simulation(
     renderer.set_dimensions(term_width as usize, term_height as usize);
 
     // Compute initial window layout for windowed (non-fullscreen) chrome styles.
-    // `mut` because the config-load apply seam recomputes it on load.
+    // `mut` because the config-load apply seam recomputes it on load, and because
+    // cycling the frame mode can change the ring (glow keeps a matte).
+    let (initial_ring_cols, initial_ring_rows) = crate::render::window::ring_for_frame(
+        config.window_frame,
+        config.frame_matte_cols,
+        config.frame_matte_rows,
+    );
     let mut window = crate::render::window::Window {
         aspect: config.aspect,
         padding: config.window_padding,
-        ring_cols: config.frame_matte_cols + 1,
-        ring_rows: config.frame_matte_rows + 1,
+        ring_cols: initial_ring_cols,
+        ring_rows: initial_ring_rows,
         min_sim_size: config.min_sim_size,
         min_frame_size: config.min_frame_size,
     };
@@ -1151,6 +1157,46 @@ pub fn run_simulation(
         aux.width = w;
         aux.height = h;
         aux.cells = vec![crate::render::downsample::AuxCell::default(); w * h];
+    }
+
+    // Re-reserve the frame ring after the frame mode changed, and when the ring
+    // moved, recompute the window layout and render buffers to match. Only `glow`
+    // keeps a background matte (it grades its shading across the ring's depth),
+    // so cycling in or out of glow resizes the field.
+    #[allow(clippy::too_many_arguments)]
+    fn reflow_frame_ring(
+        mode: crate::simulation::config::WindowFrame,
+        matte: (usize, usize),
+        chrome_style: crate::simulation::config::ChromeStyle,
+        term: (usize, usize),
+        window: &mut crate::render::window::Window,
+        renderer: &mut TerminalRenderer,
+        downsampled: &mut crate::render::downsample::DownsampledFrame,
+        aux: &mut crate::render::downsample::AuxFrame,
+    ) {
+        use crate::render::window::FallbackMode;
+        use crate::simulation::config::ChromeStyle;
+        let ring = crate::render::window::ring_for_frame(mode, matte.0, matte.1);
+        if ring == (window.ring_cols, window.ring_rows) {
+            return;
+        }
+        window.ring_cols = ring.0;
+        window.ring_rows = ring.1;
+        let layout = if matches!(chrome_style, ChromeStyle::Fullscreen) {
+            None
+        } else {
+            let l = window.compute_rects(term.0, term.1);
+            if matches!(l.fallback, FallbackMode::Fullscreen) {
+                None
+            } else {
+                Some(l)
+            }
+        };
+        // Resize render buffers to the new sim dims BEFORE moving `layout` into
+        // the renderer (else blur_field panics).
+        let (rw, rh) = layout.as_ref().map(|l| (l.sim_w, l.sim_h)).unwrap_or(term);
+        resize_render_frames(downsampled, aux, rw, rh);
+        renderer.set_window_layout(layout);
     }
 
     // Resolve the ambient surface overlay + its screen position for this frame.
@@ -3377,6 +3423,16 @@ pub fn run_simulation(
                         ControlAction::CycleWindowFrame => {
                             runtime_state.cycle_window_frame();
                             renderer.set_window_frame(runtime_state.window_frame);
+                            reflow_frame_ring(
+                                runtime_state.window_frame,
+                                (config.frame_matte_cols, config.frame_matte_rows),
+                                runtime_state.chrome_style,
+                                (term_width as usize, term_height as usize),
+                                &mut window,
+                                &mut renderer,
+                                &mut downsampled_frame,
+                                &mut aux_frame,
+                            );
                             runtime_state.show_notification(format!(
                                 "Frame: {:?}",
                                 runtime_state.window_frame
@@ -3385,6 +3441,16 @@ pub fn run_simulation(
                         ControlAction::CycleWindowFrameReverse => {
                             runtime_state.cycle_window_frame_reverse();
                             renderer.set_window_frame(runtime_state.window_frame);
+                            reflow_frame_ring(
+                                runtime_state.window_frame,
+                                (config.frame_matte_cols, config.frame_matte_rows),
+                                runtime_state.chrome_style,
+                                (term_width as usize, term_height as usize),
+                                &mut window,
+                                &mut renderer,
+                                &mut downsampled_frame,
+                                &mut aux_frame,
+                            );
                             runtime_state.show_notification(format!(
                                 "Frame: {:?}",
                                 runtime_state.window_frame
