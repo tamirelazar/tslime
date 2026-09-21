@@ -64,7 +64,17 @@ pub struct ProfileOverrides {
     pub wind: Option<WindArg>,
     pub terrain: Option<String>,
     pub terrain_strength: Option<f32>,
-    pub background_color: Option<String>,
+    /// Inner-zone background hex: every cell inside the frame rect (simulation
+    /// interior plus the frame matte).
+    pub background_color_inner: Option<String>,
+    /// Outer-zone background hex: every cell outside the frame rect.
+    pub background_color_outer: Option<String>,
+    /// Legacy single-zone `background_color` key. Accepted on read and folded
+    /// into whichever of the pair is unset (so a specific key in the same file
+    /// wins), then cleared — see
+    /// [`ProfileOverrides::migrate_legacy_background`]. Never written back.
+    #[serde(rename = "background_color", default, skip_serializing)]
+    pub background_color_legacy: Option<String>,
     pub boundary_mode: Option<BoundaryMode>,
     #[serde(default, with = "serde_opt_window_frame")]
     pub window_frame: Option<WindowFrame>,
@@ -210,6 +220,27 @@ pub struct ProfileOverrides {
 }
 
 impl ProfileOverrides {
+    /// Fold a legacy `background_color` key into the inner/outer pair.
+    ///
+    /// The legacy key seeds both zones, but only where the file did not already
+    /// carry the specific key — the same "specific beats general" rule the CLI
+    /// applies to `--bg-color`. The legacy field is cleared afterwards, so it
+    /// never round-trips back out and never affects dirty comparison.
+    ///
+    /// This is a one-way migration: files are upgraded on read, and `save`
+    /// writes only the pair.
+    pub(crate) fn migrate_legacy_background(&mut self) {
+        let Some(legacy) = self.background_color_legacy.take() else {
+            return;
+        };
+        if self.background_color_inner.is_none() {
+            self.background_color_inner = Some(legacy.clone());
+        }
+        if self.background_color_outer.is_none() {
+            self.background_color_outer = Some(legacy);
+        }
+    }
+
     /// Builds a `ProfileOverrides` from CLI args. Sim block mirrors the sim-field
     /// extraction that the former `ConfigBuilder::from_args` performed. Render block
     /// mirrors the palette/charset/art-defaults predicates from the startup resolution path.
@@ -319,7 +350,9 @@ impl ProfileOverrides {
             wind: args.wind.clone(),
             terrain: args.terrain.clone(),
             terrain_strength: args.terrain_strength,
-            background_color: args.bg_color.clone(),
+            background_color_inner: args.bg_color_inner(),
+            background_color_outer: args.bg_color_outer(),
+            background_color_legacy: None,
             boundary_mode: args.boundary_mode,
             window_frame: args.window_frame,
             chrome_style: if args.fullscreen {
@@ -672,9 +705,14 @@ impl ProfileOverrides {
             config.terrain_strength = strength;
         }
 
-        // Background color: CLI overrides; absent the flag, the preset's bg survives.
-        if let Some(ref bg) = self.background_color {
-            config.background_color = Some(bg.clone());
+        // Background colors: CLI overrides; absent the flag, the preset's bg
+        // survives. The two zones resolve independently, so passing only one
+        // leaves the other at whatever the preset layer supplied.
+        if let Some(ref bg) = self.background_color_inner {
+            config.background_color_inner = Some(bg.clone());
+        }
+        if let Some(ref bg) = self.background_color_outer {
+            config.background_color_outer = Some(bg.clone());
         }
 
         // Boundary mode: preset suggests (via PresetSimDefaults), CLI overrides.
@@ -977,7 +1015,18 @@ pub(crate) fn dump_sim_config(config: &crate::simulation::config::SimConfig) -> 
     let _ = writeln!(s, "boundary_mode={:?}", config.boundary_mode);
     let _ = writeln!(s, "preferred_init_mode={:?}", config.preferred_init_mode);
     let _ = writeln!(s, "wind={:?}", config.wind);
-    let _ = writeln!(s, "background_color={:?}", config.background_color);
+    // Two lines, always emitted even when the values are equal, so the snapshot
+    // shows each zone independently.
+    let _ = writeln!(
+        s,
+        "background_color_inner={:?}",
+        config.background_color_inner
+    );
+    let _ = writeln!(
+        s,
+        "background_color_outer={:?}",
+        config.background_color_outer
+    );
     let _ = writeln!(s, "obstacles={:?}", config.obstacles);
     let _ = writeln!(s, "attractors={:?}", config.attractors);
     let _ = writeln!(
@@ -1461,7 +1510,32 @@ mod tests {
     fn petridish_preset_keeps_obstacle_and_bg() {
         let c = resolve(&["--preset", "petridish"]).sim;
         assert_eq!(c.obstacles.len(), 1);
-        assert_eq!(c.background_color.as_deref(), Some("000000"));
+        assert_eq!(c.background_color_inner.as_deref(), Some("000000"));
+        assert_eq!(c.background_color_outer.as_deref(), Some("000000"));
+    }
+
+    #[test]
+    fn a_bg_zone_flag_beats_a_preset_supplied_background() {
+        // PetriDish is the only preset with a background opinion, so it is the
+        // one place the CLI-vs-preset precedence is observable.
+        let c = resolve(&["--preset", "petridish", "--bg-color-outer", "445566"]).sim;
+        assert_eq!(
+            c.background_color_inner.as_deref(),
+            Some("000000"),
+            "the untouched zone keeps the preset's value"
+        );
+        assert_eq!(
+            c.background_color_outer.as_deref(),
+            Some("445566"),
+            "an explicit zone flag must win over the preset"
+        );
+    }
+
+    #[test]
+    fn bg_color_overrides_both_preset_zones() {
+        let c = resolve(&["--preset", "petridish", "--bg-color", "445566"]).sim;
+        assert_eq!(c.background_color_inner.as_deref(), Some("445566"));
+        assert_eq!(c.background_color_outer.as_deref(), Some("445566"));
     }
 
     #[test]

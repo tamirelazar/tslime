@@ -918,7 +918,14 @@ pub fn run_simulation(
     let startup_profile = crate::profile::Profile::resolve_from_args(args)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let config = startup_profile.sim.clone();
-    let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+    let background_color_inner = config
+        .background_color_inner
+        .as_ref()
+        .and_then(|c| hex_to_rgb(c));
+    let background_color_outer = config
+        .background_color_outer
+        .as_ref()
+        .and_then(|c| hex_to_rgb(c));
 
     let init_mode = args
         .init
@@ -933,7 +940,8 @@ pub fn run_simulation(
         args.reverse_palette,
         args.invert_palette,
         color_mode,
-        background_color,
+        background_color_inner,
+        background_color_outer,
     );
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
     renderer.set_dither_mode(dither_mode);

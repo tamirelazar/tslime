@@ -36,7 +36,8 @@ pub(crate) struct PresetSimDefaults {
     pub window_frame: WindowFrame,
     pub preferred_init_mode: Option<InitMode>,
     pub wind: Option<Wind>,
-    pub background_color: Option<String>,
+    pub background_color_inner: Option<String>,
+    pub background_color_outer: Option<String>,
     pub obstacles: Vec<Obstacle>,
     pub species_configs: Vec<SpeciesConfig>,
     pub deposit_cap: f32,
@@ -80,7 +81,8 @@ impl Default for PresetSimDefaults {
             window_frame: WindowFrame::Frame,
             preferred_init_mode: Some(InitMode::Food),
             wind: None,
-            background_color: None,
+            background_color_inner: None,
+            background_color_outer: None,
             obstacles: Vec::new(),
             species_configs: vec![SpeciesConfig::default()],
             deposit_cap: trail::DEFAULT_DEPOSIT_CAP,
@@ -120,7 +122,8 @@ impl PresetSimDefaults {
         config.window_frame = self.window_frame;
         config.preferred_init_mode = self.preferred_init_mode;
         config.wind = self.wind;
-        config.background_color = self.background_color.clone();
+        config.background_color_inner = self.background_color_inner.clone();
+        config.background_color_outer = self.background_color_outer.clone();
         config.obstacles = self.obstacles.clone();
         config.species_configs = self.species_configs.clone();
         config.deposit_cap = self.deposit_cap;
@@ -256,7 +259,8 @@ impl From<Preset> for PresetSimDefaults {
                 deposit_amount: 0.2,
                 max_brightness: 50.0,
                 preferred_init_mode: Some(InitMode::Petri),
-                background_color: Some("000000".to_string()),
+                background_color_inner: Some("000000".to_string()),
+                background_color_outer: Some("000000".to_string()),
                 obstacles: vec![Obstacle::Circle {
                     x: 200.0,
                     y: 100.0,
@@ -965,7 +969,8 @@ mod tests {
         use crate::simulation::config::InitMode;
         let s = PresetSimDefaults::from(Preset::PetriDish);
         assert_eq!(s.obstacles.len(), 1);
-        assert_eq!(s.background_color.as_deref(), Some("000000"));
+        assert_eq!(s.background_color_inner.as_deref(), Some("000000"));
+        assert_eq!(s.background_color_outer.as_deref(), Some("000000"));
         assert_eq!(s.preferred_init_mode, Some(InitMode::Petri));
     }
 

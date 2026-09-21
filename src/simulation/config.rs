@@ -1461,8 +1461,15 @@ pub struct SimConfig {
     pub terrain: TerrainType,
     /// Strength of terrain effect.
     pub terrain_strength: f32,
-    /// Background color hex code.
-    pub background_color: Option<String>,
+    /// Background color hex code for the **inner** zone: every cell inside the
+    /// frame rect (simulation interior plus the frame matte). `None` lets the
+    /// terminal's own background show through.
+    pub background_color_inner: Option<String>,
+    /// Background color hex code for the **outer** zone: every cell outside the
+    /// frame rect. `None` lets the terminal's own background show through. The
+    /// zone has no area in the fullscreen and edge-hug fallbacks, where the
+    /// frame rect covers the whole terminal, so the value is silently unused.
+    pub background_color_outer: Option<String>,
     /// Preferred initialization mode for this config (if any).
     pub preferred_init_mode: Option<InitMode>,
     /// Boundary handling mode (bounce or wrap).
@@ -1604,7 +1611,8 @@ impl Default for SimConfig {
             wind: None,
             terrain: TerrainType::None,
             terrain_strength: env_consts::DEFAULT_TERRAIN_STRENGTH,
-            background_color: None,
+            background_color_inner: None,
+            background_color_outer: None,
             preferred_init_mode: Some(InitMode::Food),
             boundary_mode: BoundaryMode::Bounce,
             window_frame: WindowFrame::Frame,

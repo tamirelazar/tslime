@@ -73,7 +73,12 @@ pub struct TerminalRenderer {
     error_diffusion: Option<ErrorDiffusion>,
     species_colors_enabled: bool,
     species_rgb_colors: Vec<RgbColor>,
-    background_color: Option<RgbColor>,
+    /// Background for the inner zone: every cell inside the layout's frame
+    /// rect (simulation interior plus the frame matte).
+    background_color_inner: Option<RgbColor>,
+    /// Background for the outer zone: every cell outside the frame rect.
+    /// Unused when the frame rect covers the terminal (fullscreen/edge-hug).
+    background_color_outer: Option<RgbColor>,
     ascii_contrast: f32,
     color_aa: crate::render::antialiasing::AaStrength,
     aux_frame: Option<crate::render::downsample::AuxFrame>,
@@ -112,7 +117,8 @@ impl TerminalRenderer {
         reverse_palette: bool,
         invert_palette: bool,
         color_mode: ColorMode,
-        background_color: Option<RgbColor>,
+        background_color_inner: Option<RgbColor>,
+        background_color_outer: Option<RgbColor>,
     ) -> Self {
         Self {
             stdout: std::io::stdout(),
@@ -129,7 +135,8 @@ impl TerminalRenderer {
             error_diffusion: None,
             species_colors_enabled: false,
             species_rgb_colors: Vec::new(),
-            background_color,
+            background_color_inner,
+            background_color_outer,
             ascii_contrast: 1.5,
             color_aa: crate::render::antialiasing::AaStrength::Off,
             aux_frame: None,
@@ -328,14 +335,34 @@ impl TerminalRenderer {
         self.color_aa
     }
 
-    /// Update the background color (the color drawn behind empty cells).
-    pub fn set_background_color(&mut self, bg: Option<RgbColor>) {
-        self.background_color = bg;
+    /// Update the inner-zone background: the color drawn behind empty cells
+    /// inside the frame rect (simulation interior plus the frame matte).
+    pub fn set_background_color_inner(&mut self, bg: Option<RgbColor>) {
+        self.background_color_inner = bg;
     }
 
-    /// Returns the active background color, if any.
-    pub fn background_color(&self) -> Option<RgbColor> {
-        self.background_color
+    /// Update the outer-zone background: the color drawn outside the frame rect.
+    pub fn set_background_color_outer(&mut self, bg: Option<RgbColor>) {
+        self.background_color_outer = bg;
+    }
+
+    /// Returns the active inner-zone background color, if any.
+    pub fn background_color_inner(&self) -> Option<RgbColor> {
+        self.background_color_inner
+    }
+
+    /// Returns the active outer-zone background color, if any.
+    pub fn background_color_outer(&self) -> Option<RgbColor> {
+        self.background_color_outer
+    }
+
+    /// The layout's frame rect as `(x, y, w, h)` — the inner zone. Without a
+    /// window layout the whole terminal is the inner zone.
+    fn frame_rect(&self) -> (usize, usize, usize, usize) {
+        match self.window_layout {
+            Some(ref l) => (l.frame_x, l.frame_y, l.frame_w, l.frame_h),
+            None => (0, 0, self.width, self.height),
+        }
     }
 
     /// Returns the active palette.
@@ -426,6 +453,12 @@ impl TerminalRenderer {
                 self.height,
                 layout.sim_x,
                 layout.sim_y,
+                (
+                    layout.frame_x,
+                    layout.frame_y,
+                    layout.frame_w,
+                    layout.frame_h,
+                ),
                 max_trail_value,
                 self.palette.clone(),
                 self.charset.clone(),
@@ -438,7 +471,8 @@ impl TerminalRenderer {
                 self.intensity_mapping.as_ref(),
                 self.species_colors_enabled,
                 species_colors,
-                self.background_color,
+                self.background_color_inner,
+                self.background_color_outer,
                 self.ascii_contrast,
                 self.aux_frame.as_ref(),
                 self.trail_age_enabled,
@@ -474,7 +508,7 @@ impl TerminalRenderer {
                 self.intensity_mapping.as_ref(),
                 self.species_colors_enabled,
                 species_colors,
-                self.background_color,
+                self.background_color_inner,
                 self.ascii_contrast,
                 self.aux_frame.as_ref(),
                 self.trail_age_enabled,
@@ -514,7 +548,7 @@ impl TerminalRenderer {
                     layout.frame_y,
                     layout.frame_w,
                     layout.frame_h,
-                    self.background_color,
+                    self.background_color_inner,
                     layout.sim_x - layout.frame_x,
                     layout.sim_y - layout.frame_y,
                 );
@@ -728,6 +762,12 @@ impl TerminalRenderer {
                 self.height,
                 layout.sim_x,
                 layout.sim_y,
+                (
+                    layout.frame_x,
+                    layout.frame_y,
+                    layout.frame_w,
+                    layout.frame_h,
+                ),
                 max_trail_value,
                 self.palette.clone(),
                 self.charset.clone(),
@@ -740,7 +780,8 @@ impl TerminalRenderer {
                 self.intensity_mapping.as_ref(),
                 self.species_colors_enabled,
                 species_colors_rwo,
-                self.background_color,
+                self.background_color_inner,
+                self.background_color_outer,
                 self.ascii_contrast,
                 self.aux_frame.as_ref(),
                 self.trail_age_enabled,
@@ -776,7 +817,7 @@ impl TerminalRenderer {
                 self.intensity_mapping.as_ref(),
                 self.species_colors_enabled,
                 species_colors_rwo,
-                self.background_color,
+                self.background_color_inner,
                 self.ascii_contrast,
                 self.aux_frame.as_ref(),
                 self.trail_age_enabled,
@@ -856,7 +897,13 @@ impl TerminalRenderer {
         }
 
         if blank_backdrop {
-            buffer.fill_background();
+            // Zone-aware so the modal matte respects the same geometric split as
+            // the normal frame: the picture goes to inner, the surround stays outer.
+            buffer.fill_zones(
+                self.frame_rect(),
+                self.background_color_inner,
+                self.background_color_outer,
+            );
         }
 
         // Palette accent color used for accented title badges and border.
@@ -879,7 +926,7 @@ impl TerminalRenderer {
                         layout.frame_y,
                         layout.frame_w,
                         layout.frame_h,
-                        self.background_color,
+                        self.background_color_inner,
                         layout.sim_x - layout.frame_x,
                         layout.sim_y - layout.frame_y,
                     );
@@ -888,7 +935,7 @@ impl TerminalRenderer {
                 buffer.render_window_frame(
                     self.window_frame,
                     accent,
-                    self.background_color,
+                    self.background_color_inner,
                     crate::render::window::FRAME_RING_COLS,
                     crate::render::window::FRAME_RING_ROWS,
                 );
@@ -1178,7 +1225,14 @@ impl TerminalRenderer {
             self.width,
             self.height,
             self.color_mode,
-            self.background_color,
+            self.background_color_inner,
+        );
+        // This path composites species buffers by hand instead of going through
+        // from_downsampled_at, so paint the zones here to match.
+        buffer.fill_zones(
+            self.frame_rect(),
+            self.background_color_inner,
+            self.background_color_outer,
         );
         buffer.species_colors_enabled = true;
         buffer.species_rgb_colors = self.species_rgb_colors.clone();
@@ -1249,7 +1303,7 @@ impl TerminalRenderer {
                     self.intensity_mapping.as_ref(),
                     true,
                     Some(species_color_vec),
-                    self.background_color,
+                    self.background_color_inner,
                     self.ascii_contrast,
                     None, // aux_frame not supported for multi-species
                     false,
@@ -1345,7 +1399,13 @@ impl TerminalRenderer {
         }
 
         if blank_backdrop {
-            buffer.fill_background();
+            // Zone-aware so the modal matte respects the same geometric split as
+            // the normal frame: the picture goes to inner, the surround stays outer.
+            buffer.fill_zones(
+                self.frame_rect(),
+                self.background_color_inner,
+                self.background_color_outer,
+            );
         }
 
         // Palette accent color for accented title badges (same approach as single-species).
@@ -1368,7 +1428,7 @@ impl TerminalRenderer {
                         layout.frame_y,
                         layout.frame_w,
                         layout.frame_h,
-                        self.background_color,
+                        self.background_color_inner,
                         layout.sim_x - layout.frame_x,
                         layout.sim_y - layout.frame_y,
                     );
@@ -1377,7 +1437,7 @@ impl TerminalRenderer {
                 buffer.render_window_frame(
                     self.window_frame,
                     accent,
-                    self.background_color,
+                    self.background_color_inner,
                     crate::render::window::FRAME_RING_COLS,
                     crate::render::window::FRAME_RING_ROWS,
                 );
@@ -1539,6 +1599,7 @@ mod tests {
             false,
             ColorMode::TrueColor,
             None,
+            None,
         );
         renderer.set_invert_palette(true);
         renderer.set_reverse_palette(true);
@@ -1562,6 +1623,7 @@ mod tests {
             false,
             ColorMode::TrueColor,
             None,
+            None,
         );
         r.set_charset(Charset::Ascii);
         assert_eq!(r.charset(), &Charset::Ascii);
@@ -1581,6 +1643,7 @@ mod tests {
             false,
             false,
             ColorMode::TrueColor,
+            None,
             None,
         );
         let trail = vec![1.0; 100];

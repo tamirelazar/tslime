@@ -51,9 +51,26 @@ impl WindowFrameRenderer {
     /// so it counts as non-blank (and thus blits over simulation content). When
     /// no background is configured, a plain blank space is used.
     fn bg_cell(&self) -> Cell {
+        self.ring_cell(' ', None)
+    }
+
+    /// A ring cell: `ch` in `fg`, over the configured background color.
+    ///
+    /// Every cell the frame draws sits inside the layout's frame rect, so it
+    /// belongs to the inner background zone. Carrying the background here is
+    /// what keeps that true: the ring is blitted over the composed buffer as
+    /// whole cells, so a glyph with no background would punch the zone color
+    /// out and let the terminal's own background show through behind it —
+    /// invisible behind a solid `█`, but obvious behind the thin box rules and
+    /// the shaded glow glyphs.
+    fn ring_cell(&self, ch: char, fg: Option<RgbColor>) -> Cell {
+        let mut cell = Cell::new(ch);
+        if let Some(c) = fg {
+            cell = cell.with_fg(c);
+        }
         match self.background_color {
-            Some(c) => Cell::new(' ').with_bg(c),
-            None => Cell::new(' '),
+            Some(bg) => cell.with_bg(bg),
+            None => cell,
         }
     }
 
@@ -107,7 +124,7 @@ impl WindowFrameRenderer {
                 }
                 let is_accent = x < acc_c || x >= width - acc_c || y < acc_r || y >= height - acc_r;
                 if is_accent {
-                    buffer.set_cell(x, y, Cell::new('█').with_fg(color));
+                    buffer.set_cell(x, y, self.ring_cell('█', Some(color)));
                 } else {
                     buffer.set_cell(x, y, bg);
                 }
@@ -142,11 +159,8 @@ impl WindowFrameRenderer {
                 } else {
                     '▒'
                 };
-                buffer.set_cell(
-                    x,
-                    y,
-                    Cell::new(ch).with_fg(self.accent_color.with_alpha(alpha)),
-                );
+                let fg = self.accent_color.with_alpha(alpha);
+                buffer.set_cell(x, y, self.ring_cell(ch, Some(fg)));
             }
         }
     }
@@ -173,18 +187,18 @@ impl WindowFrameRenderer {
         }
 
         // Box at the outer ring edge (the matte sits between it and the sim).
-        buffer.set_cell(0, 0, Cell::new('┌').with_fg(color));
-        buffer.set_cell(width - 1, 0, Cell::new('┐').with_fg(color));
-        buffer.set_cell(0, height - 1, Cell::new('└').with_fg(color));
-        buffer.set_cell(width - 1, height - 1, Cell::new('┘').with_fg(color));
+        buffer.set_cell(0, 0, self.ring_cell('┌', Some(color)));
+        buffer.set_cell(width - 1, 0, self.ring_cell('┐', Some(color)));
+        buffer.set_cell(0, height - 1, self.ring_cell('└', Some(color)));
+        buffer.set_cell(width - 1, height - 1, self.ring_cell('┘', Some(color)));
 
         for x in 1..width - 1 {
-            buffer.set_cell(x, 0, Cell::new('─').with_fg(color));
-            buffer.set_cell(x, height - 1, Cell::new('─').with_fg(color));
+            buffer.set_cell(x, 0, self.ring_cell('─', Some(color)));
+            buffer.set_cell(x, height - 1, self.ring_cell('─', Some(color)));
         }
         for y in 1..height - 1 {
-            buffer.set_cell(0, y, Cell::new('│').with_fg(color));
-            buffer.set_cell(width - 1, y, Cell::new('│').with_fg(color));
+            buffer.set_cell(0, y, self.ring_cell('│', Some(color)));
+            buffer.set_cell(width - 1, y, self.ring_cell('│', Some(color)));
         }
     }
 

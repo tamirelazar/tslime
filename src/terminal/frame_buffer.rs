@@ -151,19 +151,60 @@ impl FrameBuffer {
     /// a clean backdrop behind a modal overlay that would otherwise overlap the
     /// frame border and read as visual noise.
     pub fn fill_background(&mut self) {
-        let (bg_color_256, bg_color_rgb) = match (self.background_color, self.color_mode) {
+        let blank = self.matte_cell(self.background_color);
+        self.cells.fill(blank);
+    }
+
+    /// Repaints every cell as blank matte, using `inner` inside `frame_rect`
+    /// (`(x, y, w, h)`) and `outer` everywhere else.
+    ///
+    /// The zone boundary is geometric: it depends only on the layout's frame
+    /// rect, never on the active
+    /// [`WindowFrame`](crate::simulation::config::WindowFrame) mode. That is
+    /// what lets chrome cycle at runtime without a single cell changing colour,
+    /// and what keeps the matte on the inner colour under `none` (which paints
+    /// no ring at all) and `glow` (which only shades it).
+    ///
+    /// Either colour may be `None`, leaving that zone's cells uncoloured so the
+    /// terminal's own background shows through.
+    pub fn fill_zones(
+        &mut self,
+        frame_rect: (usize, usize, usize, usize),
+        inner: Option<RgbColor>,
+        outer: Option<RgbColor>,
+    ) {
+        let inner_cell = self.matte_cell(inner);
+        let outer_cell = self.matte_cell(outer);
+        let (fx, fy, fw, fh) = frame_rect;
+        let (fx2, fy2) = (fx.saturating_add(fw), fy.saturating_add(fh));
+        for y in 0..self.height {
+            let in_rows = y >= fy && y < fy2;
+            for x in 0..self.width {
+                let cell = if in_rows && x >= fx && x < fx2 {
+                    inner_cell
+                } else {
+                    outer_cell
+                };
+                self.cells[y * self.width + x] = cell;
+            }
+        }
+    }
+
+    /// A blank cell carrying `color` in this buffer's color mode, or a plain
+    /// blank when `color` is `None`.
+    fn matte_cell(&self, color: Option<RgbColor>) -> Cell {
+        let (bg_color_256, bg_color_rgb) = match (color, self.color_mode) {
             (Some(bg), ColorMode::TrueColor) => (None, Some(bg)),
             (Some(bg), _) => (Some(palette::rgb_to_256(bg)), None),
             (None, _) => (None, None),
         };
-        let blank = Cell {
+        Cell {
             char: ' ',
             fg_color_256: None,
             bg_color_256,
             fg_color_rgb: None,
             bg_color_rgb,
-        };
-        self.cells.fill(blank);
+        }
     }
 
     #[cfg(test)]
@@ -779,6 +820,19 @@ impl FrameBuffer {
     ///
     /// When `sim_x == 0 && sim_y == 0 && sim_w == term_w && sim_h == term_h` the inner
     /// `from_downsampled` result is returned directly (fast path — no copy).
+    ///
+    /// # Background zones
+    ///
+    /// The composition is also the background-zone boundary. `frame_rect`
+    /// (`(x, y, w, h)`, the chrome ring plus the simulation it encloses) is
+    /// painted with `background_color_inner`; every cell outside it gets
+    /// `background_color_outer`. The split is purely geometric — it does not
+    /// consult the [`WindowFrame`](crate::simulation::config::WindowFrame) mode
+    /// — so cycling chrome at runtime never moves a cell between zones, and
+    /// `none`/`glow`, which leave part or all of the ring unpainted, still show
+    /// the inner colour there. Where `frame_rect` covers the whole buffer
+    /// (fullscreen and edge-hug), the outer zone has no area and its colour is
+    /// silently unused.
     #[allow(clippy::too_many_arguments)]
     pub fn from_downsampled_at(
         downsampled: &[DownsampleCell],
@@ -788,6 +842,7 @@ impl FrameBuffer {
         term_h: usize,
         sim_x: usize,
         sim_y: usize,
+        frame_rect: (usize, usize, usize, usize),
         max_trail_value: f32,
         palette: Palette,
         charset: Charset,
@@ -800,7 +855,8 @@ impl FrameBuffer {
         intensity_mapping: Option<&IntensityMapping>,
         species_colors_enabled: bool,
         species_rgb_colors: Option<Vec<RgbColor>>,
-        background_color: Option<RgbColor>,
+        background_color_inner: Option<RgbColor>,
+        background_color_outer: Option<RgbColor>,
         ascii_contrast: f32,
         aux_frame: Option<&crate::render::downsample::AuxFrame>,
         trail_age_enabled: bool,
@@ -836,7 +892,7 @@ impl FrameBuffer {
             intensity_mapping,
             species_colors_enabled,
             species_rgb_colors,
-            background_color,
+            background_color_inner,
             ascii_contrast,
             aux_frame,
             trail_age_enabled,
@@ -856,13 +912,19 @@ impl FrameBuffer {
             aa_strength,
         );
 
-        // Fast path: fullscreen — no blitting needed
+        // Fast path: fullscreen — no blitting needed. The frame rect covers the
+        // whole terminal there, so everything is the inner zone anyway.
         if sim_x == 0 && sim_y == 0 && sim_w == term_w && sim_h == term_h {
             return sim_buffer;
         }
 
-        // Create outer buffer filled with blank cells, then blit sim into it
-        let mut outer = Self::new(term_w, term_h, color_mode, background_color);
+        // Outer zone first, then the frame rect repainted as the inner zone, then
+        // the sim blitted on top. Painting the rect here rather than leaving it to
+        // WindowFrameRenderer is what makes the zones frame-mode independent: the
+        // `none` mode draws nothing and `glow` only shades, so neither would cover
+        // the matte on its own.
+        let mut outer = Self::new(term_w, term_h, color_mode, background_color_inner);
+        outer.fill_zones(frame_rect, background_color_inner, background_color_outer);
         for y in 0..sim_h {
             for x in 0..sim_w {
                 let src_idx = y * sim_w + x;
@@ -3739,6 +3801,246 @@ mod tests {
         assert_eq!(cell.fg_color_256, Some(200));
     }
 
+    // ── Background zones ──────────────────────────────────────────────────
+    //
+    // The zone boundary is the layout's frame rect: inside it (simulation plus
+    // matte) is the inner zone, outside it is the outer zone. These tests pin
+    // one cell per zone against real layouts from `Window::compute_rects`, so a
+    // change to the ring geometry or the fallbacks shows up here.
+
+    const ZONE_INNER: RgbColor = RgbColor {
+        r: 0x11,
+        g: 0x22,
+        b: 0x33,
+    };
+    const ZONE_OUTER: RgbColor = RgbColor {
+        r: 0xAA,
+        g: 0xBB,
+        b: 0xCC,
+    };
+
+    /// Build a terminal-sized buffer for `layout` the way the renderer does,
+    /// optionally drawing the window frame on top.
+    fn zone_buffer(
+        layout: &crate::render::window::WindowLayout,
+        term_w: usize,
+        term_h: usize,
+        frame: Option<crate::simulation::config::WindowFrame>,
+    ) -> FrameBuffer {
+        let downsampled: Vec<DownsampleCell> = (0..layout.sim_w * layout.sim_h)
+            .map(|_| DownsampleCell::default())
+            .collect();
+        let mut buffer = FrameBuffer::from_downsampled_at(
+            &downsampled,
+            layout.sim_w,
+            layout.sim_h,
+            term_w,
+            term_h,
+            layout.sim_x,
+            layout.sim_y,
+            (
+                layout.frame_x,
+                layout.frame_y,
+                layout.frame_w,
+                layout.frame_h,
+            ),
+            1.0,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            0.0,
+            DitherMode::None,
+            &mut None,
+            None,
+            false,
+            None,
+            Some(ZONE_INNER),
+            Some(ZONE_OUTER),
+            1.5,
+            None,
+            false,
+            false,
+            15.0,
+            0.5,
+            0.5,
+            false,
+            0.3,
+            TrailAgeMode::Bidirectional,
+            false,
+            0.0,
+            palette::TemporalMode::Hue,
+            palette::PaletteCycle::default(),
+            charset::GlyphConfig::default(),
+            None,
+            crate::render::antialiasing::AaStrength::Off,
+        );
+        if let Some(mode) = frame {
+            buffer.render_window_frame_at(
+                mode,
+                RgbColor {
+                    r: 0xFF,
+                    g: 0x00,
+                    b: 0x00,
+                },
+                layout.frame_x,
+                layout.frame_y,
+                layout.frame_w,
+                layout.frame_h,
+                Some(ZONE_INNER),
+                layout.sim_x - layout.frame_x,
+                layout.sim_y - layout.frame_y,
+            );
+        }
+        buffer
+    }
+
+    #[test]
+    fn zones_split_at_the_frame_rect_in_the_normal_layout() {
+        use crate::render::window::{FallbackMode, Window};
+        let (tw, th) = (120, 40);
+        let layout = Window::default().compute_rects(tw, th);
+        assert!(matches!(layout.fallback, FallbackMode::Normal));
+
+        let buffer = zone_buffer(&layout, tw, th, None);
+
+        // Outside the frame rect → outer.
+        assert_eq!(
+            buffer.get_cell(0, 0).bg_color_rgb,
+            Some(ZONE_OUTER),
+            "cell outside the frame rect must be the outer zone"
+        );
+        // Inside the frame rect but outside the sim (the matte) → inner.
+        let matte_x = layout.frame_x;
+        let matte_y = layout.frame_y;
+        assert!(matte_x < layout.sim_x && matte_y < layout.sim_y);
+        assert_eq!(
+            buffer.get_cell(matte_x, matte_y).bg_color_rgb,
+            Some(ZONE_INNER),
+            "matte cell inside the frame rect must be the inner zone"
+        );
+        // The simulation interior is inner too (empty sim cells stay matte).
+        assert_eq!(
+            buffer.get_cell(layout.sim_x, layout.sim_y).bg_color_rgb,
+            Some(ZONE_INNER),
+            "simulation cell must be the inner zone"
+        );
+    }
+
+    #[test]
+    fn zone_assignment_is_the_same_in_every_frame_mode() {
+        use crate::render::window::{FallbackMode, Window};
+        use crate::simulation::config::WindowFrame;
+        let (tw, th) = (120, 40);
+        let layout = Window::default().compute_rects(tw, th);
+        assert!(matches!(layout.fallback, FallbackMode::Normal));
+
+        // The innermost matte ring: inside the frame rect, just outside the sim.
+        let (mx, my) = (layout.sim_x - 1, layout.sim_y);
+
+        for mode in [
+            WindowFrame::None,
+            WindowFrame::Accented,
+            WindowFrame::Glow,
+            WindowFrame::Frame,
+        ] {
+            let buffer = zone_buffer(&layout, tw, th, Some(mode));
+            assert_eq!(
+                buffer.get_cell(mx, my).bg_color_rgb,
+                Some(ZONE_INNER),
+                "{mode:?}: matte must stay on the inner zone — \
+                 `none` paints no ring and `glow` only shades one, so the zone \
+                 fill, not the frame renderer, has to own this cell"
+            );
+            assert_eq!(
+                buffer.get_cell(0, 0).bg_color_rgb,
+                Some(ZONE_OUTER),
+                "{mode:?}: cell outside the frame rect must stay outer"
+            );
+            // The ring's own cells are inside the frame rect too, so the accent
+            // glyph sits *over* the inner background rather than punching a
+            // hole in it — otherwise the terminal's background shows through
+            // the thin box rules and the shaded glow.
+            assert_eq!(
+                buffer
+                    .get_cell(layout.frame_x, layout.frame_y + 1)
+                    .bg_color_rgb,
+                Some(ZONE_INNER),
+                "{mode:?}: the ring's border cell must carry the inner zone"
+            );
+        }
+    }
+
+    #[test]
+    fn edge_hug_layout_has_no_outer_zone() {
+        use crate::render::window::{FallbackMode, Window};
+        let (tw, th) = (40, 14);
+        let layout = Window::default().compute_rects(tw, th);
+        assert!(matches!(layout.fallback, FallbackMode::EdgeHug));
+        // The frame rect covers the terminal, so outer has nowhere to land.
+        assert_eq!((layout.frame_w, layout.frame_h), (tw, th));
+
+        let buffer = zone_buffer(&layout, tw, th, None);
+        for (x, y) in [(0, 0), (tw - 1, th - 1), (layout.sim_x, layout.sim_y)] {
+            assert_eq!(
+                buffer.get_cell(x, y).bg_color_rgb,
+                Some(ZONE_INNER),
+                "edge-hug: ({x},{y}) must be inner; the outer color is unused"
+            );
+        }
+    }
+
+    #[test]
+    fn fullscreen_layout_has_no_outer_zone() {
+        use crate::render::window::{FallbackMode, Window};
+        let (tw, th) = (30, 10);
+        let layout = Window::default().compute_rects(tw, th);
+        assert!(matches!(layout.fallback, FallbackMode::Fullscreen));
+
+        let buffer = zone_buffer(&layout, tw, th, None);
+        for (x, y) in [(0, 0), (tw - 1, th - 1)] {
+            assert_eq!(
+                buffer.get_cell(x, y).bg_color_rgb,
+                Some(ZONE_INNER),
+                "fullscreen: ({x},{y}) must be inner; the outer color is unused"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unset_zone_leaves_its_cells_uncolored() {
+        let mut buffer = FrameBuffer::new(10, 6, ColorMode::TrueColor, None);
+        buffer.fill_zones((2, 1, 6, 4), Some(ZONE_INNER), None);
+
+        assert_eq!(
+            buffer.get_cell(2, 1).bg_color_rgb,
+            Some(ZONE_INNER),
+            "inner zone is colored"
+        );
+        assert_eq!(
+            buffer.get_cell(0, 0).bg_color_rgb,
+            None,
+            "an unset outer zone must leave the terminal's own background showing"
+        );
+    }
+
+    #[test]
+    fn fill_zones_quantizes_to_256_colors_outside_truecolor() {
+        let mut buffer = FrameBuffer::new(10, 6, ColorMode::Bits256, None);
+        buffer.fill_zones((2, 1, 6, 4), Some(ZONE_INNER), Some(ZONE_OUTER));
+
+        assert_eq!(buffer.get_cell(2, 1).bg_color_rgb, None);
+        assert_eq!(
+            buffer.get_cell(2, 1).bg_color_256,
+            Some(palette::rgb_to_256(ZONE_INNER))
+        );
+        assert_eq!(
+            buffer.get_cell(0, 0).bg_color_256,
+            Some(palette::rgb_to_256(ZONE_OUTER))
+        );
+    }
+
     #[test]
     fn test_from_downsampled_at_places_cells_at_offset() {
         // A 10×10 terminal buffer with a 4×4 sim at offset (3, 3).
@@ -3760,7 +4062,8 @@ mod tests {
             10,
             10, // term_w, term_h
             3,
-            3, // sim_x, sim_y
+            3,            // sim_x, sim_y
+            (2, 2, 6, 6), // frame_rect
             1.0,
             Palette::Organic,
             Charset::HalfBlock,
@@ -3772,6 +4075,7 @@ mod tests {
             &mut None,
             None,
             false,
+            None,
             None,
             None,
             1.5,
@@ -3853,6 +4157,7 @@ mod tests {
                 h, // term_h == sim_h
                 0,
                 0,
+                (0, 0, w, h), // frame_rect
                 1.0,
                 Palette::Mono,
                 Charset::Braille,
@@ -3864,6 +4169,7 @@ mod tests {
                 &mut None,
                 None,
                 false,
+                None,
                 None,
                 None,
                 1.5,

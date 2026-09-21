@@ -70,9 +70,10 @@ if ($userPath -notlike "*$dir*") {
     $newPath = if ($userPath) { "$userPath;$dir" } else { $dir }
     [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
 }
+# Open a new terminal so the PATH change takes effect, then run: tslime
 ```
 
-Open a new terminal so the `PATH` change takes effect, then run `tslime`.
+Then open a new terminal so the `PATH` change takes effect, and run `tslime`.
 
 ### From source
 
@@ -101,6 +102,23 @@ Some of the presets I use come pre-loaded and are bound to the `1`-`4` keys. You
 
 `tslime --help` lists every flag. `tslime --explain` walks through what each
 simulation parameter does and how the parameters interact.
+
+### Background
+
+The window frame splits the terminal into two zones, and each takes its own
+color: **inner** is everything inside the frame — the simulation and the matte
+around it — and **outer** is the padding outside it.
+
+```bash
+tslime --bg-color-inner 0b100e --bg-color-outer 000000
+```
+
+`--bg-color` sets both at once; `--bg-color-inner` / `--bg-color-outer` (short:
+`--bg-inner` / `--bg-outer`) override it per zone. Leave a zone out and your
+terminal's own background shows through there. The split is geometric, so it
+looks the same under every `--window-frame` mode and cycling the chrome with
+`F10` never recolors a cell. On a terminal too small for padding the frame
+fills the screen, so everything is inner and the outer color goes unused.
 
 ### Saved Configs
 
