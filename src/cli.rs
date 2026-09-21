@@ -13,9 +13,9 @@ use crate::config_defaults::{
 use crate::render::dither::{DitherMatrix, DitherMode};
 use crate::render::palette::RgbColor;
 use crate::simulation::config::{
-    Aspect, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode, Obstacle,
-    PointConfig, Preset, SimConfig, TerminalSizeThreshold, TerrainType, TransitionStyle, Wind,
-    WindowFrame, WindowPadding,
+    Aspect, BorderRingMode, BoundaryMode, ChromeStyle, DepositCurve, DiffusionKernel, InitMode,
+    Obstacle, PointConfig, Preset, SimConfig, TerminalSizeThreshold, TerrainType, TransitionStyle,
+    Wind, WindowFrame, WindowPadding,
 };
 use crate::validation::Validatable;
 
@@ -1476,6 +1476,39 @@ pub struct Args {
     pub no_obstacles: bool,
 
     #[arg(
+        long = "border-ring",
+        value_name = "MODE",
+        help = "Ring of repelling obstacles along the border: 'bounce' (hard circles agents ricochet off) or 'repel' (soft repellers). Example: --border-ring bounce"
+    )]
+    /// Border ring mode. `None` = no ring.
+    pub border_ring: Option<BorderRingMode>,
+
+    #[arg(
+        long = "border-ring-radius",
+        value_name = "FLOAT",
+        help = "Radius of each border-ring element in sim pixels [range: 1-100, default: 8]"
+    )]
+    /// Border ring element radius. `None` = default.
+    pub border_ring_radius: Option<f32>,
+
+    #[arg(
+        long = "border-ring-gap",
+        value_name = "FLOAT",
+        help = "Spacing between border-ring elements in sim pixels (0 = touching, negative = overlapping) [default: 0]",
+        allow_hyphen_values = true
+    )]
+    /// Border ring element gap. `None` = default.
+    pub border_ring_gap: Option<f32>,
+
+    #[arg(
+        long = "border-ring-strength",
+        value_name = "FLOAT",
+        help = "Repeller strength for --border-ring repel [range: 0.1-10, default: 1]"
+    )]
+    /// Border ring repeller strength. `None` = default.
+    pub border_ring_strength: Option<f32>,
+
+    #[arg(
         long = "attractor-strength",
         value_name = "FLOAT",
         help = "Global multiplier for attractor/repeller strength [range: 0.1-10]"
@@ -2446,6 +2479,10 @@ impl Default for Args {
             export_fps: 30,
             obstacle: Vec::new(),
             no_obstacles: false,
+            border_ring: None,
+            border_ring_radius: None,
+            border_ring_gap: None,
+            border_ring_strength: None,
             mouse_attract: false,
             mouse_repel: false,
             mouse_timeout: env_consts::DEFAULT_MOUSE_TIMEOUT,

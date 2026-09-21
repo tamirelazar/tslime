@@ -120,6 +120,23 @@ looks the same under every `--window-frame` mode and cycling the chrome with
 `F10` never recolors a cell. On a terminal too small for padding the frame
 fills the screen, so everything is inner and the outer color goes unused.
 
+### Border Ring
+
+`--border-ring` keeps the growth off the edges of the terminal. `bounce` lines
+the border with circular obstacles the agents ricochet off; `repel` is a soft
+cushion that steers them back inward as they approach a wall.
+
+```bash
+tslime --border-ring bounce --border-ring-radius 16 --border-ring-gap -8
+tslime --border-ring repel --border-ring-radius 24 --border-ring-strength 3
+```
+
+`--border-ring-radius` sets the size of each element in simulation pixels (the
+grid is 400×200 by default). `--border-ring-gap` spaces bounce circles apart;
+a negative gap overlaps them, which closes the cusps between tangent circles
+that agents otherwise slip through. `--border-ring-strength` only applies to
+`repel`.
+
 ### Saved Configs
 
 When you reach a configuration you like, press `Ctrl+S` to save it. You can load your configs with `Ctrl+L` or bind them to the numkeys as described in the next section.

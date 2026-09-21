@@ -117,6 +117,9 @@ pub fn capture_overrides(
             })
             .collect(),
         attractor_strength: Some(sim_config.attractor_strength),
+        // The ring is already materialized into the concrete obstacles/attractors
+        // captured above; saving the spec too would double it on load.
+        border_ring: None,
         obstacles: Some(
             sim_config
                 .obstacles
