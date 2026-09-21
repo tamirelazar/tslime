@@ -182,6 +182,21 @@ pub fn print_parameter_explanations() {
     println!("    • Default (400×200): Good balance");
     println!("    • Larger (800×400): Slower, more detail");
 
+    println!("\n  --bg-color / --bg-color-inner / --bg-color-outer <HEX>");
+    println!("    Background color behind empty cells, as 6 hex digits with an");
+    println!("    optional leading '#'. The terminal is split into two zones by");
+    println!("    the window frame's rectangle:");
+    println!("    • inner: everything inside the frame — the simulation area and");
+    println!("             the matte between it and the border");
+    println!("    • outer: everything outside the frame — the surrounding padding");
+    println!("    --bg-color sets both; --bg-color-inner / --bg-color-outer");
+    println!("    (aliases --bg-inner / --bg-outer) set one zone and win over it.");
+    println!("    The split is geometric, so it is the same in every --window-frame");
+    println!("    mode and cycling chrome never recolors a cell. Leave a zone unset");
+    println!("    to let the terminal's own background show through. When the frame");
+    println!("    fills the terminal (small terminals, or --fullscreen), everything");
+    println!("    is inner and the outer color is unused.");
+
     println!("\n  --dither-mode <MODE> (default: none) [dev-only]");
     println!("    Dithering algorithm for color quantization.");
     println!("    • none: No dithering");

@@ -320,7 +320,20 @@ pub(crate) fn apply_overrides(
     // 6. Renderer sync — push everything the renderer caches, using the exact
     //    live palette/charset (not the lossy index reconstruction).
     sync_renderer_caches(rs, renderer);
-    renderer.set_background_color(profile.sim.background_color.as_deref().and_then(hex_to_rgb));
+    renderer.set_background_color_inner(
+        profile
+            .sim
+            .background_color_inner
+            .as_deref()
+            .and_then(hex_to_rgb),
+    );
+    renderer.set_background_color_outer(
+        profile
+            .sim
+            .background_color_outer
+            .as_deref()
+            .and_then(hex_to_rgb),
+    );
 
     // 7. Window: route through the same recompute the resize handler uses.
     apply_window(
@@ -887,7 +900,12 @@ pub fn print_mode(
         None
     };
 
-    let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+    // Exports are frameless: there is no outer zone, so the inner colour is
+    // the whole picture's background.
+    let background_color = config
+        .background_color_inner
+        .as_ref()
+        .and_then(|c| hex_to_rgb(c));
 
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
     let intensity_mapping = Some(render.intensity_mapping.clone());
@@ -1080,7 +1098,12 @@ pub fn capture_frames_mode(
             None
         };
 
-        let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+        // Exports are frameless: there is no outer zone, so the inner colour is
+        // the whole picture's background.
+        let background_color = config
+            .background_color_inner
+            .as_ref()
+            .and_then(|c| hex_to_rgb(c));
         let intensity_mapping = Some(render.intensity_mapping.clone());
         let palette_cycle_inner = render.palette_cycle;
         let glyph_inner = render.glyph;
@@ -1322,7 +1345,12 @@ pub fn export_gif_mode(
             None
         };
 
-        let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+        // Exports are frameless: there is no outer zone, so the inner colour is
+        // the whole picture's background.
+        let background_color = config
+            .background_color_inner
+            .as_ref()
+            .and_then(|c| hex_to_rgb(c));
         let intensity_mapping = Some(render.intensity_mapping.clone());
         let palette_cycle_gif = render.palette_cycle;
 
@@ -1501,7 +1529,12 @@ pub fn export_webm_mode(
             None
         };
 
-        let background_color = config.background_color.as_ref().and_then(|c| hex_to_rgb(c));
+        // Exports are frameless: there is no outer zone, so the inner colour is
+        // the whole picture's background.
+        let background_color = config
+            .background_color_inner
+            .as_ref()
+            .and_then(|c| hex_to_rgb(c));
         let intensity_mapping = Some(render.intensity_mapping.clone());
         let palette_cycle_webm = render.palette_cycle;
 
@@ -1626,6 +1659,7 @@ mod tests {
             false,
             ColorMode::TrueColor,
             None,
+            None,
         );
         let ascii_idx = ALL_CHARSETS
             .iter()
@@ -1663,6 +1697,7 @@ mod tests {
             false,
             ColorMode::TrueColor,
             None,
+            None,
         );
         let non_identity = PaletteCycle {
             cycles: 3,
@@ -1695,6 +1730,7 @@ mod tests {
             false,
             false,
             ColorMode::TrueColor,
+            None,
             None,
         );
         rs.glyph = crate::render::charset::GlyphConfig {
@@ -1731,6 +1767,7 @@ mod tests {
             false,
             false,
             ColorMode::TrueColor,
+            None,
             None,
         );
         rs.sensor_angle = 37.5;
@@ -1989,6 +2026,7 @@ mod tests {
             false,
             ColorMode::TrueColor,
             None,
+            None,
         );
         let sim = Simulation::new(400, 400, SimConfig::default(), 42, InitMode::Random, 0);
         let timer = FrameTimer::with_time_scale(60, 0.0, 1.0);
@@ -2019,7 +2057,8 @@ mod tests {
             charset: Some(Charset::Braille),
             reverse_palette: Some(true),
             invert_palette: Some(true),
-            background_color: Some("000000".to_string()),
+            background_color_inner: Some("000000".to_string()),
+            background_color_outer: Some("0a0a0a".to_string()),
             ..Default::default()
         };
         crate::app::apply_overrides(
@@ -2042,9 +2081,18 @@ mod tests {
         assert!(renderer.reverse_palette(), "renderer reverse");
         assert!(renderer.invert_palette(), "renderer invert");
         assert_eq!(
-            renderer.background_color(),
+            renderer.background_color_inner(),
             Some(RgbColor { r: 0, g: 0, b: 0 }),
-            "renderer background"
+            "renderer inner background"
+        );
+        assert_eq!(
+            renderer.background_color_outer(),
+            Some(RgbColor {
+                r: 0x0a,
+                g: 0x0a,
+                b: 0x0a
+            }),
+            "renderer outer background"
         );
         // Live exact values also set on runtime state.
         assert_eq!(rs.live_palette, Palette::Heat);

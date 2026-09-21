@@ -146,7 +146,10 @@ pub fn capture_overrides(
         wind: rs.wind.map(|w| crate::cli::WindArg { dx: w.dx, dy: w.dy }),
         terrain: terrain_name(sim_config.terrain),
         terrain_strength: Some(sim_config.terrain_strength),
-        background_color: sim_config.background_color.clone(),
+        background_color_inner: sim_config.background_color_inner.clone(),
+        background_color_outer: sim_config.background_color_outer.clone(),
+        // Never captured: the legacy key is read-only, one-way migration.
+        background_color_legacy: None,
         // Capture boundary_mode so a Wrap preset (River/Smoke/Mold) round-trips
         // through projection; leaving it None defaulted the live mirror to Bounce
         // and made any Wrap preset read falsely dirty. Symmetric with window_frame.
@@ -252,8 +255,17 @@ fn load_config_file() -> Result<ConfigFile, String> {
 
 /// Parse config-file TOML into a `ConfigFile`. Pure (no IO) so the stale-schema
 /// tolerance can be regression-tested directly.
+///
+/// This is the single deserialization seam for saved configs, so it is also
+/// where the legacy single-zone `background_color` key is folded into the
+/// inner/outer pair — every loaded profile is upgraded before anyone sees it.
 fn parse_config_file(contents: &str) -> Result<ConfigFile, String> {
-    toml::from_str(contents).map_err(|e| format!("Failed to parse config file: {}", e))
+    let mut config_file: ConfigFile =
+        toml::from_str(contents).map_err(|e| format!("Failed to parse config file: {}", e))?;
+    for profile in &mut config_file.presets {
+        profile.overrides.migrate_legacy_background();
+    }
+    Ok(config_file)
 }
 
 fn save_config_file(config_file: &ConfigFile) -> Result<(), String> {
@@ -606,6 +618,106 @@ mod tests {
             "diffusion_sigma must survive round-trip (got {})",
             p.sim.diffusion_sigma
         );
+    }
+
+    // ── Background-color zones: legacy key migration ──────────────────────
+
+    /// Parse a whole config file the way `load_config` does, so the legacy
+    /// migration in `parse_config_file` runs.
+    fn parse_one(toml: &str) -> NamedProfile {
+        let mut file = parse_config_file(toml).expect("config file must parse");
+        assert_eq!(file.presets.len(), 1);
+        file.presets.remove(0)
+    }
+
+    #[test]
+    fn legacy_background_color_key_seeds_both_zones() {
+        let p = parse_one(
+            r#"
+[[preset]]
+name = "legacy"
+background_color = "112233"
+"#,
+        );
+        assert_eq!(
+            p.overrides.background_color_inner.as_deref(),
+            Some("112233")
+        );
+        assert_eq!(
+            p.overrides.background_color_outer.as_deref(),
+            Some("112233")
+        );
+        assert!(
+            p.overrides.background_color_legacy.is_none(),
+            "the legacy key must be cleared once folded in, or it would show up \
+             in dirty comparison against a freshly captured profile"
+        );
+    }
+
+    #[test]
+    fn a_specific_key_beats_a_legacy_key_in_the_same_file() {
+        let p = parse_one(
+            r#"
+[[preset]]
+name = "mixed"
+background_color = "112233"
+background_color_outer = "445566"
+"#,
+        );
+        assert_eq!(
+            p.overrides.background_color_inner.as_deref(),
+            Some("112233"),
+            "the zone with no specific key falls back to the legacy one"
+        );
+        assert_eq!(
+            p.overrides.background_color_outer.as_deref(),
+            Some("445566"),
+            "the specific key must win"
+        );
+    }
+
+    #[test]
+    fn saving_writes_only_the_zone_pair() {
+        let profile = NamedProfile {
+            name: "roundtrip".to_string(),
+            description: None,
+            overrides: ProfileOverrides {
+                background_color_inner: Some("112233".to_string()),
+                background_color_outer: Some("445566".to_string()),
+                // Even if something set it, the legacy key is never written.
+                background_color_legacy: Some("ffffff".to_string()),
+                ..Default::default()
+            },
+        };
+        let toml = toml::to_string_pretty(&ConfigFile {
+            presets: vec![profile],
+        })
+        .expect("serialize");
+
+        assert!(toml.contains("background_color_inner = \"112233\""));
+        assert!(toml.contains("background_color_outer = \"445566\""));
+        assert!(
+            !toml.contains("\nbackground_color ="),
+            "the legacy key must never round-trip back out:\n{toml}"
+        );
+    }
+
+    #[test]
+    fn a_legacy_config_file_round_trips_into_the_new_keys() {
+        let loaded = parse_one(
+            r#"
+[[preset]]
+name = "legacy"
+background_color = "112233"
+"#,
+        );
+        let toml = toml::to_string_pretty(&ConfigFile {
+            presets: vec![loaded],
+        })
+        .expect("serialize");
+        assert!(toml.contains("background_color_inner = \"112233\""));
+        assert!(toml.contains("background_color_outer = \"112233\""));
+        assert!(!toml.contains("\nbackground_color ="));
     }
 
     #[test]

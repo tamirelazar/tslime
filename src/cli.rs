@@ -262,6 +262,23 @@ fn parse_hex_color(hex: &str) -> Result<RgbColor, String> {
     Ok(RgbColor::new(r, g, b))
 }
 
+/// Validate a background-colour hex string, returning it verbatim.
+///
+/// Accepts the same forms as [`crate::render::palette::hex_to_rgb`] — six hex
+/// digits with an optional leading `#`. Every background call site downstream is
+/// `.and_then(hex_to_rgb)`, which silently turns a malformed value into "no
+/// background"; rejecting it here makes the mistake visible as a clap error
+/// instead of an invisible no-op.
+fn parse_bg_hex(hex: &str) -> Result<String, String> {
+    if crate::render::palette::hex_to_rgb(hex).is_some() {
+        Ok(hex.to_string())
+    } else {
+        Err(format!(
+            "invalid hex color '{hex}': expected 6 hex digits, optionally prefixed with '#' (e.g. '1a1a1a' or '#1a1a1a')"
+        ))
+    }
+}
+
 fn parse_count(s: &str) -> Result<usize, String> {
     if s.ends_with('k') || s.ends_with('K') {
         let num = &s[..s.len() - 1];
@@ -1809,10 +1826,33 @@ pub struct Args {
         long = "bg-color",
         alias = "bg",
         value_name = "HEX",
-        help = "Background color as hex (e.g., '000000' or '#1a1a1a')"
+        value_parser = parse_bg_hex,
+        help = "Background color as hex (e.g., '000000' or '#1a1a1a') — sets both zones"
     )]
-    /// Background color hex code.
+    /// Background color hex code for both zones. Expands into
+    /// `bg_color_inner`/`bg_color_outer` at parse time, so either specific flag
+    /// still wins over it.
     pub bg_color: Option<String>,
+
+    #[arg(
+        long = "bg-color-inner",
+        alias = "bg-inner",
+        value_name = "HEX",
+        value_parser = parse_bg_hex,
+        help = "Background color for the inner zone (simulation + frame matte)"
+    )]
+    /// Background color hex code for the inner zone: every cell inside the frame rect.
+    pub bg_color_inner: Option<String>,
+
+    #[arg(
+        long = "bg-color-outer",
+        alias = "bg-outer",
+        value_name = "HEX",
+        value_parser = parse_bg_hex,
+        help = "Background color for the outer zone (padding around the frame)"
+    )]
+    /// Background color hex code for the outer zone: every cell outside the frame rect.
+    pub bg_color_outer: Option<String>,
 
     #[arg(
         long = "pause-style",
@@ -1912,6 +1952,26 @@ impl Args {
             "256" => Ok(ColorMode::Bits256),
             _ => Err(format!("Invalid color mode: {}", self.colors)),
         }
+    }
+
+    /// The inner-zone background: `--bg-color-inner` if given, else the
+    /// general `--bg-color`.
+    ///
+    /// This is where the general flag expands into the pair, so the rule
+    /// "specific beats general" holds at the CLI boundary exactly as it does
+    /// for a preset default or a saved-config key.
+    pub fn bg_color_inner(&self) -> Option<String> {
+        self.bg_color_inner
+            .clone()
+            .or_else(|| self.bg_color.clone())
+    }
+
+    /// The outer-zone background: `--bg-color-outer` if given, else the
+    /// general `--bg-color`. See [`Args::bg_color_inner`].
+    pub fn bg_color_outer(&self) -> Option<String> {
+        self.bg_color_outer
+            .clone()
+            .or_else(|| self.bg_color.clone())
     }
 
     /// Parses the palette name or custom definition.
@@ -2420,6 +2480,8 @@ impl Default for Args {
             choir_volume: 0.5,
             color_aa: None,
             bg_color: None,
+            bg_color_inner: None,
+            bg_color_outer: None,
             pause_style: PauseStyle::Minimal,
             pause_logo: false,
             pause_pulse_draw_mode: false,
@@ -2498,6 +2560,70 @@ fn parse_custom_palette(s: &str) -> Result<Palette, String> {
 mod tests {
     use super::*;
     use crate::render::palette::RgbColor;
+
+    // ── Background-color zones ────────────────────────────────────────────
+
+    #[test]
+    fn bg_color_sets_both_zones() {
+        let a = Args::parse_from(["tslime", "--bg-color", "112233"]);
+        assert_eq!(a.bg_color_inner().as_deref(), Some("112233"));
+        assert_eq!(a.bg_color_outer().as_deref(), Some("112233"));
+    }
+
+    #[test]
+    fn specific_bg_flag_beats_the_general_one() {
+        let a = Args::parse_from([
+            "tslime",
+            "--bg-color",
+            "112233",
+            "--bg-color-outer",
+            "445566",
+        ]);
+        assert_eq!(a.bg_color_inner().as_deref(), Some("112233"));
+        assert_eq!(
+            a.bg_color_outer().as_deref(),
+            Some("445566"),
+            "the specific flag must win over --bg-color"
+        );
+    }
+
+    #[test]
+    fn one_bg_zone_flag_leaves_the_other_unset() {
+        let a = Args::parse_from(["tslime", "--bg-color-inner", "112233"]);
+        assert_eq!(a.bg_color_inner().as_deref(), Some("112233"));
+        assert_eq!(
+            a.bg_color_outer(),
+            None,
+            "unset must stay unset so the terminal's own background shows"
+        );
+    }
+
+    #[test]
+    fn bg_zone_aliases_are_accepted() {
+        let a = Args::parse_from(["tslime", "--bg-inner", "112233", "--bg-outer", "445566"]);
+        assert_eq!(a.bg_color_inner.as_deref(), Some("112233"));
+        assert_eq!(a.bg_color_outer.as_deref(), Some("445566"));
+    }
+
+    #[test]
+    fn bg_flags_accept_a_leading_hash() {
+        let a = Args::parse_from(["tslime", "--bg-color", "#1a1a1a"]);
+        assert_eq!(a.bg_color_inner().as_deref(), Some("#1a1a1a"));
+    }
+
+    #[test]
+    fn malformed_bg_hex_is_rejected_on_every_flag() {
+        // Previously `.and_then(hex_to_rgb)` swallowed these, making a typo
+        // indistinguishable from omitting the flag entirely.
+        for flag in ["--bg-color", "--bg-color-inner", "--bg-color-outer"] {
+            for bad in ["zzz", "12345", "1234567", "gggggg", ""] {
+                assert!(
+                    Args::try_parse_from(["tslime", flag, bad]).is_err(),
+                    "{flag} {bad:?} must be rejected"
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_mode_default() {

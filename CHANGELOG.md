@@ -6,17 +6,39 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `--bg-color-inner` and `--bg-color-outer` (aliases `--bg-inner`,
+  `--bg-outer`) set the background of the two zones the window frame divides
+  the terminal into: inner is everything inside the frame rect (the simulation
+  and its matte), outer is the padding around it. `--bg-color` still sets both
+  and either specific flag overrides it. The split is geometric, so it is
+  identical in every `--window-frame` mode and cycling chrome at runtime
+  recolors nothing; where the frame fills the terminal, everything is inner and
+  the outer color is unused. (#126)
+
+### Changed
+- **Breaking:** a malformed `--bg-color` value is now a command-line error.
+  Every background call site was `.and_then(hex_to_rgb)`, so `--bg-color zzz`
+  silently meant "no background" and was indistinguishable from omitting the
+  flag. The three background flags now validate their hex up front.
+- Saved configs store `background_color_inner` / `background_color_outer`. An
+  existing `background_color` key is still read and seeds both zones — a
+  specific key in the same file wins — and is rewritten as the pair on the next
+  save.
+- `--time` is now a floor on the frame period rather than a cap on the
+  inter-frame sleep, and defaults to `0`. As a cap it silently discarded any
+  `--fps` below `1 / --time`, so `--fps 10` emitted ~22.
+
 ### Fixed
+- The window frame's own cells dropped the background color, so the terminal's
+  own background showed through behind them instead of the configured matte —
+  visible behind `frame`'s thin box rules and `glow`'s shaded ring, hidden
+  behind `accented`'s solid band.
 - `--fps N` now emits N frames per second. Each frame's sleep was computed from
   the instant the loop woke up, so `thread::sleep` overshoot was never paid
   back and stretched the frame period — `--fps 30` emitted ~27. The frame
   deadline now accumulates, and a frame that overruns its budget starts the
   next one immediately. (#112)
-
-### Changed
-- `--time` is now a floor on the frame period rather than a cap on the
-  inter-frame sleep, and defaults to `0`. As a cap it silently discarded any
-  `--fps` below `1 / --time`, so `--fps 10` emitted ~22.
 
 ## [0.1.2] - 2026-06-27
 
