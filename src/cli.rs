@@ -262,14 +262,14 @@ fn parse_hex_color(hex: &str) -> Result<RgbColor, String> {
     Ok(RgbColor::new(r, g, b))
 }
 
-/// Validate a background-colour hex string, returning it verbatim.
+/// Validate a colour hex string, returning it verbatim.
 ///
 /// Accepts the same forms as [`crate::render::palette::hex_to_rgb`] — six hex
 /// digits with an optional leading `#`. Every background call site downstream is
 /// `.and_then(hex_to_rgb)`, which silently turns a malformed value into "no
 /// background"; rejecting it here makes the mistake visible as a clap error
 /// instead of an invisible no-op.
-fn parse_bg_hex(hex: &str) -> Result<String, String> {
+fn parse_hex_arg(hex: &str) -> Result<String, String> {
     if crate::render::palette::hex_to_rgb(hex).is_some() {
         Ok(hex.to_string())
     } else {
@@ -1859,7 +1859,7 @@ pub struct Args {
         long = "bg-color",
         alias = "bg",
         value_name = "HEX",
-        value_parser = parse_bg_hex,
+        value_parser = parse_hex_arg,
         help = "Background color as hex (e.g., '000000' or '#1a1a1a') — sets both zones"
     )]
     /// Background color hex code for both zones. Expands into
@@ -1871,7 +1871,7 @@ pub struct Args {
         long = "bg-color-inner",
         alias = "bg-inner",
         value_name = "HEX",
-        value_parser = parse_bg_hex,
+        value_parser = parse_hex_arg,
         help = "Background color for the inner zone (simulation + frame matte)"
     )]
     /// Background color hex code for the inner zone: every cell inside the frame rect.
@@ -1881,11 +1881,23 @@ pub struct Args {
         long = "bg-color-outer",
         alias = "bg-outer",
         value_name = "HEX",
-        value_parser = parse_bg_hex,
+        value_parser = parse_hex_arg,
         help = "Background color for the outer zone (padding around the frame)"
     )]
     /// Background color hex code for the outer zone: every cell outside the frame rect.
     pub bg_color_outer: Option<String>,
+
+    #[arg(
+        long = "accent-color",
+        alias = "accent",
+        value_name = "HEX",
+        value_parser = parse_hex_arg,
+        help = "Chrome accent color as hex (window frame, title badges, key hints); replaces the one sampled from the palette"
+    )]
+    /// Chrome accent hex code. Unset, the accent is sampled from the active
+    /// palette (`palette_accent_color`); set, this value replaces that sample
+    /// everywhere the chrome uses it, so the frame and the UI stay one colour.
+    pub accent_color: Option<String>,
 
     #[arg(
         long = "pause-style",
@@ -2519,6 +2531,7 @@ impl Default for Args {
             bg_color: None,
             bg_color_inner: None,
             bg_color_outer: None,
+            accent_color: None,
             pause_style: PauseStyle::Minimal,
             pause_logo: false,
             pause_pulse_draw_mode: false,
@@ -2659,6 +2672,35 @@ mod tests {
                     "{flag} {bad:?} must be rejected"
                 );
             }
+        }
+    }
+
+    // ── Accent color ──────────────────────────────────────────────────────
+
+    #[test]
+    fn accent_color_is_unset_by_default() {
+        let a = Args::parse_from(["tslime"]);
+        assert_eq!(
+            a.accent_color, None,
+            "unset must leave the palette-sampled accent in charge"
+        );
+    }
+
+    #[test]
+    fn accent_color_flag_and_alias_are_accepted() {
+        let a = Args::parse_from(["tslime", "--accent-color", "#ffb347"]);
+        assert_eq!(a.accent_color.as_deref(), Some("#ffb347"));
+        let a = Args::parse_from(["tslime", "--accent", "ffb347"]);
+        assert_eq!(a.accent_color.as_deref(), Some("ffb347"));
+    }
+
+    #[test]
+    fn malformed_accent_hex_is_rejected() {
+        for bad in ["zzz", "12345", "1234567", "gggggg", ""] {
+            assert!(
+                Args::try_parse_from(["tslime", "--accent-color", bad]).is_err(),
+                "--accent-color {bad:?} must be rejected"
+            );
         }
     }
 

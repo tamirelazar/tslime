@@ -120,6 +120,19 @@ looks the same under every `--window-frame` mode and cycling the chrome with
 `F10` never recolors a cell. On a terminal too small for padding the frame
 fills the screen, so everything is inner and the outer color goes unused.
 
+### Accent
+
+The chrome — the window frame ring, title badges and key-binding highlights —
+is drawn in one accent color, sampled from the active palette so it follows
+the trails. `--accent-color` (short: `--accent`) replaces that sample:
+
+```bash
+tslime --palette forest --accent-color ffb347
+```
+
+With the two background zones this pins every color block on screen that is
+not the simulation itself. Leave it out and the palette decides.
+
 ### Border Ring
 
 `--border-ring` keeps the growth off the edges of the terminal. `bounce` lines

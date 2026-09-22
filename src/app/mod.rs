@@ -334,6 +334,7 @@ pub(crate) fn apply_overrides(
             .as_deref()
             .and_then(hex_to_rgb),
     );
+    renderer.set_accent_color(profile.sim.accent_color.as_deref().and_then(hex_to_rgb));
 
     // 7. Window: route through the same recompute the resize handler uses.
     apply_window(

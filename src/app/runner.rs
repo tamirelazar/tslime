@@ -926,6 +926,7 @@ pub fn run_simulation(
         .background_color_outer
         .as_ref()
         .and_then(|c| hex_to_rgb(c));
+    let accent_color = config.accent_color.as_ref().and_then(|c| hex_to_rgb(c));
 
     let init_mode = args
         .init
@@ -943,6 +944,7 @@ pub fn run_simulation(
         background_color_inner,
         background_color_outer,
     );
+    renderer.set_accent_color(accent_color);
     let dither_mode = args.dither_mode().unwrap_or(DitherMode::None);
     renderer.set_dither_mode(dither_mode);
     // Dither is dev-only for v0.1.0: runtime keys work only when it was
@@ -1761,13 +1763,15 @@ pub fn run_simulation(
             (0, 0)
         };
 
-        let accent = palette_accent_color(
-            &current_palette,
-            runtime_state.reverse_palette,
-            runtime_state.invert_palette,
-            0.0,
-            Some(&runtime_state.intensity_mapping),
-        );
+        let accent = runtime_state.accent_color.unwrap_or_else(|| {
+            palette_accent_color(
+                &current_palette,
+                runtime_state.reverse_palette,
+                runtime_state.invert_palette,
+                0.0,
+                Some(&runtime_state.intensity_mapping),
+            )
+        });
         let palette_editor_overlay: Option<RenderedOverlay> = (runtime_state
             .overlay_state
             .is_palette_editor_open()
@@ -1788,14 +1792,17 @@ pub fn run_simulation(
 
         // Controls position is computed below from the built overlay's own dims.
 
-        // Palette accent colour used for key-binding highlights and title badges.
-        let ui_accent = palette_accent_color(
-            &current_palette,
-            runtime_state.reverse_palette,
-            runtime_state.invert_palette,
-            hue_offset,
-            Some(&runtime_state.intensity_mapping),
-        );
+        // Accent colour used for key-binding highlights and title badges:
+        // the --accent-color override when set, else sampled from the palette.
+        let ui_accent = runtime_state.accent_color.unwrap_or_else(|| {
+            palette_accent_color(
+                &current_palette,
+                runtime_state.reverse_palette,
+                runtime_state.invert_palette,
+                hue_offset,
+                Some(&runtime_state.intensity_mapping),
+            )
+        });
 
         // Build keyboard hints overlay (? key)
         let keyboard_hints_lines: Option<RenderedOverlay> = if runtime_state

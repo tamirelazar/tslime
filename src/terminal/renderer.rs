@@ -94,7 +94,9 @@ pub struct TerminalRenderer {
     gradient_magnitude_enabled: bool,
     gradient_strength: f32,
     window_frame: crate::simulation::config::WindowFrame,
-    window_frame_accent_color: RgbColor,
+    /// Chrome accent override (`--accent-color`). `None` samples the accent
+    /// from the palette on every frame; see [`Self::chrome_accent`].
+    accent_color: Option<RgbColor>,
     window_layout: Option<crate::render::window::WindowLayout>,
     chrome_snapshot: Option<ChromeSnapshot>,
     temporal_strength: f32,
@@ -151,7 +153,7 @@ impl TerminalRenderer {
             gradient_magnitude_enabled: false,
             gradient_strength: 0.3,
             window_frame: crate::simulation::config::WindowFrame::None,
-            window_frame_accent_color: RgbColor::new(0xFA, 0xBD, 0x2F),
+            accent_color: None,
             window_layout: None,
             chrome_snapshot: None,
             temporal_strength: 0.0,
@@ -173,9 +175,31 @@ impl TerminalRenderer {
         self.window_frame = mode;
     }
 
-    /// Set the window frame accent color.
-    pub fn set_window_frame_accent_color(&mut self, color: RgbColor) {
-        self.window_frame_accent_color = color;
+    /// Set the chrome accent override. `None` restores the palette sample.
+    pub fn set_accent_color(&mut self, color: Option<RgbColor>) {
+        self.accent_color = color;
+    }
+
+    /// The chrome accent override, if one is set.
+    pub fn accent_color(&self) -> Option<RgbColor> {
+        self.accent_color
+    }
+
+    /// The colour the chrome draws in: the window frame ring, title badges and
+    /// footer highlights. The override wins when set; otherwise it is the
+    /// active palette sampled at its vivid stop with the same reverse / invert
+    /// / hue-shift / intensity mapping the trails render with, so the chrome
+    /// stays on the palette the user sees.
+    fn chrome_accent(&self) -> RgbColor {
+        self.accent_color.unwrap_or_else(|| {
+            palette::palette_accent_color(
+                &self.palette,
+                self.reverse_palette,
+                self.invert_palette,
+                self.hue_shift,
+                self.intensity_mapping.as_ref(),
+            )
+        })
     }
 
     /// Set the window layout for windowed rendering mode.
@@ -534,13 +558,7 @@ impl TerminalRenderer {
             if !matches!(layout.fallback, FallbackMode::Fullscreen)
                 && self.window_frame.is_visible()
             {
-                let accent = palette::palette_accent_color(
-                    &self.palette,
-                    self.reverse_palette,
-                    self.invert_palette,
-                    self.hue_shift,
-                    self.intensity_mapping.as_ref(),
-                );
+                let accent = self.chrome_accent();
                 buffer.render_window_frame_at(
                     self.window_frame,
                     accent,
@@ -907,13 +925,7 @@ impl TerminalRenderer {
         }
 
         // Palette accent color used for accented title badges and border.
-        let accent = palette::palette_accent_color(
-            &self.palette,
-            self.reverse_palette,
-            self.invert_palette,
-            self.hue_shift,
-            self.intensity_mapping.as_ref(),
-        );
+        let accent = self.chrome_accent();
 
         if !blank_backdrop && self.window_frame.is_visible() {
             if let Some(ref layout) = self.window_layout {
@@ -1415,13 +1427,7 @@ impl TerminalRenderer {
         }
 
         // Palette accent color for accented title badges (same approach as single-species).
-        let accent = palette::palette_accent_color(
-            &self.palette,
-            self.reverse_palette,
-            self.invert_palette,
-            self.hue_shift,
-            self.intensity_mapping.as_ref(),
-        );
+        let accent = self.chrome_accent();
 
         if !blank_backdrop && self.window_frame.is_visible() {
             if let Some(ref layout) = self.window_layout {
@@ -1641,6 +1647,39 @@ mod tests {
         assert_eq!(r.window_frame(), WindowFrame::Glow);
         r.set_intensity_mapping(None);
         assert!(r.intensity_mapping().is_none());
+    }
+
+    #[test]
+    fn chrome_accent_is_the_palette_sample_until_overridden() {
+        let mut r = TerminalRenderer::new(
+            80,
+            24,
+            Palette::Organic,
+            Charset::HalfBlock,
+            false,
+            false,
+            ColorMode::TrueColor,
+            None,
+            None,
+        );
+        let sampled = palette::palette_accent_color(&Palette::Organic, false, false, 0.0, None);
+        assert_eq!(r.chrome_accent(), sampled);
+
+        let hand_picked = RgbColor::new(0xff, 0xb3, 0x47);
+        r.set_accent_color(Some(hand_picked));
+        assert_eq!(r.accent_color(), Some(hand_picked));
+        assert_eq!(
+            r.chrome_accent(),
+            hand_picked,
+            "the override must replace the palette sample"
+        );
+
+        r.set_accent_color(None);
+        assert_eq!(
+            r.chrome_accent(),
+            sampled,
+            "clearing it restores the sample"
+        );
     }
 
     #[test]
