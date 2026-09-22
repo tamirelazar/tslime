@@ -1572,6 +1572,11 @@ pub struct SimConfig {
     /// zone has no area in the fullscreen and edge-hug fallbacks, where the
     /// frame rect covers the whole terminal, so the value is silently unused.
     pub background_color_outer: Option<String>,
+    /// Chrome accent hex code: the colour of the window frame ring, title
+    /// badges and key-binding highlights. `None` (the default) samples it from
+    /// the active palette (`palette_accent_color`); `Some` replaces that sample
+    /// wherever the chrome uses it, so frame and UI stay one colour.
+    pub accent_color: Option<String>,
     /// Preferred initialization mode for this config (if any).
     pub preferred_init_mode: Option<InitMode>,
     /// Boundary handling mode (bounce or wrap).
@@ -1752,6 +1757,7 @@ impl Default for SimConfig {
             terrain_strength: env_consts::DEFAULT_TERRAIN_STRENGTH,
             background_color_inner: None,
             background_color_outer: None,
+            accent_color: None,
             preferred_init_mode: Some(InitMode::Food),
             boundary_mode: BoundaryMode::Bounce,
             window_frame: WindowFrame::Frame,

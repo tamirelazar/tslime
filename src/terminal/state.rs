@@ -687,6 +687,9 @@ pub struct RuntimeState {
     pub intensity_mapping: IntensityMapping,
     /// Index of current intensity mapping preset.
     pub intensity_mapping_index: usize,
+    /// Chrome accent override (`--accent-color`), already parsed. `None`
+    /// samples the accent from the live palette each frame.
+    pub accent_color: Option<crate::render::palette::RgbColor>,
     /// Saved palette name (if loaded from saved palette).
     pub saved_palette_name: Option<String>,
     /// Frame counter for entropy collapse detection.
@@ -914,6 +917,10 @@ impl RuntimeState {
             reverse_palette: false,
             intensity_mapping: crate::render::palette::IntensityMapping::linear(),
             intensity_mapping_index: 0,
+            accent_color: cli_config
+                .accent_color
+                .as_deref()
+                .and_then(crate::render::palette::hex_to_rgb),
             saved_palette_name: None,
             collapse_frame_counter: 0,
             stagnation_frame_counter: 0,
@@ -1013,6 +1020,10 @@ impl RuntimeState {
         self.deposit_cap = sim.deposit_cap;
         self.time_scale = sim.time_scale;
         self.window_frame = sim.window_frame;
+        self.accent_color = sim
+            .accent_color
+            .as_deref()
+            .and_then(crate::render::palette::hex_to_rgb);
         self.chrome_style = sim.chrome_style;
         self.transition_style = sim.transition_style;
         self.transition_tagline = sim.transition_tagline;

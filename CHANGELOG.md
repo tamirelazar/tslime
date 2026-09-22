@@ -21,6 +21,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   identical in every `--window-frame` mode and cycling chrome at runtime
   recolors nothing; where the frame fills the terminal, everything is inner and
   the outer color is unused. (#126)
+- `--accent-color` (alias `--accent`) replaces the chrome accent — the window
+  frame ring, title badges and key-binding highlights — that is otherwise
+  sampled from the active palette. It is stored as `accent_color` in saved
+  configs and shown by `--dump-config`. Unset, nothing changes. (#129)
 
 ### Changed
 - Obstacle collision is now looked up through a spatial index instead of

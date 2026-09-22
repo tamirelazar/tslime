@@ -72,6 +72,9 @@ pub struct ProfileOverrides {
     pub background_color_inner: Option<String>,
     /// Outer-zone background hex: every cell outside the frame rect.
     pub background_color_outer: Option<String>,
+    /// Chrome accent hex (`--accent-color`). Unset, the accent is sampled from
+    /// the palette.
+    pub accent_color: Option<String>,
     /// Legacy single-zone `background_color` key. Accepted on read and folded
     /// into whichever of the pair is unset (so a specific key in the same file
     /// wins), then cleared — see
@@ -364,6 +367,7 @@ impl ProfileOverrides {
             terrain_strength: args.terrain_strength,
             background_color_inner: args.bg_color_inner(),
             background_color_outer: args.bg_color_outer(),
+            accent_color: args.accent_color.clone(),
             background_color_legacy: None,
             boundary_mode: args.boundary_mode,
             window_frame: args.window_frame,
@@ -733,6 +737,12 @@ impl ProfileOverrides {
             config.background_color_outer = Some(bg.clone());
         }
 
+        // Accent: CLI overrides; absent the flag the field stays unset and the
+        // chrome keeps sampling the palette.
+        if let Some(ref accent) = self.accent_color {
+            config.accent_color = Some(accent.clone());
+        }
+
         // Boundary mode: preset suggests (via PresetSimDefaults), CLI overrides.
         // The preset layer goes first so an explicit --boundary-mode still wins.
         if let Some(preset) = self.preset {
@@ -1045,6 +1055,7 @@ pub(crate) fn dump_sim_config(config: &crate::simulation::config::SimConfig) -> 
         "background_color_outer={:?}",
         config.background_color_outer
     );
+    let _ = writeln!(s, "accent_color={:?}", config.accent_color);
     let _ = writeln!(s, "obstacles={:?}", config.obstacles);
     let _ = writeln!(s, "attractors={:?}", config.attractors);
     let _ = writeln!(
@@ -1546,6 +1557,21 @@ mod tests {
             c.background_color_outer.as_deref(),
             Some("445566"),
             "an explicit zone flag must win over the preset"
+        );
+    }
+
+    #[test]
+    fn accent_color_flag_reaches_the_sim_config() {
+        let c = resolve(&["--accent-color", "ffb347"]).sim;
+        assert_eq!(c.accent_color.as_deref(), Some("ffb347"));
+    }
+
+    #[test]
+    fn accent_color_is_unset_without_the_flag() {
+        let c = resolve(&["--preset", "petridish"]).sim;
+        assert_eq!(
+            c.accent_color, None,
+            "no preset carries an accent, so the palette sample stays in charge"
         );
     }
 

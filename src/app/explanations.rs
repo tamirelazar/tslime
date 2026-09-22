@@ -205,6 +205,16 @@ pub fn print_parameter_explanations() {
     println!("    fills the terminal (small terminals, or --fullscreen), everything");
     println!("    is inner and the outer color is unused.");
 
+    println!("\n  --accent-color <HEX>");
+    println!("    Color of the chrome: the window frame ring, title badges and");
+    println!("    key-binding highlights, as 6 hex digits with an optional leading");
+    println!("    '#'. Unset, the accent is sampled from the active palette at its");
+    println!("    vivid stop, so the chrome follows the trails; set, this value");
+    println!("    replaces that sample everywhere the chrome uses it, and the frame");
+    println!("    and the UI stay one color. Together with --bg-color-inner and");
+    println!("    --bg-color-outer it fixes every color block on screen that is");
+    println!("    not the simulation itself.");
+
     println!("\n  --dither-mode <MODE> (default: none) [dev-only]");
     println!("    Dithering algorithm for color quantization.");
     println!("    • none: No dithering");

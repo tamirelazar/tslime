@@ -151,6 +151,7 @@ pub fn capture_overrides(
         terrain_strength: Some(sim_config.terrain_strength),
         background_color_inner: sim_config.background_color_inner.clone(),
         background_color_outer: sim_config.background_color_outer.clone(),
+        accent_color: sim_config.accent_color.clone(),
         // Never captured: the legacy key is read-only, one-way migration.
         background_color_legacy: None,
         // Capture boundary_mode so a Wrap preset (River/Smoke/Mold) round-trips
