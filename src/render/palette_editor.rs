@@ -723,10 +723,10 @@ fn build_editor_rich_lines(
 
     // Line 3: centered stops — shift column offset by +2 for centering
     if rich.len() > rows::STOP_SELECTOR {
-        for i in 0..PALETTE_COLOR_COUNT {
+        for (i, &color) in state.colors.iter().enumerate() {
             let col = CONTENT_OFFSET + 2 + i * 4 + 1;
             if col < rich[rows::STOP_SELECTOR].len() {
-                rich[rows::STOP_SELECTOR][col].1 = Some(state.colors[i]);
+                rich[rows::STOP_SELECTOR][col].1 = Some(color);
             }
         }
         let all_col = CONTENT_OFFSET + 2 + PALETTE_COLOR_COUNT * 4 + 1;

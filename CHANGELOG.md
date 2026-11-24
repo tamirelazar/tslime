@@ -51,6 +51,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--fps` below `1 / --time`, so `--fps 10` emitted ~22.
 
 ### Fixed
+- Trail diffusion now reflects at Bounce walls. Deposits spread along the
+  outer rows and columns, eliminating the speckled rim around smooth trails.
 - The window frame's own cells dropped the background color, so the terminal's
   own background showed through behind them instead of the configured matte —
   visible behind `frame`'s thin box rules and `glow`'s shaded ring, hidden
