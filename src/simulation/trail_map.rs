@@ -8,6 +8,8 @@
 //! the [`crate::simulation`] module docs for the full citation. The 5x5
 //! Gaussian is a standard image-processing alternative for smoother spread.
 
+use super::config::BoundaryMode;
+
 /// A 2D grid storing pheromone trail values.
 ///
 /// Uses double-buffering for efficient diffusion operations.
@@ -21,7 +23,7 @@ pub struct TrailMap {
     /// The Gaussian sigma the current `gaussian_kernel` was generated from.
     sigma: f32,
     trail_sum: f32,
-    boundary_mode: super::config::BoundaryMode,
+    boundary_mode: BoundaryMode,
     /// Pre-allocated snapshot buffer for the Lague diffuse-weight blend.
     /// Only populated (and only used) when `diffuse_weight < 1.0`.
     blend_src: Vec<f32>,
@@ -55,6 +57,62 @@ fn generate_gaussian_kernel(sigma: f32) -> [f32; 25] {
     kernel
 }
 
+/// Bounce reflects about the cell face: -1 samples cell 0, -2 samples cell 1.
+#[inline]
+fn boundary_index(index: isize, len: usize, mode: BoundaryMode) -> usize {
+    if (0..len as isize).contains(&index) {
+        return index as usize;
+    }
+    match mode {
+        BoundaryMode::Wrap => index.rem_euclid(len as isize) as usize,
+        BoundaryMode::Bounce => {
+            let period = 2 * len as isize;
+            let folded = index.rem_euclid(period);
+            folded.min(period - 1 - folded) as usize
+        }
+    }
+}
+
+/// Fill only the rim touched by out-of-bounds taps. The interior kernels can
+/// then use contiguous loads without checking boundary conditions.
+fn diffuse_edges<const N: usize>(
+    current: &[f32],
+    scratch: &mut [f32],
+    width: usize,
+    mode: BoundaryMode,
+    weights: &[f32],
+    divisor: f32,
+) {
+    if width == 0 {
+        return;
+    }
+    let height = current.len() / width;
+    let radius = N / 2;
+    for (y, row) in scratch.chunks_exact_mut(width).enumerate() {
+        let rows: [usize; N] = std::array::from_fn(|i| {
+            boundary_index((y + i) as isize - radius as isize, height, mode) * width
+        });
+        let mut fill = |x: usize| {
+            let cols: [usize; N] = std::array::from_fn(|i| {
+                boundary_index((x + i) as isize - radius as isize, width, mode)
+            });
+            let mut sum = 0.0;
+            for (taps, offset) in weights.chunks_exact(N).zip(rows) {
+                for (weight, col) in taps.iter().zip(cols) {
+                    sum += weight * current[offset + col];
+                }
+            }
+            row[x] = sum / divisor;
+        };
+        if y < radius || y + radius >= height || width <= 2 * radius {
+            (0..width).for_each(fill);
+        } else {
+            (0..radius).for_each(&mut fill);
+            (width - radius..width).for_each(fill);
+        }
+    }
+}
+
 impl TrailMap {
     /// Create a new trail map with default Gaussian sigma of 1.0.
     pub fn new(width: usize, height: usize) -> Self {
@@ -68,7 +126,7 @@ impl TrailMap {
             gaussian_kernel,
             sigma: 1.0,
             trail_sum: 0.0,
-            boundary_mode: super::config::BoundaryMode::Bounce,
+            boundary_mode: BoundaryMode::Bounce,
             blend_src: Vec::new(),
             accum: Vec::new(),
         }
@@ -86,7 +144,7 @@ impl TrailMap {
             gaussian_kernel,
             sigma,
             trail_sum: 0.0,
-            boundary_mode: super::config::BoundaryMode::Bounce,
+            boundary_mode: BoundaryMode::Bounce,
             blend_src: Vec::new(),
             accum: Vec::new(),
         }
@@ -97,7 +155,7 @@ impl TrailMap {
         width: usize,
         height: usize,
         sigma: f32,
-        boundary_mode: super::config::BoundaryMode,
+        boundary_mode: BoundaryMode,
     ) -> Self {
         let size = width * height;
         let gaussian_kernel = generate_gaussian_kernel(sigma);
@@ -113,6 +171,10 @@ impl TrailMap {
             blend_src: Vec::new(),
             accum: Vec::new(),
         }
+    }
+
+    pub(super) fn set_boundary_mode(&mut self, mode: BoundaryMode) {
+        self.boundary_mode = mode;
     }
 
     /// Update the Gaussian kernel sigma for diffusion.
@@ -215,71 +277,7 @@ impl TrailMap {
 
     /// Apply 3x3 mean-filter diffusion (the trail diffusion from Jones 2010).
     pub fn diffuse(&mut self) {
-        let width = self.width;
-        let height = self.height;
-        let current = &self.current;
-        let scratch = &mut self.scratch;
-        let is_wrap = matches!(self.boundary_mode, super::config::BoundaryMode::Wrap);
-
-        scratch.copy_from_slice(current);
-
-        if is_wrap {
-            // Toroidal: neighbors wrap across edges, all pixels processed
-            let w = width as i32;
-            let h = height as i32;
-            for y in 0..height {
-                for x in 0..width {
-                    let idx = y * width + x;
-                    let mut sum = 0.0f32;
-
-                    for dy in -1..=1 {
-                        for dx in -1..=1 {
-                            let mut nx = x as i32 + dx;
-                            let mut ny = y as i32 + dy;
-                            if nx < 0 {
-                                nx += w;
-                            } else if nx >= w {
-                                nx -= w;
-                            }
-                            if ny < 0 {
-                                ny += h;
-                            } else if ny >= h {
-                                ny -= h;
-                            }
-                            sum += current[ny as usize * width + nx as usize];
-                        }
-                    }
-
-                    scratch[idx] = sum / 9.0;
-                }
-            }
-        } else {
-            // Bounce: leave the 1-pixel border undiffused
-            for y in 1..height - 1 {
-                let row_offset = y * width;
-                for x in 1..width - 1 {
-                    let idx = row_offset + x;
-
-                    let mut sum = 0.0f32;
-                    let mut count = 0;
-
-                    for dy in -1..=1 {
-                        for dx in -1..=1 {
-                            let nx = x as i32 + dx;
-                            let ny = y as i32 + dy;
-                            if nx >= 0 && nx < width as i32 && ny >= 0 && ny < height as i32 {
-                                sum += current[(ny as usize) * width + (nx as usize)];
-                                count += 1;
-                            }
-                        }
-                    }
-
-                    scratch[idx] = if count > 0 { sum / count as f32 } else { 0.0 };
-                }
-            }
-        }
-
-        self.swap_buffers();
+        self.diffuse_mean_impl(false);
     }
 
     #[inline]
@@ -475,12 +473,20 @@ impl TrailMap {
 
     /// Apply SIMD-optimized mean diffusion.
     pub fn diffuse_simd(&mut self) {
+        self.diffuse_mean_impl(true);
+    }
+
+    fn diffuse_mean_impl(&mut self, use_simd: bool) {
         let width = self.width;
         let height = self.height;
         let current = &self.current;
         let scratch = &mut self.scratch;
 
-        scratch.copy_from_slice(current);
+        diffuse_edges::<3>(current, scratch, width, self.boundary_mode, &[1.0; 9], 9.0);
+        if width < 3 || height < 3 {
+            self.swap_buffers();
+            return;
+        }
 
         #[cfg(target_arch = "aarch64")]
         let has_simd = std::arch::is_aarch64_feature_detected!("neon");
@@ -497,7 +503,7 @@ impl TrailMap {
         #[cfg(not(any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")))]
         let has_simd = false;
 
-        if has_simd {
+        if use_simd && has_simd {
             #[cfg(target_arch = "aarch64")]
             // SAFETY: Neon feature detected, buffers sized at width*height.
             unsafe {
@@ -517,67 +523,7 @@ impl TrailMap {
 
     /// Apply 5x5 Gaussian diffusion.
     pub fn diffuse_gaussian(&mut self) {
-        let width = self.width;
-        let height = self.height;
-        let scratch = &mut self.scratch;
-        let kernel = &self.gaussian_kernel;
-        let radius: i32 = 2;
-        let is_wrap = matches!(self.boundary_mode, super::config::BoundaryMode::Wrap);
-
-        scratch.copy_from_slice(&self.current);
-
-        if is_wrap {
-            // Toroidal: neighbors wrap across edges, all pixels processed
-            let w = width as i32;
-            let h = height as i32;
-            let current = &self.current;
-            for y in 0..height {
-                for x in 0..width {
-                    let idx = y * width + x;
-                    let mut sum = 0.0f32;
-
-                    for ky in -radius..=radius {
-                        for kx in -radius..=radius {
-                            let kernel_idx = ((ky + radius) * GAUSSIAN_KERNEL_SIZE as i32
-                                + (kx + radius))
-                                as usize;
-                            let nx = ((x as i32 + kx % w) + w) % w;
-                            let ny = ((y as i32 + ky % h) + h) % h;
-                            sum += current[ny as usize * width + nx as usize] * kernel[kernel_idx];
-                        }
-                    }
-
-                    scratch[idx] = sum;
-                }
-            }
-        } else {
-            // Bounce: leave the 2-pixel border undiffused
-            let current = &self.current;
-            for y in 2..height - 2 {
-                let row_offset = y * width;
-                for x in 2..width - 2 {
-                    let idx = row_offset + x;
-
-                    let mut sum = 0.0f32;
-
-                    for ky in -radius..=radius {
-                        for kx in -radius..=radius {
-                            let nx = x as i32 + kx;
-                            let ny = y as i32 + ky;
-                            let kernel_idx = ((ky + radius) * GAUSSIAN_KERNEL_SIZE as i32
-                                + (kx + radius))
-                                as usize;
-                            sum +=
-                                current[(ny as usize) * width + (nx as usize)] * kernel[kernel_idx];
-                        }
-                    }
-
-                    scratch[idx] = sum;
-                }
-            }
-        }
-
-        self.swap_buffers();
+        self.diffuse_gaussian_impl(false);
     }
 
     #[inline]
@@ -1015,13 +961,21 @@ impl TrailMap {
 
     /// Apply SIMD-optimized Gaussian diffusion.
     pub fn diffuse_gaussian_simd(&mut self) {
+        self.diffuse_gaussian_impl(true);
+    }
+
+    fn diffuse_gaussian_impl(&mut self, use_simd: bool) {
         let width = self.width;
         let height = self.height;
         let current = &self.current;
         let scratch = &mut self.scratch;
         let kernel = &self.gaussian_kernel;
 
-        scratch.copy_from_slice(current);
+        diffuse_edges::<5>(current, scratch, width, self.boundary_mode, kernel, 1.0);
+        if width < 5 || height < 5 {
+            self.swap_buffers();
+            return;
+        }
 
         #[cfg(target_arch = "aarch64")]
         let has_simd = std::arch::is_aarch64_feature_detected!("neon");
@@ -1038,7 +992,7 @@ impl TrailMap {
         #[cfg(not(any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")))]
         let has_simd = false;
 
-        if has_simd && width >= 10 {
+        if use_simd && has_simd && width >= 10 {
             #[cfg(target_arch = "aarch64")]
             // SAFETY: Neon feature detected, buffers sized at width*height.
             unsafe {
@@ -1077,20 +1031,12 @@ impl TrailMap {
         for w in &mut kernel {
             *w /= ksum;
         }
-        let is_wrap = matches!(self.boundary_mode, super::config::BoundaryMode::Wrap);
-        let clampi = |v: i32, n: i32| -> usize {
-            if is_wrap {
-                (((v % n) + n) % n) as usize
-            } else {
-                v.clamp(0, n - 1) as usize
-            }
-        };
         // Horizontal pass: current -> scratch.
         for y in 0..height {
             for x in 0..width {
                 let mut sum = 0.0f32;
                 for (ki, k) in (-radius..=radius).enumerate() {
-                    let nx = clampi(x as i32 + k, width as i32);
+                    let nx = boundary_index(x as isize + k as isize, width, self.boundary_mode);
                     sum += self.current[y * width + nx] * kernel[ki];
                 }
                 self.scratch[y * width + x] = sum;
@@ -1101,7 +1047,7 @@ impl TrailMap {
             for x in 0..width {
                 let mut sum = 0.0f32;
                 for (ki, k) in (-radius..=radius).enumerate() {
-                    let ny = clampi(y as i32 + k, height as i32);
+                    let ny = boundary_index(y as isize + k as isize, height, self.boundary_mode);
                     sum += self.scratch[ny * width + x] * kernel[ki];
                 }
                 self.current[y * width + x] = sum;
@@ -1137,9 +1083,8 @@ impl TrailMap {
             self.blend_src.copy_from_slice(&self.current);
         }
 
-        // SIMD paths don't implement wrap-around, so wrap mode always takes the scalar path.
-        let use_scalar =
-            !use_simd || matches!(self.boundary_mode, super::config::BoundaryMode::Wrap);
+        // Preserve the scalar arithmetic used for Wrap trajectories.
+        let use_scalar = !use_simd || matches!(self.boundary_mode, BoundaryMode::Wrap);
 
         if use_gaussian && sigma > 2.0 {
             self.diffuse_gaussian_separable(sigma);
@@ -1342,13 +1287,45 @@ mod tests {
     }
 
     #[test]
-    fn test_diffuse_preserves_edges() {
-        let mut trail = TrailMap::new(10, 10);
-        trail.set(0, 0, 5.0);
-        trail.set(9, 9, 5.0);
-        trail.diffuse();
-        assert!(trail.get(0, 0) > 0.0);
-        assert!(trail.get(9, 9) > 0.0);
+    fn bounce_diffusion_matches_a_mirrored_field() {
+        use crate::simulation::config::BoundaryMode;
+
+        for (width, height) in [(17, 11), (4, 3), (1, 2), (5, 1)] {
+            for (gaussian, sigma) in [(false, 1.0), (true, 1.0), (true, 3.0)] {
+                for simd in [false, true] {
+                    let mut field = TrailMap::new_with_sigma(width, height, sigma);
+                    let mut tile = TrailMap::new_with_sigma_and_boundary(
+                        width * 2,
+                        height * 2,
+                        sigma,
+                        BoundaryMode::Wrap,
+                    );
+                    // A periodic tile containing four mirrored copies gives a reflecting
+                    // wall at each face, including when the kernel spans the whole field.
+                    for y in 0..height {
+                        for x in 0..width {
+                            let value = ((7 * x + 3 * y) % 13) as f32;
+                            field.set(x, y, value);
+                            for yy in [y, 2 * height - 1 - y] {
+                                for xx in [x, 2 * width - 1 - x] {
+                                    tile.set(xx, yy, value);
+                                }
+                            }
+                        }
+                    }
+                    let total = field.current().iter().sum::<f32>();
+                    tile.diffuse_with_kernel(false, gaussian, 1.0, sigma);
+                    field.diffuse_with_kernel(simd, gaussian, 1.0, sigma);
+                    for y in 0..height {
+                        for x in 0..width {
+                            assert!((field.get(x, y) - tile.get(x, y)).abs() < 1e-5,
+                                "cell ({x},{y}), size {width}x{height}, Gaussian={gaussian}, sigma={sigma}, SIMD={simd}");
+                        }
+                    }
+                    assert!((field.current().iter().sum::<f32>() - total).abs() < 1e-3);
+                }
+            }
+        }
     }
 
     #[test]
@@ -1523,10 +1500,8 @@ mod tests {
         let mut trail = TrailMap::new(4, 10);
         trail.set(1, 1, 9.0);
         trail.diffuse_gaussian_simd();
-        // Just ensure it doesn't panic.
-        // With width 4 and 5x5 kernel (radius 2), no pixels are processed as "inner" pixels.
-        // So the value should remain unchanged.
-        assert_eq!(trail.get(1, 1), 9.0);
+        assert!(trail.get(1, 1) < 9.0);
+        assert!(trail.get(0, 1) > 0.0);
     }
 
     #[test]

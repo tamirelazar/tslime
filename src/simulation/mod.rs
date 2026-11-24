@@ -1257,18 +1257,16 @@ impl Simulation {
         config.expand_border_ring(self.width(), self.height());
         self.obstacle_index = ObstacleIndex::build(&config.obstacles, self.width(), self.height());
         self.config = config;
-        // Existing trail maps cache a precomputed Gaussian kernel; regenerate it so a
-        // changed diffusion_sigma actually takes effect (new maps below already bake it in).
-        let new_sigma = self.config.diffusion_sigma;
+        let boundary_mode = self.config.boundary_mode;
         for trail_map in &mut self.trail_maps {
-            trail_map.set_gaussian_sigma(new_sigma);
+            trail_map.set_gaussian_sigma(self.config.diffusion_sigma);
+            trail_map.set_boundary_mode(boundary_mode);
         }
         let num_trails = if self.config.separate_species_trails {
             self.config.species_configs.len()
         } else {
             1
         };
-        let boundary_mode = self.config.boundary_mode;
         while self.trail_maps.len() < num_trails {
             self.trail_maps.push(TrailMap::new_with_sigma_and_boundary(
                 self.width(),
@@ -1476,6 +1474,24 @@ mod tests {
         cfg.diffusion_sigma = original + 1.5;
         sim.update_config(cfg);
         assert_eq!(sim.trail_map().gaussian_sigma(), original + 1.5);
+    }
+
+    #[test]
+    fn diffusion_follows_boundary_mode_changes() {
+        use crate::simulation::config::BoundaryMode;
+
+        let mut config = SimConfig::default();
+        config.species_configs[0].count = 0;
+        let mut sim = Simulation::new(12, 12, config, 42, InitMode::Random, 0);
+        for mode in [BoundaryMode::Wrap, BoundaryMode::Bounce] {
+            sim.with_config_mut(|config| config.boundary_mode = mode);
+            let trail = sim.trail_map_mut();
+            trail.clear();
+            trail.set(0, 5, 9.0);
+            trail.diffuse_with_kernel(true, false, 1.0, 1.0);
+            assert_eq!(trail.get(11, 5) > 0.0, mode == BoundaryMode::Wrap);
+            assert!(trail.get(0, 6) > 0.0);
+        }
     }
 
     #[test]
